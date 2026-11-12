@@ -192,6 +192,9 @@ public actor MobileRemoteService {
     private(set) var pathSettlePasses = 0
     private(set) var pathSettleDeadline: Date?
     private var screenShareEngine: ScreenShareEngine?
+    /// Off while screen share is paused (`ScreenShareAvailability`): no engine
+    /// is kept, so `screenShare` is never advertised and its routes answer 503.
+    private let screenShareAvailable: Bool
     /// Waiters on a `turn-credentials` answer from the relay's control socket.
     private var turnWaiters: [UUID: CheckedContinuation<ScreenShareTurnCredential?, Never>] = [:]
     private var clients: [String: RelayClientConnection] = [:]
@@ -280,9 +283,13 @@ public actor MobileRemoteService {
     private var relayURL: String? { MobileRemoteSettings.effectiveRelay(user: settings.relayURL, fallback: defaultRelayURL) }
 
     /// `watchesNetwork` is off in tests, which report paths through `networkPathChanged`.
-    public init(dataDirectory: URL, hostName: String, appVersion: String = "0.2.0", defaultRelayURL: String = MobileWire.defaultRelayURL, watchesNetwork: Bool = true) {
+    /// `screenShareAvailable` is `ScreenShareAvailability.enabled`; tests of the
+    /// screen-share routes pass `true`.
+    public init(dataDirectory: URL, hostName: String, appVersion: String = "0.2.0", defaultRelayURL: String = MobileWire.defaultRelayURL, watchesNetwork: Bool = true,
+                screenShareAvailable: Bool = ScreenShareAvailability.enabled) {
         self.dataDirectory = dataDirectory; self.hostName = hostName; self.appVersion = appVersion; self.defaultRelayURL = defaultRelayURL
         self.watchesNetwork = watchesNetwork
+        self.screenShareAvailable = screenShareAvailable
         hostId = Self.stableHostId(dataDirectory)
         uploads = MobileUploadStore(directory: dataDirectory.appendingPathComponent("uploads", isDirectory: true))
         deviceRegistry = MobileDeviceRegistry(url: dataDirectory.appendingPathComponent("devices.json"))
@@ -296,8 +303,12 @@ public actor MobileRemoteService {
     public func attachScreenShare(_ target: ScreenShareSafetyTarget) { screenShare = target }
     /// Wires the screen-share engine in, so the `/m1/screen-share` routes work
     /// and signalling frames reach it. Nil until the app has one, which is what
-    /// keeps the routes answering 503 rather than half-working.
-    public func attachScreenShareEngine(_ engine: ScreenShareEngine) { screenShareEngine = engine }
+    /// keeps the routes answering 503 rather than half-working. A host with
+    /// screen share switched off (`ScreenShareAvailability`) keeps no engine.
+    public func attachScreenShareEngine(_ engine: ScreenShareEngine) {
+        guard screenShareAvailable else { return }
+        screenShareEngine = engine
+    }
     /// What this host advertises in `/m1/info` and `auth_ok`. `screenShare` is
     /// listed only once an engine is attached, so a phone never offers a
     /// feature whose routes would answer 503.

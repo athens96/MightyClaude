@@ -15,7 +15,9 @@ public sealed partial class MainWindow
     private string screenUnavailable = "";
     private async Task InitializeScreenShare(string directory)
     {
-        if (options.SmokeTest || screenPlatform is not null || mobileHost is null || mobileRouter is null) return;
+        // Nothing at all while screen share is paused (ScreenShareAvailability, M/ScreenShareSafety.swift configureScreenShare): no capture
+        // platform, hub, stop banner or hooks, and the host and router are handed nothing, so the phones are never offered it.
+        if (!ScreenShareAvailability.Enabled || options.SmokeTest || screenPlatform is not null || mobileHost is null || mobileRouter is null) return;
         screenPlatform = new(DispatcherQueue, root);
         try { await screenPlatform.InitializeAsync(directory); }
         catch (Exception ex) when (ex is not OutOfMemoryException) { screenUnavailable = Locale.Get("windows.screenShare.initializeFailed"); }
@@ -62,6 +64,7 @@ public sealed partial class MainWindow
     // is allowed, the control key's fingerprint beside the remove button, and its live sessions.
     private StackPanel BuildScreenShareSection()
     {
+        if (!ScreenShareAvailability.Enabled) return BuildScreenSharePaused();
         var rows = new StackPanel(); const string deviceRow = "screen-share-device";
         AutomationProperties.SetAutomationId(rows, "settings-screen-share");
         var description = new StackPanel { Spacing = DesignMetrics.Spacing.Xs };
@@ -170,6 +173,15 @@ public sealed partial class MainWindow
         rows.Loaded += (_, _) => { if (screenHub is not null) screenHub.Changed += Changed; if (mobileHost is not null) mobileHost.StatusChanged += DevicesChanged; Refresh(); };
         rows.Unloaded += (_, _) => { if (screenHub is not null) screenHub.Changed -= Changed; if (mobileHost is not null) mobileHost.StatusChanged -= DevicesChanged; };
         Refresh(); return rows;
+    }
+    // While screen share is switched off (ScreenShareAvailability, M/ScreenShareSettingsSection.swift paused): under the slot's title and
+    // BETA badge, one line, and nothing that reads the host.
+    private StackPanel BuildScreenSharePaused()
+    {
+        var rows = new StackPanel();
+        AutomationProperties.SetAutomationId(rows, "settings-screen-share-paused");
+        SettingsRow(rows, SettingsText(Locale.Get("settings.screenShare.paused"), 11, DesignToken.Ink2));
+        return rows;
     }
     private async Task ShutdownScreenShare()
     {

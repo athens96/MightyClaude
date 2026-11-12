@@ -51,7 +51,17 @@ internal static class MobileRemoteVerification
             var joined = identity.Authenticate(Json(new { type = "auth", pairingKey = key, clientId = id, clientName = "Phone" }), false);
             Check(joined.DeviceId == id && joined.DeviceToken is not null, "first pairing issues device token");
             Check(!File.ReadAllText(Path.Combine(directory, "mobile-identity.json")).Contains(joined.DeviceToken!), "only device token hash is persisted");
-            Check(identity.Authenticate(Json(new { type = "auth", pairingKey = key, clientId = id }), false).Error == "device-conflict", "pairing key cannot replace an existing device token");
+            // The phone scanned the QR again (the relay moved, its pairing was deleted): the key and the same id re-pair it, the row
+            // keeps its first-seen time and loses its push handle, the new token works and the old one no longer does.
+            var firstSeen = identity.Devices.Single(d => d.Id == id).FirstSeen;
+            Check(identity.SetPush(id, new string('h', 43), MobilePushKinds.All.ToArray()) == MobilePushRegistrationResult.Saved && identity.PushDevices().Count == 1, "paired phone registers a push handle");
+            var again = identity.Authenticate(Json(new { type = "auth", pairingKey = key, clientId = id, clientName = "Galaxy" }), false);
+            Check(again.Error is null && again.DeviceId == id && again.DeviceToken is { } renewed && renewed != joined.DeviceToken, "pairing again with the key issues the same row a new token");
+            Check(identity.Devices.Count == 1 && identity.Devices[0].FirstSeen == firstSeen && identity.Devices[0].Name == "Galaxy", "re-pairing keeps one row with its first-seen time and the new name");
+            Check(identity.PushDevices().Count == 0, "re-pairing drops the push registration");
+            Check(identity.Authenticate(Json(new { type = "auth", clientId = id, deviceToken = joined.DeviceToken }), false).Error == "device-revoked", "the token from before re-pairing stops working");
+            Check(identity.Authenticate(Json(new { type = "auth", pairingKey = "not-the-key-not-the-key-not-the-key-not-the", clientId = id }), false).Error == "pairing-key", "re-pairing without the key is refused");
+            joined = again;
             var reopened = new MobileIdentity(directory);
             Check(reopened.Authenticate(Json(new { type = "auth", clientId = id, deviceToken = joined.DeviceToken }), false).DeviceId == id, "returning device authenticates after app restart");
             reopened.Rotate(); Check(reopened.Devices.Count == 0, "key rotation erases every device credential");
@@ -62,6 +72,13 @@ internal static class MobileRemoteVerification
             Check(reopened.Authenticate(Json(new { type = "auth", pairingKey = fresh, clientId = "zzzzzzzzzzzzzzzzzzzzzz" }), false).Error == "device-limit", "new-device rate limit is enforced");
             Check(MobileRelayHost.NormalizeRelay("https://relay.example/path?token=x") == "wss://relay.example", "relay origin does not retain path/query");
             Check(MobileRelayHost.NormalizeRelay("wss://user:password@relay.example") is null, "relay URL credentials rejected");
+            // The default relay is Cloudflare's; the Oracle relay earlier versions shipped, typed into the field or left there, falls back to it.
+            Check(MobileRelayHost.DefaultRelay == "wss://mighty-relay.athens96.workers.dev", "default relay is the Cloudflare relay");
+            Check(MobileRelayHost.EffectiveRelay("") == MobileRelayHost.DefaultRelay && MobileRelayHost.EffectiveRelay("not a url") == MobileRelayHost.DefaultRelay, "empty or invalid relay field uses the default");
+            Check(MobileRelayHost.EffectiveRelay("relay.example") == "wss://relay.example", "user relay field wins over the default");
+            Check(MobileRelayHost.EffectiveRelay("wss://mightyclaude.duckdns.org", "wss://default.example") == "wss://default.example", "retired default relay falls back to the default");
+            Check(MobileRelayHost.EffectiveRelay("MightyClaude.DuckDNS.org", "wss://default.example") == "wss://default.example", "retired default relay matches without case after normalizing");
+            Check(MobileRelayHost.EffectiveRelay("", "") is null, "no usable relay is null");
         }
         finally { Directory.Delete(directory, true); }
         return Task.CompletedTask;
@@ -146,6 +163,8 @@ internal static class MobileRemoteVerification
                 async Task Encrypted(object message) => await socket.SendAsync(cipher.Seal(JsonSerializer.SerializeToUtf8Bytes(message, Wire.Json)), WebSocketMessageType.Binary, true, timeout.Token);
                 await Encrypted(new { type = "auth", pairingKey = Query(host.PairingUrl, "key"), clientId = "abcdefghijklmnopqrstuv", clientName = "Fixture Phone" });
                 using var auth = JsonDocument.Parse(cipher.Open(await Receive(socket, timeout.Token))); Check(auth.RootElement.Text("type") == "auth_ok" && auth.RootElement.Text("deviceToken") is not null, "phone authenticates over encrypted relay");
+                // Screen share is paused (ScreenShareAvailability): a host built with the defaults leaves it out of auth_ok even when asked to add it.
+                Check(auth.RootElement.GetProperty("capabilities").EnumerateArray().Any(c => c.GetString() == "screenShare") == ScreenShareAvailability.Enabled, "auth_ok follows the screen-share switch");
                 await Encrypted(new { id = "request-1", method = "GET", path = "/m1/info" });
                 using var response = JsonDocument.Parse(cipher.Open(await Receive(socket, timeout.Token))); Check(response.RootElement.Text("id") == "request-1" && response.RootElement.GetProperty("status").GetInt32() == 200, "encrypted request response is correlated");
                 completed.TrySetResult(); var buffer = new byte[1024]; await socket.ReceiveAsync(buffer, timeout.Token);
@@ -155,7 +174,7 @@ internal static class MobileRemoteVerification
         try
         {
             await app.StartAsync(timeout.Token); var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
-            host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (method, path, body, device, ct) => Task.FromResult(new MobileReply(200, new { protocol = 1, ok = true }))) { WatchesNetwork = false };
+            host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (method, path, body, device, ct) => Task.FromResult(new MobileReply(200, new { protocol = 1, ok = true }))) { WatchesNetwork = false, ExtraCapabilities = () => ["screenShare"] };
             await host.ApplyAsync(new(true, address, false, DirectEnabled: false)); await completed.Task.WaitAsync(timeout.Token); Check(host.Devices.Count == 1, "device registered through live WebSocket handshake");
             var link = host.PairingUrl; var serverId = host.PairingServerId;
             Check(host.PairingKeyForDisplay == Query(link, "key"), "manual pairing key matches QR key");
@@ -166,6 +185,43 @@ internal static class MobileRemoteVerification
             await host.DisposeAsync(); host = null;
         }
         finally { if (host is not null) await host.DisposeAsync(); await app.StopAsync(CancellationToken.None); Directory.Delete(directory, true); }
+    }
+    /// <summary>
+    /// Screen share's one switch (M/ScreenShareEngineTests.swift aHostWithScreenShareSwitchedOffNeitherAdvertisesNorRoutesIt): with it off
+    /// a router handed the screen routes and the capability neither advertises nor routes it; the screen-share checks opt in.
+    /// </summary>
+    internal static async Task ScreenShareSwitch()
+    {
+        var directory = Temp();
+        try
+        {
+            await using var service = new DesktopService(Path.Combine(directory, "state"), null, directory); await service.InitializeAsync();
+            var routed = 0;
+            Task<MobileReply> Screen(string method, string path, JsonElement? body, string device, CancellationToken token) { routed++; return Task.FromResult(new MobileReply(200, new { screenShare = new { } })); }
+            async Task<(bool Advertised, int State, int Session)> Probe(MobileDesktopRouter router)
+            {
+                router.ExtraCapabilities = () => ["screenShare"]; router.ScreenRoute = Screen;
+                var info = Json((await router.RouteAsync("GET", "/m1/info", null, "phone", CancellationToken.None)).Body);
+                var advertised = info.GetProperty("capabilities").EnumerateArray().Any(c => c.GetString() == "screenShare");
+                var state = (await router.RouteAsync("GET", "/m1/screen-share/state", null, "phone", CancellationToken.None)).Status;
+                var session = (await router.RouteAsync("POST", "/m1/screen-share/sessions", Json(new { mode = "view" }), "phone", CancellationToken.None)).Status;
+                return (advertised, state, session);
+            }
+            using (var off = new MobileDesktopRouter(service, Path.Combine(directory, "off"), "Fixture", (_, _) => Task.FromResult<object?>(null), _ => new([])) { ScreenShareAvailable = false })
+            {
+                var probe = await Probe(off);
+                Check(!probe.Advertised && probe.State == 503 && probe.Session == 503 && routed == 0, "screen share switched off is neither advertised nor routed");
+            }
+            using (var on = new MobileDesktopRouter(service, Path.Combine(directory, "on"), "Fixture", (_, _) => Task.FromResult<object?>(null), _ => new([])) { ScreenShareAvailable = true })
+            {
+                var probe = await Probe(on);
+                Check(probe.Advertised && probe.State == 200 && probe.Session == 200 && routed == 2, "screen share switched on is advertised and routed");
+            }
+            using (var standard = new MobileDesktopRouter(service, Path.Combine(directory, "standard"), "Fixture", (_, _) => Task.FromResult<object?>(null), _ => new([])))
+                Check((await Probe(standard)).Advertised == ScreenShareAvailability.Enabled, "a router built with the defaults follows the one switch");
+            Check(ScreenShareAvailability.Extra(() => ["screenShare", "other"], false).SequenceEqual(["other"]) && ScreenShareAvailability.Extra(() => ["screenShare"], true).SequenceEqual(["screenShare"]) && ScreenShareAvailability.Extra(null, true).Length == 0, "the host's extra capabilities drop screenShare only while it is off");
+        }
+        finally { Directory.Delete(directory, true); }
     }
     private static async Task Send(WebSocket socket, JsonElement value, CancellationToken token) => await socket.SendAsync(JsonSerializer.SerializeToUtf8Bytes(value, Wire.Json), WebSocketMessageType.Text, true, token);
     internal static async Task DisposedHostCannotRestart()

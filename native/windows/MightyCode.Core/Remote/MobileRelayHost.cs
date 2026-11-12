@@ -53,7 +53,10 @@ public static class MobileRelayStatusText
 /// handshake and encrypted device authentication before any m1 request runs.
 public sealed class MobileRelayHost : IAsyncDisposable
 {
-    public const string DefaultRelay = "wss://mightyclaude.duckdns.org";
+    /// <summary>Built-in relay address shipped with the app: the relay on Cloudflare Workers (relay/cloudflare, docs/relay-cloudflare.md). The user's own relay field wins over it.</summary>
+    public const string DefaultRelay = "wss://mighty-relay.athens96.workers.dev";
+    /// <summary>Built-in addresses earlier versions shipped (the Oracle relay, retired 2026-11-12). A relay field holding one of them falls back to <see cref="DefaultRelay"/>.</summary>
+    public static readonly IReadOnlySet<string> RetiredDefaultRelays = new HashSet<string>(StringComparer.Ordinal) { "wss://mightyclaude.duckdns.org" };
     /// <summary>
     /// Phones inside the handshake on the relay path (M/MobileRemoteService.swift maximumUnauthenticated). The same number as the
     /// direct path's <see cref="MobileDirect.MaximumUnauthenticated"/> but a separate budget: each path counts only its own.
@@ -93,18 +96,24 @@ public sealed class MobileRelayHost : IAsyncDisposable
     public Func<string, JsonElement, CancellationToken, Task>? ScreenSignal { get; set; }
     public Func<string, Task>? ScreenDisconnected { get; set; }
     public Func<IReadOnlyList<ScreenIceServer>, Task>? TurnCredentials { get; set; }
+    /// <summary>
+    /// Whether screen share is on for this host (<see cref="ScreenShareAvailability.Enabled"/>; the screen-share checks pass true). Off,
+    /// <c>screenShare</c> is never advertised in auth_ok and <see cref="ScreenSignal"/>, <see cref="ScreenDisconnected"/> and
+    /// <see cref="TurnCredentials"/> are never called.
+    /// </summary>
+    public bool ScreenShareAvailable { get; init; } = ScreenShareAvailability.Enabled;
     public event Action<MobileRelayStatus>? StatusChanged;
     public MobileRelayStatus Status { get; private set; } = new(false, 0, "disabled");
     public IReadOnlyList<MobileDeviceInfo> Devices { get { var connected = clients.Values.Where(c => c.Authenticated).Select(c => c.DeviceId).ToHashSet(); return identity.Devices.Select(d => d with { Connected = connected.Contains(d.Id) }).ToArray(); } }
     public string HostId => identity.HostId;
     internal MobileIdentity Identity => identity;
     /// <summary>The relay this host dials; the push route sits beside it (docs/relay.md, the push section).</summary>
-    public string RelayForPush => NormalizeRelay(settings.RelayURL) ?? DefaultRelay;
+    public string RelayForPush => EffectiveRelay(settings.RelayURL) ?? DefaultRelay;
     public bool Enabled => settings.Enabled;
     public string PairingServerId => identity.ServerId;
     public string PairingKeyForDisplay => identity.PairingKey;
     public string AppVersion { get; init; } = "0.0.0";
-    public string PairingUrl => identity.PairingUrl(NormalizeRelay(settings.RelayURL) ?? DefaultRelay, hostName, DirectEndpoints);
+    public string PairingUrl => identity.PairingUrl(EffectiveRelay(settings.RelayURL) ?? DefaultRelay, hostName, DirectEndpoints);
 
     // The direct path (M/MightyCore/Remote/MobileRemoteService.swift "Direct path"): listeners on this PC's Tailscale addresses while
     // the remote and its direct switch are on. Its phones have ids starting with "direct-" and live apart from the relay's: a relay
@@ -325,6 +334,17 @@ public sealed class MobileRelayHost : IAsyncDisposable
         var builder = new UriBuilder(uri) { Scheme = uri.Scheme is "http" or "ws" ? "ws" : "wss", Path = "", Query = "", Fragment = "" };
         return builder.Uri.GetLeftPart(UriPartial.Authority);
     }
+    /// <summary>
+    /// The relay the host dials for a relay field (M/MightyCore/Remote/MobileRemoteModels.swift effectiveRelay): the user's own address,
+    /// or <paramref name="fallback"/> (the built-in default) when the field is empty, invalid or holds a built-in address the app no
+    /// longer ships (<see cref="RetiredDefaultRelays"/>, compared without case after normalizing). Null when neither is usable.
+    /// </summary>
+    public static string? EffectiveRelay(string? user, string fallback = DefaultRelay)
+    {
+        // A relay field holding a built-in address the app no longer ships is no choice of the user's.
+        if (NormalizeRelay(user ?? "") is { } own && !RetiredDefaultRelays.Contains(own.ToLowerInvariant())) return own;
+        return NormalizeRelay(fallback);
+    }
     private Uri SocketUri(string relay, string? connection = null)
     {
         var query = "serverId=" + Uri.EscapeDataString(identity.ServerId) + "&role=server&v=1&hostToken=" + Uri.EscapeDataString(identity.HostToken);
@@ -366,7 +386,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
         var read = await Task.Run(ReadDirect);
         ApplyDirect(forceDirect, read);
         if (!settings.Enabled) { StopWatching(); Publish(false, "disabled"); return; }
-        var relay = NormalizeRelay(settings.RelayURL.Length == 0 ? DefaultRelay : settings.RelayURL) ?? throw new ArgumentException("Invalid relay address.");
+        var relay = EffectiveRelay(settings.RelayURL) ?? throw new ArgumentException("Invalid relay address.");
         lifetime = new(); var current = ++generation; Publish(false, "connecting"); loop = RunAsync(relay, current, lifetime.Token);
         StartWatching();
     }
@@ -465,8 +485,12 @@ public sealed class MobileRelayHost : IAsyncDisposable
             try
             {
                 await socket.ConnectAsync(SocketUri(relay), token); connected = true; Interlocked.Exchange(ref turnRenewTicks, DateTimeOffset.UtcNow.AddMinutes(45).UtcTicks); delay = 1; Publish(true, "connected");
-                await socket.SendAsync(Encoding.UTF8.GetBytes("{\"type\":\"turn-credentials-request\"}"), WebSocketMessageType.Text, true, token);
-                renewal = RenewTurn(socket, renew.Token);
+                // TURN credentials are for screen share alone: a host with it off asks the relay for none (docs/relay.md, TURN).
+                if (ScreenShareAvailable)
+                {
+                    await socket.SendAsync(Encoding.UTF8.GetBytes("{\"type\":\"turn-credentials-request\"}"), WebSocketMessageType.Text, true, token);
+                    renewal = RenewTurn(socket, renew.Token);
+                }
                 while (!token.IsCancellationRequested)
                 {
                     var (type, bytes) = await Receive(socket, token);
@@ -506,7 +530,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
     }
     private async Task ReadTurnCredentials(JsonElement value)
     {
-        if (TurnCredentials is null || value.Text("username") is not { Length: > 0 and <= 256 } user || value.Text("password") is not { Length: > 0 and <= 256 } password || !value.TryGetProperty("uris", out var list) || list.ValueKind != JsonValueKind.Array) return;
+        if (!ScreenShareAvailable || TurnCredentials is null || value.Text("username") is not { Length: > 0 and <= 256 } user || value.Text("password") is not { Length: > 0 and <= 256 } password || !value.TryGetProperty("uris", out var list) || list.ValueKind != JsonValueKind.Array) return;
         var uris = list.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.String).Select(v => v.GetString()!).Where(s => s.Length <= 512 && s is not null && (s.StartsWith("turn:", StringComparison.Ordinal) || s.StartsWith("turns:", StringComparison.Ordinal)) && !s.Any(char.IsWhiteSpace)).Take(8).ToArray();
         if (uris.Length == 0 || !value.TryGetProperty("ttl", out var lifetime) || !lifetime.TryGetInt32(out var seconds) || seconds is < 30 or > 86400) return;
         Interlocked.Exchange(ref turnRenewTicks, DateTimeOffset.UtcNow.AddSeconds(seconds * .75).UtcTicks);
@@ -517,7 +541,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
     private async Task Serve(Connection connection)
     {
         try { await connection.Run(); }
-        finally { clients.TryRemove(new KeyValuePair<string, Connection>(connection.Id, connection)); connection.Completion.TrySetResult(); if (ScreenDisconnected is not null && connection.Authenticated) { try { await ScreenDisconnected(connection.DeviceId); } catch { } } Republish(); }
+        finally { clients.TryRemove(new KeyValuePair<string, Connection>(connection.Id, connection)); connection.Completion.TrySetResult(); if (ScreenShareAvailable && ScreenDisconnected is not null && connection.Authenticated) { try { await ScreenDisconnected(connection.DeviceId); } catch { } } Republish(); }
     }
     public async Task NotifyAsync(string scope, long revision)
     {
@@ -596,7 +620,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
                     return;
                 }
                 device = auth.DeviceId; Authenticated = true;
-                await Send(new { type = "auth_ok", hostName = host.hostName, hostId = host.identity.HostId, appVersion = host.AppVersion, capabilities = host.capabilities.Concat(host.ExtraCapabilities?.Invoke() ?? []).Distinct().ToArray(), direct = host.DirectEndpoints, deviceToken = auth.DeviceToken });
+                await Send(new { type = "auth_ok", hostName = host.hostName, hostId = host.identity.HostId, appVersion = host.AppVersion, capabilities = host.capabilities.Concat(ScreenShareAvailability.Extra(host.ExtraCapabilities, host.ScreenShareAvailable)).Distinct().ToArray(), direct = host.DirectEndpoints, deviceToken = auth.DeviceToken });
                 host.Republish();
                 heartbeat = Heartbeat(token);
                 while (!token.IsCancellationRequested)
@@ -607,7 +631,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
                     using var doc = JsonDocument.Parse(cipher.Open(frame.Bytes)); var root = doc.RootElement;
                     if (root.Text("type") == "ping") { await Send(new { type = "pong" }); continue; }
                     if (root.Text("type") is { } signalType && signalType.StartsWith("screen-", StringComparison.Ordinal))
-                    { if (host.ScreenSignal is not null && frame.Bytes.Length <= 65536 + 28 && host.identity.Contains(device, false)) await host.ScreenSignal(device, root.Clone(), token); continue; }
+                    { if (host.ScreenShareAvailable && host.ScreenSignal is not null && frame.Bytes.Length <= 65536 + 28 && host.identity.Contains(device, false)) await host.ScreenSignal(device, root.Clone(), token); continue; }
                     if (root.TryGetProperty("type", out _)) continue;
                     var id = root.Text("id"); var method = root.Text("method"); var path = root.Text("path");
                     if (id is not { Length: > 0 and <= 64 } || method is not ("GET" or "POST") || path is null || !path.StartsWith('/')) continue;

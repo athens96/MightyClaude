@@ -66,14 +66,12 @@ public enum MobileAuthDecision: Sendable, Equatable {
     case refused(reason: String)
 }
 
-/// What a first pairing did. The words are the auth vocabulary of
-/// docs/relay.md: a taken id is "device-conflict", a full list or too many
-/// registrations in an hour is "device-limit".
+/// What a pairing did. The words are the auth vocabulary of docs/relay.md:
+/// a full list or too many registrations in an hour is "device-limit". This
+/// host never answers "device-conflict" any more: a phone that pairs again with
+/// the key (its QR) under an id that holds a token takes that row back.
 public enum MobileTokenIssue: Sendable, Equatable {
     case issued(String)
-    /// The id already holds a token, so it belongs to a phone that is not this
-    /// one. Nothing about the stored row changes.
-    case conflict
     /// No slot and nothing stale enough to evict, or too many registrations
     /// this hour.
     case refused
@@ -112,7 +110,6 @@ public enum MobileAuthSupport {
             switch devices.issueToken(clientId: clientId, name: name) {
             case .issued(let token): return .paired(deviceId: clientId, token: token)
             case .unsaved: return .paired(deviceId: clientId, token: nil)
-            case .conflict: return .refused(reason: "device-conflict")
             case .refused: return .refused(reason: "device-limit")
             }
         }
@@ -306,7 +303,10 @@ public final class MobileDeviceRegistry: @unchecked Sendable {
         guard Self.validClientId(clientId) else { return .refused }
         lock.lock(); defer { lock.unlock() }
         load()
-        if let existing = devices.first(where: { $0.id == clientId }), existing.tokenHash != nil { return .conflict }
+        // Pairing again with the key under an id that holds a token (the phone scanned the QR anew, say after the relay
+        // moved): the row is the same phone's, so it gets a new token and the old one stops working. Its first-seen time
+        // stays; its push handle goes, since the phone registers one again for the new pairing.
+        let earlier = devices.first(where: { $0.id == clientId && $0.tokenHash != nil })
         let stamp = now()
         registrations.removeAll { stamp.timeIntervalSince($0) >= Self.registrationWindow }
         guard registrations.count < Self.maximumRegistrations else { return .refused }
@@ -315,7 +315,7 @@ public final class MobileDeviceRegistry: @unchecked Sendable {
         guard makeRoom() else { devices = snapshot; return .refused }
         guard let token = Self.generateToken() else { devices = snapshot; return .unsaved }
         let mark = timestamp()
-        devices.append(MobileDevice(id: clientId, name: name, tokenHash: Self.hash(token), firstSeen: mark, lastSeen: mark))
+        devices.append(MobileDevice(id: clientId, name: name, tokenHash: Self.hash(token), firstSeen: earlier?.firstSeen ?? mark, lastSeen: mark))
         // A token the host cannot remember is worse than no token: the phone
         // keeps its pairing key and is handed one the next time it connects.
         do { try save() } catch { devices = snapshot; return .unsaved }

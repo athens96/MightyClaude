@@ -400,8 +400,12 @@ extension AppStore {
     /// Wires screen-share safety into the app: the allow-list on disk, the
     /// menu-bar kill switch and hotkey, and the mobile-remote paths that must
     /// stop a live session — a revoked phone, a regenerated pairing key.
+    ///
+    /// Nothing at all while screen share is paused (`ScreenShareAvailability`):
+    /// no menu-bar item, input monitors, lock-screen polling or engine, so the
+    /// phones are never offered it and macOS is never asked for Screen Recording.
     func configureScreenShare() {
-        guard screenShareMenuBar == nil else { return }
+        guard ScreenShareAvailability.enabled, screenShareMenuBar == nil else { return }
         let controller = ScreenShareMenuBarController(service: screenShare)
         screenShareMenuBar = controller
         controller.start()

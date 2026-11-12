@@ -123,6 +123,8 @@ MobilePermission {
 
 `"screenShare"`는 BETA 화면 보기·조작 기능의 문이다. 세션 요청 라우트와 E2EE 시그널링 메시지 규약은 `docs/relay.md`의 "화면 공유 시그널링"에 있다.
 
+**지금은 Mac과 Windows에서 멈춰 있다**(Windows는 `native/windows/MightyCode.Core/Remote/ScreenShareAvailability.cs`의 `Enabled`, 같은 규칙). 릴레이가 TURN 서버가 없는 Cloudflare Workers로 옮겨 가므로, Mac은 `ScreenShareAvailability.enabled`(`native/macos/Sources/MightyCore/Remote/ScreenShareAvailability.swift`)가 `false`인 동안 엔진·메뉴 막대 항목을 만들지 않고 화면 기록 권한도 묻지 않는다. 그래서 `"screenShare"`를 알리지 않고 `/m1/screen-share/*`는 503이며, 휴대폰은 이 기능을 내보이지 않는다. 설정의 화면 보기·조작 칸에는 멈췄다는 한 줄만 보인다. 코드는 모두 남아 있고 이 값을 `true`로 되돌리면 돌아온다.
+
 공통 오류: 알 수 없는 실행 창·항목 404, 형식 오류·허용 값 밖의 문자열·필수 필드 누락 400, 지금 상태에서 할 수 없음 409, 크기 초과 413. 허용 값 밖의 값을 조용히 기본값으로 바꾸지 않는다.
 
 ### 고정 문자열 값

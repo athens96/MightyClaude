@@ -84,17 +84,22 @@ public sealed class MobileIdentity
                 else Save(state with { Devices = state.Devices.Append(new Device("legacy", "Legacy app", null, Wire.Now(), Wire.Now())).ToList() });
                 return new("legacy");
             }
-            if (state.Devices.Any(d => d.Id == id && d.TokenHash is not null)) return new(null, Error: "device-conflict");
+            // Pairing again with the key under an id that holds a token (the phone scanned the QR anew, say after the relay moved): the
+            // row is the same phone's, so it gets a new token and the old one stops working (M/MobileDeviceRegistry.swift issueToken). Its
+            // first-seen time stays; its push handle goes, since the phone registers one again for the new pairing. This host never
+            // answers "device-conflict" any more.
+            var earlier = state.Devices.FirstOrDefault(d => d.Id == id && d.TokenHash is not null);
             registrations.RemoveAll(t => now - t > TimeSpan.FromHours(1));
             if (registrations.Count >= 8) return new(null, Error: "device-limit");
-            var devices = state.Devices.ToList();
+            var devices = state.Devices.Where(d => d.Id != id).ToList();
             if (devices.Count >= 32)
             {
                 var old = devices.Where(d => DateTimeOffset.TryParse(d.LastSeen, out var last) && now - last > TimeSpan.FromDays(90)).OrderBy(d => d.LastSeen).FirstOrDefault();
                 if (old is null) return new(null, Error: "device-limit"); devices.Remove(old);
             }
             var fresh = RandomToken(32); var name = Wire.Clean(auth.Text("clientName") is { Length: > 0 } given ? given : Locale.Get("mobileRemote.device.defaultName"), 40);
-            devices.Add(new(id, name, Hash(fresh), Wire.Now(), Wire.Now()));
+            var mark = Wire.Now();
+            devices.Add(new(id, name, Hash(fresh), earlier?.FirstSeen ?? mark, mark));
             Save(state with { Devices = devices }); registrations.Add(now); return new(id, fresh);
         }
     }

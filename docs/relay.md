@@ -6,7 +6,7 @@
 
 | 역할 | 구현 | 위치 |
 |---|---|---|
-| 릴레이 | Node.js + `ws`, 상태 없음, `serverId`로 소켓을 짝지음 | `relay/` (Docker 이미지 포함) |
+| 릴레이 | 기본: Cloudflare Workers + Durable Objects(`serverId`마다 Hub 하나, [`relay-cloudflare.md`](relay-cloudflare.md)). 직접 올리기: Node.js + `ws`, 상태 없음, `serverId`로 소켓을 짝지음. 와이어는 같다 | `relay/cloudflare/`, `relay/` (Docker 이미지 포함) |
 | 호스트(데몬) | Mac 앱의 `MobileRemoteService`, Windows 앱의 `MobileRelayHost` (둘 다 직접 연결 리스너 `MobileDirectListener` 포함) | `native/macos/Sources/MightyCore/Remote/`, `native/windows/MightyCode.Core/Remote/` |
 | 클라이언트 | Expo 앱의 `relayTransport` | `mobile/src/api/relay/` |
 
@@ -69,7 +69,7 @@ WebSocket `GET /ws` + 쿼리. `serverId`는 `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
 - 이후 접속: 클라이언트 → `{"type":"auth","clientId":"…","deviceToken":"…","clientName":"…"}` (`pairingKey` 없음). 호스트는 해시를 상수 시간으로 비교한다. 등록되지 않았거나 해제된 기기면 `{"type":"auth_error","reason":"device-revoked"}` 후 소켓을 닫고, 클라이언트는 재페어링 필요로 표시한다.
 - `clientId` 없이 `pairingKey`만 보내는 구버전 앱은 키가 맞으면 받아들이되 기기 목록에는 "구버전 앱"으로 묶는다(토큰을 발급하지 않는다).
 - 기기 해제 또는 **키 다시 만들기**는 페어링 키를 교체하고 기기 목록 전체를 비우는 작업이다. 정상적으로 목록을 비운 뒤에는 토큰으로 인증했던 연결도 종료되며, 옛 QR과 기존 기기 토큰은 다시 사용할 수 없다. 모든 휴대폰이 새 QR로 다시 페어링해야 한다. 해제 대상으로 선택한 기기의 업로드도 지운다.
-- 이미 토큰을 가진 `clientId`는 페어링 키만으로 덮어쓸 수 없다(`device-conflict`). 페어링 키를 아는 다른 휴대폰이 남의 기기 항목을 가로채지 못하게 하기 위해서다. 거절당한 앱은 그 호스트 전용 `clientId`를 새로 만들어 한 번 다시 시도한다(앱을 지웠다 다시 깐 경우).
+- 이미 토큰을 가진 `clientId`가 페어링 키(QR)로 다시 오면 그 기기 항목을 새로 갱신한다(Mac·Windows, 2026-11-12): 새 토큰을 주고 옛 토큰은 더는 통하지 않으며, 처음 본 시각은 그대로, 푸시 핸들은 지운다(휴대폰이 새 페어링에 다시 등록한다). 같은 휴대폰이 페어링을 지우고 QR을 다시 스캔한 경우(릴레이가 바뀌었을 때 등)를 거절하지 않기 위해서다. 그 `clientId`는 휴대폰만 알고 암호 채널 안에서만 오가므로, 키를 아는 다른 휴대폰이 남의 항목을 고르기는 어렵다. 이전 호스트만 이 경우 `device-conflict`로 거절하고, 거절당한 앱은 그 호스트 전용 `clientId`를 새로 만들어 한 번 다시 시도한다(앱을 지웠다 다시 깐 경우).
 - 기기 목록은 최대 32대다. 가득 차면 90일 넘게 접속하지 않은 항목만 밀어내고, 그런 항목이 없으면 등록을 거절한다(`device-limit`). 새 기기 등록은 호스트 전체에서 1시간에 8대까지다. 등록한 지 24시간이 안 된 기기는 Mac 설정에 "새 기기"로 표시된다.
 - 호스트가 목록을 저장하지 못하면 토큰 없이 `auth_ok`를 보낸다. 앱은 이때 페어링 키를 그대로 두고 다음 접속에서 다시 토큰을 받는다.
 - Mac 설정의 **구버전 앱 허용**을 끄면 `clientId` 없는 인증을 거절한다(`legacy-refused`). 형식이 틀린 `clientId`는 구버전으로 내려 받지 않고 거절한다(`malformed`). JSON이 아닌 인증 프레임도 릴레이 경로에서는 `malformed`로 거절한다(Mac·Windows 호스트 같음; 직접 연결은 어떤 거절이든 `unauthorized`).
@@ -176,6 +176,8 @@ QR/문자열: `mightycode://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&relay=
 - 서비스 계정 키(`FCM_SERVICE_ACCOUNT_FILE`)가 없거나 읽히지 않거나 JSON·개인 키가 깨졌으면 릴레이는 시작 때 `[push] FCM disabled`를 남기고 전송만 503이다. 릴레이는 계속 돌고 나머지는 그대로다. 키를 읽으면 `[push] FCM sending on`이다. 키는 앱의 `google-services.json`과 같은 Firebase 프로젝트의 것이어야 한다. 설정 순서와 재배포 뒤 실제 기기 확인은 `docs/relay-oracle.md` "푸시 알림(FCM) 켜기"다.
 
 ## TURN 자격증명 발급 (릴레이 평문, E2EE 아님)
+
+> 릴레이가 TURN 서버가 없는 Cloudflare Workers로 옮겨 가는 동안 화면 공유는 Mac과 Windows 호스트에서 멈춰 있다(Mac `ScreenShareAvailability.enabled = false`, Windows `ScreenShareAvailability.Enabled`, `docs/mobile-remote.md`의 `"screenShare"`). 호스트가 `screenShare`를 알리지 않으므로 `turn-credentials-request`도 보내지 않는다. 아래 규약은 기능이 돌아올 때를 위해 그대로 둔다.
 
 릴레이는 coturn `use-auth-secret`을 환경 변수 `TURN_SECRET`으로 보관한다. 클라이언트·호스트 앱에는 절대 전달되지 않는다.
 

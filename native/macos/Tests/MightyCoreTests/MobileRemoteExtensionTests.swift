@@ -117,6 +117,9 @@ struct MobileRemoteExtensionTests {
         #expect(MobileRemoteSettings.effectiveRelay(user: "not a url", fallback: "wss://default.example") == "wss://default.example")
         #expect(MobileRemoteSettings.effectiveRelay(user: "", fallback: "") == nil)
         #expect(MobileRemoteSettings(relayURL: "").effectiveRelayURL == RelayEndpoint.normalize(MobileWire.defaultRelayURL))
+        // The Oracle relay earlier versions shipped, typed into the field or left there, falls back to today's default.
+        #expect(MobileRemoteSettings.effectiveRelay(user: "wss://mightyclaude.duckdns.org", fallback: "wss://default.example") == "wss://default.example")
+        #expect(MobileRemoteSettings.effectiveRelay(user: "MightyClaude.DuckDNS.org", fallback: "wss://default.example") == "wss://default.example")
     }
 
     @Test func settingsAreEditableOnlyWhileNothingIsRunningOrPending() {
@@ -1173,7 +1176,7 @@ struct MobileRemoteExtensionTests {
         #expect(!MobileDeviceRegistry(url: url, now: { clock.now() }).authenticate(clientId: clientId, token: token))
     }
 
-    @Test func aTakenClientIdIsNeverWrittenOverEvenWithTheRightKey() throws {
+    @Test func pairingAgainWithTheKeyGivesTheSameRowANewToken() throws {
         let clock = TestClock()
         let (devices, directory) = registry(clock)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -1182,15 +1185,21 @@ struct MobileRemoteExtensionTests {
         let token = try #require(issuedToken(devices.issueToken(clientId: clientId, name: "Young의 iPhone")))
         let before = try #require(devices.all().first)
         clock.advance(3_600)
-        // Whoever knows the key would otherwise only have to name this id to
-        // take the phone's place in the list — and its name, and its history.
-        #expect(devices.issueToken(clientId: clientId, name: "침입자") == .conflict)
-        let frame: [String: Any] = ["type": "auth", "pairingKey": key, "clientId": clientId, "clientName": "침입자"]
-        #expect(MobileAuthSupport.decide(frame: frame, pairingKey: key, devices: devices) == .refused(reason: "device-conflict"))
-        // Not one field of the row moved, and the real phone still gets in.
-        #expect(devices.all() == [before])
-        #expect(devices.all().first?.name == "Young의 iPhone" && devices.all().first?.firstSeen == before.firstSeen)
-        #expect(devices.authenticate(clientId: clientId, token: token))
+        // The phone scanned the QR again (the relay moved, its pairing was deleted): the key and the same id re-pair it.
+        let frame: [String: Any] = ["type": "auth", "pairingKey": key, "clientId": clientId, "clientName": "Young의 Galaxy"]
+        guard case .paired(let deviceId, let fresh?) = MobileAuthSupport.decide(frame: frame, pairingKey: key, devices: devices) else {
+            Issue.record("re-pairing was refused"); return
+        }
+        #expect(deviceId == clientId && fresh != token)
+        // One row still, with its first-seen time; the new token works and the old one no longer does.
+        let after = devices.all()
+        #expect(after.count == 1 && after.first?.firstSeen == before.firstSeen && after.first?.name == "Young의 Galaxy")
+        #expect(devices.authenticate(clientId: clientId, token: fresh))
+        #expect(!devices.authenticate(clientId: clientId, token: token))
+        // Without the key nothing changes.
+        let wrong: [String: Any] = ["type": "auth", "pairingKey": "not-the-key", "clientId": clientId]
+        #expect(MobileAuthSupport.decide(frame: wrong, pairingKey: key, devices: devices) == .refused(reason: "pairing-key"))
+        #expect(devices.authenticate(clientId: clientId, token: fresh))
     }
 
     @Test func aFailedWriteIssuesNoTokenAndMakesARevokeFail() throws {

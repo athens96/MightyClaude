@@ -1552,7 +1552,7 @@ extension ScreenShareEngineTests {
         let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         let remote = MobileRemoteService(dataDirectory: fixture.directory.appendingPathComponent("remote"),
-                                         hostName: "Route Mac", watchesNetwork: false)
+                                         hostName: "Route Mac", watchesNetwork: false, screenShareAvailable: true)
         // The service holds its delegate weakly; the test keeps it alive.
         let host = RouteHost()
         await remote.attach(host)
@@ -1588,11 +1588,35 @@ extension ScreenShareEngineTests {
                             ["publicKeyB64": String(repeating: "A", count: 400)]).0.status == 400)
     }
 
+    @Test func aHostWithScreenShareSwitchedOffNeitherAdvertisesNorRoutesIt() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        let remote = MobileRemoteService(dataDirectory: fixture.directory.appendingPathComponent("remote"),
+                                         hostName: "Route Mac", watchesNetwork: false, screenShareAvailable: false)
+        let host = RouteHost()
+        await remote.attach(host)
+        defer { withExtendedLifetime(host) {} }
+
+        // The engine the app would attach is dropped, so the phone is never offered it.
+        await remote.attachScreenShareEngine(fixture.engine)
+        let (_, info) = await route(remote, "GET", "/m1/info")
+        #expect((info["capabilities"] as? [String])?.contains("screenShare") == false)
+        #expect(await !remote.capabilities.contains("screenShare"))
+        #expect(await route(remote, "GET", "/m1/screen-share/state").0.status == 503)
+        #expect(await route(remote, "POST", "/m1/screen-share/sessions", ["mode": "view"]).0.status == 503)
+
+        // A host built with the defaults follows the one switch.
+        let standard = MobileRemoteService(dataDirectory: fixture.directory.appendingPathComponent("standard"),
+                                           hostName: "Route Mac", watchesNetwork: false)
+        await standard.attachScreenShareEngine(fixture.engine)
+        #expect(await standard.capabilities.contains("screenShare") == ScreenShareAvailability.enabled)
+    }
+
     @Test func theSessionRouteRepliesFirstAndOnlyThenSendsTheOffer() async throws {
         let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         let remote = MobileRemoteService(dataDirectory: fixture.directory.appendingPathComponent("remote"),
-                                         hostName: "Route Mac", watchesNetwork: false)
+                                         hostName: "Route Mac", watchesNetwork: false, screenShareAvailable: true)
         // The service holds its delegate weakly; the test keeps it alive.
         let host = RouteHost()
         await remote.attach(host)
@@ -1617,7 +1641,7 @@ extension ScreenShareEngineTests {
         let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         let remote = MobileRemoteService(dataDirectory: fixture.directory.appendingPathComponent("remote"),
-                                         hostName: "Route Mac", watchesNetwork: false)
+                                         hostName: "Route Mac", watchesNetwork: false, screenShareAvailable: true)
         // The service holds its delegate weakly; the test keeps it alive.
         let host = RouteHost()
         await remote.attach(host)

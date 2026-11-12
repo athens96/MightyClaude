@@ -70,6 +70,11 @@ public sealed class MobileDesktopRouter : IDisposable
     /// <summary>Draws an image file's thumbnail from its name and bytes.</summary>
     public Func<string, byte[], CancellationToken, Task<MobileImageResult>>? ImagePreview { get; set; }
     public Func<string, string, JsonElement?, string, CancellationToken, Task<MobileReply>>? ScreenRoute { get; set; }
+    /// <summary>
+    /// Whether screen share is on for this host (<see cref="ScreenShareAvailability.Enabled"/>; the screen-share checks pass true). Off,
+    /// <see cref="ScreenRoute"/> is ignored, so <c>/m1/screen-share</c> answers 503, and <c>screenShare</c> is never advertised.
+    /// </summary>
+    public bool ScreenShareAvailable { get; init; } = ScreenShareAvailability.Enabled;
     public Func<string, int>? QueueCount { get; set; }
     /// <summary>Where <c>/m1/push/*</c> keeps a phone's handle and view; null answers them as unknown routes.</summary>
     public MobilePushHub? Push { get; set; }
@@ -204,7 +209,7 @@ public sealed class MobileDesktopRouter : IDisposable
                         return Reply(OK());
                 }
             }
-            if (method == "GET" && route.SequenceEqual(new[] { "m1", "info" })) return Reply(new { protocol = 1, hostId = HostId, hostName = HostName, appVersion = AppVersion, platform = "win32", capabilities = Capabilities.Concat(ExtraCapabilities?.Invoke() ?? []).Distinct().ToArray(), direct = DirectEndpoints?.Invoke() ?? [] });
+            if (method == "GET" && route.SequenceEqual(new[] { "m1", "info" })) return Reply(new { protocol = 1, hostId = HostId, hostName = HostName, appVersion = AppVersion, platform = "win32", capabilities = Capabilities.Concat(ScreenShareAvailability.Extra(ExtraCapabilities, ScreenShareAvailable)).Distinct().ToArray(), direct = DirectEndpoints?.Invoke() ?? [] });
             if (method == "GET" && (route.SequenceEqual(new[] { "m1", "state" }) || route.Length == 3 && route[1] == "sessions"))
             {
                 // `structure` (the tag of the structure the phone holds, 0 for none) and `roles` (1: the phone draws the role view, MobileFlow) are
@@ -230,7 +235,7 @@ public sealed class MobileDesktopRouter : IDisposable
                 await AppUpdateAct(install);
                 return Reply(AppUpdatePhone() ?? state);
             }
-            if (route.Length == 3 && route[1] == "screen-share") { if (ScreenRoute is not null) return await ScreenRoute(method, route[2], body, device, token); throw new MobileRequestException(503, "Screen sharing is not available on this host."); }
+            if (route.Length == 3 && route[1] == "screen-share") { if (ScreenShareAvailable && ScreenRoute is not null) return await ScreenRoute(method, route[2], body, device, token); throw new MobileRequestException(503, "Screen sharing is not available on this host."); }
             if (route.Length is 4 or 5 && route[1] == "workspaces" && route[3] == "workmap")
             {
                 // Only this PC's workspaces: a remote one's history is on its host.

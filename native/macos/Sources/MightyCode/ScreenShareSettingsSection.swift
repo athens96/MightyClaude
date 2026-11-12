@@ -21,6 +21,26 @@ struct ScreenShareSettingsSection: View {
     private var devices: [MobileDeviceInfo] { store.mobileStatus.devices }
 
     var body: some View {
+        if ScreenShareAvailability.enabled { section } else { paused }
+    }
+
+    /// While screen share is switched off (`ScreenShareAvailability`): the
+    /// heading and one line, and nothing that reads the host or asks macOS for a
+    /// permission.
+    private var paused: some View {
+        SettingsGroup {
+            Text(L("settings.screenShare.paused"))
+                .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        } header: {
+            HStack(spacing: DesignMetrics.Spacing.sm) {
+                Text(L("settings.screenShare.sectionTitle"))
+                BetaBadge()
+            }
+        }
+        .accessibilityIdentifier("settings-screen-share-paused")
+    }
+
+    private var section: some View {
         SettingsGroup {
             Text(L("settings.screenShare.description"))
                 .font(.ui(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

@@ -40,7 +40,10 @@ public struct MobileRemoteSettings: Codable, Sendable, Equatable {
     /// nil means neither is usable.
     public var effectiveRelayURL: String? { Self.effectiveRelay(user: relayURL, fallback: MobileWire.defaultRelayURL) }
     public static func effectiveRelay(user: String, fallback: String) -> String? {
-        RelayEndpoint.normalize(user) ?? RelayEndpoint.normalize(fallback)
+        let own = RelayEndpoint.normalize(user)
+        // A relay field holding a built-in address the app no longer ships is no choice of the user's.
+        if let own, !MobileWire.retiredDefaultRelayURLs.contains(own.lowercased()) { return own }
+        return RelayEndpoint.normalize(fallback)
     }
 }
 
@@ -107,10 +110,13 @@ public enum MobileWire {
     public static let maximumBlockActivity = 8
     /// How many of a pane's newest runs the Mighty payload carries.
     public static let mightyRuns = 20
-    /// Built-in relay address shipped with the app: the relay deployed with
-    /// relay/deploy/oracle (docs/relay-oracle.md). The user's own relay field
+    /// Built-in relay address shipped with the app: the relay on Cloudflare Workers
+    /// (relay/cloudflare, docs/relay-cloudflare.md). The user's own relay field
     /// always wins over this, and an empty string turns the default off.
-    public static let defaultRelayURL: String = "wss://mightyclaude.duckdns.org"
+    public static let defaultRelayURL: String = "wss://mighty-relay.athens96.workers.dev"
+    /// Built-in addresses earlier versions shipped (the Oracle relay, retired 2026-11-12). A relay
+    /// field holding one of them falls back to `defaultRelayURL`.
+    public static let retiredDefaultRelayURLs: Set<String> = ["wss://mightyclaude.duckdns.org"]
     /// The largest reply body the host sends: the relay closes a frame over 1 MiB
     /// (docs/relay.md), and the envelope and the seal take a little of that.
     public static let maximumReplyBytes = 1_024 * 1_024 - 32 * 1_024
