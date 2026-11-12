@@ -4,6 +4,8 @@
 포트 개방·VPN이 필요 없고, 릴레이는 `serverId`/`connectionId`로 소켓을 짝지어 프레임을 그대로 전달할 뿐이다.
 명세는 [`../docs/relay.md`](../docs/relay.md)의 "릴레이 와이어" 절이다.
 
+앱의 기본 릴레이는 같은 와이어를 Cloudflare Workers로 옮긴 [`cloudflare/`](cloudflare)다([`../docs/relay-cloudflare.md`](../docs/relay-cloudflare.md)). 이 Node 릴레이는 직접 서버에 올리는 경우(Docker, [`../docs/relay-oracle.md`](../docs/relay-oracle.md))에 쓴다.
+
 ## 릴레이는 암호문만 본다
 
 데이터 소켓의 페이로드는 호스트와 클라이언트가 X25519 + ChaCha20-Poly1305로 종단 간 암호화한다.

@@ -1,0 +1,27 @@
+# Mighty Code relay on Cloudflare (docs/relay-cloudflare.md). The wire is the Node relay's
+# (docs/relay.md "릴레이 와이어"): GET /ws, GET /healthz, /push/v1/*. No TURN: a host's
+# turn-credentials-request is answered turn-unavailable, and screen share is paused.
+name = "mighty-relay"
+main = "src/worker.ts"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+# One Hub per serverId: a host's control socket, its client data sockets and their host
+# halves all meet in the same object. One PushStore holds every push handle.
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "Hub"
+
+[[durable_objects.bindings]]
+name = "PUSH"
+class_name = "PushStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Hub", "PushStore"]
+
+# The FCM service account JSON is a secret, never a var:
+#   npx wrangler secret put FCM_SERVICE_ACCOUNT < service-account.json
+[observability]
+enabled = true
