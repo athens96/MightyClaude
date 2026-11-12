@@ -108,18 +108,17 @@ if ! otool -l "$APP_PATH/Contents/MacOS/MightyCode" | grep -q "@executable_path/
   install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_PATH/Contents/MacOS/MightyCode"
 fi
 
-# Browser engine bundling: CEF framework, helper stubs, pinned Node, licence notices.
+# Browser engine bundling: CEF framework, helper stubs, licence notices.
 # Requires a warm engine cache (run scripts/fetch-browser-engine.sh first).
+# The pinned Node (BrowserEngine.lock) is not bundled: nothing in the app runs it yet, and the stage that will
+# (the agent's browser control, docs/browser-pane.md) downloads it from nodejs.org on first use instead of shipping it.
 if [ "${MIGHTY_BROWSER_ENGINE:-}" = "1" ]; then
     LOCK_FILE="$PROJECT_ROOT/native/macos/BrowserEngine.lock"
     CEF_URL="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['cef']['url'])" "$LOCK_FILE")"
-    NODE_URL="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['node']['url'])" "$LOCK_FILE")"
-    NODE_VERSION="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['node']['version'])" "$LOCK_FILE")"
     LOCK_HASH="$(shasum -a 256 "$LOCK_FILE" | awk '{print $1}')"
     ENGINE_CACHE="${MIGHTY_BROWSER_ENGINE_CACHE:-$HOME/Library/Caches/MightyCode/browser-engine/${LOCK_HASH:0:16}}"
     CEF_ARCHIVE="$ENGINE_CACHE/$(basename "$CEF_URL")"
-    NODE_ARCHIVE="$ENGINE_CACHE/$(basename "$NODE_URL")"
-    if [ ! -f "$CEF_ARCHIVE" ] || [ ! -f "$NODE_ARCHIVE" ]; then
+    if [ ! -f "$CEF_ARCHIVE" ]; then
         echo "browser engine not in cache — run scripts/fetch-browser-engine.sh first" >&2
         exit 1
     fi
@@ -137,13 +136,6 @@ if [ "${MIGHTY_BROWSER_ENGINE:-}" = "1" ]; then
     LIC_DIR="$APP_PATH/Contents/Resources/ThirdPartyLicenses"
     cp "$EXTRACT_TEMP/$CEF_TOP/LICENSE.txt"  "$LIC_DIR/CEF-LICENSE.txt"
     cp "$EXTRACT_TEMP/$CEF_TOP/CREDITS.html" "$LIC_DIR/Chromium-CREDITS.html"
-    # Node runtime (only the node binary is required by the check)
-    NODE_BASE="node-v${NODE_VERSION}-darwin-arm64"
-    tar -xzf "$NODE_ARCHIVE" -C "$EXTRACT_TEMP" "$NODE_BASE/bin/node" 2>/dev/null
-    NODE_DST="$APP_PATH/Contents/Resources/browser/node/bin"
-    mkdir -p "$NODE_DST"
-    cp "$EXTRACT_TEMP/$NODE_BASE/bin/node" "$NODE_DST/node"
-    chmod +x "$NODE_DST/node"
     # Real CEF helpers: call cef_execute_process via dlopen/dlsym so the Swift
     # package builds without CEF headers.  Each helper resolves the framework
     # relative to its own executable path at runtime.

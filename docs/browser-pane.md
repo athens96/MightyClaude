@@ -1,6 +1,6 @@
 # 브라우저 창 (1단계)
 
-고정한 CEF(Chromium Embedded Framework) 엔진과 고정한 Node 런타임을 내려받아 검증하고 macOS 앱 번들에 담는 단계, 그리고 사용자가 손으로 여는 브라우저 탭. 에이전트 제어(2·3단계)와 CDP 프록시·Playwright MCP는 이 시드 밖이다.
+고정한 CEF(Chromium Embedded Framework) 엔진을 내려받아 검증하고 macOS 앱 번들에 담는 단계, 그리고 사용자가 손으로 여는 브라우저 탭. lock에는 Node 런타임도 고정돼 있지만 앱에 담지 않는다(2026-11-12): 지금 앱에서 Node를 실행하는 곳이 없고, 그것을 쓸 에이전트 제어 단계는 처음 쓸 때 lock의 `url`·`sha256`으로 nodejs.org에서 받아 데이터 폴더에 둔다(Node와 그 안의 OpenSSL·V8·ICU 등을 앱이 재배포하지 않는다). 에이전트 제어(2·3단계)와 CDP 프록시·Playwright MCP는 이 시드 밖이다.
 
 이 단계의 모든 작업은 Command Line Tools만으로 끝난다(Xcode 불필요).
 
@@ -65,7 +65,6 @@ MightyCode.app/Contents/
     MightyCode Helper (Renderer).app/
     MightyCode Helper (Plugin).app/
   Resources/
-    browser/node/bin/node                     ← 고정한 Node 런타임
     ThirdPartyLicenses/
       CEF-LICENSE.txt                         ← CEF 고지
       Chromium-CREDITS.html                   ← Chromium 고지
@@ -104,7 +103,7 @@ MightyCode.app/Contents/
 3. `native/macos/BrowserEngine.lock`의 해당 블록에서 `version`·`url`·`sha256` **세 개를 함께** 고친다. 하나만 고치면 받기 단계에서 해시 불일치로 거부된다.
 4. `scripts/fetch-browser-engine.sh`를 돌린다. lock 해시가 바뀌었으므로 캐시 디렉터리가 새로 생기고 두 아카이브를 새로 받는다. 한 번 더 돌려 `cache hit`이 찍히는지 본다.
 5. `MIGHTY_BROWSER_ENGINE=1 MIGHTY_BUILD_SCRATCH=/tmp/mc-swift-browser scripts/build-macos.sh`로 번들을 만들고 `codesign --verify --deep --strict`로 서명을 확인한다.
-6. `Contents/Resources/browser/node/bin/node --version`이 lock의 Node 버전과 같은지 본다.
+6. (Node는 앱에 담지 않으므로 볼 것이 없다.)
 7. lock 파일과 이 문서의 버전 표기를 함께 커밋한다. 캐시 경로는 lock 해시에서 나오므로 따로 손댈 것이 없다.
 
 ## 6. 화면 확인 (기기 미확인)

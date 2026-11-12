@@ -1,6 +1,6 @@
 # NOTICE · 제3자 저작물 고지
 
-Mighty Claude 자체는 MIT 라이선스로 배포됩니다(`LICENSE`). 아래 항목은 이 저장소가 참고하거나 포함한 제3자 저작물과 그 라이선스입니다.
+Mighty Code 자체는 MIT 라이선스로 배포됩니다(`LICENSE`). 아래 항목은 이 저장소가 참고하거나 포함한 제3자 저작물과 그 라이선스입니다.
 
 ## Paseo — Apache License 2.0
 
@@ -57,16 +57,24 @@ Mac 화면 공유(BETA)의 클립보드는 휴대폰과 같은 zstd 형식으로
 - 저작권: Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
 - 라이선스: BSD 3-Clause License(상위 프로젝트는 BSD와 GPLv2 중 선택하게 하며, 이 앱은 BSD를 따릅니다) — 전문은 `licenses/zstd-BSD-3-Clause.txt`, 앱 번들에는 `native/licenses/zstd-LICENSE`가 함께 들어갑니다
 
-## 그 밖의 구성 요소
+## 앱에 함께 들어가는 그 밖의 구성 요소
 
-- macOS 앱과 펫 리소스의 타사 라이선스: `native/licenses/`, `assets/`
-- 릴레이 서버(`relay/`)와 모바일 앱(`mobile/`)의 npm 의존성(`ws`, `@noble/curves`, `@noble/hashes`, `@noble/ciphers`, Expo 등)은 각 패키지의 `LICENSE`를 따르며 `package-lock.json`에 버전이 고정되어 있습니다.
+라이선스 전문은 `native/licenses/`에 있고, Mac 앱은 `Contents/Resources/ThirdPartyLicenses/`, Windows 앱은 `ThirdPartyLicenses/`에 함께 들어갑니다.
+
+- **Mac 앱**
+  - Chromium Embedded Framework(브라우저 탭) — BSD 3-Clause, Chromium과 그 구성 요소의 고지는 CEF 배포본의 `CREDITS.html`(`Chromium-CREDITS.html`, 빌드가 복사). 특허가 걸린 코덱을 뺀 표준(minimal) 배포본입니다.
+  - Ghostty(터미널, `libghostty-spm`·GhosttyKit) — MIT. 그 안에 정적으로 묶인 Oniguruma(BSD 2-Clause), FreeType(FreeType License를 따름; Portions of this software are copyright © 2026 The FreeType Project (www.freetype.org). All rights reserved.), simdutf·Wuffs(MIT를 따름), Highway(BSD 3-Clause를 따름), libpng, zlib — `Ghostty-*-LICENSE`.
+  - MSDisplayLink — MIT. bash-preexec — MIT.
+  - Node.js는 앱에 담지 않습니다(`docs/browser-pane.md`).
+- **Windows 앱**: 자체 포함 .NET·ASP.NET Core 런타임(MIT, `dotnet-*`·`aspnetcore-*`의 라이선스와 THIRD-PARTY-NOTICES), WebView2 SDK(`WebView2-LICENSE.txt`·`WebView2-NOTICE.txt`), Windows App SDK 런타임(Microsoft 소프트웨어 사용 조건과 고지, `WindowsAppSDK-*`), 터미널의 xterm.js·addon-fit(MIT, `Assets/Terminal/`), 아래의 Lucide·Bouncy Castle·QRCoder·ZstdSharp·Win2D.
+- **릴레이와 모바일 앱**: 릴레이 서버(`relay/`)와 모바일 앱(`mobile/`)의 npm 의존성(`ws`, `@noble/curves`, `@noble/hashes`, `@noble/ciphers`, Expo 등)은 각 패키지의 `LICENSE`를 따르며 `package-lock.json`에 버전이 고정되어 있습니다. Cloudflare 릴레이(`relay/cloudflare/`)의 배포 코드에는 외부 패키지가 없습니다.
+- 펫과 앱 아이콘: `assets/`(생성 기록 `generation.md`).
 
 ---
 
 # NOTICE (English)
 
-Mighty Claude itself is distributed under the MIT License (see `LICENSE`). This file lists third-party works this repository references or includes.
+Mighty Code itself is distributed under the MIT License (see `LICENSE`). This file lists third-party works this repository references or includes.
 
 ## Paseo — Apache License 2.0
 
@@ -122,6 +130,13 @@ The Mac screen-share (BETA) clipboard is compressed with zstd, the same format t
 - Project: Zstandard — https://github.com/facebook/zstd
 - Copyright: Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
 - License: BSD 3-Clause License (upstream offers BSD or GPLv2; this app follows BSD) — full text in `licenses/zstd-BSD-3-Clause.txt`; the app bundle carries `native/licenses/zstd-LICENSE`
+
+## Other components shipped in the apps
+
+The license texts are in `native/licenses/`; the Mac app carries them in `Contents/Resources/ThirdPartyLicenses/`, the Windows app in `ThirdPartyLicenses/`.
+
+- **Mac app**: Chromium Embedded Framework (the browser tab, BSD 3-Clause; Chromium's notices in the CEF distribution's `CREDITS.html`, copied as `Chromium-CREDITS.html`; the standard minimal build without patent-encumbered codecs). Ghostty (the terminal, MIT) with what is statically linked into it: Oniguruma (BSD 2-Clause), FreeType (under the FreeType License; Portions of this software are copyright © 2026 The FreeType Project (www.freetype.org). All rights reserved.), simdutf and Wuffs (under MIT), Highway (under BSD 3-Clause), libpng and zlib, in `Ghostty-*-LICENSE`. MSDisplayLink (MIT), bash-preexec (MIT). Node.js is not shipped (`docs/browser-pane.md`).
+- **Windows app**: the self-contained .NET and ASP.NET Core runtimes (MIT, with their THIRD-PARTY-NOTICES), the WebView2 SDK, the Windows App SDK runtime (Microsoft Software License Terms and notices), xterm.js and addon-fit (MIT, `Assets/Terminal/`), and Lucide, Bouncy Castle, QRCoder, ZstdSharp and Win2D below.
 
 ## Provider marks
 

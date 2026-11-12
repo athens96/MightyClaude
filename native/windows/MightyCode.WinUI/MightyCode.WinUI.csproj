@@ -77,6 +77,17 @@
     <Content Include="../../licenses/Win2D-LICENSE" Link="ThirdPartyLicenses/Win2D-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../licenses/QRCoder-LICENSE" Link="ThirdPartyLicenses/QRCoder-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../licenses/lucide-LICENSE" Link="ThirdPartyLicenses/lucide-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- The self-contained .NET and ASP.NET Core runtimes, the WebView2 SDK and the Windows App SDK runtime ship with the app: their
+         license terms and third-party notices go with them (copied from the NuGet packages: .NET 10.0.14, WebView2 1.0.3719.77,
+         Windows App SDK 2.4.0; refresh them with those versions). -->
+    <Content Include="../../licenses/dotnet-LICENSE.txt" Link="ThirdPartyLicenses/dotnet-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/dotnet-THIRD-PARTY-NOTICES.txt" Link="ThirdPartyLicenses/dotnet-THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/aspnetcore-LICENSE.txt" Link="ThirdPartyLicenses/aspnetcore-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/aspnetcore-THIRD-PARTY-NOTICES.txt" Link="ThirdPartyLicenses/aspnetcore-THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/WebView2-LICENSE.txt" Link="ThirdPartyLicenses/WebView2-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/WebView2-NOTICE.txt" Link="ThirdPartyLicenses/WebView2-NOTICE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/WindowsAppSDK-LICENSE.txt" Link="ThirdPartyLicenses/WindowsAppSDK-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/WindowsAppSDK-NOTICE.txt" Link="ThirdPartyLicenses/WindowsAppSDK-NOTICE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <!-- The web shell (WebShell.cs, the window's front end unless the state folder holds ui-winui): native/windows/web is built to dist/ before the build when its
        sources, the shared locales or the design tokens changed (Inputs/Outputs), npm ci first only on a fresh checkout,
