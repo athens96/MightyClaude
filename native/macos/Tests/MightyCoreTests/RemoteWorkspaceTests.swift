@@ -337,6 +337,9 @@ private func blockingRawExchange(port: Int, _ request: String) throws -> String 
     }
 
     private func share(_ fixture: Fixture, fullAccess: Bool = true) async throws -> (key: String, port: Int) {
+        // `/v2/info` probes every provider (`ProviderService.runtimeInfo`), which a loaded CI runner took longer than the
+        // client's 15 s request timeout to do; probing once here leaves the host's answer to the caches.
+        _ = await fixture.providers.runtimeInfo(appVersion: "9.9.9")
         let state = try await fixture.host.start(workspaceIds: [fixture.workspace.id], port: 0)
         let key = try #require(state.key), port = try #require(state.port)
         #expect(state.enabled && state.addresses == ["127.0.0.1:\(port)"] && !state.allowsFullAccess)
