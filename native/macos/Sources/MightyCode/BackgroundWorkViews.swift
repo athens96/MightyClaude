@@ -114,7 +114,8 @@ struct BackgroundWorkStrip: View {
                     Text(L("plan.background.title")).font(.ui(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
                     Text(verbatim: counts).font(.ui(size: 11).monospacedDigit()).foregroundStyle(Palette.ink2).lineLimit(1)
                     Spacer(minLength: 0)
-                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
+                    // The strip stands over the composer and opens upward, as the session log does: the same chevron.
+                    Image(systemName: open ? "chevron.down" : "chevron.up").font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
                 }.contentShape(Rectangle())
             }
             .buttonStyle(.plain)
