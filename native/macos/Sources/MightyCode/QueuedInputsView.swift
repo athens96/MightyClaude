@@ -91,7 +91,8 @@ struct QueuedInputsView: View {
                         }
                     }
                     runNowButton(item.id)
-                    Button { onRemove(item.id) } label: { Image(systemName: "xmark").font(.ui(size: 9, weight: .semibold)).frame(width: 18, height: 16) }
+                    // A plain button takes clicks only on its glyph's drawn pixels: the whole frame is the target.
+                    Button { onRemove(item.id) } label: { Image(systemName: "xmark").font(.ui(size: 9, weight: .semibold)).frame(width: 22, height: 18).contentShape(Rectangle()) }
                         .buttonStyle(.plain).foregroundStyle(.secondary).help(L("queue.removeHelp")).accessibilityLabel(L("queue.remove"))
                         .accessibilityIdentifier("queue-remove-\(item.id)")
                 }

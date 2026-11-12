@@ -701,7 +701,7 @@ struct SessionPaneView: View {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "exclamationmark.circle").foregroundStyle(Palette.accent)
                     Text(attachmentError).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
-                    Button { store.attachmentErrors.removeValue(forKey: session.id) } label: { Image(systemName: "xmark").font(.ui(size: 9)).frame(width: 18, height: 16) }
+                    Button { store.attachmentErrors.removeValue(forKey: session.id) } label: { Image(systemName: "xmark").font(.ui(size: 9)).frame(width: 18, height: 16).contentShape(Rectangle()) }
                         .buttonStyle(.plain).accessibilityLabel(L("composer.attachment.dismissError"))
                 }
                 .font(.ui(size: 11)).foregroundStyle(Palette.ink2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
@@ -729,7 +729,7 @@ struct SessionPaneView: View {
                 HStack(alignment: .top, spacing: DesignMetrics.Spacing.sm) {
                     Image(systemName: "info.circle").foregroundStyle(Palette.accent)
                     Text(notice).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
-                    Button { store.askFallbackNotices.removeValue(forKey: session.id) } label: { Image(systemName: "xmark").font(.ui(size: 9)).frame(width: 18, height: 16) }
+                    Button { store.askFallbackNotices.removeValue(forKey: session.id) } label: { Image(systemName: "xmark").font(.ui(size: 9)).frame(width: 18, height: 16).contentShape(Rectangle()) }
                         .buttonStyle(.plain).accessibilityLabel(L("common.close"))
                 }
                 .font(.ui(size: 11)).foregroundStyle(Palette.ink2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
@@ -747,7 +747,7 @@ struct SessionPaneView: View {
                     Spacer(minLength: 4)
                     Button(L("menu.reconnectInputMethod")) { store.reconnectInputMethod(editor: composerInput.editor) }.controlSize(.small)
                         .disabled(problem.recoveryState.isPending)
-                    Button { store.dismissInputMethodProblem() } label: { Image(systemName: "xmark").font(.ui(size: 9)).frame(width: 18, height: 16) }
+                    Button { store.dismissInputMethodProblem() } label: { Image(systemName: "xmark").font(.ui(size: 9)).frame(width: 18, height: 16).contentShape(Rectangle()) }
                         .buttonStyle(.plain).accessibilityLabel(L("inputRecovery.dismiss"))
                 }
                 .font(.ui(size: 11)).lineSpacing(2).padding(.horizontal, DesignMetrics.Inset.composerInnerH)
