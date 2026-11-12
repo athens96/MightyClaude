@@ -263,9 +263,21 @@ public sealed class TodoProgressTracker
         if (MetadataJson.Property(frame, "parent_tool_use_id").ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null)) return null;
         var changed = false;
         var blocks = MetadataJson.Property(MetadataJson.Property(frame, "message"), "content");
+        // An ACP agent's plan (opencode, Hermes): the whole list each time, each entry with its status.
+        if (frame.Text("type") == "acp.update")
+        {
+            var update = MetadataJson.Property(frame, "update");
+            var planned = MetadataJson.Property(update, "entries");
+            if (update.Text("sessionUpdate") != "plan" || planned.ValueKind != JsonValueKind.Array) return null;
+            todoWrite = planned.EnumerateArray().Take(TodoProgress.MaximumItems)
+                .Where(e => e.ValueKind == JsonValueKind.Object && ActivitySupport.Clean(e.Text("content"), 1024, true).Length > 0)
+                .Select(e => new TodoItem(e.Text("content")!, e.Text("status") is "pending" or "in_progress" or "completed" ? e.Text("status")! : "pending")).ToList();
+            if (todoWrite.Count == 0) return null;
+            changed = true;
+        }
         // Codex's plan (update_plan) reaches exec --json as a todo_list item that only says done or not done:
         // the first unfinished step is the one being worked on.
-        if (frame.Text("type") is "item.started" or "item.updated" or "item.completed")
+        else if (frame.Text("type") is "item.started" or "item.updated" or "item.completed")
         {
             var codexItem = MetadataJson.Property(frame, "item");
             var entries = MetadataJson.Property(codexItem, "items");

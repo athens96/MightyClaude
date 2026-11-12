@@ -441,7 +441,8 @@ public sealed partial class MainWindow
                 graphResultFilesRunId, files.ToDictionary(f => f.Key, f => f.Value.Select(file => new WebMightyFile(file.Path, file.Line)).ToList()),
                 older.Count, older.Count, history, summary, MightyGraphBlockModel.ToolbarHelp(retained), cards, AnimationsEnabled, header,
                 fanOut ? true : null, fanOut ? FlowCopy.LogOf(runs, pane.FlowLogCollapsed == true, definitions) : null,
-                fanOut ? FlowCopy.ProgressOf(runs) : null);
+                // Every agent pane has the progress panel: the request in view, its state, and the plan its agent keeps, if any.
+                FlowCopy.ProgressOf(runs));
             var olderKey = older.Count + ":" + string.Join(",", older.Select(run => run.Id + "/" + run.Status + "/" + run.Agents.Count));
             return new(copy, inputs, olderKey, older,
                 presentation == "timeline" ? WebTimeline(pane, runs, older.Count, catalog) : null,

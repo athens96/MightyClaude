@@ -176,4 +176,17 @@ internal static class FlowStepsVerification
         Check(steps.Count == TodoProgress.MaximumItems && steps[0].Status == "pending" && steps.All(s => s.StartedAt is null), "as many as a list holds, statuses and times checked");
         return Task.CompletedTask;
     }
+
+    /// <summary>An ACP agent's plan update (opencode, Hermes) is its checklist and so the request's steps; a pane of any agent keeps them.</summary>
+    internal static Task AnACPAgentsPlanIsTheRequestsSteps()
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse("""{"type":"acp.update","update":{"sessionUpdate":"plan","entries":[{"content":"Read the README","status":"completed","priority":"high"},{"content":"Summarize it","status":"in_progress","priority":"medium"},{"content":"Answer","status":"odd","priority":"low"}]}}""");
+        var progress = new TodoProgressTracker().Consume(doc.RootElement);
+        Check(progress is not null && progress.Items.Select(i => i.Content).SequenceEqual(["Read the README", "Summarize it", "Answer"])
+            && progress.Items.Select(i => i.Status).SequenceEqual(["completed", "in_progress", "pending"]), "the plan's entries and their statuses");
+        var pane = new RunSession { Id = "s", Kind = "claude", Provider = "opencode", GraphRuns = [new MightyGraphRun { Id = "r", Input = "요약", Status = "running", SourceRunID = "r", Provider = "opencode" }] };
+        var recorded = FlowSteps.RecordSteps(pane, new RunEvent("s", "todos", Todos: progress! with { RunId = "r" }), At(1));
+        Check(recorded.GraphRuns![0].Steps?.Select(s => s.Status).SequenceEqual(["completed", "in_progress", "pending"]) == true, "an opencode pane keeps the steps on its request");
+        return Task.CompletedTask;
+    }
 }

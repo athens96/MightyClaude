@@ -195,6 +195,8 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
   const latest = latestResultID(runs);
   // The role view of a Claude pane: cards, delegate lines, steps and the plan column (the host says when).
   const fanOut = inputs?.fanOut === true;
+  // Every agent pane the host sends progress for has the progress panel (macOS MightyGraphView showsProgress); the role view is Claude's alone.
+  const showsProgress = inputs?.progress !== undefined && inputs?.progress !== null;
   const blockSizes = useMemo(() => (live && live.target === 'block' ? { ...(savedSizes ?? {}), [live.id]: live.size } : savedSizes), [savedSizes, live]);
   const layout = useMemo(() => makeLayout(runs, session.draft, session.status === 'running', expanded, {
     resultFilesRunID: inputs?.resultFilesRunID ?? null,
@@ -222,20 +224,20 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
   const pinnedRef = useRef(pinnedRun);
   pinnedRef.current = pinnedRun;
   const spans = useMemo<RequestSpan[]>(() => {
-    if (!fanOut) return [];
+    if (!showsProgress) return [];
     // The longest prefix first: a notice run's id begins with its request's.
     const prefixes = runs.map((run, index) => ({ prefix: runNodeId(run, ''), index })).sort((a, b) => b.prefix.length - a.prefix.length);
     return requestSpans(layout.nodes.filter((n) => n.kind !== 'history' && n.kind !== 'draft'), runs,
       (id) => prefixes.find((p) => id.startsWith(p.prefix))?.index ?? null);
-  }, [fanOut, layout, runs]);
+  }, [showsProgress, layout, runs]);
   const spansRef = useRef(spans);
   spansRef.current = spans;
   const newestRequestID = newestRequestRun(runs)?.id ?? null;
   const seenNewest = useRef(newestRequestID);
   useEffect(() => {
-    if (newestRequestID !== null && newestRequestID !== seenNewest.current && fanOut) setPinnedRun(newestRequestID);
+    if (newestRequestID !== null && newestRequestID !== seenNewest.current && showsProgress) setPinnedRun(newestRequestID);
     seenNewest.current = newestRequestID;
-  }, [newestRequestID, fanOut]);
+  }, [newestRequestID, showsProgress]);
 
   const running = useMemo(() => new Set(Object.entries(mighty.blocks).filter(([, b]) => b.tone === 'run').map(([id]) => id)), [mighty.blocks]);
   // The role view's own nodes in motion: a delegate line that leads to a running block (flow.ts liveFlowIds).
@@ -620,10 +622,10 @@ export function Diagram({ session, mighty, memory, aim, onAimed, pending: reques
   }, [extras, request, pendingState, pendingRunIdOf, mighty.blocks]);
 
   const visible = useMemo(() => new Set(visibleKey.split('\n')), [visibleKey]);
-  // The step list over the diagram for every other pane; the role view has its progress panel there instead.
-  const steps = useMemo(() => (fanOut ? null : stepsModel(session, runs)), [session, runs, fanOut]);
+  // The step list over the diagram for a pane without the progress panel (an older host); the progress panel stands there instead.
+  const steps = useMemo(() => (showsProgress ? null : stepsModel(session, runs)), [session, runs, showsProgress]);
   const progressCopy = inputs?.progress;
-  const progressID = fanOut && progressCopy ? progressRequest(pinnedRun, focusedRun, newestRequestID, (id) => progressCopy[id] !== undefined) : null;
+  const progressID = showsProgress && progressCopy ? progressRequest(pinnedRun, focusedRun, newestRequestID, (id) => progressCopy[id] !== undefined) : null;
   const progress = progressID !== null ? progressCopy?.[progressID] : undefined;
   const unfinished = useMemo(() => new Set(runs.filter((r) => !finished(r)).map((r) => r.id)), [runs]);
   const toolbarZoom = (

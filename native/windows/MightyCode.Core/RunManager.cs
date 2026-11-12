@@ -433,6 +433,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                                 run.AuthenticationFailureText = CliAuthFailure.ClaudeFailureText(frame);
                         }
                     }
+                    // An ACP agent's plan updates are its checklist, and so the request's steps (FlowSteps).
+                    else if (request.Provider is "opencode" or "hermes") ReadPlanMode(frame);
                     else if (request.Provider == "codex")
                     {
                         ReadPlanMode(frame);

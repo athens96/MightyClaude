@@ -188,7 +188,8 @@ public static class FlowSteps
     /// replaced with it (<see cref="ClaudePlanMode"/>).</summary>
     public static RunSession RecordSteps(RunSession session, RunEvent ev, DateTimeOffset now)
     {
-        if (ev.Type != "todos" || session.Kind != "claude" || session.Provider != "claude" || TodoProgress.Normalized(ev.Todos) is not { } progress
+        // Every agent that keeps a plan: Claude's task list, Codex's plan, an ACP agent's (opencode, Hermes) plan updates.
+        if (ev.Type != "todos" || session.Kind != "claude" || TodoProgress.Normalized(ev.Todos) is not { } progress
             || session.GraphRuns is not { Count: > 0 } live) return session;
         var runs = live.ToList();
         Record(progress, runs, session.TodoProgress, now);

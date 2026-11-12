@@ -276,6 +276,7 @@ internal static class Verification
         await Test("flow steps: a step holds what its span holds; its card, the 실행 card and the plan column say it", FlowStepsVerification.AStepHoldsWhatItsSpanHoldsAndItsCardSaysIt);
         await Test("flow steps: a Bash call's heartbeat makes no sub-agent block (claude-stream-tool-heartbeat)", FlowStepsVerification.TheRecordedHeartbeatMakesNoBlock);
         await Test("flow steps: a saved heartbeat block is dropped on read, saved steps are bounded", FlowStepsVerification.ASavedHeartbeatBlockIsDroppedAndSavedStepsAreBounded);
+        await Test("flow steps: an ACP agent's plan update is its checklist and the request's steps", FlowStepsVerification.AnACPAgentsPlanIsTheRequestsSteps);
         await Test("background notice runs: ids, the views' filter and the saved flags", BackgroundNoticeRunsVerification.RunIDsAndTheFilter);
         await Test("background notice runs: the newest request, the followed run, numbers, result cards, 기록 and 파이프라인", BackgroundNoticeRunsVerification.TheRunRulesAndTheViews);
         await Test("background notice runs: the pane keeps the notice run apart with its own lines, and the phone and the strip get theirs", BackgroundNoticeRunsVerification.ThePaneKeepsTheNoticeRunApart);
