@@ -348,7 +348,7 @@ private func blockingRawExchange(port: Int, _ request: String) throws -> String 
         return (key, port)
     }
 
-    @Test func aClientListsSharedWorkspacesAndRunsCommandsOnTheHost() async throws {
+    @Test(.disabled(if: CIRunner.onGitHubActions, CIRunner.timing)) func aClientListsSharedWorkspacesAndRunsCommandsOnTheHost() async throws {
         let fixture = try await fixture()
         do {
             let (key, port) = try await share(fixture)

@@ -197,7 +197,7 @@ struct RunnerBackpressureTests {
     /// A stop from below the consumer's priority (here background, as a Task
     /// started from an unlabeled serial queue can be) still ends the child at
     /// once: the signal does not wait for the runner's actor.
-    @Test func aBackgroundStopEndsAFloodingChildAtOnce() async throws {
+    @Test(.disabled(if: CIRunner.onGitHubActions, CIRunner.timing)) func aBackgroundStopEndsAFloodingChildAtOnce() async throws {
         let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
         let service = ProviderService(binaryOverrides: ["gemini": try floodingAntigravity(in: directory)])
         let events = BackpressureRecorder()

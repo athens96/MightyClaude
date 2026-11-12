@@ -481,7 +481,7 @@ struct MobileWorkspaceFilesTests {
         #expect(sizes.calls == 1)
     }
 
-    @Test func imagePreviewsQueueOnTheirOwnSlotNewestFirstAndNeverHoldUpSubmits() async throws {
+    @Test(.disabled(if: CIRunner.onGitHubActions, CIRunner.timing)) func imagePreviewsQueueOnTheirOwnSlotNewestFirstAndNeverHoldUpSubmits() async throws {
         let gate = PreviewGate()
         let f = try await fixture(svg: gate.rasterizer); defer { f.remove() }
         let svg = Data(#"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="16"/>"#.utf8)

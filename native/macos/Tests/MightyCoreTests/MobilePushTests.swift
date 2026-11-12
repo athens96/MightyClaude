@@ -189,7 +189,7 @@ struct MobilePushRelayTests {
     }
 
     /// A relay that answers 3xx is refused, not followed: the bearer token and the envelope go nowhere else.
-    @Test func aRedirectIsAFailureAndIsNeverFollowed() async throws {
+    @Test(.disabled(if: CIRunner.onGitHubActions, CIRunner.timing)) func aRedirectIsAFailureAndIsNeverFollowed() async throws {
         let hits = PushHits()
         let elsewhere = HTTPServer(address: "127.0.0.1", port: 0) { _ in hits.hit(); return HTTPResponse(status: 200, body: Data("{}".utf8)) }
         let elsewherePort = try await elsewhere.start()

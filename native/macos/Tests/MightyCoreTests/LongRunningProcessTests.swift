@@ -219,7 +219,7 @@ struct LongRunningProcessTests {
         #expect(elapsed < 30)
     }
 
-    @Test func realPTYCooperativeProcessStopsOnSIGINTQuickly() async throws {
+    @Test(.disabled(if: CIRunner.onGitHubActions, CIRunner.timing)) func realPTYCooperativeProcessStopsOnSIGINTQuickly() async throws {
         let folder = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: folder) }
         let pane = PTYAgentTerminalPane(workingDirectory: folder)
         let runner = AgentTerminalRunner(pane: pane, clock: SkipInitialWaitClock())

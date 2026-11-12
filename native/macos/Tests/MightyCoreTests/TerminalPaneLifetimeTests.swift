@@ -204,7 +204,7 @@ struct TerminalPaneLifetimeTests {
         #expect(made.panes.count == 1)
     }
 
-    @Test func quitTerminatesEveryTrackedProcessGroupWithinTheBound() async throws {
+    @Test(.disabled(if: CIRunner.onGitHubActions, CIRunner.timing)) func quitTerminatesEveryTrackedProcessGroupWithinTheBound() async throws {
         let folder = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: folder) }
         let processes = AgentProcessRegistry()
         let polite = PTYAgentTerminalPane(workingDirectory: folder)

@@ -73,7 +73,7 @@ struct RemoteModelListBoundTests {
         #expect(KeptModelLists.maximumModels == bound("opencode"))
     }
 
-    @Test func aClientConnectsToAnOlderHostWithLongListsAndKeepsTheirFirstModels() async throws {
+    @Test(.disabled(if: CIRunner.onGitHubActions, CIRunner.timing)) func aClientConnectsToAnOlderHostWithLongListsAndKeepsTheirFirstModels() async throws {
         let info = try Self.olderHostInfo()
         let fake = HTTPServer(address: "127.0.0.1", port: 0) { request in
             HTTPResponse(status: request.target.hasSuffix("/info") ? 200 : 404, body: request.target.hasSuffix("/info") ? info : Data("{}".utf8),

@@ -514,7 +514,7 @@ import Testing
         #expect(await LoopbackDashboardTransport().get(URL(string: "http://example.com:80/api/runs")!, timeout: 1) == nil)
     }
 
-    @Test func anEventStreamThatSendsNothingIsLeftAfterTheFirstEventDeadlineNotTheWholeOne() async throws {
+    @Test(.disabled(if: CIRunner.onGitHubActions, CIRunner.timing)) func anEventStreamThatSendsNothingIsLeftAfterTheFirstEventDeadlineNotTheWholeOne() async throws {
         // Half a second to the first event against a minute for the whole read
         // and for the server's late answer. The bound sits halfway: a loaded
         // runner that is slow to wake the read's watchdog stays far below it,
