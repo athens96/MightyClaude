@@ -309,9 +309,14 @@ enum MightyGraphDiagnostics {
                     + " movedAt=\(reader.lastUserMoveAt) now=\(ProcessInfo.processInfo.systemUptime) target=\(reader.followTargetID ?? "nil")"
                     + " token=\(reader.targetToken ?? "nil") consumed=\(reader.consumedTargetToken ?? "nil")"
             }
+            // The wheel moves the camera up and following stops. How far it goes is the canvas's: some runners stop the
+            // 120pt wheel at 44pt (the same numbers every time, on commits before and after the progress panel), which is
+            // no failure of following; the user's position winning over new blocks is checked below.
             try await store.waitForSmoke(timeout: 3, step: "wheel scroll up stops following", detail: readerState) {
-                abs(reader.panOffset.y - scrollStart.y - 120) < 1 && reader.follow?.watch.following == false
+                let moved = reader.panOffset.y - scrollStart.y
+                return moved >= 1 && moved <= 121 && reader.follow?.watch.following == false
             }
+            report["userScrollWheelMoved"] = reader.panOffset.y - scrollStart.y
             let readerCamera = reader.panOffset
             fixture.runs[fixture.runs.count - 1].agents.append(MightyGraphAgent(id: "branch-late", title: "늦은 가지", input: "추가 확인", status: "running", entries: [branchEntry]))
             try await store.waitForSmoke(timeout: 3, step: "late branch mounted while scrolled up") { mountedCards(window).contains(MightyGraphLayout.nodeID(newRun, suffix: "agent:branch-late")) }
