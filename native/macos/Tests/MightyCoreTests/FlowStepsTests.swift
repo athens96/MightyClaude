@@ -306,6 +306,35 @@ struct FlowStepsTests {
         }
     }
 
+    @Test func theProgressPanelListsTheBackgroundWorkTheRequestStarted() {
+        let blocks = [
+            MightyGraphAgent(id: "fg", title: "Map the repo", status: "running", figures: GraphAgentFigures(startedAt: stamp(1))),
+            MightyGraphAgent(id: "build", title: "Build the app", status: "completed", kind: "task", background: true,
+                             figures: GraphAgentFigures(startedAt: stamp(2), endedAt: stamp(9))),
+            MightyGraphAgent(id: "wait", title: "Wait for the deploy", status: "running", kind: "task", background: true, figures: GraphAgentFigures(startedAt: stamp(3))),
+            MightyGraphAgent(id: "review", title: "Review the diff", status: "error", background: true,
+                             figures: GraphAgentFigures(startedAt: stamp(4), endedAt: stamp(12))),
+            MightyGraphAgent(id: "copy", title: "Wait for the deploy", status: "running", kind: "task", background: true, sourceBlockId: "wait"),
+        ]
+        let run = MightyGraphRun(id: "r", input: "배포해 줘", status: "completed", agents: blocks, provider: "claude")
+        // Running first, then the newest ended; a copy in a notice run and a foreground sub-agent are not background work.
+        for shown in [run, run.shown] {
+            let listed = FlowSteps.background(of: shown)
+            #expect(listed.rows.map(\.id) == ["wait", "review", "build"])
+            #expect(listed.rows.map(\.state) == [.current, .failed, .done])
+            #expect(listed.rows.map(\.agent) == [false, true, false])
+            #expect(listed.hidden == 0)
+        }
+        let progress = FlowSteps.progress(0, in: [run], heading: "요청 1")
+        #expect(progress.background.map(\.text) == ["Wait for the deploy", "Review the diff", "Build the app"])
+        // At most four lines; the rest are counted.
+        var many = run
+        many.agents = (0..<6).map { MightyGraphAgent(id: "t\($0)", title: "task \($0)", status: "running", kind: "task", background: true) }
+        #expect(FlowSteps.background(of: many).rows.count == FlowSteps.progressBackgroundRows)
+        #expect(FlowSteps.background(of: many).hidden == 2)
+        #expect(FlowSteps.background(of: many).running == 6)
+    }
+
     @Test func aNodeIdNeverCarriesTheStepsWords() {
         let suffix = FlowSteps.nodeSuffix(FlowStep(key: "text:릴리스 노트 / 검토", content: "릴리스 노트 / 검토"))
         #expect(suffix.hasPrefix("step:") && suffix.dropFirst(5).allSatisfy { $0.isHexDigit })

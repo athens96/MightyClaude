@@ -13,6 +13,8 @@ struct CompanionPreferences: Codable {
     /// height that follows the content.
     var bubbleWidth: Double?
     var bubbleHeight: Double?
+    /// The progress card over the bubble folded to its heading; nil (never folded) in older saves.
+    var progressCollapsed: Bool?
 }
 
 /// nil width is the default one; nil height follows the bubble's content.
@@ -191,6 +193,7 @@ final class AgentCompanion: ObservableObject {
             // Resizing the panel lays its view out synchronously; keep that out of this publish.
             Task { @MainActor [weak self] in self?.updateOverlay() }
         }
+        refitForProgress()
     }
 
     /// The submitted request stays visible while tool/output events change.
@@ -399,7 +402,32 @@ final class AgentCompanion: ObservableObject {
     }
     private func updateOverlay() {
         overlay?.setVisible(preferences.enabled && !stopped)
-        overlay?.fit(bubble: bubbleSize, tall: visibleApproval != nil, keeping: .left)
+        lastProgressHeight = currentProgressHeight
+        overlay?.fit(bubble: bubbleSize, tall: visibleApproval != nil, above: progressHeight, keeping: .left)
+    }
+
+    /// The progress card of the agent the bubble shows: its newest request's steps and background work
+    /// (`CompanionProgress`). Nil while an approval takes the bubble, with the bubble off, and for a request with neither.
+    var shownProgress: CompanionProgress? {
+        guard visibleApproval == nil, preferences.showsTask, let id = shown?.id,
+              let session = store?.snapshot.sessions.first(where: { $0.id == id }) else { return nil }
+        return CompanionProgress.newest(in: MightyGraphSupport.shownRuns(session.mightyGraphRuns))
+    }
+    var progressCollapsed: Bool { preferences.progressCollapsed ?? false }
+    func toggleProgress() {
+        var next = preferences
+        next.progressCollapsed = !progressCollapsed
+        preferences = next
+    }
+    /// What the card adds to the window's height as the window was last fitted; each snapshot checks it, so the
+    /// window follows the card.
+    private var progressHeight: CGFloat { lastProgressHeight }
+    private var lastProgressHeight: CGFloat = 0
+    private var currentProgressHeight: CGFloat { shownProgress?.height(collapsed: progressCollapsed) ?? 0 }
+    private func refitForProgress() {
+        guard overlay != nil, abs(currentProgressHeight - lastProgressHeight) > 0.5 else { return }
+        // Resizing the panel lays its view out synchronously; keep that out of this publish.
+        Task { @MainActor [weak self] in self?.updateOverlay() }
     }
 
     /// Only while an edge of the bubble is being dragged.
@@ -410,7 +438,7 @@ final class AgentCompanion: ObservableObject {
     /// Follows a drag of the bubble's edge. The window grows toward the side
     /// being dragged and keeps the other one; the size is saved once, at the end.
     func resizeBubble(to size: CompanionBubbleSize, keeping side: CompanionPanel.Side, finished: Bool) {
-        overlay?.fit(bubble: size, tall: visibleApproval != nil, keeping: side)
+        overlay?.fit(bubble: size, tall: visibleApproval != nil, above: progressHeight, keeping: side)
         guard finished else { liveBubbleSize = size; return }
         liveBubbleSize = nil
         var next = preferences
@@ -423,7 +451,7 @@ final class AgentCompanion: ObservableObject {
     func cancelBubbleResize(keeping side: CompanionPanel.Side) {
         guard liveBubbleSize != nil else { return }
         liveBubbleSize = nil
-        overlay?.fit(bubble: bubbleSize, tall: visibleApproval != nil, keeping: side)
+        overlay?.fit(bubble: bubbleSize, tall: visibleApproval != nil, above: progressHeight, keeping: side)
     }
 }
 

@@ -31,8 +31,14 @@ public static class FlowCopy
     public sealed record ProgressRow(int Index, string? NodeId, string Text, string State, long? StartedAt, long? EndedAt);
     /// <summary>A request's progress panel (<see cref="FlowSteps.ProgressOf"/>): "진행 상황", "요청 27", its first line, its state, and its plan's rows.
     /// <c>Hidden</c>: the steps the last line counts instead of listing; <c>More</c> its words. <c>RequestNodeId</c>: where the request line leads.</summary>
+    /// <summary><c>Background</c>: the background work the request started (<see cref="FlowSteps.BackgroundOf"/>), the running ones first, at most
+    /// <see cref="FlowSteps.ProgressBackgroundRows"/>; <c>BackgroundHidden</c>: the work those lines leave out. The page heads them with
+    /// <c>graph.progress.background</c> and its running/total.</summary>
     public sealed record ProgressCopy(string Title, string Heading, string Request, string StateWord, string Status, string? Count, IReadOnlyList<ProgressRow> Rows,
-        int Hidden, string? More, bool Running, string RequestNodeId, string RequestHelp);
+        int Hidden, string? More, bool Running, string RequestNodeId, string RequestHelp, IReadOnlyList<ProgressBackgroundRow>? Background = null, int BackgroundHidden = 0);
+    /// <summary>A piece of background work in the progress panel (<see cref="FlowSteps.ProgressBackground"/>). <c>Agent</c>: a background sub-agent, else
+    /// a background command. <c>State</c>: current, done, failed or stopped. <c>StartedAt</c>/<c>EndedAt</c>: milliseconds since 1970.</summary>
+    public sealed record ProgressBackgroundRow(string Id, string Text, bool Agent, string State, long? StartedAt, long? EndedAt);
     /// <summary>A block's role-view copy; each part only where it belongs.</summary>
     public sealed record Block(Role? Role = null, Card? Card = null, Line? Line = null, Back? Back = null, StepCopy? Step = null);
     public sealed record LogRow(string Id, string Clock, string Who, string Ink, string What, string NodeId);
@@ -162,7 +168,10 @@ public static class FlowCopy
             var more = progress.Hidden > 0
                 ? Locale.Get("graph.progress.more", new Dictionary<string, string> { ["count"] = progress.Hidden.ToString(System.Globalization.CultureInfo.InvariantCulture) }) : null;
             result[run.Id] = new(progress.Title, progress.Heading, progress.Request, progress.StateWord, progress.Status, progress.Count, rows, progress.Hidden, more,
-                progress.Running, MightyGraphLayout.NodeID(run, "request"), Locale.Get("graph.progress.showRequest"));
+                progress.Running, MightyGraphLayout.NodeID(run, "request"), Locale.Get("graph.progress.showRequest"),
+                progress.Background.Count == 0 ? null : progress.Background.Select(item => new ProgressBackgroundRow(item.Id, item.Text, item.Agent,
+                    item.State.ToString().ToLowerInvariant(), Milliseconds(item.StartedAt), Milliseconds(item.EndedAt))).ToList(),
+                progress.BackgroundHidden);
         }
         return result;
     }

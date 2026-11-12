@@ -129,6 +129,54 @@ public enum FlowSteps {
         public var hidden: Int
         /// The activity still goes on: the time of the step in progress runs.
         public var running: Bool
+        /// The background work the request started (background commands and background sub-agents): the running ones
+        /// first, then the newest ended ones, `progressBackgroundRows` at most.
+        public var background: [Background] = []
+        /// Background work the lines leave out.
+        public var backgroundHidden: Int = 0
+        /// Background work still running, the lines left out counted too.
+        public var backgroundRunning: Int = 0
+    }
+
+    /// One piece of background work in the progress panel.
+    public struct Background: Equatable, Sendable, Identifiable {
+        /// The block's id.
+        public var id: String
+        /// Its card's title: the command's description, the sub-agent's task.
+        public var text: String
+        /// A background sub-agent; else a background command.
+        public var agent: Bool
+        /// `.current` while it runs; `.done`, `.failed` or `.stopped` once it ended.
+        public var state: Progress.State
+        public var startedAt: Date?
+        public var endedAt: Date?
+    }
+
+    /// The panel's background lines at most.
+    public static let progressBackgroundRows = 4
+
+    /// The background work request `run` started, as the progress panel lists it (`Progress.background`).
+    public static func background(of run: MightyGraphRun) -> (rows: [Background], hidden: Int, running: Int) {
+        let blocks = run.flowAgents.filter { $0.background == true && $0.sourceBlockId == nil && ($0.isTask || $0.isBackgroundAgent) }
+        let rows = blocks.map { agent -> Background in
+            let state: Progress.State
+            switch MobileMightySupport.status(agent.status) {
+            case "completed": state = .done
+            case "error": state = .failed
+            case "stopped": state = .stopped
+            default: state = MightyGraphLayout.terminal(agent.status) ? .stopped : .current
+            }
+            return Background(id: agent.id, text: MightyGraphSupport.blockTitle(agent), agent: agent.isBackgroundAgent, state: state,
+                              startedAt: agent.figures?.started, endedAt: agent.figures?.ended)
+        }
+        let ordered = rows.enumerated().sorted { a, b in
+            let (x, y) = (a.element, b.element)
+            if (x.state == .current) != (y.state == .current) { return x.state == .current }
+            if x.state == .current { return a.offset < b.offset }
+            return (x.endedAt ?? .distantPast, a.offset) > (y.endedAt ?? .distantPast, b.offset)
+        }.map(\.element)
+        let shown = Array(ordered.prefix(progressBackgroundRows))
+        return (shown, ordered.count - shown.count, ordered.filter { $0.state == .current }.count)
     }
 
     /// The progress of request `runs[index]` (a request, never a notice run), headed `heading` ("요청 27"): its request in
@@ -163,10 +211,12 @@ public enum FlowSteps {
         let shown = Array(rows[start..<min(rows.count, start + room)])
         let done = rows.filter { $0.state == .done }.count
         let status = running ? "running" : MobileMightySupport.status(request.status)
+        let background = Self.background(of: request)
         return Progress(title: L("graph.progress.title"), heading: heading, request: FlowCard.line(FlowCard.firstLine(request.input)) ?? "",
                         stateWord: awaiting ? BackgroundNoticeRuns.stateWord : FlowCard.stateWord(status), status: awaiting ? "waiting" : status,
                         count: rows.isEmpty ? nil : L("graph.steps.count", ["done": "\(done)", "total": "\(rows.count)"]),
-                        rows: shown, hidden: rows.count - shown.count, running: running)
+                        rows: shown, hidden: rows.count - shown.count, running: running,
+                        background: background.rows, backgroundHidden: background.hidden, backgroundRunning: background.running)
     }
 
     /// The step a block launched from the main session belongs to, as its card says it ("2. 노트 작성"): the step whose span

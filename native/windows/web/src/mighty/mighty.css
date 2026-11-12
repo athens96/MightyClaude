@@ -420,6 +420,16 @@
 .mighty-progress-ordinal { font-size: var(--type-pill); font-weight: 700; }
 .mighty-progress-text { font-size: var(--type-pill); color: var(--ink2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .mighty-progress-rows { padding: 4px 0; }
+/* The background work the request started (macOS MightyGraphProgressPanel backgroundSection): under the steps, its own heading with running/total,
+   a line per command or sub-agent; its lines lead nowhere, so they keep the plain cursor and no hover. */
+.mighty-progress-background { padding: 0 0 4px; border-top: var(--stroke-line) solid var(--line); }
+.mighty-progress-background-head { flex: none; height: 20px; display: flex; align-items: center; gap: var(--space-xs); padding: 0 var(--inset-graph-block-body-h); color: var(--ink2); font-size: 10px; }
+.mighty-progress-background-title { font-weight: 600; }
+.mighty-progress-background-count { font-variant-numeric: tabular-nums; }
+.mighty-progress-background .flow-outline-row { cursor: default; }
+.mighty-progress .mighty-progress-background .flow-outline-row:hover { background: transparent; }
+.mighty-progress .mighty-progress-background .flow-outline-row.state-current, .mighty-progress .mighty-progress-background .flow-outline-row.state-current:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.mighty-progress-background-kind { flex: none; display: inline-grid; color: var(--ink2); }
 .flow-outline-head { flex: none; height: 33px; display: flex; align-items: center; gap: var(--space-sm); padding: 0 var(--inset-graph-block-body-h); border-bottom: var(--stroke-line) solid var(--line); }
 .flow-outline-glyph { display: inline-grid; color: var(--task-text); }
 .flow-outline-title { font-size: var(--type-block); font-weight: 700; white-space: nowrap; }

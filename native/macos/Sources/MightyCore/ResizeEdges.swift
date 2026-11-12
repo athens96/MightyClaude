@@ -58,12 +58,13 @@ public enum CompanionBubbleLayout {
     /// `height` nil keeps the bubble as tall as its content; `tall` is the
     /// approval bubble, which is never given a fixed height nor made narrower
     /// than the default, so its options still fit its fixed window.
-    public static func panelSize(width: CGFloat?, height: CGFloat?, tall: Bool) -> CGSize {
+    /// `above` is the pet's progress card over the task bubble (`CompanionProgress.height`), which the window grows by.
+    public static func panelSize(width: CGFloat?, height: CGFloat?, tall: Bool, above: CGFloat = 0) -> CGSize {
         let bubbleWidth = tall ? approvalWidth(width) : clampedWidth(width)
         let panelWidth = bubbleWidth + sidePadding * 2
         if tall { return CGSize(width: panelWidth, height: tallHeight) }
         let fixed = height.map { clampedHeight($0) + chrome } ?? 0
-        return CGSize(width: panelWidth, height: max(baseHeight, fixed))
+        return CGSize(width: panelWidth, height: max(baseHeight, fixed) + max(0, above))
     }
     public static func clampedWidth(_ width: CGFloat?) -> CGFloat {
         min(maximum.width, max(minimum.width, width ?? defaultWidth))

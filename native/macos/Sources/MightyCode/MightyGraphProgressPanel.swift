@@ -3,8 +3,9 @@ import SwiftUI
 
 /// The role view's progress panel (`FlowSteps.progress`), over the diagram's top-left corner where it stays while the diagram
 /// scrolls under it: the request in view ("요청 27" and its first line) with its state, then its plan — every step with its
-/// mark (done, the one in progress with its time running, not begun) and the time each took. The heading leads to the
-/// request; a step that began leads to its card. The panel folds to its heading.
+/// mark (done, the one in progress with its time running, not begun) and the time each took, then the background work it
+/// started (commands and sub-agents, running ones first). The heading leads to the request; a step that began leads to its
+/// card. The panel folds to its heading.
 struct MightyGraphProgressPanel: View {
     let sessionID: String
     let progress: FlowSteps.Progress
@@ -68,6 +69,10 @@ struct MightyGraphProgressPanel: View {
                 }
                 .padding(.vertical, DesignMetrics.Spacing.xs)
             }
+            if !collapsed, !progress.background.isEmpty {
+                Divider().overlay(Palette.border)
+                backgroundSection
+            }
         }
         .frame(width: FlowSteps.progressWidth, alignment: .topLeading)
         .mightyBlockCard()
@@ -75,6 +80,43 @@ struct MightyGraphProgressPanel: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(progress.title + " " + progress.heading)
         .accessibilityIdentifier("mighty-progress-\(sessionID)")
+    }
+
+    /// The background work the request started: a command or a sub-agent per line, with its mark and its time.
+    private var backgroundSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: DesignMetrics.Spacing.xs) {
+                Text(verbatim: L("graph.progress.background")).font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
+                Text(verbatim: "\(progress.backgroundRunning)/\(progress.background.count + progress.backgroundHidden)")
+                    .font(.ui(size: 10).monospacedDigit()).foregroundStyle(Palette.ink2)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH)
+            .frame(height: 20)
+            ForEach(progress.background) { item in
+                HStack(spacing: DesignMetrics.Spacing.sm) {
+                    mark(item.state).frame(width: 14)
+                    Image(systemName: item.agent ? "person.crop.circle" : "terminal").font(.ui(size: 10)).foregroundStyle(Palette.ink2)
+                    Text(verbatim: item.text)
+                        .font(.ui(size: 11.5, weight: item.state == .current ? .semibold : .regular))
+                        .foregroundStyle(Palette.ink).opacity(item.state == .done ? 0.75 : 1)
+                        .lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength: 0)
+                    ProgressTime(start: item.startedAt, end: item.endedAt, ticking: item.state == .current)
+                }
+                .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH)
+                .frame(height: FlowSteps.progressRowHeight)
+                .background(item.state == .current ? Palette.accent.opacity(0.06) : Color.clear)
+                .help(item.text)
+                .accessibilityIdentifier("mighty-progress-background-\(sessionID)-\(item.id)")
+            }
+            if progress.backgroundHidden > 0 {
+                Text(verbatim: L("graph.progress.more", ["count": "\(progress.backgroundHidden)"])).font(.ui(size: 10)).foregroundStyle(Palette.ink2)
+                    .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH)
+                    .frame(height: FlowSteps.progressRowHeight, alignment: .leading)
+            }
+        }
+        .padding(.bottom, DesignMetrics.Spacing.xs)
     }
 
     private func line(_ row: FlowSteps.Progress.Row) -> some View {
@@ -85,7 +127,7 @@ struct MightyGraphProgressPanel: View {
                 .foregroundStyle(row.state == .pending ? Palette.ink2 : Palette.ink).opacity(row.state == .done ? 0.75 : 1)
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 0)
-            ProgressTime(row: row, running: progress.running)
+            ProgressTime(start: row.startedAt, end: row.endedAt, ticking: row.state == .current && progress.running)
         }
         .padding(.horizontal, DesignMetrics.Inset.graphBlockBodyH)
         .frame(height: FlowSteps.progressRowHeight)
@@ -105,17 +147,18 @@ struct MightyGraphProgressPanel: View {
     }
 }
 
-/// A step's time: how long it took once it ended, the time since it began while it runs (read once a second), nothing for
+/// A line's time: how long it took once it ended, the time since it began while it runs (read once a second), nothing for
 /// a step not begun.
 private struct ProgressTime: View {
-    let row: FlowSteps.Progress.Row
-    let running: Bool
+    let start: Date?
+    let end: Date?
+    let ticking: Bool
 
     var body: some View {
-        if let start = row.startedAt {
-            if row.state == .current, running, row.endedAt == nil {
+        if let start {
+            if ticking, end == nil {
                 TimelineView(.periodic(from: .now, by: 1)) { context in text(StyleWidgetPresentation.elapsed(from: start, to: context.date)) }
-            } else if let end = row.endedAt, end >= start {
+            } else if let end, end >= start {
                 text(StyleWidgetPresentation.elapsed(from: start, to: end))
             }
         }

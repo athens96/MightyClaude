@@ -277,6 +277,7 @@ internal static class Verification
         await Test("flow steps: a Bash call's heartbeat makes no sub-agent block (claude-stream-tool-heartbeat)", FlowStepsVerification.TheRecordedHeartbeatMakesNoBlock);
         await Test("flow steps: a saved heartbeat block is dropped on read, saved steps are bounded", FlowStepsVerification.ASavedHeartbeatBlockIsDroppedAndSavedStepsAreBounded);
         await Test("flow steps: an ACP agent's plan update is its checklist and the request's steps", FlowStepsVerification.AnACPAgentsPlanIsTheRequestsSteps);
+        await Test("flow steps: the progress panel lists the background work the request started", FlowStepsVerification.TheProgressPanelListsTheBackgroundWorkTheRequestStarted);
         await Test("background notice runs: ids, the views' filter and the saved flags", BackgroundNoticeRunsVerification.RunIDsAndTheFilter);
         await Test("background notice runs: the newest request, the followed run, numbers, result cards, 기록 and 파이프라인", BackgroundNoticeRunsVerification.TheRunRulesAndTheViews);
         await Test("background notice runs: the pane keeps the notice run apart with its own lines, and the phone and the strip get theirs", BackgroundNoticeRunsVerification.ThePaneKeepsTheNoticeRunApart);
@@ -454,6 +455,7 @@ internal static class Verification
         await Test("Mobile remote DeviceTrustAndRotation", MobileRemoteVerification.DeviceTrustAndRotation);
         await Test("Mobile remote UploadOwnershipAndClaims", MobileRemoteVerification.UploadOwnershipAndClaims);
         await Test("Mobile remote DesktopRouteContract", MobileRemoteVerification.DesktopRouteContract);
+        await Test("Mobile remote ScreenShareSwitch", MobileRemoteVerification.ScreenShareSwitch);
         await Test("Mobile remote EncryptedRelayRoundTrip", MobileRemoteVerification.EncryptedRelayRoundTrip);
         await Test("Mobile relay shutdown rejects reconnect and rotation", MobileRemoteVerification.DisposedHostCannotRestart);
         await Test("Mobile structure: the phone gets the desktop's shape", MobileStructureVerification.CarriesTheDesktopShape);

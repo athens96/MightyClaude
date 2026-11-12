@@ -126,13 +126,13 @@ export const DelegateLineNode = memo(function DelegateLineNode({ id, x, y, w, h,
 
 /** A step's time in the progress panel: how long it took once it ended, the time since it began while it runs (read once a second), nothing for a
  * step not begun. */
-function ProgressTime({ row, running }: { row: FlowProgressRowCopy; running: boolean }) {
+function ProgressTime({ startedAt, endedAt, ticking }: { startedAt?: number; endedAt?: number; ticking: boolean }) {
   const { t } = useServices();
-  const live = row.state === 'current' && running && row.endedAt === undefined && row.startedAt !== undefined;
+  const live = ticking && endedAt === undefined && startedAt !== undefined;
   const now = useNow(live);
-  if (row.startedAt === undefined) return null;
-  if (live) return <span className="flow-outline-time">{elapsed(t, row.startedAt, now)}</span>;
-  if (row.endedAt !== undefined && row.endedAt >= row.startedAt) return <span className="flow-outline-time">{elapsed(t, row.startedAt, row.endedAt)}</span>;
+  if (startedAt === undefined) return null;
+  if (live) return <span className="flow-outline-time">{elapsed(t, startedAt, now)}</span>;
+  if (endedAt !== undefined && endedAt >= startedAt) return <span className="flow-outline-time">{elapsed(t, startedAt, endedAt)}</span>;
   return null;
 }
 
@@ -145,8 +145,9 @@ const progressFolded = new Set<string>();
 /**
  * The role view's progress panel (macOS MightyGraphProgressPanel, Core FlowSteps.Progress), over the diagram's top-left corner where it stays while
  * the diagram scrolls under it: the request in view ("요청 27" and its first line) with its state, then its plan — every step with its mark (done, the
- * one in progress with its time running, not begun) and the time each took. The request line leads to the request; a step that began leads to its
- * card. Folded, it keeps its header and the request line. A press or a wheel in it never pans the diagram.
+ * one in progress with its time running, not begun) and the time each took, then the background work it started (commands and sub-agents, running
+ * ones first, with their time). The request line leads to the request; a step that began leads to its card. Folded, it keeps its header and the
+ * request line. A press or a wheel in it never pans the diagram.
  */
 export function ProgressPanel({ paneId, progress, onReveal }: { paneId: string; progress: FlowProgressCopy; onReveal: (nodeId: string) => void }) {
   const { t } = useServices();
@@ -157,6 +158,8 @@ export function ProgressPanel({ paneId, progress, onReveal }: { paneId: string; 
     setCollapsed(next);
   };
   const label = t(collapsed ? 'graph.steps.expand' : 'graph.steps.collapse');
+  const background = progress.background ?? [];
+  const backgroundHidden = progress.backgroundHidden ?? 0;
   return (
     <section className="mighty-progress" data-testid="mighty-progress" data-collapsed={collapsed ? '' : undefined} aria-label={progress.title + ' ' + progress.heading}
       onPointerDown={(event) => event.stopPropagation()}>
@@ -184,10 +187,30 @@ export function ProgressPanel({ paneId, progress, onReveal }: { paneId: string; 
               <span className={'flow-outline-mark state-' + row.state} aria-hidden="true"><Icon name={progressMark[row.state]} size={12} weight={2} /></span>
               <span className="flow-outline-text">{row.text}</span>
               <span className="flow-head-spacer" />
-              <ProgressTime row={row} running={progress.running} />
+              <ProgressTime startedAt={row.startedAt} endedAt={row.endedAt} ticking={row.state === 'current' && progress.running} />
             </button>
           ))}
           {progress.hidden > 0 && progress.more && <div className="flow-outline-more" data-testid="mighty-progress-more">{progress.more}</div>}
+        </div>
+      )}
+      {!collapsed && background.length > 0 && (
+        <div className="flow-outline-rows mighty-progress-background" data-testid="mighty-progress-background">
+          <div className="mighty-progress-background-head">
+            <span className="mighty-progress-background-title">{t('graph.progress.background')}</span>
+            <span className="mighty-progress-background-count" data-testid="mighty-progress-background-count">
+              {background.filter((item) => item.state === 'current').length + '/' + (background.length + backgroundHidden)}
+            </span>
+          </div>
+          {background.map((item) => (
+            <div key={item.id} className={'flow-outline-row state-' + item.state} title={item.text} data-testid={'mighty-progress-background-' + item.id}>
+              <span className={'flow-outline-mark state-' + item.state} aria-hidden="true"><Icon name={progressMark[item.state]} size={12} weight={2} /></span>
+              <span className="mighty-progress-background-kind" aria-hidden="true"><Icon name={item.agent ? 'square-user-round' : 'terminal'} size={11} weight={1.75} /></span>
+              <span className="flow-outline-text">{item.text}</span>
+              <span className="flow-head-spacer" />
+              <ProgressTime startedAt={item.startedAt} endedAt={item.endedAt} ticking={item.state === 'current'} />
+            </div>
+          ))}
+          {backgroundHidden > 0 && <div className="flow-outline-more" data-testid="mighty-progress-background-more">{t('graph.progress.more', { count: backgroundHidden })}</div>}
         </div>
       )}
     </section>

@@ -72,9 +72,47 @@ public static class FlowSteps
     public enum ProgressState { Done, Current, Pending, Stopped, Failed }
     /// <summary>A step's line in the panel. <c>Index</c>: the step's index among the request's steps (<c>step</c> nodes).</summary>
     public sealed record ProgressRow(int Index, string Id, string Text, ProgressState State, DateTimeOffset? StartedAt, DateTimeOffset? EndedAt);
-    /// <summary>What the progress panel says (Mac FlowSteps.Progress). <c>Count</c>: "3/9", null for a request without a plan.</summary>
+    /// <summary>What the progress panel says (Mac FlowSteps.Progress). <c>Count</c>: "3/9", null for a request without a plan. <c>Background</c>: the
+    /// background work the request started (background commands and background sub-agents), the running ones first, then the newest ended ones,
+    /// <see cref="ProgressBackgroundRows"/> at most; <c>BackgroundHidden</c>: the background work the lines leave out.</summary>
     public sealed record Progress(string Title, string Heading, string Request, string StateWord, string Status, string? Count,
-        IReadOnlyList<ProgressRow> Rows, int Hidden, bool Running);
+        IReadOnlyList<ProgressRow> Rows, int Hidden, bool Running, IReadOnlyList<ProgressBackground>? Background = null, int BackgroundHidden = 0)
+    {
+        public IReadOnlyList<ProgressBackground> Background { get; init; } = Background ?? [];
+    }
+    /// <summary>One piece of background work in the progress panel (Mac FlowSteps.Background). <c>Id</c>: the block's id. <c>Text</c>: its card's
+    /// title (the command's description, the sub-agent's task). <c>Agent</c>: a background sub-agent, else a background command. <c>State</c>:
+    /// <see cref="ProgressState.Current"/> while it runs; done, failed or stopped once it ended.</summary>
+    public sealed record ProgressBackground(string Id, string Text, bool Agent, ProgressState State, DateTimeOffset? StartedAt, DateTimeOffset? EndedAt);
+    /// <summary>The panel's background lines at most.</summary>
+    public const int ProgressBackgroundRows = 4;
+
+    /// <summary>The background work request <paramref name="run"/> started, as the progress panel lists it (<see cref="Progress.Background"/>): the run's
+    /// flow blocks (<see cref="MightyGraphRun.FlowAgents"/>: its agents and the background ones <c>Shown</c> took out) started in the background, never
+    /// a copy in a notice run, that are a command or a background sub-agent. Running first in launch order, then the ended ones, newest end first;
+    /// at most <see cref="ProgressBackgroundRows"/>, the rest counted (Mac FlowSteps.background(of:)).</summary>
+    public static (IReadOnlyList<ProgressBackground> Rows, int Hidden) BackgroundOf(MightyGraphRun run)
+    {
+        var rows = run.FlowAgents.Where(a => a.Background == true && a.SourceBlockId is null && (a.IsTask || a.IsBackgroundAgent)).Select(agent =>
+        {
+            var state = MobileMightySupport.Status(agent.Status) switch
+            {
+                "completed" => ProgressState.Done,
+                "error" => ProgressState.Failed,
+                "stopped" => ProgressState.Stopped,
+                _ => MightyGraphLayout.Terminal(agent.Status) ? ProgressState.Stopped : ProgressState.Current,
+            };
+            return new ProgressBackground(agent.Id, MightyGraphSupport.BlockTitle(agent), agent.IsBackgroundAgent, state, agent.Figures?.Started, agent.Figures?.Ended);
+        }).ToList();
+        var ordered = rows.Select((row, offset) => (row, offset))
+            .OrderBy(p => p.row.State == ProgressState.Current ? 0 : 1)
+            .ThenBy(p => p.row.State == ProgressState.Current ? p.offset : 0)
+            .ThenByDescending(p => p.row.State == ProgressState.Current ? DateTimeOffset.MinValue : p.row.EndedAt ?? DateTimeOffset.MinValue)
+            .ThenByDescending(p => p.row.State == ProgressState.Current ? 0 : p.offset)
+            .Select(p => p.row).ToList();
+        var shown = ordered.Take(ProgressBackgroundRows).ToList();
+        return (shown, ordered.Count - shown.Count);
+    }
 
     /// <summary>The progress of request <c>runs[index]</c> (a request, never a notice run), headed <paramref name="heading"/> ("요청 27"): its request in
     /// brief, its state, and every step of its plan with its state, the one in progress kept in view when there are more than the panel holds. A
@@ -112,10 +150,11 @@ public static class FlowSteps
         var shown = rows.Skip(start).Take(room).ToList();
         var done = rows.Count(r => r.State == ProgressState.Done);
         var status = running ? "running" : MobileMightySupport.Status(request.Status);
+        var background = BackgroundOf(request);
         return new(Locale.Get("graph.progress.title"), heading, FlowCard.Line(FlowCard.FirstLine(request.Input)) ?? "",
             awaiting ? BackgroundNoticeRuns.StateWord : FlowCard.StateWord(status), awaiting ? "waiting" : status,
             rows.Count == 0 ? null : Locale.Get("graph.steps.count", new Dictionary<string, string> { ["done"] = done.ToString(CultureInfo.InvariantCulture), ["total"] = rows.Count.ToString(CultureInfo.InvariantCulture) }),
-            shown, rows.Count - shown.Count, running);
+            shown, rows.Count - shown.Count, running, background.Rows, background.Hidden);
     }
 
     /// <summary>The step a block launched from the main session belongs to, as its card says it ("2. 노트 작성"): the step whose span its launch time

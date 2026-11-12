@@ -306,7 +306,8 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// The role view's progress panel on the Mighty fixture (its newest request is smoke-run-4): a three-step plan on that run draws
-    /// 1/3 and a done, a current and a pending row; without a plan the panel has no rows and no count. The 진행 단계 panel is the other panes' and never stands in a Claude pane's role view.
+    /// 1/3 and a done, a current and a pending row, and the background command the request started under them; without a plan (or background work)
+    /// the panel has no rows, no count and no background section. The 진행 단계 panel is the other panes' and never stands in a Claude pane's role view.
     /// </summary>
     private async Task<bool> RunWebStepsSmoke(Microsoft.Web.WebView2.Core.CoreWebView2 core, string paneId, Dictionary<string, object?> result)
     {
@@ -320,9 +321,17 @@ public sealed partial class MainWindow
         string At(int seconds) => start.AddSeconds(seconds).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
         List<FlowStep> Plan() => [new("text:Implement", "Implement the app", null, "completed", At(0), At(10)),
             new("text:Build", "Build the app", "Building the app", "in_progress", At(10)), new("text:Deploy", "Deploy the app")];
+        // With the plan, a background command the request started: the panel lists it under the steps (FlowSteps.BackgroundOf).
+        const string BackgroundId = "smoke-background";
+        MightyGraphAgent Background() => new() { Id = BackgroundId, Title = "Watch the deploy", Input = "gh run watch", Status = "running", Kind = "task", Background = true, Figures = new GraphAgentFigures(At(12)) };
         Task Steps(string runId) => service.UpdateAsync(state => state with { Sessions = state.Sessions.Select(s => s.Id != paneId ? s : s with
         {
-            GraphRuns = s.GraphRuns?.Select(g => { var copy = g.Copy(); copy.Steps = g.Id == runId ? Plan() : null; return copy; }).ToList(),
+            GraphRuns = s.GraphRuns?.Select(g =>
+            {
+                var copy = g.Copy(); copy.Steps = g.Id == runId ? Plan() : null;
+                copy.Agents = [.. copy.Agents.Where(a => a.Id != BackgroundId), .. g.Id == runId ? [Background()] : Array.Empty<MightyGraphAgent>()];
+                return copy;
+            }).ToList(),
         }).ToList() });
         const string Panel = "document.querySelector('[data-testid=mighty-progress]')";
         const string Rows = "document.querySelectorAll('[data-testid=mighty-progress] [data-testid^=mighty-progress-row-]')";
@@ -331,12 +340,13 @@ public sealed partial class MainWindow
         var read = JsonDocument.Parse(JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync("JSON.stringify({ count: document.querySelector('[data-testid=mighty-progress-count]')?.textContent ?? null, "
             + "rows: Number(" + Rows + ".length), states: [..." + Rows + "].map(e => [...e.classList].find(c => c.startsWith('state-'))?.slice(6) ?? '').join(','), "
             + "oldPanel: !!document.querySelector('[data-testid=mighty-diagram] [data-testid=mighty-steps]') })")) ?? "{}").RootElement.Clone();
-        var right = drawn && read.Text("count") == "1/3" && read.Text("states") == "done,current,pending"
+        var background = await Wait("!!document.querySelector('[data-testid=mighty-progress] [data-testid=mighty-progress-background-" + BackgroundId + "]') && document.querySelector('[data-testid=mighty-progress-background-count]')?.textContent === '1/1'");
+        var right = drawn && background && read.Text("count") == "1/3" && read.Text("states") == "done,current,pending"
             && read.TryGetProperty("rows", out var rows) && rows.GetInt32() == 3 && read.TryGetProperty("oldPanel", out var old) && !old.GetBoolean();
         // Without a plan the panel still names the request, with no rows and no count.
         await Steps("");
-        var hidden = await Wait("!!" + Panel + " && " + Rows + ".length === 0 && !document.querySelector('[data-testid=mighty-progress-count]')");
-        result["mightySteps"] = new { drawn, read, right, hiddenForAnOlderRun = hidden };
+        var hidden = await Wait("!!" + Panel + " && " + Rows + ".length === 0 && !document.querySelector('[data-testid=mighty-progress-count]') && !document.querySelector('[data-testid=mighty-progress-background]')");
+        result["mightySteps"] = new { drawn, background, read, right, hiddenForAnOlderRun = hidden };
         return right && hidden;
     }
 

@@ -20,6 +20,44 @@ internal static class FlowStepsVerification
         new(id, "system", summary, Stamp(at), "claude", new AgentActivity(id, "claude", "command", "completed", summary, "Bash"));
     private static void Korean(Action action) => FlowTrackerVerification.InLanguage("ko", action);
 
+    /// <summary>The progress panel lists the background work the request started (macOS FlowStepsTests theProgressPanelListsTheBackgroundWorkTheRequestStarted).</summary>
+    internal static Task TheProgressPanelListsTheBackgroundWorkTheRequestStarted()
+    {
+        MightyGraphAgent Block(string id, string title, string status, string? kind = null, bool? background = null, double? started = null, double? ended = null, string? source = null) =>
+            new() { Id = id, Title = title, Status = status, Kind = kind, Background = background, SourceBlockId = source,
+                Figures = started is null ? null : new GraphAgentFigures(Stamp(started.Value), ended is null ? null : Stamp(ended.Value)) };
+        List<MightyGraphAgent> Blocks() =>
+        [
+            Block("fg", "Map the repo", "running", started: 1),
+            Block("build", "Build the app", "completed", "task", true, 2, 9),
+            Block("wait", "Wait for the deploy", "running", "task", true, 3),
+            Block("review", "Review the diff", "error", background: true, started: 4, ended: 12),
+            Block("copy", "Wait for the deploy", "running", "task", true, source: "wait"),
+        ];
+        var run = Request(status: "completed", agents: Blocks());
+        // Running first, then the newest ended; a copy in a notice run and a foreground sub-agent are not background work. The shown run, whose
+        // background blocks moved to its flow blocks, lists the same.
+        foreach (var shown in new[] { run, Request(status: "completed", agents: Blocks()).Shown })
+        {
+            var (rows, hidden) = FlowSteps.BackgroundOf(shown);
+            Check(rows.Select(r => r.Id).SequenceEqual(["wait", "review", "build"]), "running first, then the newest ended: " + string.Join(",", rows.Select(r => r.Id)));
+            Check(rows.Select(r => r.State).SequenceEqual([FlowSteps.ProgressState.Current, FlowSteps.ProgressState.Failed, FlowSteps.ProgressState.Done]), "each one's state");
+            Check(rows.Select(r => r.Agent).SequenceEqual([false, true, false]) && hidden == 0, "a command or a sub-agent, nothing left out");
+            Check(rows[1].StartedAt == At(4) && rows[1].EndedAt == At(12) && rows[0].EndedAt is null, "its times from its figures");
+        }
+        var progress = FlowSteps.ProgressOf(0, [run], "요청 1");
+        Check(progress.Background.Select(b => b.Text).SequenceEqual(["Wait for the deploy", "Review the diff", "Build the app"]) && progress.BackgroundHidden == 0, "the panel carries them");
+        var copy = FlowCopy.ProgressOf([run])[run.Id];
+        Check(copy.Background is { Count: 3 } lines && lines[0] is { Id: "wait", State: "current", Agent: false, EndedAt: null } && lines[1].State == "failed"
+            && lines[1].StartedAt == At(4).ToUnixTimeMilliseconds() && copy.BackgroundHidden == 0, "the page's copy carries them");
+        Check(FlowCopy.ProgressOf([Request(status: "completed")])["r"].Background is null, "a request without background work sends none");
+        // At most four lines; the rest are counted.
+        var many = Request(agents: Enumerable.Range(0, 6).Select(i => Block("t" + i, "task " + i, "running", "task", true)).ToList());
+        var listed = FlowSteps.BackgroundOf(many);
+        Check(listed.Rows.Count == FlowSteps.ProgressBackgroundRows && listed.Hidden == 2 && listed.Rows.Select(r => r.Id).SequenceEqual(["t0", "t1", "t2", "t3"]), "four lines, in launch order, and a count of the rest");
+        return Task.CompletedTask;
+    }
+
     internal static Task EachChangeKeepsTheTimesOfTheStepsItHad()
     {
         var runs = new List<MightyGraphRun> { Request() };

@@ -134,6 +134,10 @@ struct CompanionOverlayView: View {
             } else if let approval = companion.visibleApproval {
                 CompanionApprovalBubble(companion: companion, approval: approval)
             } else if companion.preferences.showsTask, bubble.isVisible, let current = companion.shown {
+                if let progress = companion.shownProgress {
+                    CompanionProgressCard(companion: companion, agentID: current.id, progress: progress)
+                        .padding(.bottom, CompanionProgress.gap - DesignMetrics.Spacing.xxs)
+                }
                 CompanionTaskBubble(companion: companion, current: current)
             } else { Color.clear.frame(height: 86) }
             Button(action: toggleBubble) {
@@ -160,7 +164,8 @@ struct CompanionOverlayView: View {
     }
     private var panelSize: CGSize {
         let size = companion.bubbleSize
-        return CompanionBubbleLayout.panelSize(width: size.width, height: size.height, tall: companion.visibleApproval != nil)
+        let above = companion.shownProgress?.height(collapsed: companion.progressCollapsed) ?? 0
+        return CompanionBubbleLayout.panelSize(width: size.width, height: size.height, tall: companion.visibleApproval != nil, above: above)
     }
     private func toggleBubble() {
         guard !motion.isDragging else { return }
@@ -169,6 +174,117 @@ struct CompanionOverlayView: View {
     }
     private var animationRow: Int {
         (motion.direction ?? CompanionPetAnimationPolicy.task(companion.shown, celebrating: celebrating)).rawValue
+    }
+}
+
+/// The progress of the agent the bubble shows, over the bubble (`CompanionProgress`): its newest request's number, state
+/// and steps done, a few steps around the one in progress, then its background work. The heading folds it (kept between
+/// launches); a line opens the agent.
+struct CompanionProgressCard: View {
+    @ObservedObject var companion: AgentCompanion
+    let agentID: String
+    let progress: CompanionProgress
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button { companion.toggleProgress() } label: {
+                HStack(spacing: DesignMetrics.Spacing.xs) {
+                    Image(systemName: "list.bullet.clipboard").font(.ui(size: 10)).foregroundStyle(Palette.flow(.lead))
+                    Text(verbatim: L("graph.progress.title")).font(.ui(size: 10, weight: .bold))
+                    Text(verbatim: progress.heading).font(.ui(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    if let count = progress.count { Text(verbatim: count).font(.ui(size: 10, weight: .semibold).monospacedDigit()).foregroundStyle(.secondary) }
+                    Spacer(minLength: 0)
+                    MightyStatusMark(status: progress.status, text: progress.stateWord, tone: DesignTone(blockStatus: progress.status), showsActivity: progress.running)
+                    Image(systemName: companion.progressCollapsed ? "chevron.up" : "chevron.down").font(.ui(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                }
+                .frame(height: CompanionProgress.headerHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(L(companion.progressCollapsed ? "graph.steps.expand" : "graph.steps.collapse"))
+            .accessibilityIdentifier("pet-progress-fold")
+            if !companion.progressCollapsed {
+                Button { companion.focus(agentID) } label: { lines }.buttonStyle(.plain).accessibilityIdentifier("pet-progress-lines")
+            }
+        }
+        .padding(.horizontal, DesignMetrics.Spacing.md)
+        .padding(.bottom, companion.progressCollapsed ? 0 : CompanionProgress.padding)
+        .frame(width: companion.bubbleSize.resolvedWidth, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.10)))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("pet-progress")
+    }
+
+    private var lines: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(progress.rows) { row in
+                line(mark: row.state, icon: nil, text: row.text, start: row.startedAt, end: row.endedAt, ticking: row.state == .current && progress.running)
+            }
+            if progress.hidden > 0 { more(progress.hidden) }
+            if !progress.background.isEmpty {
+                HStack(spacing: DesignMetrics.Spacing.xs) {
+                    Text(verbatim: L("graph.progress.background")).font(.ui(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                    Text(verbatim: progress.backgroundCount).font(.ui(size: 9).monospacedDigit()).foregroundStyle(.secondary)
+                }
+                .frame(height: CompanionProgress.sectionHeight, alignment: .bottomLeading)
+                ForEach(progress.background) { item in
+                    line(mark: item.state, icon: item.agent ? "person.crop.circle" : "terminal", text: item.text, start: item.startedAt, end: item.endedAt, ticking: item.state == .current)
+                }
+                if progress.backgroundHidden > 0 { more(progress.backgroundHidden) }
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func line(mark state: FlowSteps.Progress.State, icon: String?, text: String, start: Date?, end: Date?, ticking: Bool) -> some View {
+        HStack(spacing: DesignMetrics.Spacing.xs) {
+            mark(state).frame(width: 12)
+            if let icon { Image(systemName: icon).font(.ui(size: 9)).foregroundStyle(.secondary) }
+            Text(verbatim: text).font(.ui(size: 10.5, weight: state == .current ? .semibold : .regular))
+                .foregroundStyle(state == .pending ? .secondary : .primary).opacity(state == .done ? 0.75 : 1)
+                .lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: 0)
+            CompanionProgressTime(start: start, end: end, ticking: ticking)
+        }
+        .frame(height: CompanionProgress.rowHeight)
+        .help(text)
+    }
+
+    private func more(_ count: Int) -> some View {
+        Text(verbatim: L("graph.progress.more", ["count": "\(count)"])).font(.ui(size: 9)).foregroundStyle(.secondary)
+            .frame(height: CompanionProgress.sectionHeight, alignment: .leading)
+    }
+
+    @ViewBuilder private func mark(_ state: FlowSteps.Progress.State) -> some View {
+        switch state {
+        case .done: Image(systemName: "checkmark.circle.fill").font(.ui(size: 10)).foregroundStyle(Palette.done)
+        case .current: Image(systemName: "circle.inset.filled").font(.ui(size: 10)).foregroundStyle(Palette.run)
+        case .pending: Image(systemName: "circle").font(.ui(size: 10)).foregroundStyle(.secondary)
+        case .stopped: Image(systemName: "stop.circle").font(.ui(size: 10)).foregroundStyle(Palette.stop)
+        case .failed: Image(systemName: "exclamationmark.circle.fill").font(.ui(size: 10)).foregroundStyle(Palette.err)
+        }
+    }
+}
+
+/// A card line's time: how long it took, or the time since it began while it runs (read once a second).
+private struct CompanionProgressTime: View {
+    let start: Date?
+    let end: Date?
+    let ticking: Bool
+
+    var body: some View {
+        if let start {
+            if ticking, end == nil {
+                TimelineView(.periodic(from: .now, by: 1)) { context in text(StyleWidgetPresentation.elapsed(from: start, to: context.date)) }
+            } else if let end, end >= start {
+                text(StyleWidgetPresentation.elapsed(from: start, to: end))
+            }
+        }
+    }
+
+    private func text(_ value: String) -> some View {
+        Text(verbatim: value).font(.ui(size: 9).monospacedDigit()).foregroundStyle(.secondary).lineLimit(1).fixedSize()
     }
 }
 
@@ -531,8 +647,8 @@ final class CompanionPanel {
     enum Side { case left, right, center }
     /// Sizes the window around the bubble. It always grows upward; sideways it
     /// keeps `side` where it is, so a dragged edge follows the pointer.
-    func fit(bubble: CompanionBubbleSize, tall: Bool, keeping side: Side) {
-        let size = CompanionBubbleLayout.panelSize(width: bubble.width, height: bubble.height, tall: tall)
+    func fit(bubble: CompanionBubbleSize, tall: Bool, above: CGFloat = 0, keeping side: Side) {
+        let size = CompanionBubbleLayout.panelSize(width: bubble.width, height: bubble.height, tall: tall, above: above)
         let frame = panel.frame
         guard abs(frame.width - size.width) > 0.5 || abs(frame.height - size.height) > 0.5 else { return }
         let x = switch side {

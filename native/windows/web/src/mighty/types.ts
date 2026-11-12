@@ -114,6 +114,23 @@ export interface FlowProgressCopy {
   /** Where the request line leads, and what it says on hover. */
   requestNodeId: string;
   requestHelp: string;
+  /** The background work the request started (Core FlowSteps.BackgroundOf, macOS FlowSteps.background): running first, at most four; absent for none. */
+  background?: FlowProgressBackgroundCopy[];
+  /** The background work those lines leave out. */
+  backgroundHidden?: number;
+}
+/** A piece of background work in the progress panel (Core FlowCopy.ProgressBackgroundRow, macOS FlowSteps.Background). */
+export interface FlowProgressBackgroundCopy {
+  /** The block's id. */
+  id: string;
+  /** Its card's title: the command's description, the sub-agent's task. */
+  text: string;
+  /** A background sub-agent; else a background command. */
+  agent: boolean;
+  state: Exclude<FlowProgressState, 'pending'>;
+  /** Milliseconds since 1970. */
+  startedAt?: number;
+  endedAt?: number;
 }
 
 export interface FlowBlockCopy {
