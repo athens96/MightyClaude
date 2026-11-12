@@ -366,9 +366,12 @@ public sealed record ProviderInput(List<string> Arguments, byte[] StandardInput)
         }
         if (!arguments.Contains("--input-format")) arguments.AddRange(["--input-format", "stream-json"]);
         // A style's own tools are judged at each request here (StyleRunPermissions.AutoAllows): listed at launch, the CLI
-        // would allow them for the whole run, whatever became of the style meanwhile.
+        // would allow them for the whole run, whatever became of the style meanwhile. The task tools stay named: with stream-json
+        // input Claude Code loads them only when --allowedTools names them, and without them there is no task list, so no steps
+        // and an empty progress panel (FlowSteps; the Mac always names them, ProviderService.swift).
         var allowed = arguments.IndexOf("--allowedTools");
-        if (allowed >= 0 && allowed + 1 < arguments.Count) arguments.RemoveRange(allowed, 2);
+        if (allowed >= 0 && allowed + 1 < arguments.Count) arguments[allowed + 1] = string.Join(",", FlowSteps.TaskTools);
+        else if (allowed < 0) arguments.AddRange(["--allowedTools", string.Join(",", FlowSteps.TaskTools)]);
         return arguments;
     }
 

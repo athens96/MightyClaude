@@ -198,7 +198,7 @@ internal static class StylesVerification
             File.WriteAllBytes(file,bytes);
             var bound=StyleRunPermissions.Bind(new StartRunRequest(pane.Id,pane.WorkspaceId,"claude","test",[]),pane,profile,workspace);
             var listed=ProviderCatalog.Arguments(bound,"/plugin");Check(listed[listed.IndexOf("--allowedTools")+1]==string.Join(",",new[]{AutoAllowTool}.Concat(FlowSteps.TaskTools))&&listed.Count(a=>a=="--allowedTools")==1,"a host without the card launches with the list (and the task tools, in the one list)");
-            var hosted=ProviderInput.Prepare(bound,"/plugin",allowPermissionPrompts:true).Arguments;Check(!hosted.Contains("--allowedTools")&&!hosted.Contains(AutoAllowTool)&&hosted[hosted.IndexOf("--permission-prompts")+1]=="host","a host with the card launches without it");
+            var hosted=ProviderInput.Prepare(bound,"/plugin",allowPermissionPrompts:true).Arguments;Check(hosted.Count(a=>a=="--allowedTools")==1&&hosted[hosted.IndexOf("--allowedTools")+1]==string.Join(",",FlowSteps.TaskTools)&&!hosted.Contains(AutoAllowTool)&&hosted[hosted.IndexOf("--permission-prompts")+1]=="host","a host with the card launches without the style's tools, the task tools still named");
             Check(ProviderInput.Prepare(bound,"/plugin",allowPermissionPrompts:false).Arguments.Contains("--allowedTools"),"prompts off keeps the list");
         }
         finally{Directory.Delete(root,true);}return Task.CompletedTask;
@@ -228,7 +228,7 @@ internal static class StylesVerification
             }
             var allowed=await Run();
             var launched=JsonSerializer.Deserialize<string[]>(await File.ReadAllTextAsync(record+".args"),Wire.Json)!;
-            Check(launched[Array.IndexOf(launched,"--permission-prompts")+1]=="host"&&!launched.Contains("--allowedTools"),"the run asks this host about each tool and lists none at launch");
+            Check(launched[Array.IndexOf(launched,"--permission-prompts")+1]=="host"&&launched[Array.IndexOf(launched,"--allowedTools")+1]==string.Join(",",FlowSteps.TaskTools),"the run asks this host about each tool and lists only the task tools at launch");
             Check(allowed.GetProperty("behavior").GetString()=="allow"&&allowed.GetProperty("toolUseID").GetString()=="tool-style-1"&&allowed.GetProperty("updatedInput").GetProperty("step").GetInt32()==1,"the style's own tool is allowed once, with its input as asked");
             Check(!allowed.TryGetProperty("updatedPermissions",out _),"no rule or settings update is ever returned");
             lock(seen)Check(seen.Count==0,"a request the style allows never reaches the pane: "+string.Join(",",seen.Select(r=>r.State)));

@@ -265,6 +265,8 @@ internal static class ToolPermissionVerification
         Check(hosted[hosted.IndexOf("--permission-prompts") + 1] == "host", "the bar's path asks this host for prompts");
         Check(hosted[hosted.IndexOf("--permission-prompt-tool") + 1] == "stdio", "the prompts arrive over stdio");
         Check(hosted[hosted.IndexOf("--input-format") + 1] == "stream-json", "stdin carries stream-json so replies are possible");
+        // With stream-json input Claude Code loads its task tools only when they are named; without them no task list, so no steps.
+        Check(hosted.Count(a => a == "--allowedTools") == 1 && hosted[hosted.IndexOf("--allowedTools") + 1] == string.Join(",", FlowSteps.TaskTools), "the bar's path still names the task tools, so the progress panel gets its steps");
 
         var codex = ProviderInput.Prepare(Claude("codex-run") with { Provider = "codex" }, "/fixture-plugin", allowPermissionPrompts: true).Arguments;
         Check(!codex.Contains("--permission-prompt-tool"), "only Claude speaks this protocol");
