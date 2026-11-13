@@ -48,8 +48,8 @@ native/tauri/
 |---|---|---|
 | W0 골격 *(완료 2026-11-13)* | Tauri 앱 + 페이지 연결 + 상태 읽기(쓰기 없음) + 미구현 함수 목록 + smoke | 실제 상태로 작업 공간·창 목록이 보임 |
 | W1 상태·플랫폼 *(완료 2026-11-14)* | 상태 저장(원자적 저장, .bak, 디바운스), 정규화, 이름 바꾸기 이전, 프로세스 계층(Job Object, PATHEXT, .cmd), 로케일·토큰, 델타 엔진, 셸 모델 전부 | 상태가 C#과 바이트 단위로 같게 저장; 셸·델타 비교 도구 통과 |
-| W2 Claude 요청 | 실행 엔진(Claude), 스트림 파서, 권한·질문·계획 카드, 체크리스트·백그라운드, 첨부, 작성창·대기열·슬래시 명령 | claude-stream-*, claude-plan-mode, pending, queue-run-now 통과; 실제 Claude 요청이 처음부터 끝까지 됨 |
-| W3 마이티 흐름 | 그래프 추적기, 흐름·타임라인·구조·역할 보기, 진행 패널, 알림 대기 | graph-vectors, flow-vectors, agent-notices 통과 |
+| W2 Claude 요청 *(구현 2026-11-14, 리뷰 대기)* | 실행 엔진(Claude), 스트림 파서, 권한·질문·계획 카드, 체크리스트·백그라운드, 첨부, 작성창·대기열·슬래시 명령 | claude-stream-*, claude-plan-mode, pending, queue-run-now 통과; 실제 Claude 요청이 처음부터 끝까지 됨 |
+| W3 마이티 흐름 *(구현 2026-11-14, 리뷰 대기)* | 그래프 추적기, 흐름·타임라인·구조·역할 보기, 진행 패널, 알림 대기 | graph-vectors, flow-vectors, agent-notices 통과 |
 | W4 창 종류 | 터미널(ConPTY + xterm), 파일 창·미리보기·변경점, 브라우저 창(자식 웹뷰), HTML 프레임, 작업 지도, 세션 기록·이어하기 | file-diff, work-map 통과; 해당 smoke 통과 |
 | W5 다른 에이전트 | Codex(exec + 승인 채널), Antigravity(설정 바이트 단위 편집), pi, opencode, Hermes, 모델 목록·단계별 모델 | 각 fixture와 acp-graphs 통과 |
 | W6 설정·관리 | 설정 화면 16개 섹션과 대화 상자 14개(NativeNode), 플러그인, CLI 계정·업데이트, 설정 도구, 사용량, 상태 줄, 알림 | setup-catalog, toolkit-hash 통과; 설정 smoke 통과 |
@@ -81,3 +81,6 @@ native/tauri/
 |---|---|---|---|
 | W0 골격 | 4df8f04c | — | Windows 통과 |
 | W1 상태·플랫폼 | 79d0c26a, 00fd9e4c, d3115cdd | W1-C 리뷰 7건 수정 | 43450108376 Windows·Mac 통과 |
+| W2 Claude 요청 (W2-A 실행 엔진, W2-B 작성창) | 2f6aafa2(W2-B 병합), 8677d8a9(W2-A 병합) | 리뷰 대기 | — |
+| W3 마이티 흐름 | 1740632b(병합) | 리뷰 대기 | — |
+| W2·W3 호스트 연결 (실행 서비스·작성창·카드·마이티 push와 메서드, 미뤄 둔 검사, smoke 실행 단계, 실제 Claude 요청 1회) | 2b99e71a 이후 이 브랜치의 연결 커밋들 | 리뷰 대기 | — |

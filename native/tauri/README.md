@@ -16,9 +16,10 @@ does, but **only when started with `--allow-state-write`**; without it every cha
 | `tools/parity` | The C# side of the parity checks (`Parity.csproj`, a .NET 10 console over `MightyCode.Core` with `WebDelta.cs` compiled in; `Composer.cs` answers mighty-composer's vectors), `run.ps1` (the corpus and the vectors compared byte for byte), `real-write.ps1` (the app's save of a real profile's copy against C#'s), and `run-replay` (C#'s `DesktopService` running a recorded Claude run through mighty-run's fake CLI, the expectation of `crates/mighty-run/tests/service.rs`). |
 | `crates/mighty-platform` | No OS code. The ports (traits) between the shared logic and the OS, each with its contract, a fake of each (`fake.rs`) and `Unsupported` (`unsupported.rs`), and `PlatformProfile`, the deliberate Windows/Mac differences as named values (docs/tauri-architecture.md §2.1). |
 | `crates/mighty-platform-windows` | The Windows ports, everything behind `cfg(windows)`: `Paths`, `RegistryPrefs` (HKCU `Software\MightyCode`, reads), `DpapiVault` (C# `DpapiRemoteKeyVault`'s files, read and written both ways), `WebviewSurfaces` (browser panes as WebView2 child webviews), and the process layer (W1-C): `WindowsProcessHost` (C# `ChildProcess`: suspended start, kill-on-close job, hidden UTF-8 console), `command` (C# `WindowsCommand`: PATH × PATHEXT, `.cmd` through `cmd.exe /d /s /c`), `CliRunner`, `discovery`, `WindowsShellEnvironment` (C# `CliEnvironment` + the PowerShell profile capture), `user_environment`, `WindowsPtyHost` (C# `PseudoTerminal`, ConPTY) and `shell_activity`. Its tests run real processes against a stand-in child (`tests/fake/child.rs`, a `[[bin]]`) and compare with C# itself (`tests/parity`, a tiny .NET program over MightyCode.Core). The rest is `Unsupported` for now. |
-| `crates/mighty-run` | No Tauri, no OS code: the run engine (W2-A). `manager.rs` (C# `RunManager`: a pane's CLI started through `ProcessHost`, its frames read, its stdin kept for steers and answers), `providers.rs` (C# `ProviderCatalog`: every provider's arguments, Claude's and Codex's model reads, the runtime and discovery), `permissions.rs` and `presentation.rs` (C# `ToolPermissions`: `ProviderInput`, `ClaudePermissionChannel`, the card's copy), `parser.rs` and `stream.rs` (C# `OutputParser` for Claude and Codex, `ClaudeStream`), `plan_mode.rs` (C# `ClaudePlanMode`, the checklist and background-task trackers), `mods.rs` (C# `ModBridge` + `HttpHost` over hyper), `service.rs` (the run half of C# `DesktopService`, its events through a channel), `graph.rs` (`GraphFactory`/`GraphSink`, where mighty-graph's tracker plugs in), and the smaller C# classes each in its own file. Its tests port the C# checks under their names and run a stand-in CLI (`tests/fake/cli.rs`, a `[[bin]]` that replays recordings) through the Windows `ProcessHost`; `tests/service.rs` compares a replayed run's pane with C#'s. |
+| `crates/mighty-run` | No Tauri, no OS code: the run engine (W2-A). `manager.rs` (C# `RunManager`: a pane's CLI started through `ProcessHost`, its frames read, its stdin kept for steers and answers), `providers.rs` (C# `ProviderCatalog`: every provider's arguments, Claude's and Codex's model reads, the runtime and discovery), `permissions.rs` and `presentation.rs` (C# `ToolPermissions`: `ProviderInput`, `ClaudePermissionChannel`, the card's copy), `parser.rs` and `stream.rs` (C# `OutputParser` for Claude and Codex, `ClaudeStream`), `plan_mode.rs` (C# `ClaudePlanMode`, the checklist and background-task trackers), `mods.rs` (C# `ModBridge` + `HttpHost` over hyper), `service.rs` (the run half of C# `DesktopService`, its events through a channel, with `UpdateDraft` and the window's `ClearToolPermissions`), `graph.rs` (`GraphFactory`/`GraphSink`, where mighty-graph's tracker plugs in), and the smaller C# classes each in its own file. Its tests port the C# checks under their names and run a stand-in CLI (`tests/fake/cli.rs`, a `[[bin]]` that replays recordings) through the Windows `ProcessHost`; `tests/service.rs` compares a replayed run's pane with C#'s. |
+| `crates/mighty-graph` | No Tauri, no OS code: the execution graph (W3). `tracker/` (C# `ExecutionGraphTracker`: a run's stream as graph blocks and graph runs, notice runs, Codex and Antigravity sessions), `run.rs` (the tracker as mighty-run's `GraphFactory`/`GraphSink`, `TrackerFactory`; mighty-graph reads mighty-run, never the other way round), the rules every Mighty view reads (`support`, `notice`), the views' models (`layout`, `camera`, `flow/` role view, `timeline`, `structure/`, `view_model`) and the host's `mighty` push (`view.rs`: `MightyPane`, `Sources`, `project`, `MightySent`, `MightyPushes`). Its tests port the graph suites under their names and read the shared fixtures; the checks that need the run engine replay recordings through mighty-run's stream parser (`tests/view_support` `replay`); what is still left is `DEFERRED.md`. |
 | `crates/mighty-platform-macos` | The Mac ports in Rust, everything behind `cfg(target_os = "macos")`: `Paths`; the surfaces say terminal and browser are native (Ghostty, CEF/WKWebView) but open nothing yet. |
-| `src-tauri` | The app. `main.rs` (window, startup), `host.rs` (the bridge, the state's changes and saves), `delta.rs` (C# `WebBridge.Flush` and `WebDelta`), `methods.rs` (the page methods), `platform.rs` (the one place the OS crate is chosen), `surface.rs` (`SurfaceManager`, the NativeSlot protocol), `smoke.rs` (`--smoke-test`), `args.rs`, `logfile.rs`. |
+| `src-tauri` | The app. `main.rs` (window, startup), `host.rs` (the bridge, the state's changes and saves, the run service's events), `delta.rs` (C# `WebBridge.Flush` and `WebDelta`), `methods.rs` (the page methods), `runs.rs` (the run engine: one `RunService` with mighty-graph's tracker and the picture cache, the CLIs' runtime), `panes.rs` (the never-shown pane views: composer and cards models and pushes), `composer.rs`, `cards.rs`, `mighty.rs` (their page methods; `mighty.rs` also the `mighty` push), `platform.rs` (the one place the OS crate is chosen), `surface.rs` (`SurfaceManager`, the NativeSlot protocol), `smoke.rs` and `smoke_runs.rs` (`--smoke-test`), `args.rs`, `logfile.rs`. |
 | `scripts/env.ps1` | Loads the MSVC environment and `~/.cargo/bin` into the PowerShell session (dot-source it before any cargo or tauri command). |
 | `scripts/smoke.ps1` | Seeds a demo profile and runs the smoke; `-Profile <folder>` runs it read-only against an existing profile. |
 | `scripts/screenshot.mjs` | A picture of the running page over WebView2's DevTools protocol. |
@@ -53,6 +54,8 @@ The VS 2022 Build Tools on the development PC are not registered with vswhere, s
 | `--log-dir <folder>` | The host's logs (default `<profile>\tauri-logs`). |
 | `--remote-debugging-port <n>` | Opens WebView2's DevTools protocol (`scripts/screenshot.mjs`). |
 | `--allow-state-write` | Lets the host write the profile's state as C# does: every change saved, the damaged-file recovery, the legacy copy. Off by default. |
+| `--smoke-fake-cli <exe>` | The smoke's run steps against mighty-run's stand-in CLI (`mighty-fake-cli --replay-cli claude-stream-subagents`); every other provider reads as missing. Needs `--smoke-test`. |
+| `--smoke-real-claude` | The smoke sends one real request with the installed `claude` CLI instead (below). Needs `--smoke-test`. |
 
 ## The bridge
 
@@ -88,6 +91,63 @@ change is C#'s `UpdateAsync`: normalized, then queued for saving.
 
 The NativeSlot protocol (`surface.rs`, registered from `methods.rs` with one line): `surfaceBounds`, `surfaceAction`, and the
 browser pane's `browserOpen`, `browserNavigate` (C# `BrowserAddress.Resolve`), `browserBack`, `browserForward`, `browserReload`.
+
+The composer (`composer.rs`, C# MainWindow.WebShell.Composer.cs over the never-shown `PaneView`): `composerState`, `updateDraft`
+(`DesktopService.UpdateDraft`: the pane alone, saved on the schedule), `send` (`PaneView.Submit`: a busy pane queues the draft, an idle
+one takes the draft and its attachments and starts the request through the run service, a start that did not happen puts them back;
+answered with `SubmitReceipt.SendAnswer`: outcome, user entry, graph run, the page's client id, the composer state), `stop`
+(`StopActiveRun`: the queue cancelled unless the turn only waits on background work), `queueRemove`, `queueRunNow` (바로 실행: `Here`
+starts the row now, `Steer` hands it to the running turn), `queueRunNowMenu`, `installCli`, `pickAttachments` (the OS's picker through
+Tauri's dialog plugin), `addAttachments`, `removeAttachment`, `dismissAttachmentError`, `attachmentPreview`, `slashCommands` (the built-ins
+and the scanned catalogue), `slashAction` (new conversation, help, model, permission), `composerMenu`, `composerMenuChoose` (the row the
+page showed: provider, model, effort, permission, Fast, models read again, new conversation), `runSettings`, `applyRunSettings`,
+`toggleFast`, `composerToggle` (status line), `newConversation`, `setAskTarget`, `dismissAskNotice`.
+
+The cards (`cards.rs`, C# MainWindow.WebShell.Cards.cs): `cards`, `permissionAnswer` (Allow once / Deny for the request the card shows),
+`questionnaireAnswer` (`QuestionnaireAnswers`, `ValidateAnswers`; the refusal's words back), `planAnswer` (`AnswerPlanCard`: one answer
+at a time, a revise Core would refuse never leaves the card), `nextActionFill`, `backgroundWork`, `statusLineTrust`.
+
+The Mighty views (`mighty.rs`, C# MainWindow.WebShell.Mighty.cs): `mightyVisible`, `mightySetPresentation`, `mightySaveSize`,
+`mightyExpand`, `mightyResultFiles`, `mightyLoadOlder`, `mightyImages` (a step's tiles as data URLs), `mightyTimelineFlip`,
+`mightyLogCollapsed`, `mightyOpenDashboard`. And `imageData` (a log picture from the cache by its hash; an SVG goes as it is, where C#
+draws it to PNG first) and `openUrl` (http, https, mailto through `ShellExecuteW`, as C#'s `UseShellExecute`).
+
+### The run engine in the app
+
+One `RunService` (mighty-run) owns the state once the host has started it (`runs.rs`): `View::update` goes through
+`RunService::update` (normalized under the service's lock, then saved), and each `ServiceEvent` takes the page's copy from the service
+again. Its runner makes each request's graph with mighty-graph's tracker (`TrackerFactory`: the graph run published every second and at
+the end, with the notice runs) and keeps tool pictures in the picture cache (the profile's `image-cache` with `--allow-state-write`, else
+`%LOCALAPPDATA%\dev.mightycode.tauri\image-cache\<profile>`). Claude runs load the mighty-bridge plugin (`claude-mods` beside the exe, else
+the repository's `mods/mighty-bridge`). The CLIs are read once at start (`ProviderCatalog::get_runtime`) and a pane's provider again when
+its models are asked for; until then the composer says it is checking the runtime.
+
+Pushes, with C#'s rules and cadence: `event` (each run event; a log line and a graph run without their record, which the next delta
+carries), `permission` (each tool-permission change; a pane's waiting requests end with its run, as the window's
+`ClearToolPermissions`), `composer` and `cards` (`panes.rs`: a pane whose record changed or that a method or a request marked, looked at
+every 30 ms and sent when its JSON changed; the cards again each second while an open background strip has a task running), `mighty`
+(every 120 ms for the panes the page shows, a pane projected when its record changed or a method marked it and every one each eighth
+tick; only the blocks whose copy changed).
+
+### Pending inputs
+
+What a later stage gives the composer, the cards and the Mighty views stays at its resting value (mighty-composer `composer::PENDING`,
+`cards::PENDING`, mighty-graph `view::Sources`):
+
+| Input | Until then | Stage |
+|---|---|---|
+| `BackgroundUpdateHolds`, `ManualMutationBlockReason`, `ManualUpdateReason` | nothing holds a pane | W6 |
+| `SetupItemForMissingCli` (the blocked row's install button), `installCli` | no install offered; `installCli` does nothing | W6 |
+| `SecondSend`, `WorktreeMenuOnly`, `HeldItems`, `Delegation.EndingRuns`, `queueRunNowMenu` | Ctrl+Enter queues as Enter; no held rows; the menu is empty | W7 |
+| `RemoteWorkspaceFeatures.BlockedReason`, a remote pane's runs (`RemoteRunner`) | none | W8 |
+| The style row, the guide panel, a guided question, a style's prompt and plan mode (`activeStyle`) | no style; typed text goes to the agent as typed | W9 |
+| A typed built-in (`SubmitTypedBuiltin`), the slash palette's usage, settings, plugins and rename actions | sent as text; those actions do nothing | W6, W4 |
+| The "send to" targets (`AskTargetsFor`: the installed CLIs and the ask skill) | none offered; `setAskTarget` takes only null | W5 |
+| The model list's notice (`ModelListNotices.Notice`), the custom model dialog, the plugin window | none | W5, W6 |
+| Background strip rows (`PlanCardSupport.BackgroundStripRows`) | the strip's line without rows | W8 |
+| The Antigravity card, a terminal prompt, web-open prompts, the sign-in card, the status line | none | W5, W4, W6 |
+| The session record's older requests and history words (`mightyLoadOlder`), the Ouroboros dashboard, background output tails, custom agents' definitions | empty; `mightyLoadOlder` and `mightyOpenDashboard` only mark the view | W4, W9 |
+| `sessionInfo`, `guidedAction` | unimplemented | W6, W9 |
 
 ## Platform ports and native surfaces
 
@@ -196,7 +256,19 @@ own (in memory) and makes it active; a second probe types the address of a fixtu
 the pane's address field, waits until the native view shows it, checks the view's bounds read back from Windows (the WebView2
 host window in the main window's client coordinates) against the slot in device pixels (±1 px), has the host push a page dialog
 and checks the view hides, closes it and checks the view shows again (`checks.browserSurface`, details under `browser`).
-It writes `smoke-result.json` (`passed`, `checks`, `probe`, `browser`, the calls it saw, the unimplemented methods) and quits with
+The run steps follow (`smoke_runs.rs`, the C# smoke's `RunWebComposerSmoke`, `RunWebCardsSmoke`, `RunWebMightySmoke` and
+`RunWebStepsSmoke` over a real child). With `--smoke-fake-cli` (what `smoke.ps1` passes unless `-NoRuns`): the host adds a Claude pane
+in a workspace of its own (a temporary folder, in memory) shown in the Mighty diagram; the probe types a request into the composer and
+presses Enter (`checks.composerSend`: the draft reached the state, the send started); the stand-in asks one Bash permission, allowed from
+the page's card (`permissionCard`), and one plan, approved from the page's plan card (`planCard`: both answers reached the CLI); it then
+replays claude-stream-subagents and the diagram draws the request, the sub-agents and the result with the recording's answer
+(`mightyDiagram`); a second request is sent, and while its permission waits the progress panel draws a three-step plan on it (1/3: done,
+current, pending) and none without it (`progressSteps`); the request is stopped from the composer (`stopRun`: the run ends stopped and its
+card goes). With `--smoke-real-claude` (`smoke.ps1 -RealClaude`) the probe sends "Reply with exactly the word: ok" to the installed
+`claude` CLI instead (the pane's default permission mode, writes off) and checks the run completed, the result block shows "ok" and the
+CLI reported its usage (`real*`).
+
+It writes `smoke-result.json` (`passed`, `checks`, `probe`, `browser`, `runs`, the calls it saw, the unimplemented methods) and quits with
 0 when it passed, else 1 (Tauri's event loop would end with 0 either way; `main.rs` keeps the code). The demo
 profile is made by `cargo run -p mighty-core --example seed_demo -- <folder> [ko|en|zh|ja]` from
 `native/contracts/fixtures/demo-profile.json`, as the C# help capture seeds it (without playing the runs). With `-Profile`, the
