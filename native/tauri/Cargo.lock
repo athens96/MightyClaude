@@ -1696,6 +1696,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mighty-graph"
+version = "0.1.0"
+dependencies = [
+ "indexmap 2.14.2",
+ "mighty-core",
+ "percent-encoding",
+ "regex",
+ "serde_json",
+ "sha2",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "mighty-platform"
 version = "0.1.0"
 dependencies = [

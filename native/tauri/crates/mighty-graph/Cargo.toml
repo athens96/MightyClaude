@@ -1,0 +1,17 @@
+[package]
+name = "mighty-graph"
+version = "0.1.0"
+description = "Mighty Code's execution graph: the tracker that turns a run's stream into graph blocks, the Mighty views' rules (diagram, role view, timeline, structure) and the host's `mighty` push model. Pure logic: no OS, no Tauri."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mighty-core.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+unicode-segmentation.workspace = true
+sha2.workspace = true
+regex.workspace = true
+percent-encoding.workspace = true

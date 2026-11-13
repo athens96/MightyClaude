@@ -45,6 +45,45 @@ pub struct MightyGraphRun {
     pub configured_advisor: Option<String>,
     pub steps: Option<Vec<FlowStep>>,
     pub steps_carried: Option<Vec<String>>,
+    /// `[JsonIgnore] ShownFanOut`: the background blocks `MightyGraphRun.Shown` took out of `agents`, with the blocks under them, which
+    /// the flow diagram alone still draws. Never read or written.
+    pub shown_fan_out: Option<Vec<MightyGraphAgent>>,
+    /// `[JsonIgnore] ShownFlowOrder`: where each of the flow's agents stood among the run's blocks before `Shown`. Never read or written.
+    pub shown_flow_order: Option<Vec<usize>>,
+    /// `[JsonIgnore] ShownBackgroundWaiting`: `BackgroundWaiting` of the run `Shown` was made from. Never read or written.
+    pub shown_background_waiting: Option<i32>,
+    /// `[JsonIgnore] RequestBackgroundWaiting`: the background work of the whole request (`WithBackgroundWaiting`). Never read or written.
+    pub request_background_waiting: Option<i32>,
+    /// `[JsonIgnore] ShownAwaiting`: `BackgroundNoticeRuns.AwaitingNotice` of the run `Shown` was made from. Never read or written.
+    pub shown_awaiting: Option<Awaiting>,
+}
+
+/// C# `BackgroundNoticeRuns.AwaitedTask(Id, Title, Status)`: one background task or sub-agent of a request awaiting its notices.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwaitedTask {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+}
+
+impl AwaitedTask {
+    /// `Delivered`: the work ended (and told Claude so), whatever its outcome.
+    pub fn delivered(&self) -> bool {
+        terminal(&self.status)
+    }
+}
+
+/// C# `BackgroundNoticeRuns.Awaiting(Tasks)`: a request awaiting the notices of the background work it started.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Awaiting {
+    pub tasks: Vec<AwaitedTask>,
+}
+
+impl Awaiting {
+    /// `Delivered`: how many of its tasks' notices are in.
+    pub fn delivered(&self) -> usize {
+        self.tasks.iter().filter(|t| t.delivered()).count()
+    }
 }
 
 fn text_or(value: Option<&Value>, default: &str) -> R<Option<String>> {
@@ -94,6 +133,11 @@ impl Wire for MightyGraphRun {
                     Some(keys.into_iter().map(|k| k.ok_or_else(|| json::ReadError::crash("a null carried step"))).collect::<R<_>>()?)
                 }
             },
+            shown_fan_out: None,
+            shown_flow_order: None,
+            shown_background_waiting: None,
+            request_background_waiting: None,
+            shown_awaiting: None,
         })
     }
 
@@ -153,6 +197,15 @@ impl MightyGraphRun {
     }
     pub fn result_entries(&self) -> &[LogEntry] {
         self.result_entries.as_deref().unwrap_or(&[])
+    }
+    pub fn input(&self) -> &str {
+        self.input.as_deref().unwrap_or("")
+    }
+    pub fn final_output(&self) -> Option<&str> {
+        self.final_output.as_deref()
+    }
+    pub fn provider(&self) -> Option<&str> {
+        self.provider.as_deref()
     }
     pub fn is_notice(&self) -> bool {
         self.notice_run == Some(true)
@@ -280,6 +333,26 @@ impl MightyGraphAgent {
     }
     pub fn entries(&self) -> &[LogEntry] {
         self.entries.as_deref().unwrap_or(&[])
+    }
+    pub fn title(&self) -> &str {
+        self.title.as_deref().unwrap_or("")
+    }
+    pub fn input(&self) -> &str {
+        self.input.as_deref().unwrap_or("")
+    }
+    pub fn kind(&self) -> Option<&str> {
+        self.kind.as_deref()
+    }
+    pub fn parent_id(&self) -> Option<&str> {
+        self.parent_id.as_deref()
+    }
+    /// `IsTask`.
+    pub fn is_task(&self) -> bool {
+        self.kind.as_deref() == Some("task")
+    }
+    /// `IsBackgroundAgent`: a sub-agent started with `run_in_background`.
+    pub fn is_background_agent(&self) -> bool {
+        self.kind.is_none() && self.background == Some(true)
     }
 }
 
