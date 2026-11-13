@@ -62,9 +62,12 @@ if ($readOnly) {
 }
 if (Test-Path $result) { Get-Content $result -Raw -Encoding utf8 } else { Write-Output 'no smoke-result.json' }
 if (-not $readOnly) {
-    # The seeded profile's WebView2 data (main.rs: <local data>\webview\<the profile path as a folder name>) goes with it.
+    # The seeded profile's WebView2 data (Paths::webview_dir and browser_dir: <local data>\webview|browser\<the profile path as a
+    # folder name>) goes with it.
     $name = $Profile -replace '[^A-Za-z0-9-]', '_'
     if ($name.Length -gt 80) { $name = $name.Substring($name.Length - 80) }
-    Remove-Item -Recurse -Force (Join-Path $env:LOCALAPPDATA "dev.mightycode.tauri\webview\$name") -ErrorAction SilentlyContinue
+    foreach ($kind in 'webview', 'browser') {
+        Remove-Item -Recurse -Force (Join-Path $env:LOCALAPPDATA "dev.mightycode.tauri\$kind\$name") -ErrorAction SilentlyContinue
+    }
 }
 exit $process.ExitCode

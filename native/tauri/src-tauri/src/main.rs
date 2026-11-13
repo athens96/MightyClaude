@@ -9,9 +9,10 @@ mod args;
 mod host;
 mod logfile;
 mod methods;
+mod platform;
 mod smoke;
+mod surface;
 
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use mighty_core::locale::Locale;
@@ -24,27 +25,29 @@ use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use crate::host::{Host, WINDOW};
 use crate::logfile::LogFile;
 use crate::smoke::Smoke;
+use crate::surface::SurfaceManager;
 
-/// Page → host: one message (`{kind:"call", ...}`), queued for the dispatcher; the answer comes back on `host-message`.
+/// Page → host: one message (`{kind:"call", ...}`), queued for the dispatcher; the answer comes back on `host-message`. Only the
+/// page's own webview is heard: a browser pane's child webview never reaches the host.
 #[tauri::command]
-fn host_post(message: Value, inbound: tauri::State<'_, Inbound>) {
-    let _ = inbound.0.send(message);
+fn host_post(message: Value, webview: tauri::Webview, inbound: tauri::State<'_, Inbound>) {
+    if webview.label() == WINDOW {
+        let _ = inbound.0.send(message);
+    }
 }
 
 /// The smoke's probe script hands what it read of the page here (smoke.rs).
 #[tauri::command]
 fn smoke_probe(probe: Value, host: tauri::State<'_, Arc<Host>>) {
     if let Some(smoke) = &host.smoke {
-        smoke.finish(&host, probe);
+        smoke.probed(&host, probe);
     }
 }
 
 struct Inbound(tokio::sync::mpsc::UnboundedSender<Value>);
 
-/// A folder name for a profile path, so each profile gets its own WebView2 data.
-fn folder_name(path: &Path) -> String {
-    let name: String = path.to_string_lossy().chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect();
-    name.chars().rev().take(80).collect::<Vec<_>>().into_iter().rev().collect()
+fn surfaces(app: &tauri::AppHandle) -> Option<Arc<SurfaceManager>> {
+    app.try_state::<Arc<SurfaceManager>>().map(|state| state.inner().clone())
 }
 
 fn source_name(source: &LoadSource) -> String {
@@ -66,12 +69,18 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let Some(data_dir) = options.profile.clone().or_else(store::default_data_dir) else {
-        eprintln!("No data folder (%APPDATA%) is known.");
-        std::process::exit(1);
+    let context = tauri::generate_context!();
+    // The OS's ports (platform.rs). Their paths are the data folder (`--profile` or %APPDATA%\MightyCode) and, for the default
+    // profile only, the folders from before the rename (C# Program.cs).
+    let platform = match platform::platform(options.profile.clone(), &context.config().identifier) {
+        Ok(platform) => platform,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
     };
-    // An explicit profile never reads the app's folders from before the rename (C# Program.cs).
-    let legacy = if options.profile.is_none() { store::legacy_data_dirs() } else { vec![] };
+    let data_dir = platform.paths.data_dir().to_path_buf();
+    let legacy = platform.paths.legacy_data_dirs().to_vec();
     let log = LogFile::new(options.log_dir.clone().unwrap_or_else(|| data_dir.join("tauri-logs")));
     let report = store::load(&data_dir, &legacy);
     let snapshot = normalize::for_page(&report.snapshot);
@@ -107,11 +116,10 @@ fn main() {
     });
     let theme = snapshot.theme().to_string();
     let mut parts = Some((snapshot, banner, log, smoke));
-    let profile = options.profile.clone();
     let debugging_port = options.remote_debugging_port;
 
     let app = tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![host_post, smoke_probe])
+        .invoke_handler(tauri::generate_handler![host_post, smoke_probe, smoke::smoke_surface])
         .setup(move |app| {
             let (snapshot, banner, log, smoke) = parts.take().expect("setup runs once");
             let version = app.package_info().version.to_string();
@@ -123,7 +131,18 @@ fn main() {
             let dispatcher = host.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(message) = calls.recv().await {
+                    let surfaces = surfaces(&dispatcher.app);
+                    // NativeSlot: who draws what reaches the page before `ready` pushes the snapshot (surface.rs).
+                    if message.get("method").and_then(Value::as_str) == Some("ready")
+                        && let Some(surfaces) = &surfaces
+                    {
+                        surfaces.announce();
+                    }
                     dispatcher.clone().dispatch(message).await;
+                    // A pane the call closed takes its native view with it.
+                    if let Some(surfaces) = surfaces {
+                        surfaces.retain(&surface::live_panes(&dispatcher)).await;
+                    }
                 }
             });
             if host.smoke.is_some() {
@@ -131,12 +150,8 @@ fn main() {
             }
 
             // Its own WebView2 data, never the C# app's (<profile>\web-profile): under this identity's local data folder, one
-            // folder per profile.
-            let webview_data: PathBuf = app
-                .path()
-                .app_local_data_dir()?
-                .join("webview")
-                .join(profile.as_deref().map(folder_name).unwrap_or_else(|| "default".into()));
+            // folder per profile (Paths::webview_dir).
+            let webview_data = platform.paths.webview_dir();
             host.log.line(&format!("webview data {}", webview_data.display()));
             let (r, g, b) = if theme == "light" { (0xEC, 0xEE, 0xF3) } else { (0x0B, 0x0F, 0x19) };
             let page = host.clone();
@@ -149,6 +164,10 @@ fn main() {
                 .on_page_load(move |_, payload| {
                     if payload.event() == PageLoadEvent::Started {
                         page.page_started();
+                        // On the UI thread: the views hide from a task, never here (a view may be waiting for this thread).
+                        if let Some(surfaces) = surfaces(&page.app) {
+                            tauri::async_runtime::spawn(async move { surfaces.page_started().await });
+                        }
                     }
                 });
             if let Some(port) = debugging_port {
@@ -157,17 +176,32 @@ fn main() {
                     "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port={port}"
                 ));
             }
-            window.build()?;
+            let window = window.build()?;
+            // The native views over the page (browser panes; the Mac's terminal later), in the OS's implementation.
+            let factory = platform::surfaces(window.as_ref().window());
+            let browser_data = platform.paths.browser_dir();
+            host.log.line(&format!("browser data {}", browser_data.display()));
+            let push = surface::page_push(app.handle().clone());
+            app.manage(Arc::new(SurfaceManager::new(factory, platform.profile.os, browser_data, push)));
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("the Tauri app");
-    app.run(|app, event| {
-        if let RunEvent::Exit = event
-            && let Some(host) = app.try_state::<Arc<Host>>()
-        {
-            host.write_unimplemented();
-            host.log.line("exit");
+    // Tauri's event loop ends with 0 whatever `exit(code)` asked (tauri-runtime-wry's RequestExit sets ControlFlow::Exit): the
+    // code is kept here and given to the process at the end, so a failed `--smoke-exit` run exits 1.
+    let mut exit_code = 0;
+    app.run(move |app, event| match event {
+        RunEvent::ExitRequested { code: Some(code), .. } => exit_code = code,
+        RunEvent::Exit => {
+            if let Some(host) = app.try_state::<Arc<Host>>() {
+                host.write_unimplemented();
+                host.log.line("exit");
+            }
+            if exit_code != 0 {
+                app.cleanup_before_exit();
+                std::process::exit(exit_code);
+            }
         }
+        _ => {}
     });
 }

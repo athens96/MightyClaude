@@ -199,6 +199,7 @@ pub fn registry() -> Registry {
             }
         })
     });
+    crate::surface::register(&mut methods);
     methods
 }
 
