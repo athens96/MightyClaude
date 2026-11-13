@@ -220,6 +220,8 @@ pub struct Host {
     runs: OnceLock<Arc<Runs>>,
     view: Arc<Mutex<View>>,
     saver: Arc<Saver>,
+    /// The profile's store: what it approved is what a save may write (`approve_local`).
+    store: Arc<Mutex<Store>>,
     registry: Registry,
     outbox: Mutex<mpsc::Sender<Outgoing>>,
     unimplemented: Mutex<BTreeSet<String>>,
@@ -310,6 +312,7 @@ impl Host {
             runs: OnceLock::new(),
             view,
             saver,
+            store,
             registry,
             outbox: Mutex::new(outbox),
             unimplemented: Mutex::new(BTreeSet::new()),
@@ -321,6 +324,11 @@ impl Host {
 
     pub fn view(&self) -> MutexGuard<'_, View> {
         lock(&self.view)
+    }
+
+    /// C# `StateStore.ApproveLocal`: a folder the user picked, as a workspace a save may write (the one listed for it, if any).
+    pub fn approve_local(&self, path: &std::path::Path) -> std::io::Result<mighty_core::model::Workspace> {
+        lock(&self.store).approve_local(path)
     }
 
     /// The run service takes the state from here on (runs.rs).

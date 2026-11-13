@@ -68,6 +68,27 @@ mod imp {
         Err("opening addresses is not available on this platform yet".into())
     }
 
+    /// A folder shown in Finder (`NSWorkspace.activateFileViewerSelecting`): not yet on the Mac.
+    pub fn show_in_explorer(_folder: &std::path::Path) -> std::result::Result<(), String> {
+        Err("showing a folder is not available on this platform yet".into())
+    }
+
+    /// The browser engine on the Mac is the system's (WKWebView) or the bundled CEF: always there.
+    pub fn browser_runtime() -> Option<String> {
+        Some("system".into())
+    }
+
+    /// The Mac has no engine to install: these are Windows' WebView2 bootstrapper steps.
+    pub fn download_bootstrapper(_path: &std::path::Path) -> std::result::Result<(), String> {
+        Err("not on this platform".into())
+    }
+    pub fn is_microsoft_signed(_path: &std::path::Path) -> bool {
+        false
+    }
+    pub fn run_installer(_path: &std::path::Path) -> std::result::Result<i32, String> {
+        Err("not on this platform".into())
+    }
+
     /// The user's number format (`NSLocale.current`'s grouping): not yet on the Mac, which keeps a comma every three digits.
     pub fn number_grouping() -> Option<(String, Vec<usize>)> {
         None

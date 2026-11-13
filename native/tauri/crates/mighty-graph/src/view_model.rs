@@ -2,6 +2,8 @@
 //! copy (`MightyGraphBlock`, `MightyGraphBlockModel`, MightyGraphViewModel.cs:225-502): zoom, eligibility, selection and the wheel, the
 //! result files panel, the running indicators, and every block in layout order with its title, state, transcript, capsule and outline.
 
+use std::collections::HashMap;
+
 use mighty_core::graph::{Awaiting, GraphResponseRecord, GraphTokenUsage, MightyGraphRun};
 use mighty_core::locale::Locale;
 use mighty_core::model::{LogEntry, RunSession};
@@ -335,36 +337,65 @@ fn visible(entries: &[LogEntry]) -> Vec<LogEntry> {
     entries.iter().filter(|e| e.kind() != "user").cloned().collect()
 }
 
-/// `Locate`: which run (and for an agent node which agent, for an attachment its record) a layout node belongs to.
-fn locate(node: &Node, runs: &[MightyGraphRun]) -> (Option<usize>, Option<String>) {
-    for (i, run) in runs.iter().enumerate() {
-        let id = |suffix: &str| support::node_id(run, suffix);
-        if node.kind == "request" && node.id == id("request")
-            || node.kind == layout::WORK_KIND && node.id == id(layout::WORK_SUFFIX)
-            || node.kind == "result" && node.id == id("result")
-            || node.kind == "resultFiles" && node.id == id("result-files")
-            || node.kind == "plan" && node.id == id(layout::PLAN_SUFFIX)
-        {
-            return (Some(i), None);
-        }
-        for (kind, suffix) in [
-            ("planRecord", layout::PLAN_RECORD_SUFFIX),
-            (layout::IMAGES_KIND, layout::IMAGES_SUFFIX),
-            (layout::EXECUTION_KIND, layout::EXECUTION_SUFFIX),
-        ] {
-            let prefix = id(suffix);
-            if node.kind == kind && node.id.starts_with(&prefix) {
-                return (Some(i), Some(node.id[prefix.len()..].to_string()));
+/// The node kinds `Locate` finds by their whole id, with the suffix each run's id takes.
+const EXACT: [(&str, &str); 5] = [
+    ("request", "request"),
+    (layout::WORK_KIND, layout::WORK_SUFFIX),
+    ("result", "result"),
+    ("resultFiles", "result-files"),
+    ("plan", layout::PLAN_SUFFIX),
+];
+
+/// The node kinds `Locate` finds by the start of their id, the rest being the record (a plan record, a step, an execution's key).
+const PREFIXED: [(&str, &str); 3] = [
+    ("planRecord", layout::PLAN_RECORD_SUFFIX),
+    (layout::IMAGES_KIND, layout::IMAGES_SUFFIX),
+    (layout::EXECUTION_KIND, layout::EXECUTION_SUFFIX),
+];
+
+/// One node a whole id names: its kind, its run and, for an agent's node, the agent's id.
+type Found<'a> = (&'static str, usize, Option<&'a str>);
+
+/// `Locate` for every node of a layout: each run's node ids made once (C# makes them again for every node, which a pane of many
+/// requests pays for with every push), each id answering the first run in order, as `Locate`'s walk does.
+struct Locator<'a> {
+    /// The nodes each whole id names, in the runs' order.
+    exact: HashMap<String, Vec<Found<'a>>>,
+    /// Each run's prefixes, in [`PREFIXED`]'s order.
+    prefixes: Vec<[String; 3]>,
+}
+
+impl<'a> Locator<'a> {
+    fn new(runs: &'a [MightyGraphRun]) -> Self {
+        let mut exact: HashMap<String, Vec<Found<'a>>> = HashMap::new();
+        let mut prefixes = Vec::with_capacity(runs.len());
+        for (i, run) in runs.iter().enumerate() {
+            for (kind, suffix) in EXACT {
+                exact.entry(support::node_id(run, suffix)).or_default().push((kind, i, None));
             }
+            for agent in run.agents() {
+                exact.entry(support::node_id(run, &format!("agent:{}", agent.id()))).or_default().push(("agent", i, Some(agent.id())));
+            }
+            prefixes.push(PREFIXED.map(|(_, suffix)| support::node_id(run, suffix)));
         }
-        if node.kind != "agent" {
-            continue;
-        }
-        if let Some(agent) = run.agents().iter().find(|a| node.id == id(&format!("agent:{}", a.id()))) {
-            return (Some(i), Some(agent.id().into()));
-        }
+        Locator { exact, prefixes }
     }
-    (None, None)
+
+    /// `Locate`: which run (and for an agent node which agent, for an attachment its record) a layout node belongs to.
+    fn locate(&self, node: &Node) -> (Option<usize>, Option<String>) {
+        if let Some(slot) = PREFIXED.iter().position(|(kind, _)| node.kind == *kind) {
+            return self
+                .prefixes
+                .iter()
+                .enumerate()
+                .find(|(_, prefixes)| node.id.starts_with(&prefixes[slot]))
+                .map_or((None, None), |(i, prefixes)| (Some(i), Some(node.id[prefixes[slot].len()..].to_string())));
+        }
+        self.exact
+            .get(&node.id)
+            .and_then(|found| found.iter().find(|(kind, ..)| node.kind == *kind))
+            .map_or((None, None), |(_, i, agent)| (Some(*i), agent.map(str::to_string)))
+    }
 }
 
 /// `Blocks`: every canvas block, in layout order, for one pane. `splits_execution` says a request block holds its input alone (default:
@@ -380,8 +411,41 @@ pub fn blocks(
     splits_execution: Option<bool>,
     locale: &Locale,
 ) -> Vec<MightyGraphBlock> {
+    make(layout, runs, draft, provider_label, animations_enabled, catalog, splits_execution, true, locale)
+}
+
+/// [`blocks`] without each block's transcript (`entries` left empty): what the host's `mighty` push sends, which carries no entries,
+/// so a large pane's push copies none of them.
+#[allow(clippy::too_many_arguments, reason = "C# MightyGraphBlockModel.Blocks's parameters, and the locale")]
+pub fn block_heads(
+    layout: &Layout,
+    runs: &[MightyGraphRun],
+    draft: &str,
+    provider_label: &str,
+    animations_enabled: bool,
+    catalog: Option<&[ModelOption]>,
+    splits_execution: Option<bool>,
+    locale: &Locale,
+) -> Vec<MightyGraphBlock> {
+    make(layout, runs, draft, provider_label, animations_enabled, catalog, splits_execution, false, locale)
+}
+
+#[allow(clippy::too_many_arguments, reason = "C# MightyGraphBlockModel.Blocks's parameters, whether entries are copied, and the locale")]
+fn make(
+    layout: &Layout,
+    runs: &[MightyGraphRun],
+    draft: &str,
+    provider_label: &str,
+    animations_enabled: bool,
+    catalog: Option<&[ModelOption]>,
+    splits_execution: Option<bool>,
+    with_entries: bool,
+    locale: &Locale,
+) -> Vec<MightyGraphBlock> {
     let runs = support::with_background_waiting(runs);
     let runs: &[MightyGraphRun] = &runs;
+    let locator = Locator::new(runs);
+    let visible = |entries: &[LogEntry]| if with_entries { visible(entries) } else { vec![] };
     let split = splits_execution.unwrap_or_else(|| layout.nodes.iter().any(|n| n.kind == layout::WORK_KIND));
     // Request numbers: a notice run takes none and is titled after the work it reports on.
     let ordinals = support::request_ordinals(runs);
@@ -391,7 +455,7 @@ pub fn blocks(
     let usage_label = locale.get("graph.block.blockUsageLabel");
     let mut result = vec![];
     for node in &layout.nodes {
-        let (index, agent_id) = locate(node, runs);
+        let (index, agent_id) = locator.locate(node);
         let run = index.map(|i| &runs[i]);
         match (node.kind.as_str(), run) {
             ("draft", _) => {

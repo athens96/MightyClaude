@@ -10,7 +10,7 @@ does, but **only when started with `--allow-state-write`**; without it every cha
 | Path | What |
 |---|---|
 | `Cargo.toml` | The workspace: `crates/mighty-core`, `crates/mighty-composer`, `crates/mighty-files`, `crates/mighty-graph`, `crates/mighty-history`, `crates/mighty-platform`, `crates/mighty-platform-windows`, `crates/mighty-platform-macos`, `crates/mighty-run`, `crates/mighty-terminal`, `crates/mighty-workmap`, `src-tauri`. |
-| `crates/mighty-core` | No Tauri, no OS code. JSON exactly as C# `Wire.Json` reads and writes it (`json.rs`), .NET's times (`time.rs`), the state models (`model.rs`, `graph.rs`: C# `Models.cs`, `MightyGraph.cs`, `ExecutionGraph.cs` and the records they hold), `StateStore.Normalize` with every rule it calls (`normalize.rs`), loading, saving and the save timing (`store.rs`, C# `StateStore.cs`, `SaveSchedule`, `DesktopService`'s save queue), the locale catalogues and `LocaleKeyLeak` (`locale.rs`), the pane layout rules (`layout.rs`, C# `PaneLayout.cs`), model labels (`model_label.rs`), the frame model (`shell.rs`, C# `MainWindow.WebShell.Shell.cs`), the demo state (`demo.rs`). |
+| `crates/mighty-core` | No Tauri, no OS code. JSON exactly as C# `Wire.Json` reads and writes it (`json.rs`), .NET's times (`time.rs`), the state models (`model.rs`, `graph.rs`: C# `Models.cs`, `MightyGraph.cs`, `ExecutionGraph.cs` and the records they hold), `StateStore.Normalize` with every rule it calls (`normalize.rs`), loading, saving and the save timing (`store.rs`, C# `StateStore.cs`, `SaveSchedule`, `DesktopService`'s save queue), the locale catalogues and `LocaleKeyLeak` (`locale.rs`), the pane layout rules (`layout.rs`, C# `PaneLayout.cs`), model labels (`model_label.rs`), the frame model (`shell.rs`, C# `MainWindow.WebShell.Shell.cs`), the demo state (`demo.rs`), the add-pane menu and a pane's place (`add_pane.rs`, C# `AddPaneMenu`, `SessionTemplate`, `AddToLayout`), renames and pane titles (`rename.rs`, `RenameSupport`, `PaneTitle`), the workspace create rules (`workspace_create.rs`, `WorkspaceCreate`), the browser pane's rules (`browser.rs`, `BrowserHistory`, `BrowserProfile`, `BrowserEngineService`), the text setting (`text_appearance.rs`). |
 | `crates/mighty-composer` | No Tauri, no OS-specific code: the composer's C# Core classes and what the WinUI host builds from them for the page (W2-B). `slash` (`SlashCommands.cs`, `SlashCommandStrings.cs`; the scan reads files through `SlashFiles`), `next_actions`, `ask_targets`, `queue` (the second send, 바로 실행, `QueuedInputBuffer`, `RunBlock`, `BackgroundQueuePolicy`), `pending` (`PendingDisplay`, `SubmitResponse`, `SubmitReceipt`, `SubmitScroll`), `attachments` (`AttachmentSupport`; staging is the run engine's), `images` (`AgentImages.cs`: header sniffing with TIFF, the SHA-256 cache, the path rule, Markdown pictures, the RTF picture), `svg` (`SafeSvgDocument`, the SVG rules of `FilePreviewClassifier`), `html` (`LocalHtmlDocument`), `text` and `files` (the decoding and path rules they read). Then the page's models as pure functions: `composer::composer_state` (`WebComposerState`), `menus::composer_menu`/`menu_action`/`run_settings_info`/`run_settings_from`/`slash_catalog`, `cards::cards` (`WebCards`) with `presentation` (`ToolPermissionPresentation`, `UserQuestionnaire`, `PlanCardSupport`). What later stages give them is typed (`composer::WindowRules`, `cards::CardInputs`) and listed (`composer::PENDING`, `cards::PENDING`). Its tests port the C# checks, read the shared fixtures, check the page's field names against `src/composer/*.ts` and `src/cards/types.ts`, and compare 35,597 vectors with C# itself (`tools/parity` `composer`). |
 | `crates/mighty-files` | No Tauri, no OS-specific code (the OS through mighty-platform's files ports): the files pane, its previews and the 변경사항 view (W4-B). `listing` (C# `WorkspaceFiles.List`, `Sorted`, `NaturalComparer`), `classify` (`FilePreviewClassifier`, `TextEncodings`; the decoding and SVG rules are mighty-composer's), `source` (`SourceLines`, `SourceHighlighter`, `SourceFind`), `tree` (`FilePaneTree`, `FilePaneDrawing`), `preview` (`FilePreviewLoader`), `diff` (`FileDiff`, Myers), `patch` (`FilePatch`, `FileEdit` and the parser's `EditedOriginal` reading of a `tool_use_result`), `changes` (`FileOriginalStore`, `GitHeadFile` through `ProcessHost`, `FileChanges`), `reference` (`ReferencePreview`), `pane` (`FilePaneKind`), `frames` (the HTML frames' folders and what they serve), `raster` (an SVG drawn to PNG with resvg, as C#'s `NativeSvgRaster`; a bitmap measured and fitted with the image crate, as C#'s WIC decode) and `model` (the page's `FilesModel` and `FilePreview`: `WebFilesModel`, `WebFilePreview`, `WebFileImage`). Its tests port the C# checks under their names and read `file-diff.json` and `source-highlight.json`. |
 | `crates/mighty-core/examples` | `seed_demo` (a test profile from the help capture's demo), `roundtrip` (any state file loaded and saved in memory, timed; read-only), `parity` (the Rust side of `tools/parity`). |
@@ -23,7 +23,7 @@ does, but **only when started with `--allow-state-write`**; without it every cha
 | `crates/mighty-history` | No Tauri, no OS code: session history and resume (W4-C). `history` (C# `SessionHistory`: where each CLI keeps a session's record, the next older chunk read back from its end), `backward` (`JsonlBackwardReader`), `scan` (`HistoryScan`: which line opens a request the user typed, the walk that places the retained request), `replay` (`HistoryReplay`: Claude's and Codex's records, and Antigravity's transcripts through `antigravity::stream_events`, fed to mighty-graph's tracker), `state` (`SessionHistoryState`), `resumable` (`ResumableSessions` for Claude, Codex, Antigravity, pi, opencode and Hermes, `KnownSessionIDs`), `antigravity`, `pi`, `acp` (opencode's `opencode.db`, Hermes's `state.db`), `sqlite` (the databases read-only through a built-in SQLite: `rusqlite` bundled). Its tests port SessionHistoryVerification, the resume parts of the Antigravity, pi, ACP-session, add-pane and model-label checks, and the two AgentNotice checks mighty-graph left; what is left is `DEFERRED.md`. |
 | `crates/mighty-workmap` | No Tauri: the work map (W4-C, docs/work-map.md). `lib` (C# `WorkMap`: subjects to platform lanes, release tags, VERSION, release state, dot sizes, the git log by version, the user's requests attached to the commits that followed them; the model JSON keeps its nulls), `git` (`DelegationGit.Run` through the platform's `ProcessHost`), `summary` (`WorkMapSummary`: the prompt, the answer's reading, one headless Claude run; `WorkMapSummaryStore`), `service` (`WorkMapService`: one summary at a time per workspace), `originals` (what it reads of the file originals), `dashboard` (the rest of `WorkDashboard`). Its tests read `work-map.json`, run real git and a scripted Claude (`mighty-workmap-fake`, C#'s `--workmap-fake`) through the Windows `ProcessHost`. |
 | `crates/mighty-platform-macos` | The Mac ports in Rust, everything behind `cfg(target_os = "macos")`: `Paths`; the surfaces say terminal and browser are native (Ghostty, CEF/WKWebView) but open nothing yet. |
-| `src-tauri` | The app. `main.rs` (window, startup), `host.rs` (the bridge, the state's changes and saves, the run service's events), `delta.rs` (C# `WebBridge.Flush` and `WebDelta`), `methods.rs` (the page methods), `runs.rs` (the run engine: one `RunService` with mighty-graph's tracker and the picture cache, the CLIs' runtime), `panes.rs` (the never-shown pane views: composer and cards models and pushes), `composer.rs`, `cards.rs`, `mighty.rs` (their page methods; `mighty.rs` also the `mighty` push), `terminal.rs` (terminal panes, agent terminals, terminal prompts, shell block runs), `files.rs` (the files pane, the reference bubble, HTML frames and the picture viewer's actions, the file originals), `history.rs` (session history and the resume list's data), `workmap.rs` (the work map's methods, pushes and pane), `platform.rs` (the one place the OS crate is chosen), `surface.rs` (`SurfaceManager`, the NativeSlot protocol), `smoke.rs`, `smoke_terminal.rs`, `smoke_files.rs`, `smoke_history.rs` and `smoke_runs.rs` (`--smoke-test`), `args.rs`, `logfile.rs`. |
+| `src-tauri` | The app. `main.rs` (window, startup), `host.rs` (the bridge, the state's changes and saves, the run service's events), `delta.rs` (C# `WebBridge.Flush` and `WebDelta`), `methods.rs` (the page methods), `runs.rs` (the run engine: one `RunService` with mighty-graph's tracker and the picture cache, the CLIs' runtime), `panes.rs` (the never-shown pane views: composer and cards models and pushes), `composer.rs`, `cards.rs`, `mighty.rs` (their page methods; `mighty.rs` also the `mighty` push), `terminal.rs` (terminal panes, agent terminals, terminal prompts, shell block runs), `files.rs` (the files pane, the reference bubble, HTML frames and the picture viewer's actions, the file originals), `history.rs` (session history and the resume list's data), `workmap.rs` (the work map's methods, pushes and pane), `frame.rs` (the frame's remaining methods: close, focus, rename, remove, the add menu, panes, the folder picker, Explorer, the text size, the resume flow), `dialogs.rs` (the page-drawn dialogs), `workspace_create.rs` (the create sheets, git through `ProcessHost`), `platform.rs` (the one place the OS crate is chosen), `surface.rs` (`SurfaceManager`, the NativeSlot protocol and the browser pane), `smoke.rs`, `smoke_frame.rs`, `smoke_terminal.rs`, `smoke_files.rs`, `smoke_history.rs` and `smoke_runs.rs` (`--smoke-test`), `args.rs`, `logfile.rs`. |
 | `scripts/env.ps1` | Loads the MSVC environment and `~/.cargo/bin` into the PowerShell session (dot-source it before any cargo or tauri command). |
 | `scripts/smoke.ps1` | Seeds a demo profile and runs the smoke; `-Profile <folder>` runs it read-only against an existing profile. |
 | `scripts/screenshot.mjs` | A picture of the running page over WebView2's DevTools protocol. |
@@ -94,7 +94,38 @@ porting checklist.
 change is C#'s `UpdateAsync`: normalized, then queued for saving.
 
 The NativeSlot protocol (`surface.rs`, registered from `methods.rs` with one line): `surfaceBounds`, `surfaceAction`, and the
-browser pane's `browserOpen`, `browserNavigate` (C# `BrowserAddress.Resolve`), `browserBack`, `browserForward`, `browserReload`.
+browser pane's `browserOpen`, `browserNavigate` (C# `BrowserAddress.Resolve`), `browserBack`, `browserForward`, `browserReload`,
+`browserInstall` and C#'s `browserBounds`. A browser pane is C#'s in full (MainWindow.WebShell.Panes.cs, MainWindow.Browser.cs): nothing
+starts while the setting `browserEngineEnabled` is off (read once per launch: `disabled`), the install offer without the WebView2 runtime
+(`missing`; `browserInstall` downloads Microsoft's bootstrapper only then, checks its Authenticode signer and runs it), else its view opens
+over the slot in its workspace's web profile (`<local>\browser\<profile>\browser-profiles\<workspaceProfileKey or workspace id>`); the
+history (`BrowserHistory`) follows the engine's own navigations and every state is pushed (`browser{paneId, state}`); back and forward
+are the engine's; popups are refused and downloads cancelled; script dialogs never show; a press in the page makes its pane the active one;
+the picture shown while a page overlay hides the view is WebView2's `CapturePreview`.
+
+The frame's remaining methods (`frame.rs`, one line in `methods.rs`; C# MainWindow.WebShell.Shell.cs, MainWindow.Navigation.cs,
+MainWindow.ResumeSession.cs, MainWindow.SmallParity.cs): `closeSession` (the run stopped and ended, then the pane gone), `focusPane`
+(`toggle` back to custom), `textSize` (Ctrl+= / Ctrl+- / Ctrl+0 over the saved setting, pushed as `text`; not saved: W6), `dismissResource`,
+`renameSession` and `renameWorkspace` (the page's rename sheet; Automatic for an agent pane), `removeWorkspace` (the page's danger
+confirmation, every pane's run stopped), `showInExplorer` (the folder's real path, `explorer.exe`), `pickFolder` (the OS's folder picker
+owned by the main window; the folder approved for saving and added, a Claude pane in a workspace without one), `addMenu` (the entries in the
+Mac's words, the remote menu, Connect), `addPaneEntry` (terminal, browser, files through `frame::OPEN_FILES`, agents with the resume flow,
+the three ways to add a workspace, another workspace's entry made active first), `newPane`, and `dialogAnswer`. Every action is C#'s `Act`:
+the banner cleared first, what it fails with shown there.
+
+The page-drawn dialogs (`dialogs.rs`): a flow pushes `dialog{id, dialog}` and waits for `dialogAnswer`; the host closes one
+(`dialogClose`) or updates a resume choice's checking state (`dialogUpdate`). Every dialog still open is sent again, oldest first and as it
+stands, when the page calls `ready` (C# never sends one again after a reload, and its flow then waits for ever). The resume sheets
+(`resumeChoice`, `resumeList`) are drawn and answered here; the folder's sessions come from `frame::RESUME` (the session history module's
+`ResumeSource`: the head-only look-up, the pick from the list `resumeRows` showed, `RememberSession`), and `resumeRows` reads the open list
+from `frame::open_resume`. Until it is set, an agent pane starts new at once.
+
+Workspace create (`workspace_create.rs`; C# MainWindow.WorkspaceCreate.cs, `GitTool`, `GitCloneJob`; the rules are mighty-core's
+`workspace_create`, held to native/contracts/fixtures/workspace-create.json): `workspaceCreate`, `createCheck`, `pickLocation`,
+`makeFolder` (`git init` when asked), `repoName`, `gitProbe` (`git ls-remote -- <url> HEAD`, a newer one stops the older), `gitCreate`
+(`git clone --progress`, pushed as `gitProgress`; a second press answers `busy`) and `gitCreateCancel` (git and everything it started
+ended, what it wrote removed). git is the user's own, through `ProcessHost`, never prompting (an empty `GIT_ASKPASS`, `GCM_INTERACTIVE=never`,
+BatchMode ssh unless the user has an ssh command); the sheets start at the last location, else the active workspace's parent, else home.
 
 The composer (`composer.rs`, C# MainWindow.WebShell.Composer.cs over the never-shown `PaneView`): `composerState`, `updateDraft`
 (`DesktopService.UpdateDraft`: the pane alone, saved on the schedule), `send` (`PaneView.Submit`: a busy pane queues the draft, an idle
@@ -204,10 +235,12 @@ Native views over the page (docs/tauri-architecture.md §3): when the page calls
 `{kind:'host', platform, surfaces:{terminal, browser}}` (Windows: terminal `web`, browser `native`). From then on the page reports
 each native slot with `surfaceBounds{paneId, surface, rect (device px), visible, occluded}` and the `SurfaceManager` opens, places,
 shows and hides the platform's view there; a page reload hides every view until it is reported again, and a pane that leaves the
-state closes its view. On Windows a browser pane is a Tauri child webview of the main window (`unstable` multi-webview) with its own
-WebView2 data (`%LOCALAPPDATA%\dev.mightycode.tauri\browser\<profile>`), placed in physical pixels as the slot reports them; the
-child webview never reaches the host (`host_post` only listens to the `main` webview, and Tauri refuses app commands from remote
-origins). Back/forward state, popups, downloads, per-workspace profiles and the occlusion picture are W4.
+state closes its view. On Windows a browser pane is a Tauri child webview of the main window (`unstable` multi-webview) with its
+workspace's own WebView2 data (`%LOCALAPPDATA%\dev.mightycode.tauri\browser\<profile>\browser-profiles\<key>`; C# keeps the same
+folders under the profile, which a running C# app holds, so this one never shares them), placed in physical pixels as the slot reports
+them; the child webview never reaches the host (`host_post` only listens to the `main` webview, and Tauri refuses app commands from
+remote origins). Its engine's navigations, refused popups and downloads and its focus come back through a `BrowserListener`
+(mighty-platform `BrowserEvent`), and the picture shown while it hides under an overlay is `CapturePreview`'s.
 
 The files ports (`mighty_platform::files`, chosen in `platform.rs` with the others; fakes in `mighty_platform::fake`): `FileHandles` (an
 open file's handle asked where it is: `GetFileType`, `GetFinalPathNameByHandleW`; every reader of the user's files uses it, mighty-composer's
@@ -306,11 +339,17 @@ spelling wins here, the last of all in C#).## Identity and WebView2
 `MightyCode.exe --smoke-test --smoke-exit --profile <folder>` waits until the page has called `getLocale` and `ready` and the host
 has pushed the snapshot and the frame model, then runs a probe in the page: the sidebar's pane titles, the selected pane, the theme,
 tabs, groups, header and status bar, then a click on another pane's row (the page must show it and the host's state must take it).
+The frame steps follow (`smoke_frame.rs`, C#'s `RunWebShellFrameSmoke`, `checks.frame*`): the sidebar lists the active workspace's
+panes with the header and the status bar, a row click selects a pane in the host and the page, the add-pane menu's terminal entry adds a
+tab, a tab click and back switch panes (timed, `frame.tabSwitch*Ms`), and the columns preset draws two groups.
 Where the platform draws browsers natively, the browser-surface step follows: the host adds a browser pane in a workspace of its
-own (in memory) and makes it active; a second probe types the address of a fixture page this process serves on `127.0.0.1` into
-the pane's address field, waits until the native view shows it, checks the view's bounds read back from Windows (the WebView2
-host window in the main window's client coordinates) against the slot in device pixels (±1 px), has the host push a page dialog
-and checks the view hides, closes it and checks the view shows again (`checks.browserSurface`, details under `browser`).
+own (in memory), the engine on for the smoke, and makes it active; a second probe types the address of a fixture page this process
+serves on `127.0.0.1` into the pane's address field, waits until the native view shows it, checks the view's bounds read back from
+Windows (the WebView2 host window in the main window's client coordinates) against the slot in device pixels (±1 px), has the host push
+a page dialog and checks the view hides, closes it and checks the view shows again (`checks.browserSurface`); then the address field
+shows the history's address (`browserNavigated`), a second page and the page's back button take the engine and the history back
+(`browserBack`), a page that calls `window.open` as it loads has its popup refused with no webview added and stays (`browserPopupBlocked`),
+and the tab's menu opened over the slot hides the view until Esc closes it (`browserMenuOver`).
 Where the page draws terminals (Windows), the terminal step follows (`smoke_terminal.rs`, the terminal part of C#'s
 `RunWebPanesSmoke`): the host adds a shell pane in a workspace of its own (a temporary folder, in memory) and lets it start a shell
 (without the profile); the probe waits for the shell idle at its prompt (`terminalStarted`), types through the page's xterm a
@@ -332,6 +371,10 @@ button (`workMapVersions`), turns the Mac chip off and on (`workMapChips`); the 
 lists the session with its first request and the nested run as hidden, says a search with no match, lists both with "모든 세션 보기"
 (`resumeList`); the host then takes the session as the pick and adds a pane that continues it, and the page draws its record's three
 requests above in the Mighty diagram, read back from the record (`resumeLoaded`).
+With git on PATH the gitCreate step follows: a bare repository in a temporary folder (the fixture's own git), the sheets' location that
+folder, then the add menu's "Create from Git…": the address typed, the check reachable, the name `remote`, 생성, `gitProgress` pushed,
+and the clone listed as a workspace (`gitCreate*`). The reload step then opens a workspace's rename sheet from the host, loads the
+page again, and checks the sheet is drawn again with its name and that its answer (Esc) ends the waiting flow (`dialogResentAfterReload`).
 The run steps follow (`smoke_runs.rs`, the C# smoke's `RunWebComposerSmoke`, `RunWebCardsSmoke`, `RunWebMightySmoke` and
 `RunWebStepsSmoke` over a real child). With `--smoke-fake-cli` (what `smoke.ps1` passes unless `-NoRuns`): the host adds a Claude pane
 in a workspace of its own (a temporary folder, in memory) shown in the Mighty diagram; the probe types a request into the composer and

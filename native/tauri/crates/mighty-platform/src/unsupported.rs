@@ -149,7 +149,8 @@ mod tests {
                 pane_id: "p".into(),
                 url: "about:blank".into(),
                 data_dir: PathBuf::new(),
-                bounds: DeviceRect::default()
+                bounds: DeviceRect::default(),
+                listener: None,
             })
             .await
             .err()

@@ -529,16 +529,26 @@ pub enum SurfaceEvent {
 type Log = Arc<Mutex<Vec<SurfaceEvent>>>;
 
 /// Views that record what is asked of them. `drawing` says which kinds are native (the Windows split by default: terminal web,
-/// browser native); `fail_opens` makes the next opens fail.
+/// browser native); `fail_opens` makes the next opens fail. A browser view behaves as an engine would for its listener: each address it
+/// loads (the first one, a navigation, back, forward, a reload) ends in a successful `Navigated`.
 pub struct FakeSurfaces {
     native_terminal: bool,
     log: Log,
     fail_opens: Mutex<usize>,
+    listeners: Mutex<std::collections::HashMap<String, BrowserListener>>,
 }
 
 impl FakeSurfaces {
     pub fn new(native_terminal: bool) -> FakeSurfaces {
-        FakeSurfaces { native_terminal, log: Arc::default(), fail_opens: Mutex::new(0) }
+        FakeSurfaces { native_terminal, log: Arc::default(), fail_opens: Mutex::new(0), listeners: Mutex::default() }
+    }
+
+    /// Sends `event` to the listener of the pane's browser view, as its engine would (a popup the page asked for, a download).
+    pub fn emit(&self, pane: &str, event: BrowserEvent) {
+        let listener = lock(&self.listeners).get(pane).cloned();
+        if let Some(listener) = listener {
+            listener.send(event);
+        }
     }
     pub fn events(&self) -> Vec<SurfaceEvent> {
         lock(&self.log).clone()
@@ -557,7 +567,13 @@ impl FakeSurfaces {
     }
     fn view(&self, pane: &str, kind: SurfaceKind, bounds: DeviceRect, url: Option<String>) -> FakeView {
         lock(&self.log).push(SurfaceEvent::Opened { pane: pane.to_string(), kind, bounds });
-        FakeView { pane: pane.to_string(), log: self.log.clone(), state: Mutex::new((SurfaceState { bounds, visible: true, url }, false)) }
+        FakeView {
+            pane: pane.to_string(),
+            log: self.log.clone(),
+            state: Mutex::new((SurfaceState { bounds, visible: true, url: url.clone() }, false)),
+            listener: None,
+            engine: Mutex::new((url.into_iter().collect(), 0)),
+        }
     }
 }
 
@@ -572,6 +588,9 @@ pub struct FakeView {
     log: Log,
     /// The view's state and whether it was closed.
     state: Mutex<(SurfaceState, bool)>,
+    listener: Option<BrowserListener>,
+    /// The engine's own history: its entries and the one shown.
+    engine: Mutex<(Vec<String>, usize)>,
 }
 
 impl FakeView {
@@ -582,6 +601,29 @@ impl FakeView {
         }
         apply(&mut state.0);
         lock(&self.log).push(event);
+        Ok(())
+    }
+
+    /// The engine loaded `url`: the listener hears it.
+    fn loaded(&self, url: &str) {
+        lock(&self.state).0.url = Some(url.to_string());
+        if let Some(listener) = &self.listener {
+            listener.send(BrowserEvent::Navigated { url: Some(url.to_string()), success: true });
+        }
+    }
+
+    /// The engine's back (-1) or forward (+1), when it has an entry there.
+    fn step(&self, by: isize, name: &str) -> Result<()> {
+        let url = {
+            let mut engine = lock(&self.engine);
+            let Some(at) = engine.1.checked_add_signed(by).filter(|at| *at < engine.0.len()) else {
+                return Ok(());
+            };
+            engine.1 = at;
+            engine.0[at].clone()
+        };
+        self.change(SurfaceEvent::Navigated { pane: self.pane.clone(), url: format!("{name}:{url}") }, |_| {})?;
+        self.loaded(&url);
         Ok(())
     }
 }
@@ -614,16 +656,29 @@ impl NativeSurface for FakeView {
 
 impl BrowserSurface for FakeView {
     fn navigate(&self, url: &str) -> Result<()> {
-        self.change(SurfaceEvent::Navigated { pane: self.pane.clone(), url: url.to_string() }, |s| s.url = Some(url.to_string()))
+        self.change(SurfaceEvent::Navigated { pane: self.pane.clone(), url: url.to_string() }, |s| s.url = Some(url.to_string()))?;
+        {
+            let mut engine = lock(&self.engine);
+            let keep = if engine.0.is_empty() { 0 } else { engine.1 + 1 };
+            engine.0.truncate(keep);
+            engine.0.push(url.to_string());
+            engine.1 = engine.0.len() - 1;
+        }
+        self.loaded(url);
+        Ok(())
     }
     fn go_back(&self) -> Result<()> {
-        Err(PlatformError::unsupported("BrowserSurface", "go_back"))
+        self.step(-1, "back")
     }
     fn go_forward(&self) -> Result<()> {
-        Err(PlatformError::unsupported("BrowserSurface", "go_forward"))
+        self.step(1, "forward")
     }
     fn reload(&self) -> Result<()> {
-        self.change(SurfaceEvent::Navigated { pane: self.pane.clone(), url: "reload".into() }, |_| {})
+        self.change(SurfaceEvent::Navigated { pane: self.pane.clone(), url: "reload".into() }, |_| {})?;
+        if let Some(url) = lock(&self.state).0.url.clone() {
+            self.loaded(&url);
+        }
+        Ok(())
     }
 }
 
@@ -651,7 +706,13 @@ impl SurfaceFactory for FakeSurfaces {
             if self.failing() {
                 return Err(PlatformError::Refused("the fake was told to fail".into()));
             }
-            Ok(Box::new(self.view(&options.pane_id, SurfaceKind::Browser, options.bounds, Some(options.url))) as Box<dyn BrowserSurface>)
+            let mut view = self.view(&options.pane_id, SurfaceKind::Browser, options.bounds, Some(options.url.clone()));
+            if let Some(listener) = options.listener {
+                lock(&self.listeners).insert(options.pane_id.clone(), listener.clone());
+                view.listener = Some(listener);
+            }
+            view.loaded(&options.url);
+            Ok(Box::new(view) as Box<dyn BrowserSurface>)
         })
     }
     fn open_terminal(&self, options: TerminalOptions) -> BoxFuture<'_, Result<Box<dyn TerminalSurface>>> {

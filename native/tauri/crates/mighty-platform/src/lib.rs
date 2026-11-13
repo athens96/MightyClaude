@@ -47,8 +47,8 @@ pub use profile::{
 pub use pty::{PtyControl, PtyHost, PtyRequest, PtySession, PtySize, TerminalInput};
 pub use secrets::SecretVault;
 pub use surface::{
-    BrowserOptions, BrowserSurface, DeviceRect, Drawing, LogicalRect, NativeSurface, PetWindow, SurfaceFactory, SurfaceKind, SurfaceState,
-    TerminalOptions, TerminalSurface,
+    BrowserEvent, BrowserListener, BrowserOptions, BrowserSurface, DeviceRect, Drawing, LogicalRect, NativeSurface, PetWindow,
+    SurfaceFactory, SurfaceKind, SurfaceState, TerminalOptions, TerminalSurface,
 };
 pub use update::{StagedUpdate, UpdateInstaller};
 

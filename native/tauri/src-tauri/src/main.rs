@@ -9,7 +9,9 @@ mod args;
 mod cards;
 mod composer;
 mod delta;
+mod dialogs;
 mod files;
+mod frame;
 mod history;
 mod host;
 mod logfile;
@@ -20,12 +22,14 @@ mod platform;
 mod runs;
 mod smoke;
 mod smoke_files;
+mod smoke_frame;
 mod smoke_history;
 mod smoke_runs;
 mod smoke_terminal;
 mod surface;
 mod terminal;
 mod workmap;
+mod workspace_create;
 
 use std::sync::Arc;
 
@@ -245,6 +249,8 @@ fn main() {
             let (inbound, mut calls) = tokio::sync::mpsc::unbounded_channel::<Value>();
             app.manage(Inbound(inbound));
             app.manage(host.clone());
+            // The user's settings outside the state (the text setting: frame.rs).
+            app.manage(platform.prefs.clone());
             let dispatcher = host.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(message) = calls.recv().await {
@@ -260,7 +266,12 @@ fn main() {
                         {
                             surfaces.announce();
                         }
+                        let ready = message.get("method").and_then(Value::as_str) == Some("ready");
                         host.clone().dispatch(message, first).await;
+                        // A page that loaded again gets back its open dialogs and the text setting (frame.rs).
+                        if ready {
+                            frame::page_ready(&host);
+                        }
                         // A pane the call closed takes its native view with it.
                         if let Some(surfaces) = surfaces {
                             surfaces.retain(&surface::live_panes(&host)).await;
