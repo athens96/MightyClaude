@@ -54,6 +54,17 @@ pub enum ServiceEvent {
     RememberSession(String),
 }
 
+/// How a pane changed by [`RunService::update_pane`] is saved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaneSave {
+    /// At once (C# `QueueSave`: a shell exited or failed, a shell block's run ended).
+    Now,
+    /// On the host's schedule (C# `ScheduleSave`: a shell block's run streaming).
+    Soon,
+    /// With the next save anything else asks for (a shell's idle and running: a restart reads running as idle anyway).
+    Later,
+}
+
 /// Another computer's runs, for a remote workspace's panes (C# `RemoteClientService`, W8).
 pub trait RemoteRunner: Send + Sync {
     fn start(&self, request: StartRunRequest, workspace: Workspace) -> BoxFuture<'_, Result<bool>>;
@@ -250,6 +261,29 @@ impl RunService {
         }
         self.shared.send(ServiceEvent::SaveSoon);
         Ok(true)
+    }
+
+    /// One pane replaced on its own, without the whole state's normalize: C#'s light updates of one pane (`SetShellStatus`,
+    /// DesktopService.cs:165, a shell's status from its terminal; `UpdateShellBlockRun`, :219, a shell block's record while it
+    /// streams). `change` gets the pane and gives back its next record and how it is saved, or None to change nothing. False when
+    /// the service is closing, the pane is gone or `change` changed nothing.
+    pub fn update_pane(&self, session_id: &str, change: impl FnOnce(&RunSession) -> Option<(RunSession, PaneSave)>) -> bool {
+        let save = {
+            let mut state = lock(&self.shared.state);
+            if state.closing {
+                return false;
+            }
+            let Some(at) = state.snapshot.sessions().iter().position(|s| s.id() == session_id) else { return false };
+            let Some((next, save)) = change(&state.snapshot.sessions()[at]) else { return false };
+            state.snapshot.sessions_mut()[at] = Arc::new(next);
+            save
+        };
+        match save {
+            PaneSave::Now => self.shared.send(ServiceEvent::SaveNow),
+            PaneSave::Soon => self.shared.send(ServiceEvent::SaveSoon),
+            PaneSave::Later => {}
+        }
+        true
     }
 
     /// C# `PaneView.ClearToolPermissions` (MainWindow.cs:88): a pane whose run ended (stopped, completed, error) has no request waiting
