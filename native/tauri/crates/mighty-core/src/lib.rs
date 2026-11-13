@@ -4,6 +4,7 @@
 //! `Locale.cs`), the pane layout rules (`layout.rs`, `PaneLayout.cs`) and the frame model the page draws (`shell.rs`,
 //! MightyCode.WinUI `MainWindow.WebShell.Shell.cs`). No Tauri and no OS-specific code, so it builds and tests anywhere.
 
+pub mod attachment;
 pub mod demo;
 pub mod graph;
 pub mod json;
