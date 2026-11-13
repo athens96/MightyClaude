@@ -12,6 +12,8 @@ mod browser;
 #[cfg(windows)]
 pub mod cli;
 #[cfg(windows)]
+mod clipboard;
+#[cfg(windows)]
 pub mod command;
 #[cfg(windows)]
 pub mod discovery;
@@ -49,6 +51,7 @@ mod imp {
 
     pub use crate::browser::WebviewSurfaces;
     pub use crate::cli::{CliRunResult, CliRunner};
+    pub use crate::clipboard::WindowsClipboard;
     pub use crate::dpapi::{DpapiVault, FOLDER as REMOTE_KEYS_FOLDER, file_name as remote_key_file_name};
     pub use crate::environment::{CliEnvironmentSnapshot, WindowsShellEnvironment};
     pub use crate::prefs::RegistryPrefs;
@@ -126,6 +129,11 @@ mod imp {
     /// The native views of `window`: browsers are WebView2 child webviews; the terminal is the page's (xterm.js).
     pub fn surfaces(window: tauri::Window) -> Arc<dyn SurfaceFactory> {
         Arc::new(WebviewSurfaces::new(window))
+    }
+
+    /// The user's clipboard (a terminal's copy and paste).
+    pub fn clipboard() -> Arc<dyn mighty_platform::Clipboard> {
+        Arc::new(WindowsClipboard)
     }
 
     #[cfg(test)]

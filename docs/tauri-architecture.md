@@ -72,7 +72,8 @@
 | `ChildControl` | `kill`(자식과 그 아래 전부), `wait` → 종료 코드, `close`(kill + 3초 대기 + Job이 빌 때까지 3초) |
 | `capture()` | `ProcessHost` 위의 공통 함수: stdin을 쓰고 닫고, 두 출력을 한도까지 읽고, 시간 넘으면 죽임(Swift `ProcessCapture.run`) |
 | `PtyHost` | `default_shell`, `shell_arguments(shell, command, no_profile)`, `open(PtyRequest{program, args, cwd, env(전체), size})` → `PtySession{output 채널, control}` |
-| `PtyControl` | `write`(UTF-16 65,536단위 이하 — C# `text.Length`처럼 세므로 한글 30,000자(90,000바이트)도 받음), `resize`(2–1000 × 1–1000), `process_ids`, `wait`, `close`(Job·콘솔 닫고 마지막 출력까지 읽음; 아무도 출력을 읽지 않아도 돌아옴) |
+| `PtyControl` | `write`(UTF-16 65,536단위 이하 — C# `text.Length`처럼 세므로 한글 30,000자(90,000바이트)도 받음), `resize`(2–1000 × 1–1000), `process_ids`, `busy`(셸이 명령을 실행 중인지 — Windows: Job의 셸 아닌 프로세스가 셸의 콘솔에 붙어 있음, C# `ShellProcessProbe`; 못 읽으면 None, 기본값 None — W4-A), `wait`, `close`(Job·콘솔 닫고 마지막 출력까지 읽음; 아무도 출력을 읽지 않아도 돌아옴) |
+| `Clipboard` (W4-A) | `read_text` → 글자 없으면 None, `write_text`. Windows `CF_UNICODETEXT`(다른 프로그램이 잡고 있으면 잠깐 기다린 뒤 거절), Mac은 아직 `Unsupported`(Ghostty가 스스로 복사·붙여넣기). `Platform`에는 없고 `src-tauri/src/platform.rs`의 `clipboard()`로 받음 |
 | `ShellEnvironment` | CLI가 시작할 환경: `resolve(workspace, force)`(실패 없음, 4초 한도, 10초 재사용), `current`, `invalidate`. 값은 로그·`Debug`에 안 나옴 |
 | `SecretVault` | `load(id)` → 없거나 못 읽으면 None, `save(id, secret)`, `delete(id)`. Windows는 C# `DpapiRemoteKeyVault`와 같은 파일·엔트로피(바이트 단위로 서로 읽힘), Mac은 Keychain `dev.mightycode.native.remote` |
 | `PrefsStore` | `get/set/remove(key)` → `PrefValue{Int, Text, Bool, Other}`; Windows `HKCU\Software\MightyCode`, Mac UserDefaults `dev.mightycode.native`, 이름은 같음(`delegation.enabled`, `setup.neverShow`, `textScale` …) |

@@ -77,6 +77,11 @@ mod imp {
         Arc::new(MacSurfaces)
     }
 
+    /// The pasteboard (`NSPasteboard.general`): not yet on the Mac, whose terminal (Ghostty) copies and pastes by itself.
+    pub fn clipboard() -> Arc<dyn mighty_platform::Clipboard> {
+        Arc::new(Unsupported)
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;

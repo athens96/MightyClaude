@@ -1,0 +1,27 @@
+[package]
+name = "mighty-terminal"
+version = "0.1.0"
+description = "Mighty Code's terminals (W4-A): the terminal pane's lifecycle and footer, the agent's terminal and its commands, terminal prompt cards, the transcript's shell block runs and the escape-sequence cleaner (C# PseudoTerminal's callers in MainWindow.Terminal.cs, AgentTerminal, TerminalPrompt, ShellBlockRuns, ShellBlockScan, ShellActivity.NextStatus). No Tauri, no OS code: terminals open through mighty-platform's PtyHost."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mighty-core.workspace = true
+mighty-platform.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+base64 = "0.22"
+regex = "1"
+url = "2"
+tokio = { workspace = true, features = ["sync", "time", "rt", "macros"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["sync", "time", "rt", "rt-multi-thread", "macros"] }
+# The service half of the shell-status and shell-block checks: the light update goes through the run service.
+mighty-run.workspace = true
+
+# The checks that run real terminals (C#'s Windows-only AgentIO and PseudoTerminal checks) go through the Windows PtyHost.
+[target.'cfg(windows)'.dev-dependencies]
+mighty-platform-windows.workspace = true

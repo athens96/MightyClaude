@@ -77,6 +77,12 @@ pub trait PtyControl: Send + Sync {
     /// The processes running in the terminal now (the shell and everything under it), for "is something still running?"; None once
     /// closed or when the OS gives no list.
     fn process_ids(&self) -> Option<Vec<u32>>;
+    /// Whether the terminal's shell runs a command now (C# `ShellProcessProbe.IsBusy`, ShellActivity.cs:48-52: on Windows a
+    /// process of the session's job other than the shell attached to the shell's console; the Mac reads the foreground process
+    /// group): None when it could not be read — never "idle" for "not known" — and once closed. A port that cannot tell says None.
+    fn busy(&self) -> Option<bool> {
+        None
+    }
     fn wait(&self) -> BoxFuture<'_, Result<i32>>;
     /// Ends the shell and its descendants (Windows: the session's kill-on-close job, then `ClosePseudoConsole`), lets the output
     /// drain read the console's final frame, and releases everything. It returns whether or not anyone reads the output: once it

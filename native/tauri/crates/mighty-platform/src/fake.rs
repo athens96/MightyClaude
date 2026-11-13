@@ -174,11 +174,16 @@ impl ProcessHost for FakeProcessHost {
 
 // ---- pseudo terminals ------------------------------------------------------------------------------------------------------
 
-/// Terminals that echo their input back as output (a loopback), so a test drives both directions.
+/// Terminals that echo their input back as output (a loopback), so a test drives both directions. A test can end a terminal's
+/// shell as if it had exited by itself ([`FakePtyHost::exit`]; its output stays open until the close, as a console's does) and
+/// say what the shell-activity reading answers ([`FakePtyHost::set_busy`]).
 #[derive(Default)]
 pub struct FakePtyHost {
     opened: Mutex<Vec<PtyRequest>>,
     sizes: Arc<Mutex<Vec<PtySize>>>,
+    terminals: Mutex<Vec<Arc<FakeTerminal>>>,
+    /// Opens that fail, from the next one on.
+    fail_opens: Mutex<usize>,
 }
 
 impl FakePtyHost {
@@ -188,6 +193,26 @@ impl FakePtyHost {
     pub fn sizes(&self) -> Vec<PtySize> {
         lock(&self.sizes).clone()
     }
+    /// The `index`th terminal opened (0 the first) ends with `code`, as a shell that exited.
+    pub fn exit(&self, index: usize, code: i32) {
+        if let Some(terminal) = lock(&self.terminals).get(index) {
+            terminal.exit.end(code);
+        }
+    }
+    /// What the `index`th terminal's [`PtyControl::busy`] reads from now on.
+    pub fn set_busy(&self, index: usize, busy: Option<bool>) {
+        if let Some(terminal) = lock(&self.terminals).get(index) {
+            *lock(&terminal.busy) = busy;
+        }
+    }
+    /// Whether the `index`th terminal was closed.
+    pub fn closed(&self, index: usize) -> bool {
+        lock(&self.terminals).get(index).is_some_and(|terminal| lock(&terminal.input).is_none())
+    }
+    /// The next `count` opens fail.
+    pub fn fail_next_opens(&self, count: usize) {
+        *lock(&self.fail_opens) = count;
+    }
 }
 
 struct FakeTerminal {
@@ -195,12 +220,20 @@ struct FakeTerminal {
     input: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
     sizes: Arc<Mutex<Vec<PtySize>>>,
     exit: Exit,
+    busy: Mutex<Option<bool>>,
 }
 
 impl PtyControl for FakeTerminal {
+    /// Refused once the shell has ended, as C#'s `TryWrite` refuses a completed terminal.
     fn write(&self, bytes: &[u8]) -> bool {
         let fits = bytes.len() <= 65_536 || String::from_utf8_lossy(bytes).encode_utf16().count() <= 65_536;
-        fits && lock(&self.input).as_ref().is_some_and(|sender| sender.try_send(bytes.to_vec()).is_ok())
+        fits && !self.exit.ended() && lock(&self.input).as_ref().is_some_and(|sender| sender.try_send(bytes.to_vec()).is_ok())
+    }
+    fn busy(&self) -> Option<bool> {
+        if lock(&self.input).is_none() {
+            return None;
+        }
+        *lock(&self.busy)
     }
     fn resize(&self, size: PtySize) -> Result<()> {
         if self.exit.ended() {
@@ -239,11 +272,25 @@ impl PtyHost for FakePtyHost {
             if request.env.iter().any(|(name, value)| name.is_empty() || name.contains('=') || value.contains('\0')) {
                 return Err(PlatformError::Invalid("invalid terminal environment".into()));
             }
+            {
+                let mut failing = lock(&self.fail_opens);
+                if *failing > 0 {
+                    *failing -= 1;
+                    return Err(PlatformError::Io(std::io::Error::other("the fake terminal refused to start")));
+                }
+            }
             let id = 2000 + lock(&self.opened).len() as u32;
             lock(&self.sizes).push(request.size.clamped());
             lock(&self.opened).push(request);
             let (sender, output) = mpsc::channel(64);
-            let control = Arc::new(FakeTerminal { id, input: Mutex::new(Some(sender)), sizes: self.sizes.clone(), exit: Exit::new(None) });
+            let control = Arc::new(FakeTerminal {
+                id,
+                input: Mutex::new(Some(sender)),
+                sizes: self.sizes.clone(),
+                exit: Exit::new(None),
+                busy: Mutex::new(Some(false)),
+            });
+            lock(&self.terminals).push(control.clone());
             Ok(PtySession { id, output, control })
         })
     }
@@ -332,6 +379,41 @@ impl PairingStore for MemoryPairing {
     }
     fn save(&self, identity: &PairingIdentity) -> Result<()> {
         *lock(&self.0) = Some(identity.clone());
+        Ok(())
+    }
+}
+
+/// A clipboard in memory: its text (None: no text on it), or refusing every call while `busy` (another program holding it).
+#[derive(Debug, Default)]
+pub struct MemoryClipboard {
+    text: Mutex<Option<String>>,
+    busy: Mutex<bool>,
+}
+
+impl MemoryClipboard {
+    pub fn with_text(text: &str) -> MemoryClipboard {
+        MemoryClipboard { text: Mutex::new(Some(text.to_string())), busy: Mutex::new(false) }
+    }
+    pub fn text(&self) -> Option<String> {
+        lock(&self.text).clone()
+    }
+    pub fn set_busy(&self, busy: bool) {
+        *lock(&self.busy) = busy;
+    }
+}
+
+impl Clipboard for MemoryClipboard {
+    fn read_text(&self) -> Result<Option<String>> {
+        if *lock(&self.busy) {
+            return Err(PlatformError::Refused("the clipboard is in use".into()));
+        }
+        Ok(lock(&self.text).clone())
+    }
+    fn write_text(&self, text: &str) -> Result<()> {
+        if *lock(&self.busy) {
+            return Err(PlatformError::Refused("the clipboard is in use".into()));
+        }
+        *lock(&self.text) = Some(text.to_string());
         Ok(())
     }
 }
