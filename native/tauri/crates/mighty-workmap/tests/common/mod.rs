@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
+#[cfg(windows)]
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 

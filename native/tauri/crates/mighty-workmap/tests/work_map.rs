@@ -4,7 +4,7 @@
 
 mod common;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use common::*;
@@ -308,6 +308,8 @@ fn work_map_the_pane_is_never_saved_and_never_counted() {
 
 #[cfg(windows)]
 mod real {
+    use std::collections::HashMap;
+
     use super::*;
     use mighty_workmap::{WorkMapService, WorkMapStart, WorkMapStoredSummary, WorkMapTopic};
 
