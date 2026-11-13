@@ -591,7 +591,7 @@ fn prefix(text: &str, count: usize) -> &str {
 /// `MightyStructure.ItemFor` (MightyStructure.cs:355): one card. `ordinal`: the request's number, none counting every run before it.
 /// The card reads the run as views draw it; `runs`, the pane's, say whether it awaits notices.
 pub fn item_for(raw: &MightyGraphRun, index: usize, ordinal: Option<i32>, runs: Option<&[MightyGraphRun]>, locale: &Locale) -> Item {
-    let run = support::shown_in(raw, runs.unwrap_or(std::slice::from_ref(raw)), locale);
+    let run = support::shown_in_borrowed(raw, runs.unwrap_or(std::slice::from_ref(raw)), locale);
     let finished = support::finished(&run);
     let answer = run
         .result_entries()

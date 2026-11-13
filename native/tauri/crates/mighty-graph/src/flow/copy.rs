@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 use mighty_core::graph::{MightyGraphAgent, MightyGraphRun};
 use mighty_core::locale::Locale;
-use mighty_core::model::RunSession;
+use mighty_core::model::{LogEntry, RunSession};
 use serde_json::{Map, Value, json};
 
 use crate::flow::card::{self, Content};
@@ -270,6 +270,8 @@ pub fn blocks(
     let shown: &[MightyGraphRun] = &shown;
     let ordinals = support::request_ordinals(shown);
     let mut result = IndexMap::new();
+    // What each request's steps hold, read once per request for all of its step cards.
+    let mut held_by_run: HashMap<usize, Vec<Vec<&LogEntry>>> = HashMap::new();
     for node in &layout.nodes {
         let Some((run, index, suffix)) = locate(&node.id, shown) else { continue };
         match node.kind.as_str() {
@@ -287,8 +289,10 @@ pub fn blocks(
             layout::STEP_KIND if fan_out && suffix.starts_with(steps::SUFFIX) => {
                 let all = steps::steps(run);
                 let Some(step) = all.iter().position(|s| steps::node_suffix(s) == suffix) else { continue };
-                let Some(content) = steps::card(step, index, shown, locale) else { continue };
-                let held = steps::entries(step, index, shown).iter().map(|e| e.id().to_string()).collect();
+                let entries = held_by_run.entry(index).or_insert_with(|| steps::entries_by_step(index, shown));
+                let entries = entries.get(step).map_or(&[][..], Vec::as_slice);
+                let Some(content) = steps::card_held(step, index, shown, entries, locale) else { continue };
+                let held = entries.iter().map(|e| e.id().to_string()).collect();
                 let step_copy = StepCopy {
                     title: content.title.clone(),
                     state_word: content.state_word.clone(),

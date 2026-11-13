@@ -117,7 +117,12 @@ pub fn awaiting_notice(run: &MightyGraphRun, runs: &[MightyGraphRun], locale: &L
     awaiting(run, runs, Some(locale))
 }
 
-fn awaiting(run: &MightyGraphRun, runs: &[MightyGraphRun], locale: Option<&Locale>) -> Option<Awaiting> {
+/// [`awaiting_notice`] among some of a pane's runs, borrowed (a request and the notice runs that answer for it).
+pub fn awaiting_notice_in(run: &MightyGraphRun, runs: &[&MightyGraphRun], locale: &Locale) -> Option<Awaiting> {
+    awaiting(run, runs.iter().copied(), Some(locale))
+}
+
+fn awaiting<'a>(run: &MightyGraphRun, runs: impl IntoIterator<Item = &'a MightyGraphRun>, locale: Option<&Locale>) -> Option<Awaiting> {
     if run.shown_background_waiting.is_some() {
         return run.shown_awaiting.clone();
     }
@@ -129,7 +134,7 @@ fn awaiting(run: &MightyGraphRun, runs: &[MightyGraphRun], locale: Option<&Local
         return None;
     }
     let answering: HashSet<&str> = runs
-        .iter()
+        .into_iter()
         .filter(|n| n.is_notice() && !terminal(n.status()) && original_run_id(n.id()) == Some(run.id()))
         .flat_map(|n| n.agents().iter().filter_map(|copy| copy.source_block_id.as_deref()))
         .collect();

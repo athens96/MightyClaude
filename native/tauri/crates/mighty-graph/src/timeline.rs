@@ -151,7 +151,10 @@ pub fn folds(text: &str) -> bool {
 pub fn groups(runs: &[MightyGraphRun], locale: &Locale) -> Vec<Group> {
     let runs = support::with_background_waiting(runs);
     let ordinals = support::request_ordinals(&runs);
-    runs.iter().enumerate().map(|(index, run)| project(&support::shown_in(run, &runs, locale), index, ordinals[index], locale)).collect()
+    runs.iter()
+        .enumerate()
+        .map(|(index, run)| project(&support::shown_in_borrowed(run, &runs, locale), index, ordinals[index], locale))
+        .collect()
 }
 
 fn project(run: &MightyGraphRun, index: usize, ordinal: i32, locale: &Locale) -> Group {
