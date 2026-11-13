@@ -162,4 +162,47 @@ internal static class ResumedAgentVerification
         }
         finally { try { Directory.Delete(directory, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     }
+
+    /// <summary>
+    /// The idle close after a request's result (120 s, here 300 ms): a steer opens a new turn, so the last turn's result no longer
+    /// lets the close end its input; and a turn the CLI still says runs keeps its input however long it is silent.
+    /// </summary>
+    internal static async Task TheIdleCloseWaitsForTheTurnTheCliStillRuns()
+    {
+        var directory = Verification.Temp();
+        try
+        {
+            var workspace = new Workspace { Path = directory };
+            var plugin = Path.Combine(directory, "plugin"); Directory.CreateDirectory(Path.Combine(plugin, ".claude-plugin"));
+            await File.WriteAllTextAsync(Path.Combine(plugin, ".claude-plugin", "plugin.json"), "{}");
+            foreach (var fixture in new[] { "steered watchdog fixture", "busy watchdog fixture" })
+            {
+                var record = Path.Combine(directory, fixture.Split(' ')[0]);
+                int InputLines() { try { return File.Exists(record + ".input") ? File.ReadAllLines(record + ".input").Length : 0; } catch (IOException) { return 0; } }
+                await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "claude", record)));
+                var events = new List<RunEvent>();
+                RunEvent[] Snapshot() { lock (events) return [.. events]; }
+                var manager = new RunManager(_ => Task.FromResult(workspace), catalog, plugin, ev => { lock (events) events.Add(ev); }, _ => { }) { BackgroundIdleClose = TimeSpan.FromMilliseconds(300) };
+                await using (manager)
+                {
+                    await manager.StartAsync(new("idle-pane", workspace.Id, "claude", fixture, []));
+                    if (fixture.StartsWith("steered", StringComparison.Ordinal))
+                    {
+                        // The steer answers the pane waiting on its background agent, as 바로 실행 does.
+                        await Verification.Until(() => Snapshot().Any(e => e.Background?.WaitingOnBackground == true), 20000);
+                        Check(await manager.TrySteerAsync("idle-pane", "and one more thing"), "the steer joins the open input");
+                    }
+                    else await Verification.Until(() => InputLines() >= 2, 20000);
+                    // Well past the idle close: the silent turn's input is still open.
+                    await Task.Delay(1200);
+                    Check(await manager.TrySteerAsync("idle-pane", "second"), fixture + ": the input is still open after the silence");
+                    await Verification.Until(() => !manager.IsRunning("idle-pane"), 20000);
+                }
+                Check((await File.ReadAllTextAsync(record + ".second")).Contains("second", StringComparison.Ordinal) && !File.Exists(record + ".closed"), fixture + ": the second steer reached the CLI");
+                Check(!fixture.StartsWith("steered", StringComparison.Ordinal) || (await File.ReadAllTextAsync(record + ".follow")).Contains("and one more thing", StringComparison.Ordinal), "the first steer reached the CLI");
+                Check(Snapshot().Last(e => e.Type == "status").Status == "completed", fixture + ": the run completes");
+            }
+        }
+        finally { try { Directory.Delete(directory, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+    }
 }

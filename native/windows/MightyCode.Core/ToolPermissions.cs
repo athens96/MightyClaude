@@ -234,13 +234,16 @@ public sealed class ClaudePermissionChannel
         }
     }
 
-    /// <summary>A follow-up joins only an initialized, still-open Claude stream.</summary>
-    public bool TrySteer(string text)
+    /// <summary>
+    /// A follow-up joins only an initialized, still-open Claude stream. <paramref name="accepted"/> runs under the channel's lock right
+    /// after the write: what the CLI says next is read (<see cref="Receive"/>) only after it.
+    /// </summary>
+    public bool TrySteer(string text, Action? accepted = null)
     {
         lock (sync)
         {
             if (closed || !Initialized || string.IsNullOrWhiteSpace(text) || text.Length > 100_000 || text.Contains('\0')) return false;
-            try { write(ProviderInput.PromptFrame(text)); return true; }
+            try { write(ProviderInput.PromptFrame(text)); accepted?.Invoke(); return true; }
             catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { return false; }
         }
     }

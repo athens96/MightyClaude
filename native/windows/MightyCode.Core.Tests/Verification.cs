@@ -51,6 +51,17 @@ internal static class Verification
         await File.WriteAllTextAsync(record + ".args", JsonSerializer.Serialize(args, Wire.Json));
         if (provider == "pi" && !args.Contains("--version")) { await PiVerification.FakeAsync(record, args); return; }
         if (args.Contains("--version")) { Console.WriteLine("2.1.271"); return; }
+        // A silent turn past the runner's idle close, then the next line read: a steer (written down, and the turn ends idle) or
+        // the end of the input (written down as closed).
+        static async Task AfterSilence(string record)
+        {
+            await Task.Delay(1500);
+            if (await Console.In.ReadLineAsync() is not { } next) { await File.WriteAllTextAsync(record + ".closed", ""); return; }
+            await File.WriteAllTextAsync(record + ".second", next);
+            Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"done\"}");
+            Console.WriteLine("{\"type\":\"system\",\"subtype\":\"session_state_changed\",\"state\":\"idle\"}");
+            while (await Console.In.ReadLineAsync() is not null) { }
+        }
         // A Claude launched with host permission prompts: answer the handshake,
         // ask to use one tool once the prompt frame arrives, record the answer.
         if (args.Contains("--permission-prompt-tool"))
@@ -103,6 +114,8 @@ internal static class Verification
                         var resumedFollow = await Console.In.ReadLineAsync();
                         if (resumedFollow is null) { Environment.Exit(24); return; }
                         await File.WriteAllTextAsync(record + ".follow", resumedFollow);
+                        // The steer is a turn of its own, which the CLI ends with its own result.
+                        Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"steered\"}");
                         Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"agent1\",\"run_id\":\"run-2\",\"patch\":{\"status\":\"completed\"}}");
                         Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"agent1\",\"run_id\":\"run-2\",\"tool_use_id\":\"toolu_2\",\"status\":\"completed\",\"summary\":\"two\"}");
                         Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"done\",\"origin\":{\"kind\":\"task-notification\",\"runId\":\"run-2\"}}");
@@ -110,6 +123,27 @@ internal static class Verification
                         while (await Console.In.ReadLineAsync() is { } extra) await File.AppendAllTextAsync(record + ".extra", extra + "\n");
                         return;
                     }
+                    case "user" when line.Contains("steered watchdog fixture", StringComparison.Ordinal):
+                    {
+                        // The request's turn ends idle with a background agent running; a steer opens a new turn, the agent ends, and
+                        // the new turn stays silent past the idle close: its input must stay open (the last turn's result does not close it).
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"bg1\",\"tool_use_id\":\"toolu_bg\",\"description\":\"Review\",\"is_backgrounded\":true,\"task_type\":\"local_agent\"}");
+                        Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"first\"}");
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"session_state_changed\",\"state\":\"idle\"}");
+                        var steered = await Console.In.ReadLineAsync();
+                        if (steered is null) { Environment.Exit(24); return; }
+                        await File.WriteAllTextAsync(record + ".follow", steered);
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"bg1\",\"tool_use_id\":\"toolu_bg\",\"status\":\"completed\",\"summary\":\"done\"}");
+                        await AfterSilence(record);
+                        return;
+                    }
+                    case "user" when line.Contains("busy watchdog fixture", StringComparison.Ordinal):
+                        // The request's result comes while the CLI says it still runs (a resumed agent no task names) and stays
+                        // silent past the idle close: its input must stay open until it says idle.
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"session_state_changed\",\"state\":\"running\"}");
+                        Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"first\"}");
+                        await AfterSilence(record);
+                        return;
                     case "user" when line.Contains("background stop fixture", StringComparison.Ordinal):
                         // The turn ends while a background shell still runs; only a stop ends the process.
                         await File.WriteAllTextAsync(record + ".pid", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -157,6 +191,8 @@ internal static class Verification
                         var follow = await Console.In.ReadLineAsync();
                         if (follow is null) { Environment.Exit(24); return; }
                         await File.WriteAllTextAsync(record + ".follow", follow);
+                        // The steered turn's own result (see the resumed agent fixture).
+                        Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"steered\"}");
                         Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"bg1\",\"tool_use_id\":\"toolu_bg\",\"status\":\"completed\",\"summary\":\"All good\"}");
                         Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"noted\",\"origin\":{\"kind\":\"task-notification\"}}");
                         while (await Console.In.ReadLineAsync() is { } extra) await File.AppendAllTextAsync(record + ".extra", extra + "\n");
@@ -1067,6 +1103,7 @@ internal static class Verification
         await Test("resumed agent: one resumed from a notice turn keeps the pane waiting, the queue holding and the input open until its notification", ResumedAgentVerification.AnAgentResumedFromANoticeTurnKeepsThePaneWaitingUntilItsNotification);
         await Test("resumed agent: one resumed from a steered turn waits once that turn ends", ResumedAgentVerification.AnAgentResumedFromASteeredTurnWaitsOnceThatTurnEnds);
         await Test("resumed agent: the runner keeps the input open for a notice turn's resumed agent until the CLI is idle", ResumedAgentVerification.TheRunnerKeepsTheInputOpenForAResumedAgent);
+        await Test("idle close: a steered turn and a turn the CLI still says runs keep their input past the silence", ResumedAgentVerification.TheIdleCloseWaitsForTheTurnTheCliStillRuns);
         await Test("plan card helpers pick the plan, place it and read its outcome", PlanCardVerification.Helpers);
         await Test("plan card takes the result's place in the diagram", PlanCardVerification.LayoutPlacesThePlanCard);
         await Test("plan block fits the pane like the newest result", PlanCardVerification.PlanFitsThePaneLikeTheResult);

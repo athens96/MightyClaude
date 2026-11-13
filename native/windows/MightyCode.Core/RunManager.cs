@@ -487,15 +487,15 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     if (!line.TrimStart().StartsWith('{')) { if (CliAuthFailure.Antigravity(line)) run.AuthenticationFailure = true; }
                     else if (CliAuthFailure.AntigravitySucceeded(line)) run.AuthenticationFailure = false;
                 }
+                // The turn's end is kept before its frame announces it (the pane waiting on background work): a steer that answers
+                // the announcement opens a new turn after it, and its reset is never undone by the result it answered.
+                var settles = run.Permissions is not null && ClaudeStream.IsSettlePoint(line);
+                if (settles && ClaudeStream.IsTurnResult(line)) run.TurnResultSeen = true;
                 Consume(line);
                 // One-shot shutdown: EOF only after the CLI's own turn result, so an approval reply is still
                 // possible while the turn runs; background tasks still running keep it open longer.
                 Interlocked.Exchange(ref run.LastOutputTicks, Environment.TickCount64);
-                if (run.Permissions is not null && ClaudeStream.IsSettlePoint(line))
-                {
-                    if (ClaudeStream.IsTurnResult(line)) run.TurnResultSeen = true;
-                    SettleInput();
-                }
+                if (settles) SettleInput();
             }, token, request.Kind == "shell" ? null : () => { if (run.Finalizing) return; if (run.Acp is { } acp) acp.FrameTooLarge(); else Log(run, "system", Locale.Get("run.notice.lineTooLong")); });
             var error = PumpAsync(child.Error, 1024 * 1024, line =>
             {
@@ -522,14 +522,15 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 if (interactive) _ = Task.Run(async () =>
                 {
                     // Closes input once the CLI is silent for BackgroundIdleClose after the request's result with no background
-                    // task running, whatever it last said of its session (`session_state_changed: idle` normally closes it first).
+                    // task running and the CLI idle (or never saying): a turn it still says runs keeps its input however long it
+                    // is silent (`session_state_changed: idle` normally closes it first, at the settle point).
                     var idle = BackgroundIdleClose.TotalMilliseconds;
                     try
                     {
                         while (run.Permissions is not null && !run.Finished && !token.IsCancellationRequested)
                         {
                             await Task.Delay(TimeSpan.FromMilliseconds(Math.Clamp(idle / 4, 50, 1000)), token);
-                            if (run.TurnResultSeen && !BackgroundRunning() && Environment.TickCount64 - Interlocked.Read(ref run.LastOutputTicks) >= idle) { CloseChannel(run, child); return; }
+                            if (Environment.TickCount64 - Interlocked.Read(ref run.LastOutputTicks) >= idle && ClaudeStream.ClosesInput(run.TurnResultSeen, BackgroundRunning(), run.CliState)) { CloseChannel(run, child); return; }
                         }
                     }
                     catch (OperationCanceledException) { }
@@ -716,7 +717,10 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         if (!runs.TryGetValue(sessionId, out var run) || run.Finalizing || run.Finished || run.Cancel.IsCancellationRequested || run.Request.Provider != "claude" || run.Permissions is not { } channel) return Task.FromResult(false);
         // After the request's result this starts a new turn in the same process (it stays open while background tasks run).
         // The queue no longer reads as waiting only on background work until that turn's own result (M/ProcessRunner.steer).
-        try { var accepted = channel.TrySteer(text); if (accepted) { Interlocked.Exchange(ref run.LastOutputTicks, Environment.TickCount64); run.TurnReopened?.Invoke(); run.Tracker?.Steer(Wire.Id(), text); } return Task.FromResult(accepted); } catch (IOException) { return Task.FromResult(false); } catch (ObjectDisposedException) { return Task.FromResult(false); }
+        // That turn is open: the last turn's result no longer lets the input close, and what the CLI last said of its session is
+        // not what it does now. Both are reset under the channel's lock right after the write, so the steered turn's own result,
+        // read only after it, is never lost behind the reset.
+        try { var accepted = channel.TrySteer(text, () => { run.TurnResultSeen = false; run.CliState = null; }); if (accepted) { Interlocked.Exchange(ref run.LastOutputTicks, Environment.TickCount64); run.TurnReopened?.Invoke(); run.Tracker?.Steer(Wire.Id(), text); } return Task.FromResult(accepted); } catch (IOException) { return Task.FromResult(false); } catch (ObjectDisposedException) { return Task.FromResult(false); }
     }
     /// <summary>Answers one pending ExitPlanMode request of one run (ClaudePlanMode.Response).</summary>
     public PlanRecord AnswerPlan(string sessionId, string requestId, PlanDecision decision)
