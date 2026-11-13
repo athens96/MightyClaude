@@ -2,6 +2,10 @@
 //! own, 20 blocks (five of them background commands a notice run reports) and a notice run, projected in each presentation. The timed run
 //! is ignored by default (`cargo test -p mighty-graph --release --test project_cost -- --ignored --nocapture`); the check that runs always
 //! holds what the projection's single copy of the shown runs rests on: the views read shown runs as they read the raw ones.
+//!
+//! Measured on the development PC (best / median of 15, release): before the blocks' locator and the entry-less push blocks 116.5 /
+//! 119.4 ms (diagram), 118.1 / 130.4 ms (timeline), 131.2 / 136.4 ms (structure); after them 38.3 / 40.4, 39.6 / 40.2 and 41.0 / 42.9
+//! ms, the digests unchanged.
 
 mod common;
 
@@ -172,6 +176,12 @@ fn the_views_read_shown_runs_as_they_read_the_raw_ones() {
         assert_eq!(steps::card_held(step, 4, &raw, entries, &ko), steps::card(step, 4, &raw, &ko));
     }
     assert!(held[STEPS - 1].iter().any(|e| e.id().starts_with("r2-n")), "the notice turn's entries in the step it fell in");
+    // The push's blocks are the view model's, found by the same runs and agents, without the transcripts it never sends.
+    let full = mighty_graph::view_model::blocks(&made, &raw, "", "Claude", true, None, Some(true), &ko);
+    let heads = mighty_graph::view_model::block_heads(&made, &raw, "", "Claude", true, None, Some(true), &ko);
+    assert!(full.iter().any(|b| !b.entries.is_empty()) && heads.iter().all(|b| b.entries.is_empty()));
+    let emptied: Vec<_> = full.into_iter().map(|b| mighty_graph::view_model::MightyGraphBlock { entries: vec![], ..b }).collect();
+    assert_eq!(heads, emptied);
 }
 
 #[test]

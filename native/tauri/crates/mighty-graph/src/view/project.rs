@@ -408,7 +408,8 @@ pub fn project(pane: &RunSession, state: &mut MightyPane, sources: &Sources, loc
     let draft = pane.draft.as_deref().unwrap_or("");
     let made = layout::make(shown, draft, pane.status() == "running", &state.expanded, &options, locale);
     let provider_label = labels::provider_label(pane.provider());
-    let blocks = view_model::blocks(&made, runs, draft, provider_label, sources.animations, sources.catalog, Some(true), locale);
+    // The push carries no block's transcript: none is copied for it.
+    let blocks = view_model::block_heads(&made, runs, draft, provider_label, sources.animations, sources.catalog, Some(true), locale);
     // The background sub-agents and tasks by their diagram node, for their kind, output lines and notice reply.
     let mut background: HashMap<String, &MightyGraphAgent> = HashMap::new();
     for run in runs {
@@ -422,11 +423,16 @@ pub fn project(pane: &RunSession, state: &mut MightyPane, sources: &Sources, loc
     let output = |id: &str| tails.get(id).cloned().unwrap_or_default();
     let flow = copy::blocks(&made, shown, fan_out, sources.definitions, &output, locale);
     let ordinals = support::request_ordinals(runs);
+    // Each request block's run, by its node id (the first run that has it), made once rather than looked for again for every block.
+    let mut requests: HashMap<String, usize> = HashMap::with_capacity(runs.len());
+    for (i, run) in runs.iter().enumerate() {
+        requests.entry(support::node_id(run, "request")).or_insert(i);
+    }
     let mut cards: IndexMap<String, Value> = IndexMap::new();
     let mut copies: IndexMap<String, WebMightyBlock> = IndexMap::new();
     for raw in blocks {
         let mut block = raw;
-        let index = if block.kind == "request" { runs.iter().position(|r| block.id == support::node_id(r, "request")) } else { None };
+        let index = if block.kind == "request" { requests.get(&block.id).copied() } else { None };
         if let Some(i) = index {
             block.title = graph_request_title(&runs[i], ordinals[i], pane.provider(), sources, locale);
         }
