@@ -10,7 +10,13 @@ use common::temp_dir;
 use mighty_core::locale::Locale;
 use mighty_core::store::{self, LoadSource, StateError, Store};
 
-const GOOD: &str = r#"{"version":1,"workspaces":[{"id":"w1","name":"A","path":"C:\\a","createdAt":"2026-10-24T00:00:00Z"}],"sessions":[],"theme":"light"}"#;
+/// One workspace, in a folder that is absolute on this OS (`C:\a` is one only on Windows), so the load keeps it on every OS.
+fn good() -> String {
+    let root = if cfg!(windows) { r"C:\\a" } else { "/a" };
+    format!(
+        r#"{{"version":1,"workspaces":[{{"id":"w1","name":"A","path":"{root}","createdAt":"2026-10-24T00:00:00Z"}}],"sessions":[],"theme":"light"}}"#
+    )
+}
 const OLDER: &str = r#"{"version":1,"workspaces":[],"sessions":[],"theme":"dark"}"#;
 
 fn listing(dir: &Path) -> Vec<(String, Vec<u8>)> {
@@ -27,7 +33,7 @@ fn en() -> Locale {
 #[test]
 fn a_zeroed_state_is_moved_aside_and_its_backup_restored() {
     let dir = temp_dir("zeroed");
-    fs::write(dir.join(store::STATE_FILE), vec![0u8; GOOD.len()]).unwrap();
+    fs::write(dir.join(store::STATE_FILE), vec![0u8; good().len()]).unwrap();
     fs::write(dir.join("workspace-state.json.bak"), OLDER).unwrap();
     let mut store = Store::new(dir.clone(), None, true);
     let loaded = store.load(&Locale::new("ko")).unwrap();
@@ -62,7 +68,7 @@ fn a_store_that_may_not_write_reports_what_it_would_do_and_changes_nothing() {
 fn a_damaged_state_without_a_readable_backup_starts_empty() {
     for backup in [None, Some(&b"{not json"[..]), Some(&[0u8; 8][..])] {
         let dir = temp_dir("damaged");
-        let mut bytes = GOOD.as_bytes().to_vec();
+        let mut bytes = good().into_bytes();
         bytes[20] = 0;
         fs::write(dir.join(store::STATE_FILE), bytes).unwrap();
         if let Some(backup) = backup {
@@ -108,16 +114,17 @@ fn a_state_over_eight_megabytes_is_refused() {
 fn a_new_default_profile_takes_the_legacy_state() {
     let dir = temp_dir("new");
     let legacy = temp_dir("legacy");
-    fs::write(legacy.join(store::STATE_FILE), GOOD).unwrap();
+    fs::write(legacy.join(store::STATE_FILE), good()).unwrap();
     // Read-only: read where it is, nothing copied.
     let mut reader = Store::new(dir.clone(), Some(legacy.clone()), false);
-    reader.load(&en()).unwrap();
+    let loaded = reader.load(&en()).unwrap();
     assert_eq!(reader.source, Some(LoadSource::Legacy(legacy.join(store::STATE_FILE))));
+    assert_eq!(loaded.workspaces().len(), 1, "the legacy state's workspace is kept");
     assert!(!dir.join(store::STATE_FILE).exists(), "the legacy state was copied");
     // Writing: copied once, as C# copies it.
     let mut writer = Store::new(dir.clone(), Some(legacy.clone()), true);
     writer.load(&en()).unwrap();
-    assert_eq!(fs::read(dir.join(store::STATE_FILE)).unwrap(), GOOD.as_bytes());
+    assert_eq!(fs::read(dir.join(store::STATE_FILE)).unwrap(), good().as_bytes());
     fs::remove_dir_all(dir).unwrap();
     fs::remove_dir_all(legacy).unwrap();
 }
@@ -171,7 +178,7 @@ fn a_refused_replace_is_tried_again() {
 fn the_saved_theme_is_read_before_the_load() {
     let dir = temp_dir("theme");
     assert_eq!(store::saved_theme(&dir), "dark");
-    fs::write(dir.join(store::STATE_FILE), GOOD).unwrap();
+    fs::write(dir.join(store::STATE_FILE), good()).unwrap();
     assert_eq!(store::saved_theme(&dir), "light");
     fs::remove_dir_all(dir).unwrap();
 }

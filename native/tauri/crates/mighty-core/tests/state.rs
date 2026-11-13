@@ -50,10 +50,17 @@ fn delegation_record_states_load_and_save_as_a_fixed_point() {
 fn unknown_fields_are_dropped_and_lenient_fields_load_as_nothing() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/unknown-fields.json");
     let text = std::fs::read_to_string(&path).unwrap();
+    // The local workspace's folder must be absolute on this OS, as `C:\work\local` is only on Windows: elsewhere the load drops
+    // that workspace, and with it the session holding the keyless graph step, before the step is normalized (C# as well).
+    let local = r#""path": "C:\\work\\local""#;
+    assert!(text.contains(local));
+    let text = if cfg!(windows) { text } else { text.replace(local, r#""path": "/work/local""#) };
     // Its graph run's step has no key: C# throws reading `step.Key.Length` while it normalizes, and the load fails.
     assert_eq!(store::read_state(text.as_bytes(), &en()).unwrap_err().kind(), "crash");
     let text = text.replace(r#""steps": [{ "text": "one" }]"#, r#""steps": [{ "key": "k1", "content": "one" }]"#);
     let loaded = assert_fixed_point("unknown-fields.json", text.as_bytes());
+    assert_eq!(loaded.workspaces().len(), 2, "both workspaces are kept, the local one and the remote one");
+    assert_eq!(loaded.sessions().len(), 2, "both sessions are kept");
     let (_, saved) = store::encode_for_save(&loaded).unwrap();
     let written: Value = serde_json::from_slice(&saved).unwrap();
     // C# keeps no field it does not model (no JsonExtensionData in Core): a save drops them.
