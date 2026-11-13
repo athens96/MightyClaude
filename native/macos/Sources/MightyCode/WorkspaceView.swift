@@ -48,24 +48,8 @@ struct WorkspaceView: View {
             }
         }
         .sheet(item: $store.terminalHistorySession) { LegacyTerminalHistory(session: $0) }
-        .sheet(item: $store.paneWorktreeChangesTarget) { target in
-            PaneWorktreeChangesSheet(target: target) { store.paneWorktreeChangesTarget = nil }
-        }
-        .sheet(item: Binding(get: { store.paneWorktreeListWorkspace.map(PaneWorktreeListTarget.init) }, set: { store.paneWorktreeListWorkspace = $0?.id })) { target in
-            PaneWorktreeListSheet(workspaceId: target.id).environmentObject(store)
-        }
-        .confirmationDialog(L("paneWorktree.choice.title"), isPresented: Binding(get: { store.paneWorktreeChoice != nil }, set: { if !$0 { store.paneWorktreeChoice = nil } }),
-                            titleVisibility: .visible, presenting: store.paneWorktreeChoice) { choice in
-            if choice.gitRefusal == nil {
-                Button(L("paneWorktree.choice.worktree")) { store.answerPaneWorktreeChoice(choice, worktree: true) }
-                    .keyboardShortcut(.defaultAction)
-                Button(L("paneWorktree.choice.always")) { store.answerPaneWorktreeChoice(choice, worktree: true, always: true) }
-            }
-            Button(L("paneWorktree.choice.sameFolder")) { store.answerPaneWorktreeChoice(choice, worktree: false) }
-            Button(L("common.cancel"), role: .cancel) { store.paneWorktreeChoice = nil }
-        } message: { choice in
-            Text(verbatim: choice.gitRefusal.map { L("paneWorktree.choice.notGit", ["reason": $0]) } ?? L("paneWorktree.choice.detail"))
-        }
+        // Their own modifier: inline, they made this chain too long for the compiler to type-check in time (CI).
+        .modifier(PaneWorktreeModals(store: store))
         .sheet(item: $store.resumePicker) { request in
             Group {
                 switch request.stage {
