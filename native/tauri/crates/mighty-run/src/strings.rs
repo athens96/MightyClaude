@@ -6,6 +6,24 @@ use std::sync::RwLock;
 use mighty_core::locale::{self, Locale};
 
 static LANGUAGE: RwLock<Option<&'static str>> = RwLock::new(None);
+/// `CultureInfo.CurrentCulture`'s group separator and sizes, as the host read them from the OS's regional format.
+static NUMBER_GROUPING: RwLock<Option<(String, Vec<usize>)>> = RwLock::new(None);
+
+/// The number format `{value:N0}` writes (C#'s current culture: the user's regional format, never the app's language), read by the
+/// host from the OS. Until it is set, a comma every three digits.
+pub fn set_number_grouping(separator: &str, sizes: &[usize]) {
+    if let Ok(mut current) = NUMBER_GROUPING.write() {
+        *current = Some((separator.to_string(), sizes.to_vec()));
+    }
+}
+
+/// `value.ToString("N0")` in the current culture (`$"{value:N0}"`).
+pub fn n0(value: i64) -> String {
+    match NUMBER_GROUPING.read().ok().and_then(|current| current.clone()) {
+        Some((separator, sizes)) => crate::compaction::grouped_with(value, &separator, &sizes),
+        None => crate::compaction::grouped(value),
+    }
+}
 
 /// The language every lookup reads (one of `ko`, `en`, `zh`, `ja`; anything else reads English).
 pub fn set_language(language: &str) {
