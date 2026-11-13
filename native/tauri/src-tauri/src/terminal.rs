@@ -20,6 +20,7 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
 use mighty_composer::cards::TerminalPromptInput;
+use mighty_core::add_pane::{save_layout, save_mode};
 use mighty_core::layout;
 use mighty_core::model::{AppSnapshot, PaneLayoutNode, RunSession};
 use mighty_core::shell::effective_layout;
@@ -36,7 +37,8 @@ use mighty_terminal::{
 use serde_json::{Value, json};
 use tauri::Manager;
 
-use crate::host::{Host, Registry, View};
+use crate::frame::{activate_pane, select_session};
+use crate::host::{Host, Registry};
 use crate::methods::text;
 
 /// What a later stage gives the terminals; until then each stays at rest.
@@ -194,54 +196,6 @@ fn update_block_record(
     }
 }
 
-// ── the layout rules these methods share with methods.rs (each C#'s) ──────────────────────────────────────────────────────────
-
-/// C# `SaveLayout`.
-fn save_layout(state: &mut AppSnapshot, workspace: &str, node: Option<PaneLayoutNode>) {
-    let layouts = state.pane_layouts.get_or_insert_with(Default::default);
-    match node {
-        Some(node) => {
-            layouts.insert(workspace.to_string(), Some(node));
-        }
-        None => {
-            layouts.shift_remove(workspace);
-        }
-    }
-}
-
-/// C# `SaveLayoutSelection`.
-fn save_selection(state: &mut AppSnapshot, workspace: &str, id: &str) {
-    state.pane_layout_active_session_ids.get_or_insert_with(Default::default).insert(workspace.to_string(), Some(id.to_string()));
-}
-
-/// C# `ActivatePane` (methods.rs `activate_pane`): a pane of the active workspace becomes the active one.
-fn activate_pane(view: &mut View, id: &str) -> Result<(), String> {
-    if view.shows_dashboard || view.snapshot.active_session_id.as_deref() == Some(id) {
-        return Ok(());
-    }
-    let workspace = view.snapshot.session(id).map(|s| s.workspace_id().to_string());
-    let active = view.snapshot.active_workspace_id.clone();
-    let Some(workspace) = workspace.filter(|w| Some(w) == active.as_ref()) else { return Ok(()) };
-    view.update(|state| {
-        save_selection(state, &workspace, id);
-        state.active_session_id = Some(id.to_string());
-    })
-}
-
-/// C# `SelectLayoutSession` (methods.rs `select_session`): the pane's group shows it, and it becomes the active pane of its
-/// workspace, which becomes the active one.
-fn select_layout_session(view: &mut View, id: &str) -> Result<(), String> {
-    view.shows_dashboard = false;
-    let Some(workspace) = view.snapshot.session(id).map(|s| s.workspace_id().to_string()) else { return view.update(|_| {}) };
-    let node = effective_layout(&view.snapshot, &workspace, &mut view.layout_defaults).map(|n| layout::select(&n, id));
-    view.update(|state| {
-        save_layout(state, &workspace, node);
-        save_selection(state, &workspace, id);
-        state.active_workspace_id = Some(workspace.clone());
-        state.active_session_id = Some(id.to_string());
-    })
-}
-
 /// `AgentIOPaneKind.Terminal`.
 const AGENT_TERMINAL: &str = "agent-terminal";
 
@@ -286,7 +240,7 @@ fn with_agent_io_pane(
         tree = Some(layout::move_tab(node, &pane_id, target, "right", None));
     }
     save_layout(state, workspace, tree);
-    state.pane_layout_modes.get_or_insert_with(Default::default).insert(workspace.to_string(), Some("custom".into()));
+    save_mode(state, workspace, "custom");
     Ok(())
 }
 
@@ -580,7 +534,7 @@ impl Terminals {
             }
         };
         show_agent_io_pane(host, agent, &workspace, AGENT_TERMINAL)?;
-        select_layout_session(&mut host.view(), &format!("{AGENT_TERMINAL}:{agent}"))
+        select_session(&mut host.view(), &format!("{AGENT_TERMINAL}:{agent}"))
     }
 
     // ── shell block runs (C# MainWindow.ShellBlockRuns.cs) ───────────────────────────────────────────────────────────────────

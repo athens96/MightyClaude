@@ -123,7 +123,7 @@ async fn answer_of(receiver: tokio::sync::oneshot::Receiver<Value>) -> Value {
     receiver.await.unwrap_or(Value::Null)
 }
 
-// ── the window's layout actions (C# MainWindow.Layout.cs; methods.rs keeps its own copies of select and preset) ──
+// ── the window's layout actions (C# MainWindow.Layout.cs; methods.rs, terminal.rs, files.rs and surface.rs use them too) ──
 
 /// C# `SelectLayoutSession`: the pane's group shows it, and it becomes the active pane of its workspace, which becomes the active one.
 pub fn select_session(view: &mut View, id: &str) -> Result<(), String> {
@@ -170,7 +170,7 @@ pub fn activate_pane(view: &mut View, id: &str) -> Result<(), String> {
 }
 
 /// C# `SelectWorkspace`: opened in the sidebar and made active, with the pane it last showed (else its first group's).
-fn select_workspace(view: &mut View, id: &str) -> Result<(), String> {
+pub fn select_workspace(view: &mut View, id: &str) -> Result<(), String> {
     if view.snapshot.workspace(id).is_none() {
         return Ok(());
     }

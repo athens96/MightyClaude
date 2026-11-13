@@ -21,10 +21,11 @@ use std::time::Duration;
 use mighty_composer::images as pictures;
 use mighty_composer::svg;
 use mighty_core::AppSnapshot;
+use mighty_core::add_pane::{save_layout, save_mode, save_selection};
 use mighty_core::graph::MightyGraphRun;
 use mighty_core::layout;
 use mighty_core::locale::Locale;
-use mighty_core::model::{AgentImageRef, PaneLayoutNode, RunSession};
+use mighty_core::model::{AgentImageRef, RunSession};
 use mighty_core::shell::{effective_layout, layout_mode};
 use mighty_core::wire;
 use mighty_files::changes::{self, FileOriginalStore};
@@ -263,35 +264,6 @@ fn banner(host: &Host, message: String) {
 
 // ---- the files pane in the layout (C# OpenFilePane, OpenSlimPane) -------------------------------------------------------------
 
-fn save_layout(state: &mut AppSnapshot, workspace: &str, node: Option<PaneLayoutNode>) {
-    let layouts = state.pane_layouts.get_or_insert_with(Default::default);
-    match node {
-        Some(node) => {
-            layouts.insert(workspace.to_string(), Some(node));
-        }
-        None => {
-            layouts.shift_remove(workspace);
-        }
-    }
-}
-
-fn save_selection(state: &mut AppSnapshot, workspace: &str, id: &str) {
-    state.pane_layout_active_session_ids.get_or_insert_with(Default::default).insert(workspace.to_string(), Some(id.to_string()));
-}
-
-/// C# `SelectLayoutSession`: the pane's group shows it, and it becomes the active pane of its workspace, which becomes the active one.
-fn select_session(view: &mut View, id: &str) -> Result<(), String> {
-    view.shows_dashboard = false;
-    let Some(workspace) = view.snapshot.session(id).map(|s| s.workspace_id().to_string()) else { return Ok(()) };
-    let node = effective_layout(&view.snapshot, &workspace, &mut view.layout_defaults).map(|n| layout::select(&n, id));
-    view.update(|state| {
-        save_layout(state, &workspace, node);
-        save_selection(state, &workspace, id);
-        state.active_workspace_id = Some(workspace.clone());
-        state.active_session_id = Some(id.to_string());
-    })
-}
-
 /// The add menu's files entry (frame.rs's `OPEN_FILES`): [`open_files_pane`] for the workspace the menu was opened for.
 pub fn open_files(host: Arc<Host>, workspace: Option<String>) -> crate::frame::Pending {
     Box::pin(async move { open_files_pane(&mut host.view(), &host.locale, workspace.as_deref()) })
@@ -316,7 +288,7 @@ pub fn open_slim_pane(view: &mut View, locale: &Locale, workspace_id: Option<&st
     let workspace = workspace.id().to_string();
     let pane_id = format!("{kind}:{workspace}");
     if state.session(&pane_id).is_some() {
-        return select_session(view, &pane_id);
+        return crate::frame::select_session(view, &pane_id);
     }
     if !pane::has_room(state.sessions().len()) {
         return Err(locale.get("files.error.noRoom"));
@@ -347,7 +319,7 @@ pub fn open_slim_pane(view: &mut View, locale: &Locale, workspace_id: Option<&st
             let mode = if placed.kind() == "split" { "custom" } else { "tabs" };
             save_layout(state, &workspace, Some(placed));
             if !focus {
-                state.pane_layout_modes.get_or_insert_with(Default::default).insert(workspace.clone(), Some(mode.to_string()));
+                save_mode(state, &workspace, mode);
             }
         }
         save_selection(state, &workspace, &pane_id);
