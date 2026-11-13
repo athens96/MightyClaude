@@ -48,6 +48,7 @@ internal static class Program
             case "times": return Lines(args[1], args[2], Time);
             case "delta": return Delta(args[1], args[2]);
             case "schema": return Schema(args[1]);
+            case "composer": return ComposerParity.Run(args[1], args[2]);
             default: Console.Error.WriteLine("unknown command " + args[0]); return 2;
         }
     }

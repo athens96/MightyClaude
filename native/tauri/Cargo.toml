@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/mighty-core", "crates/mighty-platform", "crates/mighty-platform-windows", "crates/mighty-platform-macos", "src-tauri"]
+members = ["crates/mighty-core", "crates/mighty-composer", "crates/mighty-platform", "crates/mighty-platform-windows", "crates/mighty-platform-macos", "src-tauri"]
 resolver = "3"
 
 [workspace.package]
