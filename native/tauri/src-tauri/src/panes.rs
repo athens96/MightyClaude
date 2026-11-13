@@ -174,6 +174,8 @@ pub fn cards_of(host: &Host, view: &mut View, id: &str) -> Option<(Vec<Card>, bo
     // `ComposerShowsPlanActions`: the Mighty diagram draws the waiting plan, so the composer shows its answers alone.
     let diagram_draws_plan =
         plan.is_some() && mighty_graph::view::diagram_plan_run_id(true, cards::in_mighty_diagram(&pane), pane.graph_runs()).is_some();
+    // A command in the pane's terminal waiting for input (terminal.rs, C# `terminalPrompts`).
+    let terminal_prompt = crate::terminal::prompt_input(host, id);
     let inputs = CardInputs {
         locale: host.locale,
         utc_offset_minutes: utc_offset_minutes(),
@@ -187,7 +189,7 @@ pub fn cards_of(host: &Host, view: &mut View, id: &str) -> Option<(Vec<Card>, bo
         background_open,
         background_rows: &[],
         antigravity: None,
-        terminal_prompt: None,
+        terminal_prompt: terminal_prompt.as_ref(),
         web_open: &[],
         login: None,
         status_line: None,

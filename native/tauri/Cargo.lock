@@ -1811,6 +1811,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "mighty-terminal"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "mighty-core",
+ "mighty-platform",
+ "mighty-platform-windows",
+ "mighty-run",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "mightycode"
 version = "0.4.59"
 dependencies = [
@@ -1824,6 +1840,7 @@ dependencies = [
  "mighty-platform-macos",
  "mighty-platform-windows",
  "mighty-run",
+ "mighty-terminal",
  "serde",
  "serde_json",
  "sys-locale",

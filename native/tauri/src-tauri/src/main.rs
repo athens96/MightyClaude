@@ -18,7 +18,9 @@ mod platform;
 mod runs;
 mod smoke;
 mod smoke_runs;
+mod smoke_terminal;
 mod surface;
+mod terminal;
 
 use std::sync::Arc;
 
@@ -192,7 +194,13 @@ fn main() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![host_post, smoke_probe, smoke::smoke_surface, smoke_runs::smoke_step])
+        .invoke_handler(tauri::generate_handler![
+            host_post,
+            smoke_probe,
+            smoke::smoke_surface,
+            smoke_runs::smoke_step,
+            smoke_terminal::smoke_terminal
+        ])
         .setup(move |app| {
             let (state, banner, log, smoke) = parts.take().expect("setup runs once");
             let version = app.package_info().version.to_string();
@@ -215,6 +223,8 @@ fn main() {
                 let _ = std::fs::create_dir_all(folder);
             }
             runs::Runs::start(&host, platform.processes.clone(), platform.environment.clone(), fake_claude.clone(), image_dir.clone());
+            // Terminal panes, the agents' terminals, terminal prompts and shell block runs (terminal.rs).
+            terminal::Terminals::start(&host, &platform);
             host.start_clocks();
             let (inbound, mut calls) = tokio::sync::mpsc::unbounded_channel::<Value>();
             app.manage(Inbound(inbound));
@@ -302,6 +312,8 @@ fn main() {
         RunEvent::ExitRequested { code: Some(code), .. } => exit_code = code,
         RunEvent::Exit => {
             if let Some(host) = app.try_state::<Arc<Host>>() {
+                // Every terminal closed first (C# CloseTerminalsAsync), the wait bounded.
+                terminal::close_all(app);
                 // The last save (C# DesktopService.DisposeAsync), written only with --allow-state-write.
                 host.close();
                 host.write_unimplemented();

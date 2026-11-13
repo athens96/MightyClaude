@@ -26,6 +26,11 @@ pub fn surfaces(window: tauri::Window) -> Arc<dyn SurfaceFactory> {
     os::surfaces(window)
 }
 
+/// The system clipboard's text (a terminal's copy and paste).
+pub fn clipboard() -> Arc<dyn mighty_platform::Clipboard> {
+    os::clipboard()
+}
+
 /// An http(s) or mailto address opened with the user's default handler (C# `Process.Start` with `UseShellExecute`).
 pub fn open_url(url: &str) -> std::result::Result<(), String> {
     os::open_url(url)
