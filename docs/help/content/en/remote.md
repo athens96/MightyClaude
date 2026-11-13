@@ -50,7 +50,7 @@ These are not available in a remote workspace, because they read this computer's
 - The files pane and the browser pane
 - [Styles](styles.md) that read project files, status lines, and resuming earlier sessions
 
-Remote workspaces do not appear on the [phone](phone.md).
+pi, opencode and Hermes panes cannot be opened in a remote workspace yet. Remote workspaces do not appear on the [phone](phone.md).
 
 ## When the connection drops {#disconnect}
 - If the network drops, a running remote pane ends in an error and the connection list says why. The host stops a run it no longer hears from within about 30 seconds.

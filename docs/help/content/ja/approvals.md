@@ -16,7 +16,7 @@ section: approvals
 許可はこのリクエスト1回にだけ適用されます。今後も常に許可するルールは作成しません。
 
 > [!note]
-> 許可を求めるカードは、このMacのClaudeペイン(Always askなど)と、Codexの{{ui:permission.label.onRequest}}、{{ui:permission.label.fullAccess}}以外のopencodeペインのすべての権限で表示されます。Hermesペインではファイル変更と危険なコマンドで表示されます。ほかの権限では、CLIの設定に従って許可またはブロックされます。Antigravityは動き方が違うため、[別の方法で確認します](#antigravity-permission)。
+> 許可を求めるカードは、Claudeペイン(Always askなど)と、Codexの{{ui:permission.label.onRequest}}、{{ui:permission.label.fullAccess}}以外のopencodeペインのすべての権限で表示されます。Hermesペインではファイル変更と危険なコマンドで表示されます。ほかの権限では、CLIの設定に従って許可またはブロックされます。Antigravityは動き方が違うため、[別の方法で確認します](#antigravity-permission)。
 
 ## Antigravityの権限カード {#antigravity-permission}
 Antigravityは作業の途中でアプリに確認できません。確認が必要な操作(コマンドの実行、ファイルの書き込みなど)に当たると、その操作だけを飛ばしてターンを終え、拒否した操作をまとめて1枚のカードで尋ねます。権限が{{ui:permission.label.default}}のときも表示され、スマートフォンにも同じカードが表示されます。
@@ -75,7 +75,7 @@ CLIのサインインの有効期限が切れてリクエストが失敗する�
 
 {{platform:mac}} Antigravity、pi、opencode、Hermesはターミナルでサインインします。失敗したペインの隣にサインイン用のターミナルが開き、Antigravity（agy）は開くブラウザでGoogleアカウントにサインインします。piはターミナルで`/login`と入力し、サブスクリプションを選ぶかAPIキーを入力します。opencodeは`opencode auth login`が実行されるので、提供元を選んでからサインインするかAPIキーを入力します。Hermesは`hermes model`が実行されるので、モデルの提供元を選んでサインインし、既定のモデルを選びます。サインインが確認されると、失敗したリクエストが自動的に再送信されます。ターミナルはサインイン後も開いたままです。
 
-{{platform:windows}} Windowsでは、Antigravityとpiがターミナルでサインインします。サインイン用のターミナルは別のウィンドウ（Windows Terminalがあれば新しいタブ）で、失敗したペインのフォルダーに開きます。Antigravity（agy）は開くブラウザでGoogleアカウントにサインインします。piは`/login`と入力し、サブスクリプションを選ぶかAPIキーを入力します。サインインが確認されると、失敗したリクエストが自動的に再送信されます。アプリはこのターミナルを閉じません。
+{{platform:windows}} Windowsでも、Antigravity、pi、opencode、Hermesはターミナルでサインインします。サインイン用のターミナルは別のウィンドウ（Windows Terminalがあれば新しいタブ）で、失敗したペインのフォルダーに開き、ターミナルでの操作はMacと同じです。Antigravity（agy）は開くブラウザでGoogleアカウントにサインインします。piは`/login`と入力し、サブスクリプションを選ぶかAPIキーを入力します。opencodeは`opencode auth login`、Hermesは`hermes model`が実行されます。サインインが確認されると、失敗したリクエストが自動的に再送信されます。アプリはこのターミナルを閉じません。
 
 > [!tip]
 > {{ui:settings.nav.cli}}タブの{{ui:settings.cliAccounts.autoLoginToggle}}をオンにしておくと、サインインが切れた時点ですぐに再サインインを始めます。

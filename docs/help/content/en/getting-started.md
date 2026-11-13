@@ -13,19 +13,19 @@ Mighty Code is a desktop app for using Claude Code, Codex CLI, Google's Antigrav
 - Codex CLI: Mac `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, Windows `npm install -g @openai/codex`
 - Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
 - pi: Mac and Windows `npm install -g @mariozechner/pi-coding-agent` (needs Node.js; see [pi](agent-pane.md#pi))
-- opencode: Mac `npm install -g @opencode/cli` (OpenCode 2) (needs Node.js; see [opencode](agent-pane.md#opencode))
-- Hermes: Mac `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash` (needs Git; see [Hermes](agent-pane.md#hermes))
+- opencode: Mac and Windows `npm install -g @opencode/cli` (OpenCode 2) (needs Node.js; see [opencode](agent-pane.md#opencode))
+- Hermes: Mac `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash` (needs Git), Windows `irm https://hermes-agent.nousresearch.com/install.ps1 | iex` (see [Hermes](agent-pane.md#hermes))
 
 > [!tip]
 > Once the app is open, {{ui:settings.nav.tools}} shows which CLIs are ready. On a Mac you install them right there; on Windows you copy the install commands. You sign in on the {{ui:settings.nav.cli}} tab. See [Settings](settings.md#components).
 
 ## Install {#install}
 1. Get the file for your system from the [download page](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/index.html).
-2. macOS: unzip `MightyCode-macos.zip`, move `MightyCode.app` to your Applications folder and open it.
+2. macOS: open `MightyCode-macos.dmg`, drag Mighty Code to your Applications folder and open it. If you got the zip (`MightyCode-macos.zip`), unzip it and move `MightyCode.app` to your Applications folder. The Mac app is for Apple silicon Macs.
 3. Windows: run `MightyCode-windows-x64-setup.exe` (`arm64` on ARM PCs) to install, then open the app from the Start menu. See [How Windows differs](windows.md#install) for details.
 
-> [!warning]
-> The app is not notarized by Apple. If macOS blocks it the first time, Control-click the app in Finder and choose **Open**, or allow it in System Settings → Privacy & Security.
+> [!note]
+> The Mac app is notarized by Apple, so it opens without a security warning even the first time. The Windows app is not code-signed, so SmartScreen may block its first run ([How Windows differs](windows.md#install)).
 
 ## Updates {#update}
 With {{ui:settings.appUpdate.autoUpdateToggle}} on (it is on from the start), the app gets and installs new versions by itself.
@@ -75,7 +75,7 @@ Git (Xcode Command Line Tools) opens a system install window, where you finish i
 
 {{ui:setup.button.later}} closes the screen; check {{ui:setup.button.neverShow}} before closing and it no longer opens at launch. While a required tool is missing, the welcome screen has a {{ui:setup.title}} button, and a pane blocked by a missing CLI has an {{ui:setup.blocked.install}} button. The same list is in Settings → {{ui:settings.nav.tools}}.
 
-{{platform:windows}} Windows has the same screen. The commands run in order, from your home folder, in one PowerShell window the app opens (a Windows Terminal tab when it is installed, otherwise a console window), which stays open until you press Enter at the end. Claude Code, Codex, Antigravity and uv install with their own official PowerShell installers, Git and glab with winget for your user only, and Node.js and gh with winget for all users. An install for all users may show Windows' own administrator prompt; the setup screen itself never asks for administrator rights. When the install ends, the app reads PATH again from the registry and checks. Homebrew, Bun and gstack install on a Mac only.
+{{platform:windows}} Windows has the same screen. The commands run in order, from your home folder, in one PowerShell window the app opens (a Windows Terminal tab when it is installed, otherwise a console window), which stays open until you press Enter at the end. Claude Code, Codex, Antigravity, Hermes and uv install with their own official PowerShell installers, pi and opencode with npm, Git and glab with winget for your user only, and Node.js and gh with winget for all users. An install for all users may show Windows' own administrator prompt; the setup screen itself never asks for administrator rights. When the install ends, the app reads PATH again from the registry and checks. Homebrew, Bun and gstack install on a Mac only.
 
 ## Open a workspace {#open-workspace}
 A workspace is one project folder. Panes, the tab layout and conversation history are saved per workspace.

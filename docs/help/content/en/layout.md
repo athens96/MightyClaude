@@ -41,19 +41,19 @@ Click {{ui:phone.dashboard.title}} under the search field in the sidebar to see 
 ![[dashboard]]
 
 ## Add a pane {#add-pane}
-A pane is an AI agent (Claude, Codex or Antigravity), a terminal, a browser or a files pane.
+A pane is an AI agent (Claude, Codex, Antigravity, pi, opencode or Hermes), a terminal, a browser or a files pane.
 
 1. Click {{ui:workspace.addPane}} in the sidebar.
-2. Pick what to add: a Claude, Codex or Antigravity pane, {{ui:workspace.newTerminal}} or {{ui:browser.newTab}}. The bottom group of the menu has the three ways to add a workspace: {{ui:workspace.add.existing}}, {{ui:workspace.add.newFolder}} and {{ui:workspace.add.fromGit}} ([Open a workspace](getting-started.md#open-workspace)).
+2. Pick what to add: an agent pane (Claude, Codex, Antigravity, pi, opencode or Hermes), {{ui:workspace.newTerminal}} or {{ui:browser.newTab}}. The bottom group of the menu has the three ways to add a workspace: {{ui:workspace.add.existing}}, {{ui:workspace.add.newFolder}} and {{ui:workspace.add.fromGit}} ([Open a workspace](getting-started.md#open-workspace)).
 3. A new AI pane takes the model, thinking effort, permission and view of the most recently used pane of the same agent. The conversation starts fresh.
 
 Shortcuts: {{ui:menu.newClaudePane}} is {{kbd:⌘N}}, {{ui:menu.addTerminalPane}} is {{kbd:⌘T}} and {{ui:menu.showFiles}} is {{kbd:⇧⌘E}}.
 
 > [!note]
-> Codex and Antigravity panes carry a {{ui:badge.beta}} label.
+> Every agent pane but Claude's (Codex, Antigravity, pi, opencode, Hermes) carries a {{ui:badge.beta}} label.
 
 ### Continue an earlier session {#resume}
-When you add a Claude, Codex or Antigravity pane and this folder has earlier sessions, you are asked what to do. Antigravity's are its conversations in this folder; the ones its sub-agents ran are not listed.
+When you add an agent pane and this folder has earlier sessions, you are asked what to do. Antigravity's are its conversations in this folder; the ones its sub-agents ran are not listed.
 1. Click {{ui:resume.choice.startNew}} for a new conversation, or {{ui:resume.choice.resume}} for an earlier one.
 2. Pick a session in {{ui:resume.title}}. Use {{ui:resume.search}} to find it.
 3. The new pane continues that session.

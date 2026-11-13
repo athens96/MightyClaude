@@ -19,7 +19,7 @@ section: agent-pane
 ### 実行中に続けてリクエストする {#queue}
 タスクの実行中でも、次のリクエストを書けます。入力欄に文字があると、停止ボタンの横に送信ボタンと同じ丸いボタンが表示されます。
 - {{kbd:Enter}}または{{ui:queue.add}}ボタン: 次のリクエストとしてキューに入れます。現在のタスクが終わると順番に実行します。1つのペインに16件まで入れられます。
-- {{kbd:⌘Enter}}または{{ui:queue.worktree}}ボタン: MightyオーケストレーションがオンのこのMacのClaudeペイン、または子がファイルを変更できるモードのCodex・Antigravityペインが、コミットのあるブランチのgitリポジトリにあるときは、このペインの隣に専用のgit worktreeを持つ新しい子ペインを開いてすぐに実行します。実行中のタスクはそのまま続き、子が終わったらサイドバーのカードで結果をマージします([新しいworktreeで実行する](delegation.md#worktree))。
+- {{kbd:⌘Enter}}または{{ui:queue.worktree}}ボタン: MightyオーケストレーションがオンのClaudeペイン、または子がファイルを変更できるモードのCodex・Antigravityペインが、コミットのあるブランチのgitリポジトリにあるときは、このペインの隣に専用のgit worktreeを持つ新しい子ペインを開いてすぐに実行します。実行中のタスクはそのまま続き、子が終わったらサイドバーのカードで結果をマージします([新しいworktreeで実行する](delegation.md#worktree))。
 - 子ペイン、そのようなリポジトリの外のペイン、Mightyオーケストレーションをオフにしたペインでは、{{kbd:⌘Enter}}も{{kbd:Enter}}と同じようにキューに入れます。子を作れないときや始められないときも、テキストはキューに入ります([新しいworktreeで実行する](delegation.md#worktree))。送ったテキストが実行中のタスクに割り込むことはもうありません。以前の記録のMighty表示には、そうしたテキストがオレンジ色の{{ui:graph.block.steer}}ブロックとして残っています。実行中のClaudeの親にそのまま届いた委任の通知は、同じ色の{{ui:graph.block.delegationNotice}}ブロックとして表示されます([通知と保留](delegation.md#notices))。
 - キューの各リクエストには、✕の隣に{{ui:queue.runNow}}ボタンがあります。新しいworktreeを作れる場所(上の{{kbd:⌘Enter}}と同じ条件)では、そのリクエストを新しい子ペインですぐに実行し、実行中のタスクはそのまま続きます。右クリック(MacではControlクリックも可)で別のエージェントを選べます。ボタンのツールチップが、どちらになるかを教えてくれます。テキストがなく添付ファイルだけのリクエストは、worktreeには行きません。
 - worktreeを作れない場所では、このペインで処理します。エラーで止まったペインのように待機中なら、そのリクエストをすぐに始めます。Claudeの応答が終わってバックグラウンドタスクだけを待っているペインでは、リクエストが実行中のClaudeにそのまま届き、Mighty表示に{{ui:graph.block.steer}}ブロックとして表示されます(添付のあるリクエストはタスクが終わるまで待ちます)。それ以外ではボタンがグレーになり、ツールチップが理由を教えてくれます。今のタスクが先に終わる必要がある、このペインに保留された項目が先に送られる、CLIの更新中、のいずれかです。そのリクエストは順番を待ちます。Antigravityのカードの続きのリクエストは、いつも自分のペインでだけ実行されます。
@@ -70,7 +70,7 @@ pi(`pi`)は、多くのモデル提供元で使えるオープンソースのコ
 - 権限: piには承認ウィンドウがないため、モードは2つです。{{ui:permission.label.defaultCodex}}モードは読み取りツール(read、grep、find、ls)だけを有効にします。{{ui:permission.label.fullAccess}}モードはすべてのツールを確認なしで使い、プロジェクトの外にも触れられます。
 - リクエストごとにペインの作業フォルダで`pi --mode rpc`を実行し、ペインのセッションを引き継ぎます。セッションは`~/.pi/agent/sessions`に保存され、{{ui:resume.choice.resume}}にもこのフォルダのpiセッションが表示されます。
 - 質問: piには質問ツールがないため、アプリが実行のたびに`ask_user`ツールを拡張機能として追加します（`~/.pi`の設定は変更しません）。piがこのツールで質問すると[質問カード](approvals.md#questions)が表示され、答えると同じリクエストが続きます。ほかの拡張機能が開く選択・確認・入力のダイアログも同じカードで表示されます。
-- まだできないこと: piのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けず、承認カードもありません。今のところMacでのみ動作します。
+- まだできないこと: piのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けず、承認カードもありません。
 
 ### opencode {#opencode}
 opencode(`opencode`)は、多くのモデル提供元で使えるオープンソースのコーディングエージェントCLIです。自社サービスopencode Zenの無料モデルはサインインなしでも使えます。
@@ -81,18 +81,18 @@ opencode(`opencode`)は、多くのモデル提供元で使えるオープンソ
 - 権限: 選んだモードがそのリクエストだけのopencode自身のルールになり、ルールが確認に残した操作はClaudeと同じくペインに承認カードとして届きます。{{ui:permission.label.default}}はファイルの編集、コマンド、Web、プロジェクト外へのアクセスの前に確認し、{{ui:permission.label.acceptEdits}}はファイルの編集を確認せず、{{ui:permission.label.plan}}はファイルを編集しないopencodeのplanエージェントで実行し、{{ui:permission.label.fullAccess}}は確認しません。
 - リクエストごとにペインの作業フォルダで`opencode acp`(OpenCode 2、Agent Client Protocol)を実行し、ペインのセッションを引き継ぎます。セッションはopencodeの`opencode.db`に保存され、{{ui:resume.choice.resume}}にもこのフォルダのopencodeセッションが表示されます。使用量にはセッションの費用、使用中のコンテキスト、リクエストのトークンが表示されます。
 - 質問: opencodeが`question`ツールで質問すると[質問カード](approvals.md#questions)が表示され、答えると同じリクエストが続きます。カードで{{ui:phone.questionnaire.cancel}}をクリックすると、opencodeはそのリクエストを終了します。
-- まだできないこと: opencodeのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けません。今のところMacでのみ動作します。
+- まだできないこと: opencodeのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けません。
 
 ### Hermes {#hermes}
 Hermes(`hermes`)は、Nous ResearchのオープンソースのエージェントCLI(Hermes Agent)です。Nous Portal、OpenRouter、Anthropic、OpenAIなど多くのモデル提供元を使えます。
 
-- インストール: {{ui:setup.title}}画面からインストールします(Gitがなければ先にインストールします)。公式のインストールスクリプトが専用のPython環境と一緒に`~/.hermes`へインストールし、ブラウザツールもダウンロードするため数分かかります。自分でインストールする場合は`curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`を実行します。アップデートはアプリが`hermes update`で行います。
+- インストール: {{ui:setup.title}}画面からインストールします(Gitがなければ先にインストールします)。公式のインストールスクリプトが専用のPython環境と一緒に`~/.hermes`へインストールし、ブラウザツールもダウンロードするため数分かかります。自分でインストールする場合は、Macでは`curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`を、WindowsではPowerShellで`irm https://hermes-agent.nousresearch.com/install.ps1 | iex`を実行します。アップデートはアプリが`hermes update`で行います。
 - サインイン: {{ui:settings.nav.cli}}タブの{{ui:settings.cliAccounts.buttonLogin}}ボタンをクリックすると、`hermes model`を実行するターミナルペインが開きます。そこでモデルの提供元を選び、サインインするかAPIキーを入力してから、既定のモデルを選びます。アプリが読むのは、Hermesが資格情報を見つけた提供元の名前だけです。資格情報を消すにはターミナルで`hermes auth`を使います。
 - モデル: 最初の項目はHermes自体の設定(`hermes model`で決めた既定のモデル)に従います。Hermesはセッションを開いて初めてモデル一覧を示すため、最初のリクエストを送ったあとから`提供元:モデル`の一覧が表示されます。
 - 権限: {{ui:permission.label.default}}はファイルを変更するたびにペインの承認カードで確認し、{{ui:permission.label.acceptEdits}}は作業フォルダ内の変更を確認せず、{{ui:permission.label.fullAccess}}はHermesの`--yolo`で危険なコマンドも確認しません。危険なコマンド(`rm -rf`など)はHermesの承認設定(`approvals.mode`)に従ってカードで確認し、それ以外のコマンドと読み取りは確認しません。計画専用のモードはありません。{{ui:permission.label.fullAccess}}はセッション開始時に決まるため、すでに始めたセッションには新しい会話から適用されます。
 - リクエストごとにペインの作業フォルダで`hermes acp`(Agent Client Protocol)を実行し、ペインのセッションを引き継ぎます。実際の作業はHermesのゲートウェイ(バックグラウンドプロセス)が行い、必要なときに自動で起動し、使われなくなると終了します。セッションは`~/.hermes/state.db`に保存され、{{ui:resume.choice.resume}}にもこのフォルダのHermesセッションが表示されます。使用量にはセッションの累計トークンと使用中のコンテキストが表示され、費用はHermesが知らせません。
 - 質問: Hermesがclarifyツールで質問すると[質問カード](approvals.md#questions)が表示され、答えると同じリクエストが続きます。Hermesはエディタ接続（ACP）ではこのツールを既定でオフにしているため、最初のHermesリクエストの前に、アプリがHermesの設定の`platform_toolsets.acp`という1項目を`hermes config set`でオンにし、記録に残します。自分で保存したリストがある場合は変更しません。新しい会話から適用され、元に戻すにはターミナルで`hermes config unset platform_toolsets.acp`を実行します。Hermesが回答を待つのは一定時間（既定で90秒）だけです。その後はカードが閉じ、Hermesは回答なしで先に進みます。
-- まだできないこと: Hermesのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けません。現在はMacでのみ動作します。
+- まだできないこと: Hermesのペインは[Mighty Orchestration](delegation.md)に参加せず、[リモートワークスペース](remote.md)では開けません。
 
 ### その他の実行設定 {#run-settings}
 …ボタンをクリックすると{{ui:settings.run.title}}が開きます。
@@ -138,7 +138,7 @@ CodexとAntigravityでは名前が少し異なります(例: Codexの`/new`、`/
 ![[session-info]]
 
 ## Mighty表示 {#views}
-Claude、Codex、Antigravityのペインは{{ui:graph.view.mighty}}表示で表示されます。リクエスト、サブエージェント、バックグラウンドタスク、結果をブロックのフローで表示します。切り替える操作はありません。
+すべてのエージェント(Claude、Codex、Antigravity、pi、opencode、Hermes)のペインは{{ui:graph.view.mighty}}表示で表示されます。リクエスト、サブエージェント、バックグラウンドタスク、結果をブロックのフローで表示します。切り替える操作はありません。
 
 ### Mightyフロー {#diagram}
 Claude ペインのフローは、リクエスト → その間に起きたこと → {{ui:graph.block.result}} の順に見えます。リクエストブロックには送ったリクエストだけが入ります。回答が来るまでは、結果が来る場所に{{ui:graph.block.execution}}カードが立ち、メインセッションのモデルといま行っていること1行（Claudeが最後に言ったこと、またはそのあとに実行したコマンド）を表示します。カードをクリックすると、メッセージとツール呼び出しがすべて入った{{ui:graph.block.execution}}ブロックに展開し、回答が来るとその場所に{{ui:graph.block.result}}カードが立ちます。途中に何もない短い質問は、リクエストと結果の2つのブロックだけです。ほかのエージェントのペインは、これまでどおりリクエストブロックのすぐ下に{{ui:graph.block.execution}}ブロックがつきます。
@@ -153,7 +153,7 @@ Claude ペインのフローの下、入力欄の上には{{ui:graph.log.title}}
 
 バックグラウンドで始めたサブエージェントとバックグラウンドコマンド（タスク）は、実行中はリクエストのブロックとしては描かれず、入力欄の上のバックグラウンド作業の帯にあります。MacのClaudeペインでは、サブエージェントは上のカードとしても表示されます。行には種類、名前、経過時間、出力の最後の1行が表示され、行を開くと実行したコマンド（サブエージェントはプロンプトの1行目）と出力の最後の数行（最大6行）が表示されます。タスクが終わって通知がClaudeに届くと、Claudeの応答ごとに新しい{{ui:graph.background.noticeRun}}の図ができ、終わったタスクごとに1つのブロックが、種類の行（サブエージェントかバックグラウンドコマンドか、終わり方）、コマンド、出力の最後の数行、サブエージェントの報告を示します。{{ui:graph.view.timeline}}ではこの図が新しい行として、{{ui:graph.view.structure}}では最後に新しいカード（ボード）として付きます。スマートフォンのMighty表示とパイプラインも同じです。
 
-Claude ペインのフローの左上には{{ui:graph.progress.title}}パネルが浮かんでいます。画面に見えるリクエストの番号と状態、リクエストの内容が出て、やることリストがあればステップごとに完了、進行中（時間が流れる）、未着手が出ます。新しいリクエストが始まるとそのリクエストを表示し、自分でスクロールすると画面に見えるリクエストに変わります。リクエストの行をクリックするとそのリクエストへ、ステップの行をクリックするとそのステップのカードへ移動します。ヘッダーのボタンでたためます。Codex ペインはやることリストをフロー左上の{{ui:graph.steps.title}}パネルで表示し、終わっていない最初のステップを進行中として表示します。Antigravityは表示するやることリストがないため、パネルは出ません。
+すべてのエージェントのペインのフローの左上には{{ui:graph.progress.title}}パネルが浮かんでいます。画面に見えるリクエストの番号と状態、リクエストの内容が出て、エージェントが計画を知らせるとステップごとに完了、進行中（時間が流れる）、未着手が出ます。ステップはClaudeのやることリスト、Codexの計画、opencode・Hermesの計画から来ます。計画を送らないAntigravityとpiは、リクエストと状態だけが出ます。リクエストがバックグラウンドタスク（コマンド、バックグラウンドのサブエージェント）を起動していれば、一番下の{{ui:graph.progress.background}}のまとまりに実行中の数と全体の数、タスクごとに1行（状態とかかった時間）が出ます。実行中のものから4行まで表示し、残りは数でまとめます。新しいリクエストが始まるとそのリクエストを表示し、自分でスクロールすると画面に見えるリクエストに変わります。リクエストの行をクリックするとそのリクエストへ、ステップの行をクリックするとそのステップのカードへ移動します（ステップのカードはClaudeペインのフローにだけあります）。ヘッダーのボタンでたたむと、ヘッダーとリクエストの行だけが残ります。
 
 - 何もない場所をドラッグするかスクロールして、フローを動かします。拡大・縮小ボタンで50〜150%の倍率で表示できます。
 - ブロックをクリックすると、そのブロックの中だけがスクロールします。何もない場所をクリックするか{{kbd:Esc}}を押すと、選択が解除されます。

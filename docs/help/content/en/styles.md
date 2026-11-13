@@ -6,7 +6,7 @@ section: styles
 A style is a ready-made way of working: it comes with phases and buttons, so a long task follows a set order. Without a style you send requests freely, as usual (CLI).
 
 ## Pick a style {#pick}
-Styles work in Claude panes on this Mac.
+Styles work in Claude panes, on the Mac and on Windows.
 1. Open the style menu ({{ui:guidedPanel.stylesMenuAccessibility}}) above the composer.
 2. Pick a style. Pick CLI to go back to free requests.
 

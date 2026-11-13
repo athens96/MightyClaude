@@ -13,19 +13,19 @@ Mighty Code는 Claude Code, Codex CLI, Google의 Antigravity CLI, pi, opencode, 
 - Codex CLI: Mac `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, Windows `npm install -g @openai/codex`
 - Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
 - pi: Mac과 Windows `npm install -g @mariozechner/pi-coding-agent` (Node.js가 필요합니다. [pi](agent-pane.md#pi) 참고)
-- opencode: Mac `npm install -g @opencode/cli` (OpenCode 2) (Node.js가 필요합니다. [opencode](agent-pane.md#opencode) 참고)
-- Hermes: Mac `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash` (Git이 필요합니다. [Hermes](agent-pane.md#hermes) 참고)
+- opencode: Mac과 Windows `npm install -g @opencode/cli` (OpenCode 2) (Node.js가 필요합니다. [opencode](agent-pane.md#opencode) 참고)
+- Hermes: Mac `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash` (Git이 필요합니다), Windows `irm https://hermes-agent.nousresearch.com/install.ps1 | iex` ([Hermes](agent-pane.md#hermes) 참고)
 
 > [!tip]
 > 앱을 연 뒤 {{ui:settings.nav.tools}}에서 어떤 CLI가 준비됐는지 봅니다. Mac은 그 자리에서 설치하고, Windows는 설치 명령을 복사합니다. 로그인은 {{ui:settings.nav.cli}} 탭에서 합니다. [설정](settings.md#components)을 보세요.
 
 ## 설치 {#install}
 1. [다운로드 페이지](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/index.html)에서 내 운영체제용 파일을 받습니다.
-2. macOS: `MightyCode-macos.zip`을 풀고 `MightyCode.app`을 응용 프로그램 폴더로 옮긴 뒤 엽니다.
+2. macOS: `MightyCode-macos.dmg`를 열고 Mighty Code를 응용 프로그램 폴더로 끌어다 놓은 뒤 엽니다. zip(`MightyCode-macos.zip`)을 받았다면 풀어서 `MightyCode.app`을 응용 프로그램 폴더로 옮깁니다. Mac 앱은 Apple Silicon Mac용입니다.
 3. Windows: `MightyCode-windows-x64-setup.exe`(ARM PC는 `arm64`)를 실행해 설치하고 시작 메뉴에서 엽니다. 자세한 내용은 [Windows에서 다른 점](windows.md#install)에 있습니다.
 
-> [!warning]
-> 이 앱은 Apple 공증을 받지 않았습니다. macOS가 처음 열 때 막으면 Finder에서 앱을 Control-클릭한 뒤 **열기**를 고르거나, 시스템 설정 → 개인정보 보호 및 보안에서 열기를 허용하세요.
+> [!note]
+> Mac 앱은 Apple의 공증을 받아 처음 열 때도 보안 경고 없이 열립니다. Windows 앱은 코드 서명이 없어 처음 실행할 때 SmartScreen이 막을 수 있습니다([Windows에서 다른 점](windows.md#install)).
 
 ## 업데이트 {#update}
 {{ui:settings.appUpdate.autoUpdateToggle}}가 켜져 있으면(처음부터 켜져 있습니다) 앱이 새 버전을 알아서 받고 설치합니다.
@@ -75,7 +75,7 @@ Git(Xcode Command Line Tools)은 시스템 설치 창이 열리고 그 창에서
 
 {{ui:setup.button.later}}로 닫을 수 있고, {{ui:setup.button.neverShow}}에 체크하고 닫으면 앱을 열 때 다시 나오지 않습니다. 필수 도구가 빠져 있는 동안 시작 화면에 {{ui:setup.title}} 단추가 있고, CLI가 없어 막힌 실행 창에는 {{ui:setup.blocked.install}} 단추가 있습니다. 같은 목록이 설정 → {{ui:settings.nav.tools}}에도 있습니다.
 
-{{platform:windows}} Windows에도 같은 화면이 있습니다. 명령은 앱이 따로 여는 PowerShell 창 하나(Windows Terminal이 있으면 그 탭, 없으면 콘솔 창)에서 홈 폴더를 작업 폴더로 차례로 실행되고, 마지막에 Enter를 누를 때까지 창이 열려 있습니다. Claude Code, Codex, Antigravity, uv는 각자의 공식 PowerShell 설치 스크립트로, Git과 glab은 winget으로 이 사용자에게만, Node.js와 gh는 winget으로 모든 사용자에게 설치합니다. 모든 사용자용 설치는 Windows가 직접 관리자 확인 창을 띄울 수 있지만, 이 화면 자체는 관리자 권한을 요청하지 않습니다. 설치가 끝나면 앱이 PATH를 레지스트리에서 다시 읽어 확인합니다. Homebrew, Bun, gstack은 Mac에서만 설치합니다.
+{{platform:windows}} Windows에도 같은 화면이 있습니다. 명령은 앱이 따로 여는 PowerShell 창 하나(Windows Terminal이 있으면 그 탭, 없으면 콘솔 창)에서 홈 폴더를 작업 폴더로 차례로 실행되고, 마지막에 Enter를 누를 때까지 창이 열려 있습니다. Claude Code, Codex, Antigravity, Hermes, uv는 각자의 공식 PowerShell 설치 스크립트로, pi와 opencode는 npm으로, Git과 glab은 winget으로 이 사용자에게만, Node.js와 gh는 winget으로 모든 사용자에게 설치합니다. 모든 사용자용 설치는 Windows가 직접 관리자 확인 창을 띄울 수 있지만, 이 화면 자체는 관리자 권한을 요청하지 않습니다. 설치가 끝나면 앱이 PATH를 레지스트리에서 다시 읽어 확인합니다. Homebrew, Bun, gstack은 Mac에서만 설치합니다.
 
 ## 워크스페이스 열기 {#open-workspace}
 워크스페이스는 프로젝트 폴더 하나입니다. 실행 창, 탭 배치, 대화 기록이 워크스페이스마다 따로 저장됩니다.

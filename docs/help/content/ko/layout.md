@@ -41,19 +41,19 @@ section: layout
 ![[dashboard]]
 
 ## 실행 창 추가 {#add-pane}
-실행 창은 AI 에이전트(Claude, Codex, Antigravity), 터미널, 브라우저, 파일 중 하나입니다.
+실행 창은 AI 에이전트(Claude, Codex, Antigravity, pi, opencode, Hermes), 터미널, 브라우저, 파일 중 하나입니다.
 
 1. 사이드바의 {{ui:workspace.addPane}} 단추를 누릅니다.
-2. 만들 창을 고릅니다: Claude·Codex·Antigravity 실행 창, {{ui:workspace.newTerminal}}, {{ui:browser.newTab}}. 메뉴 맨 아래 묶음에는 워크스페이스를 추가하는 {{ui:workspace.add.existing}}, {{ui:workspace.add.newFolder}}, {{ui:workspace.add.fromGit}} 세 항목이 있습니다([워크스페이스 열기](getting-started.md#open-workspace)).
+2. 만들 창을 고릅니다: 에이전트(Claude, Codex, Antigravity, pi, opencode, Hermes) 실행 창, {{ui:workspace.newTerminal}}, {{ui:browser.newTab}}. 메뉴 맨 아래 묶음에는 워크스페이스를 추가하는 {{ui:workspace.add.existing}}, {{ui:workspace.add.newFolder}}, {{ui:workspace.add.fromGit}} 세 항목이 있습니다([워크스페이스 열기](getting-started.md#open-workspace)).
 3. 새 AI 실행 창은 같은 에이전트로 가장 최근에 쓴 창의 모델·사고 강도·권한·보기 방식을 이어받습니다. 대화는 새로 시작합니다.
 
 단축키: {{ui:menu.newClaudePane}}은 {{kbd:⌘N}}, {{ui:menu.addTerminalPane}} 항목은 {{kbd:⌘T}}, {{ui:menu.showFiles}} 항목은 {{kbd:⇧⌘E}}입니다.
 
 > [!note]
-> Codex와 Antigravity 실행 창에는 {{ui:badge.beta}} 표시가 붙습니다.
+> Claude를 뺀 에이전트(Codex, Antigravity, pi, opencode, Hermes)의 실행 창에는 {{ui:badge.beta}} 표시가 붙습니다.
 
 ### 이전 세션 이어가기 {#resume}
-Claude, Codex, Antigravity 창을 추가할 때 이 폴더에 이전 세션이 있으면 고르는 창이 뜹니다. Antigravity는 이 폴더의 대화가 나오고, 하위 에이전트가 실행한 대화는 나오지 않습니다.
+에이전트 창을 추가할 때 이 폴더에 이전 세션이 있으면 고르는 창이 뜹니다. Antigravity는 이 폴더의 대화가 나오고, 하위 에이전트가 실행한 대화는 나오지 않습니다.
 1. 새 대화는 {{ui:resume.choice.startNew}}, 이전 대화는 {{ui:resume.choice.resume}} 단추를 누릅니다.
 2. {{ui:resume.title}} 목록에서 세션을 고릅니다. {{ui:resume.search}}으로 찾을 수 있습니다.
 3. 새 창이 그 세션을 이어갑니다.

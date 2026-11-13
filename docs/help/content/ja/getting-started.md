@@ -13,19 +13,19 @@ Mighty Codeは、Claude Code、Codex CLI、GoogleのAntigravity CLI、pi、openc
 - Codex CLI: Mac `curl -fsSL https://chatgpt.com/codex/install.sh | sh`, Windows `npm install -g @openai/codex`
 - Antigravity CLI: Mac `curl -fsSL https://antigravity.google/cli/install.sh | bash`, Windows [Antigravity](agent-pane.md#antigravity)
 - pi: MacとWindows `npm install -g @mariozechner/pi-coding-agent`(Node.jsが必要です。[pi](agent-pane.md#pi)を参照)
-- opencode: Mac `npm install -g @opencode/cli`(OpenCode 2)(Node.jsが必要です。[opencode](agent-pane.md#opencode)を参照)
-- Hermes: Mac `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`(Gitが必要です。[Hermes](agent-pane.md#hermes)を参照)
+- opencode: MacとWindows `npm install -g @opencode/cli`(OpenCode 2)(Node.jsが必要です。[opencode](agent-pane.md#opencode)を参照)
+- Hermes: Mac `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`(Gitが必要です)、Windows `irm https://hermes-agent.nousresearch.com/install.ps1 | iex`([Hermes](agent-pane.md#hermes)を参照)
 
 > [!tip]
 > アプリを開いたあと、{{ui:settings.nav.tools}}でどのCLIが準備できているかを確認できます。Macではその場でインストールでき、Windowsではインストールコマンドをコピーします。サインインは{{ui:settings.nav.cli}}タブで行います。[設定](settings.md#components)を参照してください。
 
 ## インストール {#install}
 1. [ダウンロードページ](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/index.html)から、お使いのOS用のファイルをダウンロードします。
-2. macOS: `MightyCode-macos.zip`を展開し、`MightyCode.app`をアプリケーションフォルダに移動してから開きます。
+2. macOS: `MightyCode-macos.dmg`を開き、Mighty Codeをアプリケーションフォルダにドラッグしてから開きます。zip(`MightyCode-macos.zip`)をダウンロードした場合は、展開して`MightyCode.app`をアプリケーションフォルダに移動します。MacアプリはAppleシリコン搭載のMac用です。
 3. Windows: `MightyCode-windows-x64-setup.exe`(ARM搭載PCは`arm64`)を実行してインストールし、スタートメニューから開きます。詳しくは[Windowsでの違い](windows.md#install)にあります。
 
-> [!warning]
-> このアプリはAppleの公証を受けていません。初めて開くときにmacOSにブロックされた場合は、Finderでアプリをcontrolキーを押しながらクリックして**開く**を選ぶか、「システム設定」→「プライバシーとセキュリティ」で開くことを許可してください。
+> [!note]
+> MacアプリはAppleの公証を受けているため、初めて開くときもセキュリティ警告なしで開きます。Windowsアプリはコード署名がないため、初回の実行をSmartScreenがブロックすることがあります([Windowsでの違い](windows.md#install))。
 
 ## アップデート {#update}
 {{ui:settings.appUpdate.autoUpdateToggle}}がオン(初期状態でオン)のときは、アプリが新しいバージョンを自動で入手してインストールします。
@@ -75,7 +75,7 @@ Git(Xcode Command Line Tools)はシステムのインストール画面が開く
 
 {{ui:setup.button.later}}で閉じられます。{{ui:setup.button.neverShow}}にチェックしてから閉じると、起動時に開かなくなります。必須ツールが足りない間はスタート画面に{{ui:setup.title}}ボタンがあり、CLIがなくて止まっているペインには{{ui:setup.blocked.install}}ボタンがあります。同じ一覧は設定 → {{ui:settings.nav.tools}}にもあります。
 
-{{platform:windows}} Windowsにも同じ画面があります。コマンドはホームフォルダーを作業フォルダーとして、アプリが別に開くPowerShellウィンドウ1つ(Windows Terminalがあればそのタブ、なければコンソールウィンドウ)で順に実行され、最後にEnterを押すまでウィンドウは開いたままです。Claude Code、Codex、Antigravity、uvはそれぞれの公式PowerShellインストールスクリプトで、Gitとglabはwingetでこのユーザーだけに、Node.jsとghはwingetですべてのユーザーにインストールします。すべてのユーザー向けのインストールではWindows自身が管理者の確認画面を表示することがありますが、この画面自体は管理者権限を求めません。インストールが終わると、アプリはPATHをレジストリから読み直して確認します。Homebrew、Bun、gstackはMacでのみインストールします。
+{{platform:windows}} Windowsにも同じ画面があります。コマンドはホームフォルダーを作業フォルダーとして、アプリが別に開くPowerShellウィンドウ1つ(Windows Terminalがあればそのタブ、なければコンソールウィンドウ)で順に実行され、最後にEnterを押すまでウィンドウは開いたままです。Claude Code、Codex、Antigravity、Hermes、uvはそれぞれの公式PowerShellインストールスクリプトで、piとopencodeはnpmで、Gitとglabはwingetでこのユーザーだけに、Node.jsとghはwingetですべてのユーザーにインストールします。すべてのユーザー向けのインストールではWindows自身が管理者の確認画面を表示することがありますが、この画面自体は管理者権限を求めません。インストールが終わると、アプリはPATHをレジストリから読み直して確認します。Homebrew、Bun、gstackはMacでのみインストールします。
 
 ## ワークスペースを開く {#open-workspace}
 ワークスペースは1つのプロジェクトフォルダです。ペイン、タブの配置、会話の履歴はワークスペースごとに保存されます。

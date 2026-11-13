@@ -36,9 +36,10 @@ Antigravityは作業の途中で確認できないため、確認が必要な操
 - 状態が「リレーに接続中」のまま止まっている場合は、{{ui:settings.mobileRemote.reconnectButton}}ボタンをクリックします。
 - スマートフォンの{{ui:phone.tabs.hosts}}タブに{{ui:phone.hosts.reachability.unauthorized}}と表示される場合は、Macのキーが変更されています。QRコードで接続し直してください。
 - Macがスリープ中の場合は接続できません。
+- 0.4.58より前に接続したスマートフォンに通知が届かない場合は、QRコードで一度接続し直してください。既定のリレーが新しいサーバーに変わりました([通知](phone.md#notifications))。
 
 ## ペインを閉じると会話は消えますか？ {#history}
-いいえ。会話の履歴はCLIのセッションとして残ります。同じフォルダでClaude、Codex、Antigravityのペインを新しく追加するときに{{ui:resume.choice.resume}}ボタンを選ぶと、続きから再開できます。[以前のセッションを続ける](layout.md#resume)を参照してください。
+いいえ。会話の履歴はCLIのセッションとして残ります。同じフォルダでエージェントのペインを新しく追加するときに{{ui:resume.choice.resume}}ボタンを選ぶと、続きから再開できます。[以前のセッションを続ける](layout.md#resume)を参照してください。
 
 ## データはどこに保存されますか？ {#data}
 アプリの設定と履歴は、このコンピューターにのみ保存されます。保存場所は、{{ui:settings.nav.about}}タブの{{ui:settings.appInfo.stateLocationLabel}}で確認できます。AIへのリクエストは、各CLIがそれぞれの会社のサービスに送信します。モバイルリモートを使う場合、内容は暗号化されたままリレーを通過します。

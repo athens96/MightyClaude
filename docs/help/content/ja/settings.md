@@ -69,7 +69,7 @@ CLIを最初にインストールした方法(npm、Homebrewなど)をそのま�
 ![[settings-cli]]
 
 ## モバイルリモート {#mobile}
-{{ui:settings.nav.mobile}}タブで、スマートフォンを接続し、リモート画面を許可します。[モバイルリモート](phone.md)を参照してください。
+{{ui:settings.nav.mobile}}タブで、スマートフォンを接続します。画面の表示と操作は現在一時停止しているため、このタブにはその旨の1行だけが表示されます([リモート画面](phone.md#screen))。[モバイルリモート](phone.md)を参照してください。
 
 ## リモート接続 {#remote}
 {{ui:settings.remote.navTitle}}タブで、このコンピュータのワークスペースを Tailscale で共有したり、別のコンピュータが共有しているワークスペースに接続したりします。[リモート接続（Tailscale）](remote.md)を参照してください。
@@ -77,7 +77,7 @@ CLIを最初にインストールした方法(npm、Homebrewなど)をそのま�
 ## ペットと通知 {#companion}
 {{ui:settings.nav.companion}}タブで、デスクトップペットと完了通知を設定します。
 - {{ui:companion.settings.enabled}}: 画面上を動き回るアライグマのペットを表示します。ペットはドラッグして移動でき、クリックすると吹き出しが開閉します。
-- {{ui:companion.settings.task}}: 吹き出しに、リクエスト、現在の作業、経過時間を表示します。吹き出しから許可({{ui:permission.allowOnce}} / {{ui:permission.deny}})に答えることもできます。
+- {{ui:companion.settings.task}}: 吹き出しに、リクエスト、現在の作業、経過時間を表示します。吹き出しから許可({{ui:permission.allowOnce}} / {{ui:permission.deny}})に答えることもできます。Macでは、リクエストにステップやバックグラウンドタスクがあると吹き出しの上に進行カードが付き、最新のリクエスト、進行中のステップ前後のステップ(5つまで)、バックグラウンドタスク(3つまで)を表示します。見出しをクリックすると1行にたたまれ(アプリを開き直しても保持されます)、行をクリックするとそのペインが開きます。
 - {{ui:companion.settings.pet}}: ペットを選びます。{{ui:companion.settings.import}}でほかのペットを追加できます。
 - {{ui:companion.settings.motion}}: 動きを減らします。
 - {{ui:companion.settings.macNotifications}}: リクエストが正常に終わると、Macの通知を送ります。通知をクリックすると、そのペインが開きます。通知にはリクエストや結果の内容は含まれません。

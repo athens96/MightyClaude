@@ -69,7 +69,7 @@ Each CLI is updated the way it was installed (npm, Homebrew and so on).
 ![[settings-cli]]
 
 ## Mobile remote {#mobile}
-The {{ui:settings.nav.mobile}} tab pairs your phone and allows screen viewing. See [Phone remote](phone.md).
+The {{ui:settings.nav.mobile}} tab pairs your phone. Screen view & control is paused for now, so the tab shows only a line saying so ([Screen view](phone.md#screen)). See [Phone remote](phone.md).
 
 ## Remote connection {#remote}
 The {{ui:settings.remote.navTitle}} tab shares this computer's workspaces over Tailscale, or connects to workspaces another computer shares. See [Remote connection (Tailscale)](remote.md).
@@ -77,7 +77,7 @@ The {{ui:settings.remote.navTitle}} tab shares this computer's workspaces over T
 ## Pet & alerts {#companion}
 The {{ui:settings.nav.companion}} tab sets up the desktop pet and the completion notification.
 - {{ui:companion.settings.enabled}}: a raccoon pet that walks on your screen. Drag it to move it; click it to open or close its bubble.
-- {{ui:companion.settings.task}}: the bubble shows the request, the current step and the time taken. You can also answer approvals there ({{ui:permission.allowOnce}} / {{ui:permission.deny}}).
+- {{ui:companion.settings.task}}: the bubble shows the request, the current step and the time taken. You can also answer approvals there ({{ui:permission.allowOnce}} / {{ui:permission.deny}}). On the Mac, when the request has steps or background work, a progress card sits over the bubble with the newest request, up to five steps around the one in progress and up to three pieces of background work. Its heading folds it to one line (kept after the app restarts), and clicking a line opens that pane.
 - {{ui:companion.settings.pet}}: choose the pet. Add more with {{ui:companion.settings.import}}.
 - {{ui:companion.settings.motion}}: less movement.
 - {{ui:companion.settings.macNotifications}}: a Mac notification when a request finishes successfully. Clicking it opens that pane. The notification never contains the request or its result.

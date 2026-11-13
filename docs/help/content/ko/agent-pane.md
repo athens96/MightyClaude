@@ -19,7 +19,7 @@ section: agent-pane
 ### 실행 중에 이어서 요청하기 {#queue}
 작업이 도는 동안에도 다음 요청을 쓸 수 있습니다. 입력창에 글이 있으면 중지 단추 옆에 보내기 단추와 같은 둥근 단추가 생깁니다.
 - {{kbd:Enter}} 또는 {{ui:queue.add}} 단추: 다음 요청으로 대기열에 넣습니다. 지금 작업이 끝나면 순서대로 실행합니다. 한 창에 16개까지 넣을 수 있습니다.
-- {{kbd:⌘Enter}} 또는 {{ui:queue.worktree}} 단추: 마이티 오케스트레이션이 켜진 이 Mac의 Claude 창이나 자식이 파일을 바꿀 수 있는 모드의 Codex·Antigravity 창이 커밋이 있는 브랜치의 git 저장소에 있으면, 이 창 옆에 자기 git worktree를 가진 새 자식 창을 열어 바로 실행합니다. 돌고 있는 작업은 그대로 이어지고, 자식이 끝나면 사이드바의 카드에서 결과를 병합합니다([새 worktree에서 실행하기](delegation.md#worktree)).
+- {{kbd:⌘Enter}} 또는 {{ui:queue.worktree}} 단추: 마이티 오케스트레이션이 켜진 Claude 창이나 자식이 파일을 바꿀 수 있는 모드의 Codex·Antigravity 창이 커밋이 있는 브랜치의 git 저장소에 있으면, 이 창 옆에 자기 git worktree를 가진 새 자식 창을 열어 바로 실행합니다. 돌고 있는 작업은 그대로 이어지고, 자식이 끝나면 사이드바의 카드에서 결과를 병합합니다([새 worktree에서 실행하기](delegation.md#worktree)).
 - 자식 창, 그런 저장소 밖의 창, 마이티 오케스트레이션을 끈 창에서는 {{kbd:⌘Enter}}도 {{kbd:Enter}}처럼 대기열에 넣습니다. 자식을 만들거나 시작하지 못했을 때도 글은 대기열로 갑니다([새 worktree에서 실행하기](delegation.md#worktree)). 보낸 글이 실행 중인 작업에 끼어드는 일은 이제 없습니다. 예전 기록의 마이티 보기에는 그렇게 보낸 글이 주황색 {{ui:graph.block.steer}} 블록으로 남아 있습니다. 실행 중인 Claude 부모에게 바로 전달된 위임 알림은 같은 색의 {{ui:graph.block.delegationNotice}} 블록으로 보입니다([알림과 보류](delegation.md#notices)).
 - 대기열의 각 요청에는 ✕ 옆에 {{ui:queue.runNow}} 단추가 있습니다. 새 worktree를 만들 수 있는 곳(위 {{kbd:⌘Enter}}와 같은 조건)이면 그 요청을 새 자식 창에서 지금 실행하고, 돌고 있는 작업은 그대로 이어집니다. 오른쪽 클릭(Mac은 Control-클릭도 됩니다)하면 다른 에이전트를 고를 수 있습니다. 단추의 도움말이 어느 쪽으로 실행될지 알려 줍니다. 글 없이 첨부 파일만 있는 요청은 worktree로 가지 않습니다.
 - worktree를 만들 수 없는 곳에서는 이 창에서 처리합니다. 오류로 멈춘 창처럼 쉬고 있으면 그 요청을 지금 시작하고, Claude의 답은 끝났고 백그라운드 작업만 남은 창이면 그 요청이 실행 중인 Claude에 들어가 마이티 보기에 {{ui:graph.block.steer}} 블록으로 보입니다. 첨부가 있는 요청은 작업이 끝날 때까지 기다립니다. 그 밖에는 단추가 흐리게 표시되고 도움말이 까닭을 알려 줍니다. 지금 작업이 먼저 끝나야 하거나, 이 창에 보류된 항목이 먼저 가야 하거나, CLI 업데이트 중인 경우입니다. 그 요청은 차례를 기다립니다. Antigravity 카드의 후속 요청은 늘 자기 창에서만 실행합니다.
@@ -70,7 +70,7 @@ pi(`pi`)는 여러 모델 제공자를 쓰는 오픈소스 코딩 에이전트 C
 - 권한: pi에는 승인 창이 없어 모드가 두 가지입니다. {{ui:permission.label.defaultCodex}} 모드는 읽기 도구(read, grep, find, ls)만 켭니다. {{ui:permission.label.fullAccess}} 모드는 모든 도구를 묻지 않고 쓰며 프로젝트 밖도 건드릴 수 있습니다.
 - 요청마다 창의 작업 폴더에서 `pi --mode rpc`를 실행하고 창의 세션을 이어 갑니다. 세션은 `~/.pi/agent/sessions`에 저장되고, {{ui:resume.choice.resume}} 항목에도 이 폴더의 pi 세션이 나옵니다.
 - 질문: pi에는 질문 도구가 없어, 앱이 실행마다 `ask_user` 도구를 확장으로 더합니다(`~/.pi` 설정은 바꾸지 않습니다). pi가 이 도구로 물으면 [질문 카드](approvals.md#questions)가 뜨고, 답하면 같은 요청이 이어집니다. 다른 확장이 여는 고르기·확인·입력 창도 같은 카드로 뜹니다.
-- 아직 안 되는 것: pi 창은 [마이티 오케스트레이션](delegation.md)에 참여하지 않고, [원격 작업 공간](remote.md)에서 열 수 없으며, 승인 카드도 없습니다. 지금은 Mac에서만 동작합니다.
+- 아직 안 되는 것: pi 창은 [마이티 오케스트레이션](delegation.md)에 참여하지 않고, [원격 작업 공간](remote.md)에서 열 수 없으며, 승인 카드도 없습니다.
 
 ### opencode {#opencode}
 opencode(`opencode`)는 여러 모델 제공자를 쓰는 오픈소스 코딩 에이전트 CLI입니다. 자체 서비스인 opencode Zen의 무료 모델은 로그인 없이도 씁니다.
@@ -81,18 +81,18 @@ opencode(`opencode`)는 여러 모델 제공자를 쓰는 오픈소스 코딩 �
 - 권한: 고른 모드가 그 요청에만 쓰는 opencode 자체 규칙이 되고, 규칙이 묻도록 남긴 일은 Claude처럼 창에 승인 카드로 옵니다. {{ui:permission.label.default}}은 파일 수정, 명령, 웹, 프로젝트 밖 접근 전에 묻고, {{ui:permission.label.acceptEdits}}은 파일 수정을 묻지 않으며, {{ui:permission.label.plan}}은 파일을 고치지 않는 opencode의 plan 에이전트로 실행하고, {{ui:permission.label.fullAccess}}은 묻지 않습니다.
 - 요청마다 창의 작업 폴더에서 `opencode acp`(OpenCode 2, Agent Client Protocol)를 실행하고 창의 세션을 이어 갑니다. 세션은 opencode의 `opencode.db`에 저장되고, {{ui:resume.choice.resume}} 항목에도 이 폴더의 opencode 세션이 나옵니다. 사용량에는 세션 비용, 쓰고 있는 컨텍스트, 요청의 토큰이 보입니다.
 - 질문: opencode가 `question` 도구로 물으면 [질문 카드](approvals.md#questions)가 뜨고, 답하면 같은 요청이 이어집니다. 카드에서 {{ui:phone.questionnaire.cancel}}를 누르면 opencode가 그 요청을 끝냅니다.
-- 아직 안 되는 것: opencode 창은 [마이티 오케스트레이션](delegation.md)에 참여하지 않고 [원격 작업 공간](remote.md)에서 열 수 없습니다. 지금은 Mac에서만 동작합니다.
+- 아직 안 되는 것: opencode 창은 [마이티 오케스트레이션](delegation.md)에 참여하지 않고 [원격 작업 공간](remote.md)에서 열 수 없습니다.
 
 ### Hermes {#hermes}
 Hermes(`hermes`)는 Nous Research의 오픈소스 에이전트 CLI(Hermes Agent)입니다. Nous Portal, OpenRouter, Anthropic, OpenAI 등 여러 모델 제공자를 씁니다.
 
-- 설치: {{ui:setup.title}} 화면에서 설치합니다(Git이 없으면 먼저 설치합니다). 공식 설치 스크립트가 자체 Python 환경과 함께 `~/.hermes`에 설치하고 브라우저 도구도 내려받아 몇 분 걸립니다. 직접 설치하려면 `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`를 실행합니다. 업데이트는 앱이 `hermes update`로 합니다.
+- 설치: {{ui:setup.title}} 화면에서 설치합니다(Git이 없으면 먼저 설치합니다). 공식 설치 스크립트가 자체 Python 환경과 함께 `~/.hermes`에 설치하고 브라우저 도구도 내려받아 몇 분 걸립니다. 직접 설치하려면 Mac에서는 `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`를, Windows에서는 PowerShell에서 `irm https://hermes-agent.nousresearch.com/install.ps1 | iex`를 실행합니다. 업데이트는 앱이 `hermes update`로 합니다.
 - 로그인: {{ui:settings.nav.cli}} 탭의 {{ui:settings.cliAccounts.buttonLogin}} 단추를 누르면 `hermes model`을 실행하는 터미널 창이 열립니다. 거기서 모델 제공자를 고르고 로그인하거나 API 키를 입력한 뒤 기본 모델을 고릅니다. 앱은 Hermes가 자격 증명을 찾은 제공자의 이름만 읽습니다. 자격 증명을 지우려면 터미널에서 `hermes auth`를 씁니다.
 - 모델: 첫 항목은 Hermes 자체 설정(`hermes model`로 정한 기본 모델)을 따릅니다. Hermes는 세션을 열어야 모델 목록을 알려 주므로, 첫 요청을 보낸 뒤부터 `제공자:모델` 목록이 나옵니다.
 - 권한: {{ui:permission.label.default}}은 파일을 고칠 때마다 창의 승인 카드로 묻고, {{ui:permission.label.acceptEdits}}은 작업 폴더 안의 수정을 묻지 않으며, {{ui:permission.label.fullAccess}}은 Hermes의 `--yolo`로 위험한 명령도 묻지 않습니다. 위험한 명령(`rm -rf` 등)은 Hermes의 승인 설정(`approvals.mode`)에 따라 카드로 묻고, 그 밖의 명령과 읽기는 묻지 않습니다. 계획 전용 모드는 없습니다. {{ui:permission.label.fullAccess}}은 세션을 시작할 때 정해지므로, 이미 시작한 세션에는 새 대화부터 적용됩니다.
 - 요청마다 창의 작업 폴더에서 `hermes acp`(Agent Client Protocol)를 실행하고 창의 세션을 이어 갑니다. 실제 작업은 Hermes의 게이트웨이(백그라운드 프로세스)가 하며, 필요할 때 저절로 시작되고 쓰지 않으면 끝납니다. 세션은 `~/.hermes/state.db`에 저장되고, {{ui:resume.choice.resume}} 항목에도 이 폴더의 Hermes 세션이 나옵니다. 사용량에는 세션의 누적 토큰과 쓰고 있는 컨텍스트가 보이고, 비용은 Hermes가 알려 주지 않습니다.
 - 질문: Hermes가 clarify 도구로 물으면 [질문 카드](approvals.md#questions)가 뜨고, 답하면 같은 요청이 이어집니다. Hermes는 편집기 연결(ACP)에서 이 도구를 기본으로 꺼 두므로, 앱이 첫 Hermes 요청 전에 Hermes 설정의 `platform_toolsets.acp` 한 항목을 `hermes config set`으로 켜고 기록에 알립니다. 직접 정해 둔 목록이 있으면 건드리지 않습니다. 새 대화부터 적용되고, 되돌리려면 터미널에서 `hermes config unset platform_toolsets.acp`를 실행합니다. Hermes는 답을 일정 시간(기본 90초)만 기다립니다. 그 뒤에는 카드가 닫히고 Hermes가 답 없이 이어 갑니다.
-- 아직 안 되는 것: Hermes 창은 [마이티 오케스트레이션](delegation.md)에 참여하지 않고 [원격 작업 공간](remote.md)에서 열 수 없습니다. 지금은 Mac에서만 동작합니다.
+- 아직 안 되는 것: Hermes 창은 [마이티 오케스트레이션](delegation.md)에 참여하지 않고 [원격 작업 공간](remote.md)에서 열 수 없습니다.
 
 ### 추가 실행 설정 {#run-settings}
 … 단추를 누르면 {{ui:settings.run.title}}이 열립니다.
@@ -138,7 +138,7 @@ Codex와 Antigravity는 이름이 조금 다릅니다(예: Codex `/new`, `/appro
 ![[session-info]]
 
 ## 마이티 보기 {#views}
-Claude, Codex, Antigravity 창은 {{ui:graph.view.mighty}} 보기로 보입니다. 요청, 하위 에이전트, 백그라운드 작업, 결과를 블록 흐름으로 보여 줍니다. 따로 바꿀 것은 없습니다.
+모든 에이전트 창(Claude, Codex, Antigravity, pi, opencode, Hermes)은 {{ui:graph.view.mighty}} 보기로 보입니다. 요청, 하위 에이전트, 백그라운드 작업, 결과를 블록 흐름으로 보여 줍니다. 따로 바꿀 것은 없습니다.
 
 ### 마이티 흐름 {#diagram}
 Claude 창의 흐름은 요청 → 그 사이에 일어난 일 → {{ui:graph.block.result}}로 보입니다. 요청 블록에는 보낸 요청만 담깁니다. 답이 오기 전까지는 결과가 올 자리에 {{ui:graph.block.execution}} 카드가 서서, 메인 세션의 모델과 지금 하는 일 한 줄(Claude가 마지막으로 한 말, 또는 그 뒤에 실행한 명령)을 보여 줍니다. 카드를 누르면 메시지와 도구 호출이 모두 든 {{ui:graph.block.execution}} 블록으로 펼쳐지고, 답이 오면 그 자리에 {{ui:graph.block.result}} 카드가 섭니다. 중간에 아무 일도 없는 짧은 질문은 요청과 결과 두 블록뿐입니다. 다른 에이전트의 창은 예전처럼 요청 블록 바로 아래에 {{ui:graph.block.execution}} 블록이 붙습니다.
@@ -153,7 +153,7 @@ Claude 창의 흐름 아래, 입력창 위에는 {{ui:graph.log.title}} 띠가 �
 
 백그라운드로 시작한 하위 에이전트와 백그라운드 명령(작업)은 도는 동안 요청의 블록으로 그려지지 않고 입력창 위의 백그라운드 작업 줄에 있습니다. Mac의 Claude 창은 하위 에이전트를 위의 카드로도 보여 줍니다. 행에는 종류, 이름, 걸린 시간과 마지막 출력 한 줄이 나오고, 행을 펼치면 실행한 명령(하위 에이전트는 프롬프트 첫 줄)과 출력의 마지막 줄들(최대 6줄)이 나옵니다. 작업이 끝나 알림이 가면 Claude의 답마다 새 {{ui:graph.background.noticeRun}} 다이어그램이 생기고, 끝난 작업마다 블록 하나가 종류 줄(하위 에이전트인지 백그라운드 실행인지와 끝난 상태), 명령, 출력의 마지막 줄들, 하위 에이전트의 보고를 담습니다. {{ui:graph.view.timeline}}에서는 이 다이어그램이 새 행으로, {{ui:graph.view.structure}}에서는 맨 끝의 새 카드(보드)로 붙습니다. 휴대폰의 마이티 보기와 파이프라인도 같습니다.
 
-Claude 창의 흐름 왼쪽 위에는 {{ui:graph.progress.title}} 패널이 떠 있습니다. 화면에 보이는 요청의 번호와 상태, 요청 내용이 나오고, 할 일 목록이 있으면 단계마다 끝남, 진행 중(흐르는 시간), 남음이 나옵니다. 새 요청이 시작되면 그 요청을 보여 주고, 직접 스크롤하면 화면에 보이는 요청으로 바뀝니다. 요청 줄을 누르면 그 요청으로, 단계 줄을 누르면 그 단계 카드로 이동합니다. 머리의 단추로 접을 수 있습니다. Codex 창은 할 일 목록을 흐름 왼쪽 위의 {{ui:graph.steps.title}} 패널로 보여 주며, 끝나지 않은 첫 단계를 진행 중으로 보여 줍니다. Antigravity는 보여 줄 할 일 목록이 없어 패널이 나오지 않습니다.
+모든 에이전트 창의 흐름 왼쪽 위에는 {{ui:graph.progress.title}} 패널이 떠 있습니다. 화면에 보이는 요청의 번호와 상태, 요청 내용이 나오고, 에이전트가 계획을 알려 주면 단계마다 끝남, 진행 중(흐르는 시간), 남음이 나옵니다. 단계는 Claude의 할 일 목록, Codex의 계획, opencode·Hermes의 계획에서 옵니다. 계획을 보내지 않는 Antigravity와 pi는 요청과 상태만 보입니다. 요청이 백그라운드 작업(명령, 백그라운드 하위 에이전트)을 띄웠으면 맨 아래 {{ui:graph.progress.background}} 묶음에 실행 중인 수와 전체 수, 작업마다 한 줄(상태와 걸린 시간)이 나옵니다. 실행 중인 작업부터 네 줄까지 보이고 나머지는 개수로 줄입니다. 새 요청이 시작되면 그 요청을 보여 주고, 직접 스크롤하면 화면에 보이는 요청으로 바뀝니다. 요청 줄을 누르면 그 요청으로, 단계 줄을 누르면 그 단계 카드로 이동합니다(단계 카드는 Claude 창의 흐름에만 있습니다). 머리의 단추로 접으면 머리와 요청 줄만 남습니다.
 
 - 빈 곳을 끌거나 스크롤해서 흐름을 움직입니다. 확대·축소 단추로 50~150%로 볼 수 있습니다.
 - 블록을 누르면 그 블록 안만 스크롤합니다. 빈 곳을 누르거나 {{kbd:Esc}}를 누르면 선택이 풀립니다.

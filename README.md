@@ -2,17 +2,17 @@
 
 <img src="assets/icons/mightycode.png" alt="Mighty Code 너구리" width="128" />
 
-**Claude Code · Codex CLI · Gemini CLI를 한 창에서 나란히 쓰는 데스크톱 앱입니다.**
+**Claude Code · Codex · Antigravity · pi · opencode · Hermes를 한 창에서 나란히 쓰는 데스크톱 앱입니다.**
 
 [macOS 빌드](https://github.com/athens96/MightyCode/actions/workflows/native-macos.yml) · [Windows 빌드](https://github.com/athens96/MightyCode/actions/workflows/native-windows.yml) · [도움말](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/help/) · [다운로드](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/)
 
-Mighty Code는 프로젝트 폴더(워크스페이스)마다 여러 실행 창을 열고, 창마다 Claude·Codex·Gemini CLI를 직접 실행해 대화와 설정을 따로 유지합니다. 진행을 블록 다이어그램으로 보는 **마이티 보기**, 정해진 순서로 일을 진행하는 **스타일**(오로보로스·페이퍼신·슈퍼파워·클러드 플랜), 작업 상태를 알려 주는 **데스크톱 펫**, 휴대폰에서 Mac을 다루는 **휴대폰 원격**(화면 보기 포함)이 있습니다. macOS 앱과 Windows 앱(**베타**), Android 휴대폰 앱이 있고, 화면은 한국어·영어·중국어·일본어로 볼 수 있습니다.
+Mighty Code는 프로젝트 폴더(워크스페이스)마다 여러 실행 창을 열고, 창마다 에이전트 CLI를 직접 실행해 대화와 설정을 따로 유지합니다. 요청·하위 에이전트·백그라운드 작업을 블록 흐름으로 보여 주는 **마이티 보기**, 정해진 순서로 일을 진행하는 **스타일**(오로보로스·클러드 플랜), 일을 자기 git worktree를 가진 자식 창에 나눠 맡기는 **마이티 오케스트레이션**, 작업 상태를 알려 주는 **데스크톱 펫**, 다른 컴퓨터의 워크스페이스를 여는 **원격 연결(Tailscale)**, 휴대폰에서 상태를 보고 답하는 **휴대폰 원격**이 있습니다. macOS 앱과 Windows 앱(**베타**), Android 휴대폰 앱이 있고, 화면은 한국어·영어·중국어·일본어로 볼 수 있습니다.
 
-현재 버전은 **0.4.14**입니다. 사용할 AI CLI는 따로 설치하고 로그인해야 합니다. 쓰지 않을 CLI는 설치하지 않아도 됩니다.
+사용할 AI CLI는 따로 설치하고 로그인해야 합니다. 쓰지 않을 CLI는 설치하지 않아도 됩니다. 배포 중인 버전은 [다운로드 페이지](https://pub-b705901d18c940159d40f58683d758ad.r2.dev/mightycode/)에, 이 저장소의 버전은 [`VERSION`](VERSION)에 있습니다.
 
-- **macOS:** Swift + SwiftUI/AppKit, macOS 14 이상
+- **macOS:** Swift + SwiftUI/AppKit, macOS 14 이상, Apple Silicon
 - **Windows (베타):** C# + .NET 10 + WinUI 3 호스트에 WebView2로 띄운 React 화면(`native/windows/web`), x64·ARM64, Windows 10(버전 2004) 이상 또는 Windows 11
-- **휴대폰:** React Native(Expo) Android 앱, 릴레이 서버를 거쳐 종단 간 암호화로 연결(같은 Tailscale 네트워크면 같은 암호화로 Mac에 직접)
+- **휴대폰:** React Native(Expo) Android 앱, 릴레이 서버를 거쳐 종단 간 암호화로 연결(같은 Tailscale 네트워크면 같은 암호화로 컴퓨터에 직접)
 
 ## 다운로드와 설치
 
@@ -20,24 +20,28 @@ Mighty Code는 프로젝트 폴더(워크스페이스)마다 여러 실행 창�
 
 | 파일 | 설치 |
 | --- | --- |
-| `MightyCode-macos.zip` | 풀고 `MightyCode.app`을 응용 프로그램 폴더로 옮긴 뒤 엽니다. |
+| `MightyCode-macos.dmg` | 열고 Mighty Code를 응용 프로그램 폴더로 끌어다 놓습니다. Apple 공증을 받아 처음 열 때도 보안 경고가 없습니다. Apple Silicon Mac용입니다. |
+| `MightyCode-macos.zip` | 같은 앱의 zip입니다. 풀고 `MightyCode.app`을 응용 프로그램 폴더로 옮깁니다. |
 | `MightyCode-windows-x64-setup.exe` / `-arm64-setup.exe` (베타) | 실행해서 설치합니다. 관리자 권한 없이 이 사용자에게만 `%LOCALAPPDATA%\Programs\MightyCode`에 설치되고, 제거는 Windows 설정 → 앱에서 합니다. 대부분의 PC는 x64, Snapdragon 같은 ARM PC는 ARM64입니다. |
 | Windows x64 / ARM64 zip (베타) | 설치 없이 쓸 때: 폴더째 풀고 그 안의 `MightyCode.exe`를 실행합니다. 함께 든 파일도 필요하므로 exe만 옮기지 마세요. |
-| Android APK | 휴대폰에 받아 설치합니다. 연결 방법은 도움말의 [휴대폰 원격](docs/help/content/ko/phone.md)에 있습니다. |
+| Android APK | 휴대폰에 받아 설치합니다. 0.4.54부터 새 앱(Mighty Code)이라, 그 전의 Android 앱이 있으면 지우고 설치한 뒤 다시 연결합니다. 연결 방법은 도움말의 [휴대폰 원격](docs/help/content/ko/phone.md)에 있습니다. |
 
-AI CLI 설치 명령은 다음과 같습니다. 앱의 **설정 → 구성 요소**에서도 어떤 CLI가 준비됐는지 보고 명령을 복사할 수 있습니다.
+AI CLI는 앱을 처음 열 때 나오는 **필요한 도구** 화면에서 골라 설치할 수 있습니다(Mac은 터미널 창, Windows는 PowerShell 창에서 실행하고, 실행 전에 명령을 모두 보여 줍니다). 나중에는 **설정 → 구성 요소**에서 준비 상태를 보고, 로그인은 **설정 → CLI**에서 합니다. 직접 설치하려면:
 
-| CLI | 설치 명령 |
-| --- | --- |
-| Claude Code | `npm install -g @anthropic-ai/claude-code` |
-| Codex CLI | `npm install -g @openai/codex` |
-| Gemini CLI | `npm install -g @google/gemini-cli` |
+| CLI | Mac | Windows |
+| --- | --- | --- |
+| Claude Code | `curl -fsSL https://claude.ai/install.sh \| bash` | `npm install -g @anthropic-ai/claude-code` |
+| Codex CLI | `curl -fsSL https://chatgpt.com/codex/install.sh \| sh` | `npm install -g @openai/codex` |
+| Antigravity CLI (`agy`) | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` | `irm https://antigravity.google/cli/install.ps1 \| iex` |
+| pi | `npm install -g @mariozechner/pi-coding-agent` | 같음 |
+| opencode (OpenCode 2) | `npm install -g @opencode/cli` | 같음 |
+| Hermes | `curl -fsSL https://hermes-agent.nousresearch.com/install.sh \| bash` | `irm https://hermes-agent.nousresearch.com/install.ps1 \| iex` |
 
-> **macOS:** 이 앱은 Apple 공증을 받지 않았습니다. 처음 열 때 막히면 Finder에서 앱을 Control-클릭한 뒤 **열기**를 고르거나, 시스템 설정 → 개인정보 보호 및 보안에서 열기를 허용하세요.
->
-> **Windows:** 코드 서명이 없어 Windows(SmartScreen)가 처음 실행을 막을 수 있습니다. Visual C++ 런타임을 찾지 못한다고 하면 [Microsoft Visual C++ 재배포 가능 패키지(v14)](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)를 설치하세요. 앱 화면과 터미널·브라우저 창은 Microsoft Edge WebView2 런타임으로 그립니다(없으면 이전 WinUI 화면으로 열리고 런타임이 없다고 알려 줍니다). .NET 런타임은 설치 프로그램과 zip에 들어 있습니다.
+pi와 opencode는 Node.js가, Mac의 Hermes는 Git이 필요합니다.
 
-**업데이트:** 앱이 하루 한 번, 열 때 새 버전을 확인하고 상태 줄에 알립니다. **설정 → 앱 정보 → 앱 업데이트**에서 확인·내려받기를 하고 **설치하고 다시 실행**을 누르면 바뀝니다. 업데이트 파일은 서명을 확인한 뒤에만 설치합니다. AI CLI 업데이트는 따로 **설정 → CLI → CLI 업데이트**에서 합니다.
+> **Windows:** 코드 서명이 없어 Windows(SmartScreen)가 처음 실행을 막을 수 있습니다. 그러면 **추가 정보** → **실행**을 누르세요. Visual C++ 런타임을 찾지 못한다고 하면 [Microsoft Visual C++ 재배포 가능 패키지(v14)](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)를 설치하세요. 앱 화면과 터미널·브라우저 창은 Microsoft Edge WebView2 런타임으로 그립니다(없으면 이전 WinUI 화면으로 열리고 런타임이 없다고 알려 줍니다). .NET 런타임은 설치 프로그램과 zip에 들어 있습니다.
+
+**업데이트:** **새 버전을 자동으로 받아 설치**가 켜져 있으면(처음부터 켜져 있습니다) 앱이 열 때와 6시간마다 새 버전을 확인하고, 받아서 서명을 확인한 뒤 준비해 둡니다. 준비된 업데이트는 앱을 종료할 때 설치되고, 앱이 한동안 쉬고 있으면 1분 알림 뒤 다시 시작하며 설치합니다(열려 있던 워크스페이스와 창은 그대로 돌아옵니다). 직접 하려면 **설정 → 앱 정보 → 앱 업데이트**에서 확인하고 **지금 다시 시작**을 누릅니다. 휴대폰 앱에서도 연결된 컴퓨터의 앱을 업데이트할 수 있습니다. AI CLI 업데이트는 따로 **설정 → CLI → CLI 업데이트**에서 합니다.
 
 ## 도움말
 
@@ -53,30 +57,46 @@ AI CLI 설치 명령은 다음과 같습니다. 앱의 **설정 → 구성 요�
 
 각 항목의 자세한 내용은 링크한 도움말 원문에 있습니다.
 
+**시작하기** — [시작하기](docs/help/content/ko/getting-started.md)
+- 워크스페이스는 세 가지로 더합니다: 기존 폴더 열기(⌘O), 새 폴더 만들기(빈 Git 저장소로 시작 가능), Git 주소에서 내려받기(이 컴퓨터의 자격 증명으로 접근을 확인한 뒤 받음).
+- 에이전트 CLI나 Git이 없으면 앱을 열 때 **필요한 도구** 화면이 먼저 열려, 에이전트 CLI·기본 도구·스타일 도구·Tailscale·gh·glab을 골라 설치합니다. 앱은 sudo를 쓰지 않고 비밀번호를 받지 않습니다.
+
 **화면 구성** — [화면 구성](docs/help/content/ko/layout.md)
-- 사이드바: **작업 현황**, 워크스페이스 검색(⌘K), 워크스페이스·실행 창 목록. 경계선을 끌어 폭을 바꾸고, 두 번 클릭하면 기본 폭, ⌃⌘S로 접고 펼칩니다.
-- **작업 현황**: 모든 워크스페이스의 실행 창을 상태 순으로 모으고, 실행 중·응답 대기·완료 개수와 계정 사용 한도를 보여 줍니다.
-- 실행 창은 에이전트(Claude·Codex·Gemini), 터미널, 브라우저, 파일 중 하나입니다. 탭으로 겹치거나 좌우·상하로 나누고, 배치는 워크스페이스마다 저장됩니다.
-- Claude·Codex 창을 추가할 때 이 폴더의 이전 세션을 골라 이어갈 수 있습니다. Codex·Gemini 창에는 **베타** 표시가 붙습니다.
+- 사이드바: 워크스페이스 검색(⌘K), **작업 현황**, 워크스페이스·실행 창 목록. 경계선을 끌어 폭을 바꾸고, 두 번 클릭하면 기본 폭, ⌃⌘S로 접고 펼칩니다.
+- **작업 현황**: 모든 워크스페이스의 실행 창을 상태 순으로 모으고, 실행 중·응답 대기·완료 개수와 계정 사용량을 보여 줍니다.
+- 실행 창은 에이전트(Claude, Codex, Antigravity, pi, opencode, Hermes), 터미널, 브라우저, 파일 중 하나입니다. 탭으로 겹치거나 좌우·상하로 나누고, 배치는 워크스페이스마다 저장됩니다. Claude를 뺀 에이전트 창에는 **베타** 표시가 붙습니다.
+- 에이전트 창을 추가할 때 이 폴더의 이전 세션을 골라 이어갈 수 있습니다.
 
 **에이전트 창** — [에이전트 창](docs/help/content/ko/agent-pane.md)
 - 입력창 아래 줄에서 첨부, 모델, 사고 강도, 권한, 추가 실행 설정을 고릅니다. 첨부는 최대 8개, 파일당 5 MiB, 합계 8 MiB입니다.
-- 실행 중에도 다음 요청을 쓸 수 있습니다. 중지 단추 옆의 둥근 단추로 **대기열에 추가**(Enter, 창당 16개까지)하거나, 이 Mac의 Claude 창에서는 **바로 전달**(⌘Enter)합니다.
+- 실행 중에도 다음 요청을 쓸 수 있습니다. Enter는 **대기열에 추가**(창당 16개까지)하고, ⌘Enter나 중지 단추 옆의 **새 worktree에서 실행** 단추는 마이티 오케스트레이션이 켜진 git 저장소에서 요청을 새 자식 창에 바로 실행합니다. 대기열의 요청마다 **바로 실행** 단추가 있습니다.
 - `/`를 치면 슬래시 명령 목록이 나오고, 목록에 없는 명령은 CLI의 스킬·플러그인 명령으로 그대로 전달됩니다.
+- oh-my-claudecode가 있는 Claude 창은 **보낼 대상**으로 요청을 다른 CLI에게 보내고 답을 Claude의 답 안에 받습니다.
 - 보내기 단추 옆 고리에서 컨텍스트 사용량과 토큰·비용·세션 ID를 봅니다. CLI가 알려 준 값만 보여 줍니다.
-- Claude·Codex 창은 **기본** | **마이티** 보기를 바꿀 수 있습니다. 마이티 보기는 요청·하위 에이전트·백그라운드 작업·**최종 결과**를 블록 다이어그램으로 보여 주고, **타임라인**으로 시간 순서 목록도 봅니다. 퍼즐 단추로 플러그인과 마켓플레이스를 엽니다.
+- 에이전트마다 설치·로그인·권한이 다릅니다. Antigravity, pi, opencode, Hermes의 자세한 내용은 도움말에 있습니다. pi, opencode, Hermes 창은 아직 마이티 오케스트레이션과 원격 워크스페이스에서 쓸 수 없습니다.
+
+**마이티 보기** — [에이전트 창의 마이티 보기](docs/help/content/ko/agent-pane.md)
+- 모든 에이전트 창은 요청 → 그 사이에 일어난 일 → **최종 결과**를 블록 흐름으로 보여 줍니다. 하위 에이전트와 백그라운드 명령은 작은 카드로 접혀 있고 누르면 펼쳐지며, Claude가 할 일 목록을 만들면 단계마다 카드가 섭니다.
+- 흐름 왼쪽 위의 **진행 상황** 패널에 화면에 보이는 요청의 상태와 단계, 그 요청이 띄운 백그라운드 작업이 나옵니다.
+- **흐름** | **기록** | **파이프라인** 전환으로 시간 순서 목록이나 칸반식 파이프라인으로도 봅니다. 결과 카드에서 결과 파일을 열고, 요청이 바꾼 줄만 따로 볼 수 있습니다.
+- Claude와 Codex 창은 머리의 퍼즐 단추로 플러그인과 마켓플레이스를 엽니다.
 
 **스타일과 계획** — [스타일](docs/help/content/ko/styles.md)
-- 이 Mac의 Claude 창에서 마이티 보기일 때 입력창 위 메뉴로 스타일을 고릅니다. 기본 스타일은 오로보로스(Ouroboros)와 클러드 플랜입니다.
-- 클러드 플랜은 새 요청마다 Claude의 계획 모드로 시작합니다. 다이어그램에서는 계획이 요청 아래 블록에 뜨고, 네 가지 답(**승인하고 실행 (자동 편집)**, **승인하고 실행 (매번 확인)**, **수정 요청**, **취소**)은 입력창 쪽에 나옵니다.
-- 데스크톱 펫도 끝난 계획을 보여 주고, 펫에서 바로 승인하거나 **계획 검토…**로 계획 전체를 열 수 있습니다.
+- Claude 창(Mac·Windows)에서 입력창 위 메뉴로 스타일을 고릅니다. 기본 스타일은 오로보로스(Ouroboros)와 클러드 플랜입니다.
+- 클러드 플랜은 새 요청마다 Claude의 계획 모드로 시작합니다. 계획 카드의 네 가지 답(**승인하고 실행 (자동 편집)**, **승인하고 실행 (매번 확인)**, **수정 요청**, **취소**)으로 진행하고, 데스크톱 펫에서도 끝난 계획을 보고 답할 수 있습니다.
 - 파일로 된 스타일은 **설정 → 스타일**에서 등록하고, 내용을 확인해 허용한 뒤에만 씁니다.
 
+**마이티 오케스트레이션** — [마이티 오케스트레이션](docs/help/content/ko/delegation.md)
+- 에이전트 창 하나가 일하는 동안 다른 일을 옆의 자식 창에 맡깁니다. 자식은 저마다 자기 git worktree와 브랜치(`mighty/<자식 id>`)에서 일하고, 끝나면 사이드바의 카드에서 결과를 부모 브랜치에 병합하거나 버립니다.
+- 직접 띄우거나(⌘Enter), Claude·Codex에게 일을 나눠 맡기라고 요청합니다. 자식은 Claude, Codex, Antigravity 중 아무 에이전트로 실행할 수 있습니다.
+- 실험 기능이며 기본으로 켜져 있고, **설정 → 일반 → 마이티 오케스트레이션**에서 끕니다.
+
 **승인·질문·로그인 복구** — [승인과 질문](docs/help/content/ko/approvals.md)
-- 이 Mac의 Claude 창(Always ask 등)과 Codex의 **승인 요청** 권한에서는 권한 밖의 일을 승인 카드로 묻습니다(**이번만 허용** / **거부**). Claude의 질문은 **선택 요청** 카드로 답합니다.
-- Antigravity는 일하는 도중에 물을 수 없어서, 물어봐야 하는 작업(명령 실행, 파일 쓰기 등)은 건너뛰고 그 턴을 끝낸 뒤 거절한 작업을 모은 카드로 묻습니다(**이번만 허용** / **항상 허용** / **거절**). 허용하면 같은 대화에서 이어서 진행하고, **항상 허용**은 Antigravity 설정(`~/.gemini/antigravity-cli/settings.json`의 `permissions.allow`)에 규칙을 남깁니다. 명령 규칙은 그 글자로 시작하는 모든 명령을 허용하고 이번만 허용의 규칙도 있는 동안에는 이 컴퓨터의 모든 Antigravity 실행에 적용되므로, 명령을 잇거나 파이프·리디렉션을 쓰거나 데이터를 지울 수 있는 명령은 이번만 허용할 수 있습니다. Claude는 실행 전에 멈추고 기다린다는 점이 다릅니다. 휴대폰에도 같은 카드가 뜹니다.
+- Claude 창(Always ask 등), Codex의 **승인 요청** 권한, opencode·Hermes 창은 권한 밖의 일을 승인 카드로 묻습니다(**이번만 허용** / **거부**). Claude, pi, opencode, Hermes의 질문은 **선택 요청** 카드로 답합니다.
+- Antigravity는 일하는 도중에 물을 수 없어서, 물어봐야 하는 작업을 건너뛰고 턴을 끝낸 뒤 거절한 작업을 모은 카드로 묻습니다(**이번만 허용** / **항상 허용** / **거절**). 허용하면 같은 대화에서 이어서 진행하고, 위험한 명령은 이번만 허용할 수 있습니다.
+- 에이전트가 터미널에서 실행한 명령이 입력을 기다리면 입력창 위의 **터미널이 입력을 기다립니다** 카드에서 바로 답합니다.
 - CLI 로그인이 만료되면 입력창 위의 복구 카드에서 **다시 로그인**하고, 끝나면 실패한 요청을 다시 보냅니다.
-- 턴이 끝났지만 백그라운드 작업이 남아 있으면 입력창 위에 줄이 보입니다. 숨기거나 **설정 → 일반**에서 다시 켤 수 있습니다.
+- 턴이 끝났지만 백그라운드 작업이 남아 있으면 입력창 위의 줄에서 끝난 수와 도는 수를 봅니다. 휴대폰에도 같은 카드와 줄이 뜹니다.
 
 **터미널·파일·브라우저 창** — [터미널·파일·브라우저](docs/help/content/ko/terminal-files-browser.md)
 - 터미널 창(⌘T)은 워크스페이스 폴더에서 열리는 실제 터미널입니다. 에이전트가 사용자가 봐야 할 명령을 실행하면 전용 에이전트 터미널이 생깁니다.
@@ -84,19 +104,19 @@ AI CLI 설치 명령은 다음과 같습니다. 앱의 **설정 → 구성 요�
 - 브라우저 창은 실험 기능이라 **설정 → 일반**에서 켜고 앱을 다시 열어야 합니다. Mac에서는 Apple Silicon에서만 동작합니다.
 
 **설정** — [설정](docs/help/content/ko/settings.md)
-- 일반(테마·언어·상태 줄·브라우저), 모델(페이즈별 모델), 스타일, 구성 요소(CLI·플러그인 상태, 내 작업 도구 모음), CLI(계정·업데이트), 모바일 리모트, 원격 연결 (Tailscale), 펫과 알림, 앱 정보(업데이트·데이터 위치) 탭이 있습니다.
+- 일반(테마·언어·글자 크기와 글꼴·상태 줄·브라우저·마이티 오케스트레이션), 모델(작업 단계별 모델), 스타일, 구성 요소(필요한 도구, 내 작업 도구 모음), CLI(로그인·업데이트), 모바일 리모트, 원격 연결 (Tailscale), 펫과 알림, 앱 정보(업데이트·데이터 위치) 탭이 있습니다.
 
 **원격 연결 (Tailscale)** — [원격 연결](docs/help/content/ko/remote.md)
 - Mac이나 Windows 컴퓨터 두 대의 Mighty Code를 Tailscale로 이어, 한쪽에서 다른 컴퓨터의 워크스페이스를 열고 그 컴퓨터의 CLI·계정으로 Claude·Codex·Antigravity와 명령을 실행합니다. 파일은 복사하지 않습니다.
 - 공유하는 컴퓨터는 **설정 → 원격 연결 (Tailscale) → 이 컴퓨터 공유**에서 워크스페이스를 고르고 주소와 연결 키를 알려 줍니다. 연결하는 컴퓨터는 **다른 컴퓨터 연결**에 그 주소와 키를 넣고 워크스페이스를 엽니다.
-- 원격 창도 마이티 보기와 승인·질문·계획 카드를 그대로 씁니다. 마이티 오케스트레이션, 파일·브라우저 창, 파일을 읽는 스타일은 원격 워크스페이스에서 쓸 수 없고, 휴대폰에는 보이지 않습니다. Windows 앱도 같은 화면과 프로토콜이라 Mac↔Windows 어느 방향도 연결되게 만들었습니다(실제 기기 연결은 아직 확인 중). Windows에서 공유하려면 방화벽 규칙 하나를 더합니다(관리자 확인 한 번).
+- 원격 창도 마이티 보기와 승인·질문·계획 카드를 그대로 씁니다. 마이티 오케스트레이션, 파일·브라우저 창, 파일을 읽는 스타일, pi·opencode·Hermes 창은 원격 워크스페이스에서 쓸 수 없고, 휴대폰에는 보이지 않습니다. Windows에서 공유하려면 방화벽 규칙 하나를 더합니다(관리자 확인 한 번).
 
 **휴대폰 원격** — [휴대폰 원격](docs/help/content/ko/phone.md)
-- Mac의 **설정 → 모바일 리모트**에서 연결을 허용하고 QR 코드로 휴대폰을 연결합니다. 공유기 포트나 VPN이 필요 없고, 릴레이는 내용을 볼 수 없습니다.
-- Mac과 휴대폰이 같은 Tailscale 네트워크에 있으면 휴대폰은 릴레이 없이 Mac에 바로 연결하고(**Tailscale로 직접 연결**, 기본 켜짐), 닿지 않으면 릴레이로 연결합니다. 호스트 카드에 연결 경로가 보입니다.
-- 휴대폰 앱의 **현황**·**세션**·**알림**·**호스트** 탭에서 상태를 보고, 요청을 보내고, 승인·질문·계획에 답합니다. Android 앱은 푸시 알림도 받습니다(작업 완료·실패, 권한 요청·질문·계획·로그인 만료). 내용은 그 휴대폰만 열 수 있게 암호화되고, 알림의 허용·거절 버튼은 휴대폰 잠금을 푼 뒤에만 동작합니다. 계약은 [docs/mobile-remote.md](docs/mobile-remote.md)의 "푸시 알림"입니다.
-- **화면 보기·조작**(베타, Android): Mac에서 휴대폰마다 허용 범위를 정하면 Mac 화면을 보거나 조작합니다. Mac에서 ⌃⌥⌘K를 누르면 모든 원격 화면 세션이 멈춥니다.
-- 기본 릴레이 대신 `relay/`를 직접 배포해 쓸 수 있습니다.
+- 컴퓨터(Mac 또는 Windows)의 **설정 → 모바일 리모트**에서 연결을 허용하고 QR 코드로 휴대폰을 연결합니다. 공유기 포트나 VPN이 필요 없고, 릴레이는 내용을 볼 수 없습니다. 같은 Tailscale 네트워크에 있으면 릴레이 없이 바로 연결합니다(**Tailscale로 직접 연결**, 기본 켜짐).
+- 휴대폰 앱의 **현황**·**세션**·**알림**·**호스트** 탭에서 상태를 보고, 요청을 보내고, 승인·질문·계획에 답합니다. Android 앱은 푸시 알림도 받습니다(작업 완료·실패, 권한 요청·질문·계획·로그인 만료). 0.4.58에서 기본 릴레이가 새 서버로 바뀌었으니, 그 전에 연결한 휴대폰에 알림이 오지 않으면 QR로 한 번 다시 연결하세요.
+- 컴퓨터 앱에 새 버전이 있으면 휴대폰에서 **데스크톱 앱 업데이트**로 설치하고 다시 시작하게 할 수 있습니다.
+- **화면 보기·조작**(베타, Android)은 0.4.58부터 잠시 멈춰 있습니다. 휴대폰마다 정한 허용 범위는 그대로 남아 다시 켜지면 돌아옵니다.
+- 기본 릴레이 대신 `relay/`를 직접 배포해 쓸 수 있습니다. 계약은 [docs/mobile-remote.md](docs/mobile-remote.md)와 [docs/relay.md](docs/relay.md)에 있습니다.
 
 **Windows에서 다른 점** — [Windows](docs/help/content/ko/windows.md)
 - 같은 기능을 같은 이름으로 제공하며, 창 제목에 베타 표시가 붙습니다. ⌘ 대신 Ctrl을 쓰고, 사이드바 접기는 Ctrl+B, 원격 화면 멈추기는 Ctrl+Alt+Esc입니다. 메뉴 막대는 없습니다.
@@ -157,10 +177,11 @@ Mac에서는 Windows 앱을 실행할 수 없지만, C# 코어 검사(`dotnet ru
 
 ```sh
 cd mobile && npm install && npx expo start     # Expo 휴대폰 앱 (자세한 내용은 mobile/README.md)
-cd relay && npm install && npm test            # 릴레이 서버 (자세한 내용은 relay/README.md)
+cd relay && npm install && npm test            # 직접 서버에 올리는 Node 릴레이 (자세한 내용은 relay/README.md)
+cd relay/cloudflare && npm install && npm test # 앱의 기본 릴레이인 Cloudflare Workers 판
 ```
 
-연결 계약은 [docs/relay.md](docs/relay.md)와 [docs/mobile-remote.md](docs/mobile-remote.md)에 있습니다.
+연결 계약은 [docs/relay.md](docs/relay.md)와 [docs/mobile-remote.md](docs/mobile-remote.md)에, Cloudflare 릴레이 배포는 [docs/relay-cloudflare.md](docs/relay-cloudflare.md)에 있습니다.
 
 ## 데이터와 소스 구조
 
@@ -203,4 +224,4 @@ CI(GitHub Actions)는 빌드·테스트와 함께 다음 검사를 돌립니다.
 
 ## 라이선스
 
-이 프로젝트는 MIT 라이선스입니다([LICENSE](LICENSE)). 릴레이 방식의 휴대폰 원격은 Apache License 2.0으로 배포되는 Paseo의 설계를 참고했으며, 고지는 [NOTICE.md](NOTICE.md)와 [licenses/](licenses/)에 있습니다. 앱에 포함한 타사 구성 요소의 라이선스는 [native/licenses/](native/licenses/)에, 아이콘 생성 안내는 [assets/icons/generation.md](assets/icons/generation.md)에 있습니다.
+이 프로젝트는 MIT 라이선스입니다([LICENSE](LICENSE)). 릴레이 방식의 휴대폰 원격은 Apache License 2.0으로 배포되는 Paseo의 설계를 참고했으며, 고지는 [NOTICE.md](NOTICE.md)와 [licenses/](licenses/)에 있습니다. 앱에 포함해 배포하는 타사 구성 요소의 목록은 [NOTICE.md](NOTICE.md)에, 라이선스 전문은 [native/licenses/](native/licenses/)에, 아이콘 생성 안내는 [assets/icons/generation.md](assets/icons/generation.md)에 있습니다.

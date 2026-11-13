@@ -36,9 +36,10 @@ Antigravity는 일하는 도중에 물어볼 수 없어서, 물어봐야 하는 
 - 상태가 릴레이 연결 중에서 멈춰 있으면 {{ui:settings.mobileRemote.reconnectButton}} 단추를 누릅니다.
 - 휴대폰 {{ui:phone.tabs.hosts}} 탭에 {{ui:phone.hosts.reachability.unauthorized}}가 보이면 Mac의 키가 바뀐 것입니다. QR 코드로 다시 연결하세요.
 - Mac이 잠자기 상태이면 연결되지 않습니다.
+- 0.4.58 전에 연결한 휴대폰에 알림이 오지 않으면 QR 코드로 한 번 다시 연결하세요. 기본 릴레이가 새 서버로 바뀌었습니다([알림](phone.md#notifications)).
 
 ## 실행 창을 닫으면 대화가 사라지나요? {#history}
-아니요. 대화 기록은 CLI의 세션으로 남습니다. 같은 폴더에서 Claude, Codex, Antigravity 창을 새로 추가할 때 {{ui:resume.choice.resume}} 단추를 고르면 이어갈 수 있습니다. [이전 세션 이어가기](layout.md#resume)를 보세요.
+아니요. 대화 기록은 CLI의 세션으로 남습니다. 같은 폴더에서 에이전트 창을 새로 추가할 때 {{ui:resume.choice.resume}} 단추를 고르면 이어갈 수 있습니다. [이전 세션 이어가기](layout.md#resume)를 보세요.
 
 ## 내 데이터는 어디에 저장되나요? {#data}
 앱의 설정과 기록은 이 컴퓨터에만 저장됩니다. 위치는 {{ui:settings.nav.about}} 탭의 {{ui:settings.appInfo.stateLocationLabel}}에서 봅니다. AI에게 보내는 요청은 각 CLI가 그 회사의 서비스로 보냅니다. 휴대폰 원격을 쓰면 내용이 암호화된 채로 릴레이를 지나갑니다.
