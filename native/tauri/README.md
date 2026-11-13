@@ -86,105 +86,104 @@ porting checklist.
 
 ### Implemented methods
 
-`getLocale` (the saved `languagePreference`; "system" reads the OS's preferred UI languages in order, C# `Locale.ChosenLanguage`),
-`ready`, `shellState`, `log` (to `tauri-logs/host.log`), `selectSession`, `activatePane`, `selectWorkspace`, `setTheme`,
-`setSidebarCollapsed`, `setSidebarWidth`, `toggleDisclosure`, `applyLayoutPreset`, `resizeSplit`, `resetSplit`, `dockSession`,
-`showDashboard`, `hideDashboard`, `dismissError`, `renameCheck` — each C#'s rule (`SelectLayoutSession`, `ActivatePane`,
-`SelectWorkspace`, `ApplyLayoutPreset`, `ResizeSplit`, `DockSession`, `WorkspaceDisclosure.Toggle`, `RenameSupport`, ...). Every
-change is C#'s `UpdateAsync`: normalized, then queued for saving.
+Each is the C# handler's rule (named beside it). A change is C#'s `UpdateAsync` (normalized, then queued for saving); an action is C#'s
+`Act` (the banner cleared first, what it fails with shown there, the call answering null). The layout actions (`SelectLayoutSession`,
+`ActivatePane`, `SelectWorkspace`, `ApplyLayoutPreset`) live once, in `frame.rs`, and the layout saves in mighty-core's `add_pane`; every
+module uses those. The host answers 122 methods (`tauri-logs/unimplemented.json`'s `implemented` lists them).
 
-The NativeSlot protocol (`surface.rs`, registered from `methods.rs` with one line): `surfaceBounds`, `surfaceAction`, and the
-browser pane's `browserOpen`, `browserNavigate` (C# `BrowserAddress.Resolve`), `browserBack`, `browserForward`, `browserReload`,
-`browserInstall` and C#'s `browserBounds`. A browser pane is C#'s in full (MainWindow.WebShell.Panes.cs, MainWindow.Browser.cs): nothing
-starts while the setting `browserEngineEnabled` is off (read once per launch: `disabled`), the install offer without the WebView2 runtime
-(`missing`; `browserInstall` downloads Microsoft's bootstrapper only then, checks its Authenticode signer and runs it), else its view opens
-over the slot in its workspace's web profile (`<local>\browser\<profile>\browser-profiles\<workspaceProfileKey or workspace id>`); the
-history (`BrowserHistory`) follows the engine's own navigations and every state is pushed (`browser{paneId, state}`); back and forward
-are the engine's; popups are refused and downloads cancelled; script dialogs never show; a press in the page makes its pane the active one;
-the picture shown while a page overlay hides the view is WebView2's `CapturePreview`.
-
-The frame's remaining methods (`frame.rs`, one line in `methods.rs`; C# MainWindow.WebShell.Shell.cs, MainWindow.Navigation.cs,
-MainWindow.ResumeSession.cs, MainWindow.SmallParity.cs): `closeSession` (the run stopped and ended, then the pane gone), `focusPane`
-(`toggle` back to custom), `textSize` (Ctrl+= / Ctrl+- / Ctrl+0 over the saved setting, pushed as `text`; not saved: W6), `dismissResource`,
-`renameSession` and `renameWorkspace` (the page's rename sheet; Automatic for an agent pane), `removeWorkspace` (the page's danger
-confirmation, every pane's run stopped), `showInExplorer` (the folder's real path, `explorer.exe`), `pickFolder` (the OS's folder picker
-owned by the main window; the folder approved for saving and added, a Claude pane in a workspace without one), `addMenu` (the entries in the
-Mac's words, the remote menu, Connect), `addPaneEntry` (terminal, browser, files through `frame::OPEN_FILES`, agents with the resume flow,
-the three ways to add a workspace, another workspace's entry made active first), `newPane`, and `dialogAnswer`. Every action is C#'s `Act`:
-the banner cleared first, what it fails with shown there.
-
-The page-drawn dialogs (`dialogs.rs`): a flow pushes `dialog{id, dialog}` and waits for `dialogAnswer`; the host closes one
-(`dialogClose`) or updates a resume choice's checking state (`dialogUpdate`). Every dialog still open is sent again, oldest first and as it
-stands, when the page calls `ready` (C# never sends one again after a reload, and its flow then waits for ever). The resume sheets
-(`resumeChoice`, `resumeList`) are drawn and answered here; the folder's sessions come from `frame::RESUME` (the session history module's
-`ResumeSource`: the head-only look-up, the pick from the list `resumeRows` showed, `RememberSession`), and `resumeRows` reads the open list
-from `frame::open_resume`. Until it is set, an agent pane starts new at once.
-
-Workspace create (`workspace_create.rs`; C# MainWindow.WorkspaceCreate.cs, `GitTool`, `GitCloneJob`; the rules are mighty-core's
-`workspace_create`, held to native/contracts/fixtures/workspace-create.json): `workspaceCreate`, `createCheck`, `pickLocation`,
-`makeFolder` (`git init` when asked), `repoName`, `gitProbe` (`git ls-remote -- <url> HEAD`, a newer one stops the older), `gitCreate`
-(`git clone --progress`, pushed as `gitProgress`; a second press answers `busy`) and `gitCreateCancel` (git and everything it started
-ended, what it wrote removed). git is the user's own, through `ProcessHost`, never prompting (an empty `GIT_ASKPASS`, `GCM_INTERACTIVE=never`,
-BatchMode ssh unless the user has an ssh command); the sheets start at the last location, else the active workspace's parent, else home.
-
-The composer (`composer.rs`, C# MainWindow.WebShell.Composer.cs over the never-shown `PaneView`): `composerState`, `updateDraft`
-(`DesktopService.UpdateDraft`: the pane alone, saved on the schedule), `send` (`PaneView.Submit`: a busy pane queues the draft, an idle
-one takes the draft and its attachments and starts the request through the run service, a start that did not happen puts them back;
-answered with `SubmitReceipt.SendAnswer`: outcome, user entry, graph run, the page's client id, the composer state), `stop`
-(`StopActiveRun`: the queue cancelled unless the turn only waits on background work), `queueRemove`, `queueRunNow` (바로 실행: `Here`
-starts the row now, `Steer` hands it to the running turn), `queueRunNowMenu`, `installCli`, `pickAttachments` (the OS's picker through
-Tauri's dialog plugin), `addAttachments`, `removeAttachment`, `dismissAttachmentError`, `attachmentPreview`, `slashCommands` (the built-ins
-and the scanned catalogue), `slashAction` (new conversation, help, model, permission), `composerMenu`, `composerMenuChoose` (the row the
-page showed: provider, model, effort, permission, Fast, models read again, new conversation), `runSettings`, `applyRunSettings`,
-`toggleFast`, `composerToggle` (status line), `newConversation`, `setAskTarget`, `dismissAskNotice`.
-
-The cards (`cards.rs`, C# MainWindow.WebShell.Cards.cs): `cards`, `permissionAnswer` (Allow once / Deny for the request the card shows),
-`questionnaireAnswer` (`QuestionnaireAnswers`, `ValidateAnswers`; the refusal's words back), `planAnswer` (`AnswerPlanCard`: one answer
-at a time, a revise Core would refuse never leaves the card), `nextActionFill`, `backgroundWork`, `statusLineTrust`.
-
-The Mighty views (`mighty.rs`, C# MainWindow.WebShell.Mighty.cs): `mightyVisible`, `mightySetPresentation`, `mightySaveSize`,
-`mightyExpand`, `mightyResultFiles`, `mightyLoadOlder` (the next ten older requests of the session record, read off the page's thread and
-drawn above the retained ones: `history.rs`), `mightyImages` (a step's tiles as data URLs), `mightyTimelineFlip`,
-`mightyLogCollapsed`, `mightyOpenDashboard`. And `imageData` (a log picture from the cache by its hash; an SVG drawn to PNG at most 2,048
-on its long side, as C#'s `WebImageUrl` draws it, and so are `mightyImages`' tiles) and `openUrl` (http, https, mailto through
-`ShellExecuteW`, as C#'s `UseShellExecute`).
-
-The terminals (`terminal.rs`, C# MainWindow.Terminal.cs, MainWindow.WebShell.Panes.cs, MainWindow.TerminalPrompts.cs,
-MainWindow.ShellBlockRuns.cs, over mighty-terminal): `terminalOpen` (the footer; from then on a `footer` push whenever it changes),
-`terminalMessage` (ready starts the shell — the platform's default shell in the workspace's folder at the page's grid, with the CLI
-environment —, input, resize, title, directory, copy, paste, pressed), `terminalRestart`, `terminalHistory` (its content only: the
-dialog is a native panel, W6), `terminalPromptAnswer`, `terminalPromptShow`, `shellBlockRun` (only the command the reply shows, in
-the agent pane's terminal, its `agent-terminal` pane opened beside it, the record streamed at most every 200 ms), `shellBlockStop`.
-Pushes `{kind:'terminal', paneId, message}` (output each 32 ms, paste, reset, font, theme, footer). A shell pane's status follows
-its shell through `RunService::update_pane` (C# `SetShellStatus`: idle once attached, running while a process of the shell's job
-sits on its console — read every 500 ms through `PtyControl::busy` —, completed, error); a terminal ends when its pane leaves the
-state (looked at every quarter second) and all of them when the app quits (each close on its own thread, the quit waiting at most
-5 s). An agent pane's terminal (`Terminals::agent`) is followed for prompts every 400 ms while one of its commands runs, and a
-waiting one is the pane's terminal prompt card. In a smoke only the smoke's own shell pane starts a shell (C#
-`smokeTerminalEnabled`), without the user's profile.
-
-The files pane, the reference bubble, HTML frames and the picture viewer (`files.rs`, C# MainWindow.WebShell.Panes.cs's files part and
-MainWindow.WebShell.cs's conversation methods, over mighty-files): `openFiles` (C# `OpenFilePane`: the workspace's one files pane, left of
-the current pane), `filesState`, `filesToggle`, `filesReveal`, `filesFilter`, `filesSelect`, `filesRefresh` (each workspace's
-`FilePaneTree`, kept while the app runs; folders read off the page's thread), `filesPreview` (text cut to 256 KB with its colours as flat
-`[kind, start, length]` triples, pictures as data URLs: an SVG drawn by resvg, a PDF's first page by `Windows.Data.Pdf`, a bitmap as it is
-or fitted), `filesShowInExplorer`, `filesOpen`, `referencePreview`, `referenceChanges` (against the original the pane's run kept, else
-git's HEAD), `referenceOpen`, `referenceReveal`, `referenceSize`, `htmlFrame` (the file's folder served under `h<random>.html.mighty.invalid`
-through the `mightyhtml` protocol, at most eight folders, for the page's frame sandboxed to scripts) and `imageAction` (copy, save, reveal,
-open with the default app). A Claude run's Edit, Write and MultiEdit results keep the files' originals (`FileOriginalStore`: the profile's
-`file-originals` with `--allow-state-write`, else `%LOCALAPPDATA%\dev.mightycode.tauri\file-originals\<profile>`), pruned at the start to
-what the state names, a closed pane's dropped and a run's when its graph lets it go.
-
-Session history and resume (`history.rs`, C# MainWindow.SessionHistory.cs, MainWindow.ResumeSession.cs, `WebResumeRows`): `resumeRows`
-(the resume list's rows for the page's search, the folder's sessions read again when "모든 세션 보기" changes; `hidden`, `empty`,
-`reason` as C# words them). The sheets' flow (`resumeChoice`, `resumeList`, `dialogAnswer`) calls `history::look_up`, `asks_resume`,
-`open_resume_list`, `close_resume_list` and `pick`, and adds the pane with `mighty_history::resumable::apply`. The ids the app's own panes
-start or resume (`known-sessions.json`) are remembered from the run service and written only with `--allow-state-write`.
-
-The work map (`workmap.rs`, C# MainWindow.WorkMap.cs): `openWorkMap` (the workspace's `workmap:<id>` pane, placed as the files pane is,
-never saved), `workMapState` (the model, nulls kept), `workMapSummarize` (one at a time per workspace; the model is pushed again as
-`workmap` when it ends), `workMapOpenFile` (opens the workspace's files pane and pushes `files{paneId, path}`). The summaries are kept in
-`<profile>/work-map` with `--allow-state-write`, else in this machine's local folder for the profile.
+- **The frame** (`methods.rs`; C# MainWindow.WebShell.cs, MainWindow.Layout.cs, MainWindow.Navigation.cs, MainWindow.Sidebar.cs):
+  `getLocale` (the saved `languagePreference`; "system" reads the OS's preferred UI languages in order, C# `Locale.ChosenLanguage`),
+  `ready`, `shellState`, `log` (to `tauri-logs/host.log`), `selectSession`, `activatePane`, `selectWorkspace`, `setTheme` (the open
+  terminals take their colours again, C# `Retheme`), `setSidebarCollapsed`, `setSidebarWidth`, `toggleDisclosure`, `applyLayoutPreset`,
+  `resizeSplit`, `resetSplit`, `dockSession`, `showDashboard`, `hideDashboard`, `dismissError`, `renameCheck` (`RenameSupport`), `openUrl`
+  (http, https, mailto through `ShellExecuteW`, as C#'s `UseShellExecute`).
+- **The frame's actions** (`frame.rs`; C# MainWindow.WebShell.Shell.cs, MainWindow.Navigation.cs, MainWindow.ResumeSession.cs,
+  MainWindow.SmallParity.cs, MainWindow.TextAppearance.cs): `closeSession` (the run stopped and ended, then the pane gone), `focusPane`
+  (`toggle` back to custom), `textSize` (Ctrl+= / Ctrl+- / Ctrl+0 over the saved setting, pushed as `text`, and every open terminal takes
+  its size; not saved: W6), `dismissResource`, `renameSession` and `renameWorkspace` (the page's rename sheet; Automatic for an agent pane),
+  `removeWorkspace` (the page's danger confirmation, every pane's run stopped), `showInExplorer` (the folder's real path, `explorer.exe`),
+  `pickFolder` (the OS's folder picker owned by the main window; the folder approved for saving and added, a Claude pane in a workspace
+  without one), `addMenu` (the entries in the Mac's words, the remote menu, Connect), `addPaneEntry` (terminal, browser, files — files.rs's
+  pane through `frame::OPEN_FILES` —, an agent with the resume flow below, the three ways to add a workspace, another workspace's entry
+  made active first), `newPane`.
+- **The page-drawn dialogs** (`dialogs.rs`; C# `OpenWebDialog`, `CloseWebDialog`): `dialogAnswer`. A flow pushes `dialog{id, dialog}`
+  and waits for the answer; the host closes one (`dialogClose`) or updates a resume choice's checking state (`dialogUpdate`). Every dialog
+  still open is sent again, oldest first and as it stands, when the page calls `ready` (C# never sends one again after a reload, and its
+  flow then waits for ever).
+- **Resume, end to end** (`frame.rs`'s flow over `history.rs`'s `HistoryResume`, set as `frame::RESUME` at start; C# `WebAddAgentPane`,
+  `WebPickResumedSession`, `WebResumeRows`): an agent pane from the add menu looks up the folder's newest session of that agent
+  (`history::look_up`, head only, off the workers); with one no open pane continues, `resumeChoice` asks Start new / Resume… (checking
+  while the look-up outlasts 300 ms); Resume… opens `resumeList` (`frame::open_resume` names its agent and folder, `history::open_resume_list`
+  reads it afresh), whose rows are `resumeRows` (the page's search, the folder's sessions read again when "모든 세션 보기" changes;
+  `hidden`, `empty`, `reason` as C# words them); the row picked is checked against the panes open now and remembered as the app's own
+  (`history::close_resume_list`, `pick`, `remember_session`: `known-sessions.json`, written only with `--allow-state-write`), and the new
+  pane continues it (`mighty_history::resumable::apply`), its older requests read back from the record into the diagram.
+- **Workspace create** (`workspace_create.rs`; C# MainWindow.WorkspaceCreate.cs, `GitTool`, `GitCloneJob`; the rules are mighty-core's
+  `workspace_create`, held to native/contracts/fixtures/workspace-create.json): `workspaceCreate`, `createCheck`, `pickLocation`,
+  `makeFolder` (`git init` when asked), `repoName`, `gitProbe` (`git ls-remote -- <url> HEAD`, a newer one stops the older), `gitCreate`
+  (`git clone --progress`, pushed as `gitProgress`; a second press answers `busy`) and `gitCreateCancel` (git and everything it started
+  ended, what it wrote removed). git is the user's own, through `ProcessHost`, never prompting (an empty `GIT_ASKPASS`,
+  `GCM_INTERACTIVE=never`, BatchMode ssh unless the user has an ssh command); the sheets start at the last location, else the active
+  workspace's parent, else home.
+- **Native views and the browser pane** (`surface.rs`; C# MainWindow.WebShell.Panes.cs, MainWindow.Browser.cs): `surfaceBounds`,
+  `surfaceAction`, `browserOpen`, `browserNavigate` (C# `BrowserAddress.Resolve`), `browserBack`, `browserForward`, `browserReload`,
+  `browserInstall`, `browserBounds`. Nothing starts while the setting `browserEngineEnabled` is off (read once per launch: `disabled`); the
+  install offer without the WebView2 runtime (`missing`; `browserInstall` downloads Microsoft's bootstrapper only then, checks its
+  Authenticode signer and runs it); else the pane's view opens over the slot in its workspace's web profile
+  (`<local>\browser\<profile>\browser-profiles\<workspaceProfileKey or workspace id>`). The history (`BrowserHistory`) follows the engine's own
+  navigations and every state is pushed (`browser{paneId, state}`); back and forward are the engine's; popups are refused and downloads
+  cancelled; script dialogs never show; a press in the page makes its pane the active one; the picture shown while a page overlay hides
+  the view is WebView2's `CapturePreview`.
+- **The composer** (`composer.rs`, C# MainWindow.WebShell.Composer.cs over the never-shown `PaneView`): `composerState`, `updateDraft`
+  (`DesktopService.UpdateDraft`: the pane alone, saved on the schedule), `send` (`PaneView.Submit`: a busy pane queues the draft, an idle
+  one takes the draft and its attachments and starts the request through the run service, a start that did not happen puts them back;
+  answered with `SubmitReceipt.SendAnswer`: outcome, user entry, graph run, the page's client id, the composer state), `stop`
+  (`StopActiveRun`: the queue cancelled unless the turn only waits on background work), `queueRemove`, `queueRunNow` (바로 실행: `Here`
+  starts the row now, `Steer` hands it to the running turn), `queueRunNowMenu`, `installCli`, `pickAttachments` (the OS's picker through
+  Tauri's dialog plugin), `addAttachments`, `removeAttachment`, `dismissAttachmentError`, `attachmentPreview`, `slashCommands` (the
+  built-ins and the scanned catalogue), `slashAction` (new conversation, help, model, permission, and rename: the pane's rename sheet),
+  `composerMenu`, `composerMenuChoose` (the row the page showed: provider, model, effort, permission, Fast, models read again, new
+  conversation), `runSettings`, `applyRunSettings`, `toggleFast`, `composerToggle` (status line), `newConversation`, `setAskTarget`,
+  `dismissAskNotice`.
+- **The cards** (`cards.rs`, C# MainWindow.WebShell.Cards.cs): `cards`, `permissionAnswer` (Allow once / Deny for the request the card
+  shows), `questionnaireAnswer` (`QuestionnaireAnswers`, `ValidateAnswers`; the refusal's words back), `planAnswer` (`AnswerPlanCard`: one
+  answer at a time, a revise Core would refuse never leaves the card), `nextActionFill`, `backgroundWork`, `statusLineTrust`.
+- **The Mighty views** (`mighty.rs`, C# MainWindow.WebShell.Mighty.cs): `mightyVisible`, `mightySetPresentation`, `mightySaveSize`,
+  `mightyExpand`, `mightyResultFiles`, `mightyLoadOlder` (the next ten older requests of the session record, read off the page's thread
+  and drawn above the retained ones: `history.rs`), `mightyImages` (a step's tiles as data URLs, older runs' too), `mightyTimelineFlip`,
+  `mightyLogCollapsed`, `mightyOpenDashboard`, `imageData` (a log picture from the cache by its hash; an SVG drawn to PNG at most 2,048
+  on its long side, as C#'s `WebImageUrl` draws it, and so are `mightyImages`' tiles).
+- **The terminals** (`terminal.rs`, C# MainWindow.Terminal.cs, MainWindow.WebShell.Panes.cs, MainWindow.TerminalPrompts.cs,
+  MainWindow.ShellBlockRuns.cs, over mighty-terminal): `terminalOpen` (the footer; from then on a `footer` push whenever it changes),
+  `terminalMessage` (ready starts the shell — the platform's default shell in the workspace's folder at the page's grid, with the CLI
+  environment —, input, resize, title, directory, copy, paste, pressed), `terminalRestart`, `terminalHistory` (its content only: the
+  dialog is a native panel, W6), `terminalPromptAnswer`, `terminalPromptShow`, `shellBlockRun` (only the command the reply shows, in
+  the agent pane's terminal, its `agent-terminal` pane opened beside it, the record streamed at most every 200 ms), `shellBlockStop`.
+  Pushes `{kind:'terminal', paneId, message}` (output each 32 ms, paste, reset, font, theme, footer); the font is the text setting's
+  (12 pt at 100% to the nearest half point, the code font when one is chosen), given again to every open terminal when the theme or the
+  text setting changes (C# `RefreshTerminalTheme`). A shell pane's status follows its shell through `RunService::update_pane` (C#
+  `SetShellStatus`: idle once attached, running while a process of the shell's job sits on its console — read every 500 ms through
+  `PtyControl::busy` —, completed, error); a terminal ends when its pane leaves the state (looked at every quarter second) and all of
+  them when the app quits (each close on its own thread, the quit waiting at most 5 s). An agent pane's terminal (`Terminals::agent`) is
+  followed for prompts every 400 ms while one of its commands runs, and a waiting one is the pane's terminal prompt card. In a smoke
+  only the smoke's own shell pane starts a shell (C# `smokeTerminalEnabled`), without the user's profile.
+- **The files pane, the reference bubble, HTML frames and the picture viewer** (`files.rs`, C# MainWindow.WebShell.Panes.cs's files
+  part and MainWindow.WebShell.cs's conversation methods, over mighty-files): `openFiles` (C# `OpenFilePane`: the workspace's one files
+  pane, left of the current pane; `open_slim_pane` places the work map's pane too), `filesState`, `filesToggle`, `filesReveal`,
+  `filesFilter`, `filesSelect`, `filesRefresh` (each workspace's `FilePaneTree`, kept while the app runs; folders read off the page's
+  thread), `filesPreview` (text cut to 256 KB with its colours as flat `[kind, start, length]` triples, pictures as data URLs: an SVG
+  drawn by resvg, a PDF's first page by `Windows.Data.Pdf`, a bitmap as it is or fitted), `filesShowInExplorer`, `filesOpen`,
+  `referencePreview`, `referenceChanges` (against the original the pane's run kept, else git's HEAD), `referenceOpen`, `referenceReveal`,
+  `referenceSize`, `htmlFrame` (the file's folder served under `h<random>.html.mighty.invalid` through the `mightyhtml` protocol, at most
+  eight folders, for the page's frame sandboxed to scripts) and `imageAction` (copy, save, reveal, open with the default app; a diagram
+  tile of an older run too). A Claude run's Edit, Write and MultiEdit results keep the files' originals (`FileOriginalStore`: the
+  profile's `file-originals` with `--allow-state-write`, else `%LOCALAPPDATA%\dev.mightycode.tauri\file-originals\<profile>`; the work map
+  reads the same folder), pruned at the start to what the state names, a closed pane's dropped and a run's when its graph lets it go.
+- **The work map** (`workmap.rs`, C# MainWindow.WorkMap.cs): `openWorkMap` (the workspace's `workmap:<id>` pane, placed as the files
+  pane is, never saved), `workMapState` (the model, nulls kept), `workMapSummarize` (one at a time per workspace; the model is pushed
+  again as `workmap` when it ends), `workMapOpenFile` (files.rs's `open_file_in_pane`: the file revealed, selected and previewed in the
+  workspace's files pane, then `files{paneId, path}` pushed). The summaries are kept in `<profile>/work-map` with
+  `--allow-state-write`, else in this machine's local folder for the profile.
 
 ### The run engine in the app
 
@@ -215,15 +214,28 @@ What a later stage gives the composer, the cards and the Mighty views stays at i
 | `SecondSend`, `WorktreeMenuOnly`, `HeldItems`, `Delegation.EndingRuns`, `queueRunNowMenu` | Ctrl+Enter queues as Enter; no held rows; the menu is empty | W7 |
 | `RemoteWorkspaceFeatures.BlockedReason`, a remote pane's runs (`RemoteRunner`) | none | W8 |
 | The style row, the guide panel, a guided question, a style's prompt and plan mode (`activeStyle`) | no style; typed text goes to the agent as typed | W9 |
-| A typed built-in (`SubmitTypedBuiltin`), the slash palette's usage, settings, plugins and rename actions | sent as text; those actions do nothing | W6, W4 |
+| A typed built-in (`SubmitTypedBuiltin`), the slash palette's usage, settings and plugins actions | sent as text; those actions do nothing | W6 |
 | The "send to" targets (`AskTargetsFor`: the installed CLIs and the ask skill) | none offered; `setAskTarget` takes only null | W5 |
 | The model list's notice (`ModelListNotices.Notice`), the custom model dialog, the plugin window | none | W5, W6 |
 | Background strip rows (`PlanCardSupport.BackgroundStripRows`) | the strip's line without rows | W8 |
-| The Antigravity card, web-open prompts, the sign-in card, the status line | none | W5, W4, W6 |
-| The shell pane's history dialog (`terminalHistory`: a native panel), the text setting's terminal size and code font, the agent's `run_in_terminal` tools (Agent IO), a command typed into a new shell pane (`RunTerminalCommandAsync`, needs `addPane`), the phone's view of a shell's status and of a terminal prompt (`terminal::Pending`) | the history's content made, nothing shown; 12 pt and the stand-in face; the agents' terminals exist for shell block runs only | W6, W6, W7, W6/W9, W8 |
+| The Antigravity card, the agents' web-open prompts (Agent IO's `open_url`), the sign-in card, the status line | none | W5, W7, W6, W6 |
+| The shell pane's history dialog (`terminalHistory`: a native panel), the agent's `run_in_terminal` tools (Agent IO), a command typed into a new shell pane (`RunTerminalCommandAsync`: style installs, sign-ins), the phone's view of a shell's status and of a terminal prompt (`terminal::Pending`) | the history's content made, nothing shown; the agents' terminals exist for shell block runs only; nothing typed | W6, W7, W6/W9, W8 |
 | The Ouroboros dashboard, background output tails, custom agents' definitions | empty; `mightyOpenDashboard` only marks the view | W9 |
 | Antigravity's replayed tool rows and its sub-agents' own transcripts (mighty-history `DEFERRED.md`) | the requests, answers, usage and the sub-agents the stream names | W5 |
-| `sessionInfo`, `guidedAction` | unimplemented | W6, W9 |
+| Saving the text setting (Settings › Text), the files and work map panes' phone routes, the work dashboard's usage chips | the setting lasts until the app quits; none | W6, W8, W6 |
+
+### Unimplemented page methods
+
+What the page calls that the host answers `unimplemented` (the page's `bridge.call`s against `implemented`; a full smoke meets only
+`nativeState`):
+
+| Methods | Stage |
+|---|---|
+| `nativeState`, `nativeAction`, `nativeNav`, `nativeButton`, `nativeClose` (the NativeNode forms: settings screens and dialogs) | W6 |
+| `openSettings`, `openSetup`, `openHelp`, `openPlugins`, `sessionInfo`, `loginAction`, `usageRefresh`, `usageDirect` | W6 |
+| `childAction` (a delegated child's row) | W7 |
+| `connectRemote`, `companionStatus`, `companionToggle` | W8 |
+| `guidedAction`, `postponeUpdate`, `restartForUpdate` | W9 |
 
 ## Platform ports and native surfaces
 
@@ -314,7 +326,9 @@ What is not reproduced (each a file no app writes): a number literal beyond ±1.
 a lone surrogate escape inside a field C# does not model (C# skips it; the load fails here — inside a modelled field both fail);
 an `-0.0` literal where C# wants an integer (read as 0 here; C# refuses it); a date C#'s culture parser reads but ISO 8601 does
 not (`11/13/2026`; read as no date here); `"theme"` written twice with a differently cased key in between (the last of each
-spelling wins here, the last of all in C#).## Identity and WebView2
+spelling wins here, the last of all in C#).
+
+## Identity and WebView2
 
 - `identifier` is `dev.mightycode.tauri`, a development identity so this app never collides with the installed C# app. It must
   become the real one before shipping.
@@ -358,18 +372,19 @@ footer (`terminalFooter`: the engine and the grid), types a command that runs a 
 read running and then idle (`terminalStatus`), and closes the pane: its shell ends (`terminalClosed`). Details under `terminal`.
 The files steps follow (`smoke_files.rs`, the C# smoke's `RunWebPanesSmoke` files part, `RunWebReferenceSmoke` and `RunWebPictureSmoke`, and
 an HTML frame): the host adds a workspace of its own (a temporary folder with fixture files), a Claude pane whose 기록 view holds a reply
-naming `src/a.ts:3` and one whose diagram holds a PNG and an SVG picture, and opens the workspace's files pane; the probe opens
-`smoke-folder` in the tree and previews `hello.ts` with line numbers and colour (`filesTree`, `filesFolderOpened`, `filesPreview`), opens
+naming `src/a.ts:3` and one whose diagram holds a PNG and an SVG picture; the probe opens the workspace's files pane from its add menu
+(`filesAddPane`: `addPaneEntry` through `frame::OPEN_FILES`), opens `smoke-folder` in the tree and previews `hello.ts` with line numbers and colour (`filesTree`, `filesFolderOpened`, `filesPreview`), opens
 `page/index.html` as a page in the sandboxed frame, which the host must have served with its style sheet and script (`htmlFrame`), clicks
 the reply's `src/a.ts:3` where it is drawn and the reference bubble shows the file at line 3 and closes (`referenceBubble`), and both
 picture tiles come as PNG data URLs, the first opens the picture viewer with focus inside and Esc closes it (`pictureViewer`).
-The history step follows (`smoke_history.rs`, the C# web smoke's work map steps and a resume-list step): the host makes a fixture
+The history step follows (`smoke_history.rs`, the C# web smoke's work map steps and the resume flow end to end): the host makes a fixture
 repository in a temporary folder (a tag and one commit past it), adds it as an active workspace of its own (in memory) and writes a fixture
 home whose Claude records belong to it (the history reads that home only); the probe clicks the header's work map button once the folder
 reads as a repository (`workMapButton`), waits for the overview's cells (`workMapOverview`) and one card per version with a summarize
-button (`workMapVersions`), turns the Mac chip off and on (`workMapChips`); the host opens the resume list over the folder and the page
-lists the session with its first request and the nested run as hidden, says a search with no match, lists both with "모든 세션 보기"
-(`resumeList`); the host then takes the session as the pick and adds a pane that continues it, and the page draws its record's three
+button (`workMapVersions`), turns the Mac chip off and on (`workMapChips`); then it opens the workspace's add menu and its Claude entry, and
+the folder's earlier session makes the frame's flow ask Start new / Resume… (`resumeChoice`); Resume… opens the list, which shows the
+session with its first request and the nested run as hidden, says a search with no match, lists both with "모든 세션 보기"
+(`resumeList`); a click on the session's row closes the list and adds a pane that continues it, and the page draws its record's three
 requests above in the Mighty diagram, read back from the record (`resumeLoaded`).
 With git on PATH the gitCreate step follows: a bare repository in a temporary folder (the fixture's own git), the sheets' location that
 folder, then the add menu's "Create from Git…": the address typed, the check reachable, the name `remote`, 생성, `gitProgress` pushed,
@@ -387,7 +402,8 @@ card goes). With `--smoke-real-claude` (`smoke.ps1 -RealClaude`) the probe sends
 `claude` CLI instead (the pane's default permission mode, writes off) and checks the run completed, the result block shows "ok" and the
 CLI reported its usage (`real*`).
 
-It writes `smoke-result.json` (`passed`, `checks`, `probe`, `browser`, `runs`, the calls it saw, the unimplemented methods) and quits with
+It writes `smoke-result.json` (`passed`, `checks`, each step's report — `probe`, `frame`, `browser`, `terminal`, `files`, `history`,
+`gitCreate`, `reload`, `runs` —, the calls it saw, the unimplemented methods) and quits with
 0 when it passed, else 1 (Tauri's event loop would end with 0 either way; `main.rs` keeps the code). The demo
 profile is made by `cargo run -p mighty-core --example seed_demo -- <folder> [ko|en|zh|ja]` from
 `native/contracts/fixtures/demo-profile.json`, as the C# help capture seeds it (without playing the runs). With `-Profile`, the
