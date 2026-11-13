@@ -1,0 +1,3 @@
+# Long lines, as the C# and TypeScript of this repository are written.
+max_width = 140
+use_small_heuristics = "Max"

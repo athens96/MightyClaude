@@ -1,6 +1,8 @@
 node_modules/
 out/
 dist/
+# The Rust + Tauri app's build of native/windows/web (vite build --mode tauri).
+dist-tauri/
 release/
 # The release skill's folder is a project file, not a release's output.
 !.claude/skills/release/

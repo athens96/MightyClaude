@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "futureTopLevel": { "nested": [1, 2.5, "three", null, true], "deep": { "x": -7 } },
+  "workspaces": [
+    {
+      "id": "w-local",
+      "name": "Local",
+      "path": "C:\\work\\local",
+      "createdAt": "2026-10-24T10:05:24.4583589+00:00",
+      "modelDefaults": { "claude": { "modeDefaults": { "plan": "opus" }, "registeredModels": [] }, "codex": { "modeDefaults": {}, "registeredModels": [] } },
+      "futureWorkspaceField": "kept",
+      "remote": null
+    },
+    {
+      "id": "w-remote",
+      "name": "Remote",
+      "path": "/Users/example/site",
+      "createdAt": "2026-10-17T00:00:00.000Z",
+      "remote": { "version": 2, "connectionId": "conn-1", "workspaceId": "ws-site", "hostName": "studio-mac", "futureRemoteField": [1] }
+    }
+  ],
+  "sessions": [
+    {
+      "id": "s1",
+      "workspaceId": "w-local",
+      "title": "Agent",
+      "kind": "claude",
+      "status": "completed",
+      "model": "claude-sonnet-4-5[1m]",
+      "provider": "claude",
+      "settings": { "effort": "high", "permissionMode": "acceptEdits", "maxTurns": 12, "maxBudgetUsd": 2.5, "advisor": 42, "futureSetting": "x" },
+      "logs": [
+        { "id": "l1", "kind": "user", "text": "hello", "timestamp": "2026-10-24T10:05:24Z", "futureLogField": { "a": 1 } },
+        { "id": "l2", "kind": "assistant", "text": "", "timestamp": "2026-10-24T10:05:25Z", "provider": "claude",
+          "activity": { "id": "a1", "provider": "claude", "kind": "command", "state": "completed", "summary": "npm test", "toolName": "Bash", "durationMs": 1234 } },
+        { "id": "l3", "kind": "image", "text": "[image]", "timestamp": "2026-10-24T10:05:26Z", "images": [{ "hash": "abc", "mime": "image/png" }] }
+      ],
+      "resumeId": "ses_abc123",
+      "createdAt": "2026-10-24T10:00:00Z",
+      "draft": "draft text",
+      "runTiming": { "startedAt": "2026-10-24T10:05:24Z", "finishedAt": "2026-10-24T10:06:00Z" },
+      "sessionUsage": { "provider": "claude", "contextPercent": 41.5 },
+      "agentViewMode": "mighty",
+      "graphRuns": [{ "id": "g1", "status": "completed", "rootEntries": [], "steps": [{ "text": "one" }] }],
+      "graphBlockSizes": { "result": { "width": 400, "height": 300 } },
+      "graphSizesLayout": 2,
+      "flowLogCollapsed": true,
+      "titleMode": "fixed",
+      "planHistory": [],
+      "parentSessionId": 7,
+      "shellRuns": [{ "key": "k", "state": "completed" }],
+      "futureSessionField": { "keep": ["me"] }
+    },
+    {
+      "id": "s2",
+      "workspaceId": "w-remote",
+      "title": "Shell",
+      "kind": "shell",
+      "status": "idle",
+      "model": "default",
+      "provider": "claude",
+      "settings": { "effort": "default", "permissionMode": "manual", "maxTurns": null, "maxBudgetUsd": null, "fastMode": false, "webSearch": "default", "networkAccess": false },
+      "logs": [],
+      "createdAt": "2026-10-24T10:00:00Z",
+      "draft": ""
+    }
+  ],
+  "activeWorkspaceId": "w-local",
+  "activeSessionId": "s1",
+  "expandedWorkspaceIds": "not a list",
+  "layout": "custom",
+  "paneLayouts": {
+    "w-local": { "id": "root", "kind": "split", "sessionIds": [], "axis": "vertical", "ratio": 0.4, "futureNodeField": 1,
+      "children": [ { "id": "g1", "kind": "tabs", "sessionIds": ["s1"], "selectedSessionId": "s1", "ratio": 0.5, "children": [] } ] }
+  },
+  "paneLayoutModes": { "w-local": "custom" },
+  "paneLayoutActiveSessionIds": { "w-local": "s1" },
+  "theme": "light",
+  "sidebarWidth": 300.5,
+  "sidebarCollapsed": true,
+  "trustedStatusLines": { "s1": "abcdef" },
+  "statusLineEnabled": false,
+  "completionNotificationsEnabled": false,
+  "autoUpdateCLIs": "yes",
+  "referenceBubbleWidth": 480,
+  "claudeDirectUsageLookupEnabled": true,
+  "appUpdateAutoCheck": false,
+  "languagePreference": "ja",
+  "settingsPane": "models",
+  "mobileRemote": { "enabled": true, "relayURL": "https://relay.example.com", "allowLegacyPhones": false, "directEnabled": true, "directPort": 43139 },
+  "phaseModels": { "claudeMain": "opus", "claudeOpusAlias": "default" },
+  "browserEngineEnabled": true
+}

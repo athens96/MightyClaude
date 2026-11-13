@@ -1,4 +1,5 @@
 import type { CallMessage, HostMessage, PushMessage } from './protocol';
+import { inTauri, tauriPort } from './tauriPort';
 
 /** The two ends of chrome.webview the bridge uses; a test or the dev server hands in its own. */
 export interface HostPort {
@@ -58,7 +59,12 @@ interface WebViewWindow {
   chrome?: { webview?: HostPort };
 }
 
-/** The page's host: WebView2's chrome.webview, or null in a plain browser (the dev server). */
+/**
+ * The page's host: the Rust + Tauri app's port (checked first: Tauri's own IPC runs over chrome.webview there), WebView2's
+ * chrome.webview in the C# app, or null in a plain browser (the dev server). The Tauri port is only in a `--mode tauri` build
+ * (native/tauri): any other build drops it, so the C# app's page carries none of Tauri's code.
+ */
 export function hostPort(): HostPort | null {
+  if (import.meta.env.MODE === 'tauri' && inTauri()) return tauriPort();
   return (globalThis as unknown as WebViewWindow).chrome?.webview ?? null;
 }

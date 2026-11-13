@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The main window: the page listens for the host's messages (host-message). The app's own commands (host_post, smoke_probe) need no permission.",
+  "windows": ["main"],
+  "permissions": ["core:event:default"]
+}

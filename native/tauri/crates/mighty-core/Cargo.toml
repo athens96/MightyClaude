@@ -1,0 +1,16 @@
+[package]
+name = "mighty-core"
+version = "0.1.0"
+description = "Mighty Code's state models, loading and frame model, with no Tauri dependency (the Rust side of MightyCode.Core)."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+dirs.workspace = true
+unicode-segmentation.workspace = true
