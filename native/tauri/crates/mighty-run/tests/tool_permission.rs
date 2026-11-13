@@ -529,3 +529,87 @@ fn tool_permissions_match_mac_os() {
         assert_ne!(value, key, "{key} is in the catalogue");
     }
 }
+
+/// What a switchable channel kept: its writes and the requests it settled.
+type Kept = (Arc<Mutex<Vec<String>>>, Arc<Mutex<Vec<ToolPermissionRequest>>>);
+
+/// A channel whose writes fail while `failing` is set (C#'s `failWrite`), its writes and settled requests kept.
+fn switchable(failing: Arc<std::sync::atomic::AtomicBool>) -> (ClaudePermissionChannel, Kept) {
+    common::korean();
+    let writes = Arc::new(Mutex::new(vec![]));
+    let settled = Arc::new(Mutex::new(vec![]));
+    let (w, s) = (writes.clone(), settled.clone());
+    let hooks = ChannelHooks {
+        write: Arc::new(move |text| {
+            if failing.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(std::io::Error::other("closed stdin"));
+            }
+            w.lock().unwrap().push(text.to_string());
+            Ok(())
+        }),
+        emit: Arc::new(move |value| s.lock().unwrap().push(value)),
+        activity: Arc::new(|_, _| {}),
+        warning: Arc::new(|_| {}),
+        fail: Arc::new(|_| {}),
+        plan: Arc::new(|_| {}),
+        clock: Arc::new(mighty_core::time::DateTimeOffset::now),
+    };
+    (ClaudePermissionChannel::new("run", "initial", hooks, "manual"), (writes, settled))
+}
+
+/// "queue: a steer needs a live, initialized channel and a write that went through" (SteerRequiresLiveInitializedChannelAndSuccessfulWrite,
+/// QueuedComposerVerification.cs:31-44).
+#[test]
+fn steer_requires_live_initialized_channel_and_successful_write() {
+    let failing = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (channel, (writes, _)) = switchable(failing.clone());
+    assert!(
+        !channel.try_steer("before initialization") && writes.lock().unwrap().is_empty(),
+        "uninitialized streams cannot accept a follow-up"
+    );
+    let id = channel.initialization_id.clone();
+    channel
+        .receive(&format!("{{\"type\":\"control_response\",\"response\":{{\"subtype\":\"success\",\"request_id\":\"{id}\"}}}}"))
+        .unwrap();
+    assert_eq!(writes.lock().unwrap().clone(), vec!["initial".to_string()], "initial prompt is sent only after the handshake");
+    assert!(channel.try_steer("다음 지시"), "a live Claude channel accepts Korean text");
+    assert_eq!(
+        writes.lock().unwrap().last().cloned(),
+        Some(ProviderInput::prompt_frame("다음 지시")),
+        "steering uses the same supported user-message frame as the initial prompt"
+    );
+    assert!(
+        !channel.try_steer("") && !channel.try_steer("bad\0input") && !channel.try_steer(&"x".repeat(100_001)),
+        "invalid instructions are refused before a write"
+    );
+    failing.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(!channel.try_steer("not delivered"), "failed writes fall back to the queue instead of losing input");
+    failing.store(false, std::sync::atomic::Ordering::SeqCst);
+    channel.cancel_all();
+    assert!(!channel.try_steer("after stop"), "a stopped channel never restarts through steering");
+}
+
+/// "queue: a permission answered while the run stops is settled once" (PermissionResponsesAndCancellationSettleOnlyOnce,
+/// QueuedComposerVerification.cs:46-53).
+#[test]
+fn permission_responses_and_cancellation_settle_only_once() {
+    for _ in 0..50 {
+        let (channel, (writes, settled)) = switchable(Arc::new(std::sync::atomic::AtomicBool::new(false)));
+        let channel = Arc::new(channel);
+        channel
+            .receive(r#"{"type":"control_request","request_id":"request","request":{"subtype":"can_use_tool","tool_name":"Read","tool_use_id":"tool","input":{"file_path":"README.md"}}}"#)
+            .unwrap();
+        let (answering, stopping) = (channel.clone(), channel.clone());
+        let answer = std::thread::spawn(move || {
+            let _ = answering.respond("request", true);
+        });
+        let stop = std::thread::spawn(move || stopping.cancel_all());
+        answer.join().unwrap();
+        stop.join().unwrap();
+        let ended = settled.lock().unwrap().iter().filter(|value| value.state != "pending").count();
+        assert!(
+            channel.waiting().is_empty() && ended == 1 && writes.lock().unwrap().len() <= 1,
+            "concurrent parser stop and UI consent settle a request once"
+        );
+    }
+}

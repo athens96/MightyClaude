@@ -4,51 +4,41 @@ Every C# check of the graph's suites that this crate does not run yet, because i
 the C# check (native/windows/MightyCode.Core.Tests/, file:line), what it needs, and the Rust test that holds the rest of it. Port each one
 when that part lands, next to the test named, and delete its entry here.
 
-## The run engine (W2-A, `crates/mighty-run`)
+## The run engine (W2-A, `crates/mighty-run`) — ported at the integration (2026-11-14)
 
-### OutputParser: recordings replayed as `RunManager` feeds them (`FlowGraphVerification.ReplayParsed`, FlowGraphVerification.cs:33-45)
+mighty-graph reads mighty-run now (`src/run.rs` is the tracker as the runner's `GraphFactory`/`GraphSink`), so the checks that needed both
+crates run here: `tests/view_support` has `replay`/`replay_parsed` (C# `FlowGraphVerification.ReplayParsed`: each frame to the tracker and
+to mighty-run's `OutputParser`, its tool rows routed by `ExecutionGraphTracker.activity`).
 
-- FlowLayoutVerification.cs:421-464 `TheRecordedBackgroundAgentIsACardThatLeadsToItsCopy` (whole): claude-stream-subagents through the
-  tracker and the parser, live cards from each snapshot, the copy node. Goes in tests/flow_layout.rs.
-- FlowLayoutVerification.cs:477-492 `BackgroundCommandsStandInTheRow`, its first block (claude-stream-background-commands replayed: the
-  flow agents, their command lines, exit codes and times, the line, the way back, both cards, the copy). The rest is
-  tests/flow_layout.rs `background_commands_stand_in_the_row`.
-- FlowGraphVerification.cs:202-215 `TheRecordedRequestLogsItsSubagentsWork`, its first block (the log's rows of claude-stream-subagents:
-  starts, ends, the background agent's reads, its notice, the status). The rest is tests/flow_graph.rs
-  `the_recorded_request_logs_its_subagents_work`.
-- AcpGraphVerification.cs:67-79 `EveryRecordingIsTheMacsGraph` (whole): every opencode/hermes recording through `AcpChannel`, the parser and
-  the tracker against native/contracts/fixtures/acp-graphs.json. `OpencodeAndHermesPanesDrawTheGraph` is ported
-  (tests/tracker_views.rs).
+| C# check | Rust |
+|---|---|
+| FlowLayoutVerification.cs:421-464 `TheRecordedBackgroundAgentIsACardThatLeadsToItsCopy` (whole) | tests/flow_layout.rs `the_recorded_background_agent_is_a_card_that_leads_to_its_copy` |
+| FlowLayoutVerification.cs:477-492 `BackgroundCommandsStandInTheRow`, its first block | tests/flow_layout.rs `background_commands_stand_in_the_row` (now whole) |
+| FlowGraphVerification.cs:202-215 `TheRecordedRequestLogsItsSubagentsWork`, its first block | tests/flow_graph.rs `the_recorded_request_logs_its_subagents_work` (now whole) |
+| MightyGraphLiveVerification.cs:9-36 `TheRunningRequestShowsTheMainAgentsWork`, the pane's `Apply` | tests/live.rs `the_running_request_shows_the_main_agents_work_on_the_pane` |
+| BackgroundNoticeRunsVerification.cs:186-212 `ThePaneKeepsTheNoticeRunApart`, the pane fed by `Hand`/`Line` | tests/background_notice_runs.rs `the_pane_keeps_the_notice_run_apart_through_its_events` |
+| BackgroundNoticeRunsVerification.cs:349-372 `AbsorbedAndEndedNoticeRunsLeaveTheRequestItsPlace`, the pane's lines | tests/background_notice_runs.rs `absorbed_and_ended_notice_runs_leave_the_request_its_place_through_its_events` |
+| RuntimeParityVerification.cs:103-126 `ChildActivitiesStayInTheirGraph` (whole; not listed here before) | tests/runtime_parity.rs `child_activities_stay_in_their_graph` |
+| FlowStepsVerification.cs:98-108 `ThePaneKeepsTheStepsThroughItsEvents`, FlowStepsVerification.cs:219-224 `AnACPAgentsPlanIsTheRequestsSteps` | mighty-run tests/flow_steps.rs (the W2-A port already held both whole) |
+| ResumedAgentVerification.cs:116-131 and :136-164 | mighty-run tests/stream_parser.rs `an_agent_resumed_from_a_steered_turn_waits_once_that_turn_ends`, tests/runner.rs `the_runner_keeps_the_input_open_for_a_resumed_agent` |
 
-### The pane's record of run events (`RunSession.Apply` / `AppSnapshot.Apply(RunEvent)`)
+Still left (each needs more than the two crates' public rules, or a fixture the port has not made):
 
-- MightyGraphLiveVerification.cs:9-36 `TheRunningRequestShowsTheMainAgentsWork`: the log and graph_run events applied to the pane. The merge
-  rules it relies on are tests/live.rs.
-- FlowStepsVerification.cs:101-108 `ThePaneKeepsTheStepsThroughItsEvents`: the `todos` and `graph_run` events through `AppSnapshot.Apply`
-  (a graph run keeps the steps). The `RecordSteps` half and the save are tests/flow_steps.rs `the_pane_keeps_the_steps_through_its_events`.
-- BackgroundNoticeRunsVerification.cs:43-49, 192, 198-202, 212 `ThePaneKeepsTheNoticeRunApart`: the pane fed by `Hand`/`Line`, and "the
-  notice turn's lines are its own" (the transcript routing). The tracker's half is tests/background_notice_runs.rs
-  `the_pane_keeps_the_notice_run_apart`.
-- BackgroundNoticeRunsVerification.cs:355-360, 364-371 `AbsorbedAndEndedNoticeRunsLeaveTheRequestItsPlace`: "the request's later lines are
-  its own" and "a running notice turn takes the lines" (`Line` → `Apply`). The rest is tests/background_notice_runs.rs
-  `absorbed_and_ended_notice_runs_leave_the_request_its_place`.
+- AcpGraphVerification.cs:67-79 `EveryRecordingIsTheMacsGraph` (whole): opencode/hermes recordings through `AcpChannel`, which mighty-run
+  does not have yet (W5). `OpencodeAndHermesPanesDrawTheGraph` is ported (tests/tracker_views.rs).
+- ResumedAgentVerification.cs:82, 84-86, 88-91 (inside `AnAgentResumedFromANoticeTurnKeepsThePaneWaitingUntilItsNotification`): the queue
+  policy's answers on the replayed pane (`BackgroundQueuePolicy.WaitsOnBackground`, `SteersRunNext`, `StopKeepsQueue`, `QueueRunNow.Decide`
+  giving Steer) and the strip's rows. The rules are mighty-composer's (`queue::background`, `queue::decide`) and the replay mighty-run's
+  (tests/stream_parser.rs:540); the strip's rows are `PlanCardSupport.BackgroundStripRows` (the phone's module, below).
+- GraphVectorVerification.cs:503-551 `RecordedFromARun` (whole): Claude, Codex, Gemini and shell runs through `RunManager` over a real
+  child (C#'s fake in its `--fake-cli <provider>` mode) with the real tracker. mighty-run's `mighty-fake-cli` plays that mode, but it is a
+  `[[bin]]` only mighty-run's own tests can name, and those cannot reach the tracker without a dependency cycle; a mighty-graph test needs
+  a way to find (and build) the binary first.
+- RuntimeParityVerification.cs:128-200 `ChildImagesReachTheirGraphAndGallery` and :202-260 `RunnerPreservesChildOwnershipAndImagesAcrossRestore`:
+  the parser's picture path into the tracker (`graphImages`) with the picture cache, and C#'s fake in its `--runtime-parity-cli` mode
+  (not in `mighty-fake-cli`), with the same binary question as `RecordedFromARun`.
 
-### TodoProgressTracker
-
-- FlowStepsVerification.cs:221-224 `AnACPAgentsPlanIsTheRequestsSteps`: the ACP plan update read into a checklist. The `RecordSteps` half
-  is tests/flow_steps.rs `an_acp_agents_plan_is_the_requests_steps`.
-
-### BackgroundTaskTracker, ClaudeStream.ClosesInput, BackgroundQueuePolicy, QueueRunNow, RunManager
-
-- ResumedAgentVerification.cs:16-46 (`Replay`), 70-73, 76-77, 80-86, 103-104, 107-108
-  `AnAgentResumedFromANoticeTurnKeepsThePaneWaitingUntilItsNotification`: the background work, the input's close, the queue, 바로 실행. The
-  graph's half and the log strip's status line are tests/resumed_agent.rs.
-- ResumedAgentVerification.cs:116-131 `AnAgentResumedFromASteeredTurnWaitsOnceThatTurnEnds` (whole).
-- ResumedAgentVerification.cs:136-164 `TheRunnerKeepsTheInputOpenForAResumedAgent` (whole: `RunManager` with the fake CLI).
-- GraphVectorVerification.cs:503-551 `RecordedFromARun` (whole: Claude, Codex, Gemini and shell runs through `RunManager` record their
-  graph, or none).
-
-### SessionHistory (the session record reader)
+### SessionHistory (the session record reader, W4)
 
 - AgentNoticeVerification.cs:280-296 (`Replay` writes a Claude record and reads it with `SessionHistory.Load`), used by
   :308 `ARecordedHandBackTurnSettlesTheAgentAsLive` and :338 `AQueuedHandBackSettlesTheAgentByItsName` (both whole). The shared cases are
@@ -68,21 +58,15 @@ when that part lands, next to the test named, and delete its entry here.
   pipeline itself (`MobileStructure.Make`) is ported: tests/mobile_structure.rs, and its awaiting and title checks in
   tests/background_notice_runs.rs.
 
-## The host (wiring `view::project`)
+## The host (`src-tauri`, wired at the integration)
 
-What `MainWindow.WebShell.Mighty.cs` does around the projection that is not pure, for the stage that wires `mightyVisible` and the page
-methods to `view::MightyPushes`, `view::MightyPane` and `view::project`:
+`src-tauri/src/mighty.rs` does what `MainWindow.WebShell.Mighty.cs` does around the projection: the 120 ms tick (`MightyPushes::due`,
+every eighth whole), the page methods marking the pane (`dirty`), the result files looked through off the page's thread
+(`take_result_file_lookups` → `result_files::files_in` → `found_result_files`), `mightyImages`' tiles as data URLs. The run steps of
+`--smoke-test` (smoke_runs.rs) draw a real run's request, sub-agents and result and the progress panel against the page. What the
+projection still gets empty (`Sources`), each its stage's:
 
-- The 120 ms timer (`StartWebMighty`, `FlushWebMighty` :125-179): call `MightyPushes::due` each tick with the snapshot's sessions, project
-  each pane it returns and push `MightyPushes::message`; stop the timer when `shown()` is empty. Every page method that changes what a
-  projection reads calls `MightyPushes::dirty`.
-- `Sources`: the record reader's older runs and history words (`GraphHistoryRuns`, `SessionHistoryState`, MainWindow.SessionHistory.cs),
-  `mightyLoadOlder`'s read (`MightyPane::load_older` gives the request; `SessionHistoryState.Begin`/`Finish` and the read are the record
-  reader's), the Ouroboros dashboard (`view::ExecutionDashboard`: `OuroborosDashboard.BlockStatus` and `WebExecutionCard`, polled only
-  while the diagram shows, `WatchOuroboros`/`StopOuroboros`), the custom agents read off the page's thread (`FlowDefinitions`
-  :466-488), the image locator, the background output, the model catalogue and the guided style.
-- The result files: `MightyPane::take_result_file_lookups` after each projection, `result_files::files_in` off the page's thread, then
-  `MightyPane::found_result_files` and `dirty` (`LookThroughResultFiles`, MainWindow.MightyGraph.cs:1503-1511).
-- `mightyImages`: `MightyPane::images` gives the step's pictures; their bytes and data URLs (`WebImageUrl`, :666-683) are the host's.
-- `mightyOpenDashboard`: `MightyPane::open_dashboard` gives the execution; opening it (`OpenOuroborosDashboard`) is the host's.
-- The page smoke (`RunWebMightySmoke`, :190-351) runs against the real page.
+- the session record's older requests and the history block's words (`GraphHistoryRuns`, `SessionHistoryState`; `mightyLoadOlder` names
+  the read, W4);
+- the Ouroboros dashboard (`ExecutionDashboard`: `NoDashboard`, `mightyOpenDashboard` opens nothing) and `OuroborosExecutionLinks.Extract`;
+- the background output tails (`BackgroundOutputFor`), the custom agents' definitions (`FlowDefinitions`) and the guided style (W9).

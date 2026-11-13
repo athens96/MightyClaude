@@ -458,3 +458,51 @@ pub fn difference(expected: &Value, produced: &Value, path: &str) -> Option<Stri
         }
     }
 }
+
+/// A recording's frames, one per line (C# `FlowGraphVerification.Lines`).
+pub fn recording(name: &str) -> Vec<String> {
+    std::fs::read_to_string(contracts().join("fixtures").join(format!("{name}.jsonl")))
+        .unwrap_or_else(|e| panic!("recording {name}: {e}"))
+        .split('\n')
+        .map(|l| l.trim_end_matches('\r').to_string())
+        .filter(|l| !l.trim().is_empty())
+        .collect()
+}
+
+/// C# `FlowGraphVerification.ReplayParsed` (FlowGraphVerification.cs:33-45): a recording replayed as a run reads it — each frame to the
+/// tracker, then to the run engine's stream parser, whose tool rows the tracker routes to their blocks; the pane's runs as the run
+/// pipeline hands them over once the process ended. `each` sees the runs after every frame (`BuildRun(true)` and the notice runs).
+pub fn replay(fixture: &str, run_id: &str, mut each: impl FnMut(Vec<MightyGraphRun>)) -> Vec<MightyGraphRun> {
+    use std::sync::{Arc, Mutex};
+    let tracker = Arc::new(Mutex::new(mighty_graph::ExecutionGraphTracker::new(
+        run_id,
+        Some("probe"),
+        "claude",
+        None,
+        Box::new(|_| {}),
+        None,
+        None,
+        ko(),
+    )));
+    let routed = tracker.clone();
+    let hooks = mighty_run::parser::ParserHooks {
+        graph_activity: Some(Arc::new(move |value: &AgentActivity, tool: Option<&str>| routed.lock().unwrap().activity(value, tool))),
+        ..mighty_run::parser::ParserHooks::default()
+    };
+    let parser = mighty_run::parser::OutputParser::new("claude", run_id, hooks);
+    for line in recording(fixture) {
+        tracker.lock().unwrap().consume(&serde_json::from_str(&line).unwrap());
+        parser.parse(&line);
+        let shown = tracker.lock().unwrap();
+        each(shown.build_run(true).into_iter().chain(shown.build_notice_runs(true)).collect());
+    }
+    parser.flush();
+    let mut done = tracker.lock().unwrap();
+    done.finish("completed");
+    done.build_run(false).into_iter().chain(done.build_notice_runs(false)).collect()
+}
+
+/// [`replay`] without the snapshots.
+pub fn replay_parsed(fixture: &str, run_id: &str) -> Vec<MightyGraphRun> {
+    replay(fixture, run_id, |_| {})
+}

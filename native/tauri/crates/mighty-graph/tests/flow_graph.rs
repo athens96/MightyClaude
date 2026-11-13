@@ -443,9 +443,43 @@ fn written(pane: &RunSession) -> String {
 }
 
 /// "flow log: the recorded request logs its sub-agents' work, and the pane remembers the strip folded (claude-stream-subagents)"
-/// (TheRecordedRequestLogsItsSubagentsWork): the pane's half. Its first half replays claude-stream-subagents through the graph tracker.
+/// (TheRecordedRequestLogsItsSubagentsWork, FlowGraphVerification.cs:199-226): the recording replayed through the run engine's stream
+/// parser and the tracker (`ReplayParsed`), then the pane's half.
 #[test]
 fn the_recorded_request_logs_its_subagents_work() {
+    let ko = ko();
+    let runs = support::shown_runs(&replay_parsed("claude-stream-subagents", "recorded"), &ko).into_owned();
+    let rows = log::rows(&runs, 40, &none(), &ko);
+    let starts: Vec<&Row> = rows.iter().filter(|r| r.id.ends_with(":start")).collect();
+    same(starts.iter().map(|r| r.who.as_str()).collect::<Vec<_>>(), vec!["count a", "count b and c"], "both started");
+    same(
+        starts.iter().map(|r| r.what.as_str()).collect::<Vec<_>>(),
+        vec!["시작 · Explore · Haiku 5.5", "시작 · Explore · Haiku 5.5"],
+        "as their cards' second line",
+    );
+    same(
+        starts.iter().map(|r| r.time).collect::<Vec<_>>(),
+        ["2026-11-10T18:56:31.912Z", "2026-11-10T18:56:44.496Z"]
+            .iter()
+            .map(|t| mighty_core::time::parse(Some(t)).unwrap())
+            .collect::<Vec<_>>(),
+        "at the times the CLI's frames name",
+    );
+    same(
+        rows.iter().filter(|r| r.id.ends_with(":end") && r.actor.role != FlowRole::Lead).map(|r| r.who.as_str()).collect::<Vec<_>>(),
+        vec!["count a", "count b and c"],
+        "both ended",
+    );
+    let background = support::flow_agents(&runs[0]).into_iter().find(|a| a.title() == "count b and c").unwrap().id().to_string();
+    let theirs = Actor { role: FlowRole::Subagent, agent_id: Some(background) };
+    same(
+        rows.iter().filter(|r| r.actor == theirs && !r.id.ends_with(":start") && !r.id.ends_with(":end")).count(),
+        2,
+        "the background agent's two reads",
+    );
+    check(rows.iter().any(|r| r.what == "알림 받음 · 백그라운드 작업 완료 · count b and c"), "its end came in as a notice");
+    same(log::status_of(&runs, &ko).unwrap().text().as_str(), "Haiku 5.5 완료 · 하위 에이전트 2개 끝남", "the status once it is over");
+
     let pane = pane_of(r#"{"id":"p","workspaceId":"w","title":"Claude"}"#);
     same(pane.flow_log_collapsed, None, "an older save is open");
     check(!written(&pane).contains("flowLogCollapsed"), "an open strip writes nothing");

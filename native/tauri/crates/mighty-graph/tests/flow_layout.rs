@@ -904,11 +904,105 @@ fn helper(id: &str, status: &str, background: bool) -> MightyGraphAgent {
     b.build()
 }
 
-/// "flow tasks: background commands stand in the row, with the line, the way back and the status" (BackgroundCommandsStandInTheRow): every
-/// check but its first block, which replays claude-stream-background-commands through the graph tracker and the stream parser.
+/// "flow cards: the recorded background agent is a card while it runs, and its card leads to its copy"
+/// (TheRecordedBackgroundAgentIsACardThatLeadsToItsCopy, FlowLayoutVerification.cs:421-464): claude-stream-subagents through the run
+/// engine's stream parser and the tracker, the live card read from each frame's snapshot.
+#[test]
+fn the_recorded_background_agent_is_a_card_that_leads_to_its_copy() {
+    let ko = ko();
+    let mut live = vec![];
+    let runs = replay("claude-stream-subagents", "recorded", |snapshot| {
+        let shown = support::shown_runs(&snapshot, &ko).into_owned();
+        let Some(request) = shown.first() else { return };
+        let agent = support::flow_agents(request).into_iter().find(|a| a.title() == "count b and c");
+        if let Some(agent) = agent.filter(|a| a.status() == "running" && a.figures.as_ref().and_then(|f| f.tool_calls) == Some(1)) {
+            live.push(card::of(agent, request, None, &[], &ko));
+        }
+    });
+    let agents: Vec<&MightyGraphAgent> = runs[0].agents().iter().filter(|a| support::is_subagent(a)).collect();
+    same(agents.iter().map(|a| a.title()).collect::<Vec<_>>(), vec!["count a", "count b and c"], "the sub-agents");
+    same(
+        agents.iter().map(|a| a.figures.as_ref().and_then(|f| f.started_at.clone())).collect::<Vec<_>>(),
+        vec![Some("2026-11-10T18:56:31.912Z".to_string()), Some("2026-11-10T18:56:44.496Z".to_string())],
+        "each started at its call's frame",
+    );
+    check(agents.iter().all(|a| a.figures.as_ref().is_some_and(|f| f.ended_at.is_some())), "each ended");
+    same(
+        agents.iter().map(|a| a.figures.as_ref().and_then(|f| f.tool_calls)).collect::<Vec<_>>(),
+        vec![Some(1), Some(2)],
+        "one call counted once",
+    );
+    check(agents.iter().all(|a| a.usage.as_ref().is_some_and(|u| u.total() > 0)), "their tokens");
+    let card = live.last().expect("the background agent never showed as a running card");
+    check(
+        card.running()
+            && card.identity.as_deref() == Some("Explore · Haiku 5.5")
+            && card.tool_calls == Some(1)
+            && card.tokens.unwrap_or(0) > 0,
+        format!("a running card with its figures so far: {:?}", card.identity),
+    );
+    same(card.marks.clone(), vec![FlowMark::Background], "its mark");
+    check(card.activity.as_deref().is_some_and(|a| !a.is_empty()), "what it does");
+    let shown = support::shown_runs(&runs, &ko).into_owned();
+    let flow_agents = support::flow_agents(&shown[0]);
+    let ended = *flow_agents.iter().find(|a| a.title() == "count b and c").unwrap();
+    check(card::is_compact(ended, false), "still the request's card");
+    same(card::of(ended, &shown[0], None, &[], &ko).activity.as_deref(), Some("b.txt: 3"), "its answer's first line");
+    let graph = flow::flow_layout(&runs, false, &[], true);
+    let copy = card::copy_node_id(ended, &shown).expect("no copy");
+    check(graph.nodes.iter().any(|n| n.id == copy && n.is_compact), "its copy is a card too");
+    check(graph.nodes.iter().any(|n| n.id == node_of(&shown[0], &format!("agent:{}", ended.id())) && n.is_compact), "its card");
+    check(
+        card::is_compact(flow_agents.iter().find(|a| a.title() == "count a").unwrap(), false),
+        "the foreground agent that ended is a card too",
+    );
+}
+
+/// "flow tasks: background commands stand in the row, with the line, the way back and the status" (BackgroundCommandsStandInTheRow,
+/// FlowLayoutVerification.cs:475): its first block replays claude-stream-background-commands through the run engine's stream parser and
+/// the tracker (`ReplayParsed`).
 #[test]
 fn background_commands_stand_in_the_row() {
     let ko = ko();
+    let runs = replay_parsed("claude-stream-background-commands", "recorded");
+    let shown = support::shown_runs(&runs, &ko).into_owned();
+    same(shown[0].agents().len(), 0, "every other view leaves them out");
+    let recorded = support::flow_agents(&shown[0]);
+    same(
+        recorded.iter().map(|a| a.title()).collect::<Vec<_>>(),
+        vec!["count to three", "fail on purpose"],
+        "the role view has both, in launch order",
+    );
+    let cards: Vec<card::Content> = recorded.iter().map(|a| card::of(a, &shown[0], None, &[], &ko)).collect();
+    same(
+        cards.iter().map(|c| c.identity.as_deref()).collect::<Vec<_>>(),
+        vec![Some("작업 · for i in 1 2 3; do echo line $i; sleep 1; done"), Some("작업 · sleep 2; echo about to fail; exit 3")],
+        "their command lines",
+    );
+    same(
+        cards.iter().map(|c| card::figures(c, mighty_core::time::DateTimeOffset::now(), &ko)).collect::<Vec<_>>(),
+        vec!["완료 · 종료 코드 0 · 3초".to_string(), "실패 · 종료 코드 3 · 2초".to_string()],
+        "their exit codes and times",
+    );
+    check(
+        cards.iter().all(|c| c.is_task && c.ink == FlowInk::Neutral && c.marks == vec![FlowMark::Background]),
+        "the neutral ink and the background mark",
+    );
+    let written = ["line 1", "line 2", "line 3", "", "[exited with code 0]"].map(str::to_string);
+    same(card::of(recorded[0], &shown[0], None, &written, &ko).activity.as_deref(), Some("line 3"), "the last line it wrote");
+    same(
+        lines::line_of(&lines::children(lines::MAIN_KEY, &shown[0]), &none(), &ko).map(|l| l.text()).as_deref(),
+        Some("작업 2개 실행"),
+        "the line",
+    );
+    same(lines::return_of(&shown[0], &ko).map(|r| r.text).as_deref(), Some("메인으로 복귀 · 검토 중"), "the way back");
+    let graph = flow::flow_layout(&runs, false, &[], true);
+    check(
+        recorded.iter().all(|a| find(&graph, &node_of(&shown[0], &format!("agent:{}", a.id()))).is_some_and(|n| n.is_compact)),
+        "both cards",
+    );
+    check(card::copy_node_id(recorded[0], &shown).is_some(), "an ended command's card leads to its copy");
+
     let cmd = "python3 scripts/release.py ci\n--commit";
     let running = command("ci", cmd, Some("CI 대기"), "running", None, Some(0), None, None);
     let request = r("r").agents(vec![running.clone()]).build();

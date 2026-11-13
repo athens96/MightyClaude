@@ -929,3 +929,149 @@ fn a_later_turn_answering_a_held_notification_goes_on_in_its_run() {
     same(output("proc-1:notice:3").as_deref(), Some("And one."), "an answer naming no task run");
     same(output("proc-1:notice:1").as_deref(), Some("done.\n\ndone."), "the first run keeps its two answers");
 }
+
+// ── the pane's record of the run events (the run engine's `RunSession.Apply`, now reachable) ──
+
+/// `pane.Apply(value)`: the pane alone in a state, the run engine's apply, the pane back.
+fn apply_to(pane: RunSession, value: &mighty_run::RunEvent) -> RunSession {
+    let state = mighty_core::AppSnapshot { sessions: Some(vec![std::sync::Arc::new(pane)]), ..mighty_core::AppSnapshot::default() };
+    let next = mighty_run::apply::apply(&state, value, mighty_core::time::DateTimeOffset::now());
+    (*next.sessions()[0]).clone()
+}
+
+/// C# `Hand(pane, tracker)`: the request's run and the notice runs the tracker built, each applied as a `graph_run` event.
+fn hand_pane(mut pane: RunSession, tracker: &mut ExecutionGraphTracker) -> RunSession {
+    let id = pane.id().to_string();
+    if let Some(request) = tracker.build_run(true) {
+        pane = apply_to(pane, &mighty_run::RunEvent { graph_run: Some(request), ..mighty_run::RunEvent::new(&id, "graph_run") });
+    }
+    for notice in tracker.take_notice_runs(true) {
+        pane = apply_to(pane, &mighty_run::RunEvent { graph_run: Some(notice), ..mighty_run::RunEvent::new(&id, "graph_run") });
+    }
+    pane
+}
+
+/// C# `Line(pane, id, text)`: an answer line of the pane's transcript.
+fn line(pane: RunSession, id: &str, text: &str) -> RunSession {
+    let pane_id = pane.id().to_string();
+    let entry = mighty_core::model::LogEntry::new(id.into(), "assistant", text.into(), mighty_core::time::now_o(), Some("claude".into()));
+    apply_to(pane, &mighty_run::RunEvent { entry: Some(entry), ..mighty_run::RunEvent::new(&pane_id, "log") })
+}
+
+fn running_pane(id: &str, asked: Option<&str>) -> RunSession {
+    let ask =
+        asked.map(|a| mighty_core::model::LogEntry::new("ask".into(), "user", a.into(), mighty_core::time::now_o(), Some("claude".into())));
+    RunSession {
+        id: Some(id.into()),
+        kind: Some("claude".into()),
+        provider: Some("claude".into()),
+        status: Some("running".into()),
+        logs: Some(ask.into_iter().collect()),
+        ..RunSession::default()
+    }
+}
+
+/// C# ThePaneKeepsTheNoticeRunApart (BackgroundNoticeRunsVerification.cs:186-212) through the pane's own record: the run pipeline hands
+/// the pane the request's run and the notice run, and the notice turn's lines are its own (the pane's `Apply` routes them).
+#[test]
+fn the_pane_keeps_the_notice_run_apart_through_its_events() {
+    let mut pane = running_pane("pane", Some("build it"));
+    let mut tracker = new_tracker("proc-1", "build it");
+    for value in [command("build", "npm run build", "Build the app"), launched("build", "b1"), text_frame("Building.", "m1")] {
+        tracker.consume(&value);
+    }
+    pane = hand_pane(pane, &mut tracker);
+    pane = line(pane, "line-1", "Building.");
+    tracker.consume(&result("Building.", false));
+    pane = hand_pane(pane, &mut tracker);
+    let task = mighty_core::model::BackgroundTask {
+        id: Some("b1".into()),
+        kind: Some("shell".into()),
+        description: Some("Build the app".into()),
+        started_at: Some(mighty_core::time::now_o()),
+        status: Some("running".into()),
+        tool_use_id: Some("build".into()),
+        summary: None,
+        ended_at: None,
+    };
+    pane.background_work = Some(mighty_core::model::BackgroundWork { tasks: Some(vec![task]), turn_ended: true });
+    let revision = tracker.notice_revision();
+    tracker.consume(&notification("b1", "Build done"));
+    check(
+        tracker.notice_revision() != revision,
+        "a notice run's opening moves the revision, so the pipeline hands it over before the turn's lines",
+    );
+    pane = hand_pane(pane, &mut tracker);
+    pane = line(pane, "line-2", "The build passed.");
+    tracker.consume(&text_frame("The build passed.", "m2"));
+    tracker.consume(&result("The build passed.", true));
+    pane = hand_pane(pane, &mut tracker);
+    let runs = pane.graph_runs();
+    check(
+        runs.iter().map(|r| r.id()).collect::<Vec<_>>() == vec!["proc-1", "proc-1:notice:1"],
+        &format!("the request, then its notice run: {:?}", runs.iter().map(|r| r.id()).collect::<Vec<_>>()),
+    );
+    let (request, notice) = (&runs[0], &runs[1]);
+    check(request.notice_run.is_none() && request.final_output.as_deref() == Some("Building."), "the request keeps its answer");
+    check(
+        notice.is_notice() && notice.status() == "completed" && notice.final_output.as_deref() == Some("The build passed."),
+        "the notice run ended with its answer",
+    );
+    check(
+        notice.root_entries().iter().any(|e| e.text() == "The build passed.")
+            && !request.root_entries().iter().any(|e| e.text() == "The build passed."),
+        "the notice turn's lines are its own",
+    );
+    check(support::newest_request_run(runs).map(|r| r.id()) == Some("proc-1"), "the notice run never takes the request's place");
+}
+
+/// C# AbsorbedAndEndedNoticeRunsLeaveTheRequestItsPlace (BackgroundNoticeRunsVerification.cs:349-372) through the pane's own record: the
+/// request's later lines are its own, a running notice turn takes the lines, and an ended one takes no more.
+#[test]
+fn absorbed_and_ended_notice_runs_leave_the_request_its_place_through_its_events() {
+    let mut tracker = new_tracker("proc-1", "build it");
+    for value in [command("build", "npm run build", "Build the app"), launched("build", "b1"), notification("b1", "Build done")] {
+        tracker.consume(&value);
+    }
+    let mut pane = hand_pane(running_pane("pane", Some("build it")), &mut tracker);
+    {
+        let runs = pane.graph_runs();
+        check(
+            runs.iter().map(|r| r.id()).collect::<Vec<_>>() == vec!["proc-1", "proc-1:notice:1"]
+                && runs[1].status() == "completed"
+                && support::quiet_notice(&runs[1]),
+            "the absorbed notice run is finished and quiet",
+        );
+        check(
+            support::newest_request_run(runs).map(|r| r.id()) == Some("proc-1")
+                && support::without_notice_runs(&pane).graph_runs().len() == 1,
+            "the request stays the newest",
+        );
+    }
+    pane = line(pane, "line-1", "Built and done.");
+    check(
+        pane.graph_runs()[0].root_entries().iter().any(|e| e.text() == "Built and done.") && pane.graph_runs()[1].root_entries().is_empty(),
+        "the request's later lines are its own",
+    );
+    // A process that ends in a notice turn ends its run, which then takes no more lines.
+    let mut second = new_tracker("proc-2", "lint it");
+    for value in
+        [command("lint", "npm run lint", "Lint"), launched("lint", "l1"), result("Linting.", false), notification("l1", "Lint done")]
+    {
+        second.consume(&value);
+    }
+    let mut later = hand_pane(running_pane("p2", None), &mut second);
+    check(later.graph_runs()[1].status() == "running", "the notice turn runs");
+    later = line(later, "l-1", "Linting the rest.");
+    check(later.graph_runs()[1].root_entries().iter().any(|e| e.text() == "Linting the rest."), "a running notice turn takes the lines");
+    second.finish("stopped");
+    for notice in second.take_notice_runs(false) {
+        let id = later.id().to_string();
+        later = apply_to(later, &mighty_run::RunEvent { graph_run: Some(notice), ..mighty_run::RunEvent::new(&id, "graph_run") });
+    }
+    check(
+        later.graph_runs()[1].status() == "stopped" && !support::quiet_notice(&later.graph_runs()[1]),
+        "the process's end stops the notice run",
+    );
+    check(support::routed_index(later.graph_runs()) == 0, "an ended notice run takes no more lines");
+}
