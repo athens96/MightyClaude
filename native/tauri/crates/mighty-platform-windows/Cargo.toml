@@ -7,20 +7,44 @@ license.workspace = true
 publish.workspace = true
 rust-version.workspace = true
 
+# The tests' stand-in child (C# `Verification.Self` relaunching the test exe with --long-child, --noisy-child, ...): std only, so it
+# builds on every OS, while the tests that run it are Windows-only.
+[[bin]]
+name = "mighty-fake-child"
+path = "tests/fake/child.rs"
+test = false
+doc = false
+
 # Everything is behind cfg(windows), its dependencies too: elsewhere the crate is empty.
 [target.'cfg(windows)'.dependencies]
 mighty-platform.workspace = true
+base64 = "0.22"
 dirs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 sha2 = "0.10"
 tauri = { workspace = true, features = ["unstable"] }
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "net", "rt", "time", "io-util", "macros"] }
 webview2-com = "0.38"
 windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
 windows-sys = { version = "0.61", features = [
+    "Wdk_System_Threading",
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_Environment",
+    "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Pipes",
     "Win32_System_Registry",
+    "Win32_System_SystemInformation",
     "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
 ] }
+
+[target.'cfg(windows)'.dev-dependencies]
+tokio = { workspace = true, features = ["sync", "net", "rt", "rt-multi-thread", "time", "io-util", "macros"] }

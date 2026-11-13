@@ -82,6 +82,39 @@ pub trait PtyControl: Send + Sync {
     fn close(&self) -> BoxFuture<'_, Result<()>>;
 }
 
+/// Text the app puts into a terminal for the user — a style's install command, a command the app wrote itself (C#
+/// `TerminalInputPolicy`, TerminalInputPolicy.cs; Swift TerminalInputPolicy.swift:17-34). Whatever its source, a line break means
+/// nothing is put in at all, and Enter follows only what was taken whole and only where the app says so.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalInput {
+    Pasted,
+    PastedAndRan,
+    Refused,
+    Failed,
+}
+
+impl TerminalInput {
+    /// LF, CR, U+2028 or U+2029 anywhere in `text`.
+    pub fn has_line_break(text: &str) -> bool {
+        text.contains(['\n', '\r', '\u{2028}', '\u{2029}'])
+    }
+
+    /// Puts `text` in through `write` (false when the terminal took none of it, as [`PtyControl::write`] answers), then `\r` when
+    /// `auto_run`. The refusal's sentence is the locale's `terminal.input.newlineRefused`.
+    pub fn apply(text: &str, auto_run: bool, mut write: impl FnMut(&str) -> bool) -> TerminalInput {
+        if TerminalInput::has_line_break(text) {
+            return TerminalInput::Refused;
+        }
+        if !write(text) {
+            return TerminalInput::Failed;
+        }
+        if !auto_run {
+            return TerminalInput::Pasted;
+        }
+        if write("\r") { TerminalInput::PastedAndRan } else { TerminalInput::Failed }
+    }
+}
+
 /// Opens pseudo terminals.
 pub trait PtyHost: Send + Sync {
     /// The shell a new terminal runs: Windows PowerShell 5.1 when present, else `%ComSpec%`; on the Mac the user's login shell.
@@ -92,4 +125,55 @@ pub trait PtyHost: Send + Sync {
     /// Starts `request` in a new terminal. Its processes die with the session (Windows: a kill-on-close job; the Mac: the session's
     /// process group) and never inherit the app's redirected standard handles.
     fn open(&self, request: PtyRequest) -> BoxFuture<'_, Result<PtySession>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// C# "composer parity: text with a line break is not put into a terminal" (ComposerParityVerification.cs:444-463; Swift
+    /// TerminalInputPolicyTests.swift:15-37). The locale's refusal sentence is checked with the locales (mighty-core).
+    #[test]
+    fn terminal_input_refuses_a_line_break() {
+        let mut written: Vec<String> = Vec::new();
+        let outcome = TerminalInput::apply("npx example-installer", false, |text| {
+            written.push(text.into());
+            true
+        });
+        assert!(
+            outcome == TerminalInput::Pasted && written == ["npx example-installer"],
+            "a command from elsewhere is put in and left for the user to run"
+        );
+        written.clear();
+        let outcome = TerminalInput::apply("claude login", true, |text| {
+            written.push(text.into());
+            true
+        });
+        assert!(
+            outcome == TerminalInput::PastedAndRan && written == ["claude login", "\r"],
+            "only a command the app wrote itself is followed by Enter"
+        );
+        for separator in ["\n", "\r", "\u{2028}", "\u{2029}"] {
+            written.clear();
+            let text = format!("rm -rf /{separator}echo done");
+            assert!(TerminalInput::has_line_break(&text), "a line break is seen: {separator:?}");
+            let outcome = TerminalInput::apply(&text, true, |text| {
+                written.push(text.into());
+                true
+            });
+            assert!(outcome == TerminalInput::Refused && written.is_empty(), "a line break stops the whole text: {separator:?}");
+        }
+        assert!(!TerminalInput::has_line_break("echo one && echo two") && !TerminalInput::has_line_break(""), "one line is one line");
+        let mut attempts = 0;
+        let outcome = TerminalInput::apply("ls", true, |_| {
+            attempts += 1;
+            false
+        });
+        assert!(outcome == TerminalInput::Failed && attempts == 1, "text the terminal did not take is never followed by Enter");
+        assert_eq!(
+            TerminalInput::apply("ls", true, |text| text != "\r"),
+            TerminalInput::Failed,
+            "an Enter the terminal did not take is a failure too"
+        );
+    }
 }

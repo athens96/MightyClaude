@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Writes what C# MightyCode.Core answers for the inputs in Program.cs to expected.json, which tests/parity.rs compares the Rust
+       port against. The command that regenerates it is at the top of Program.cs (build output goes to the temp folder). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../../../../windows/MightyCode.Core/MightyCode.Core.csproj" /></ItemGroup>
+</Project>
