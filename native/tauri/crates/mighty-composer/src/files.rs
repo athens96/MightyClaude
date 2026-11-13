@@ -22,6 +22,11 @@ pub enum OpenError {
 
 /// C# `WorkspaceFiles.OpenFile` (WorkspaceFiles.cs:278) as its readers use it: the file at `relative` under `root`, refused when its
 /// last part is (now) a link, not a regular file, or its real path left the root by the time it was opened; its bytes, at most `limit`.
+///
+/// After the open the path is walked again, as C# does off Windows: a folder on the way swapped for a link between the walk and the
+/// open is caught only if it is still a link at the second walk. On Windows C# asks the open handle itself where it is
+/// (`GetFinalPathNameByHandleW`), which closes that gap. That needs the Win32 call behind the platform crate, which this crate (no
+/// OS-specific code) cannot make: it is W4's, with the files pane's port (WorkspaceFiles.OpenFile).
 pub fn read_under(relative: &str, root: &Path, limit: usize) -> Result<(PathBuf, Vec<u8>), OpenError> {
     use std::io::Read as _;
     let path = resolve(relative, root).ok_or(OpenError::Missing)?;
