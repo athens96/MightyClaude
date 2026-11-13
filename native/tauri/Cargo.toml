@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/mighty-core", "crates/mighty-composer", "crates/mighty-graph", "crates/mighty-platform", "crates/mighty-platform-windows", "crates/mighty-platform-macos", "crates/mighty-run", "src-tauri"]
+members = ["crates/mighty-core", "crates/mighty-composer", "crates/mighty-files", "crates/mighty-graph", "crates/mighty-platform", "crates/mighty-platform-windows", "crates/mighty-platform-macos", "crates/mighty-run", "src-tauri"]
 resolver = "3"
 
 [workspace.package]
@@ -12,6 +12,7 @@ rust-version = "1.88"
 [workspace.dependencies]
 mighty-core = { path = "crates/mighty-core" }
 mighty-composer = { path = "crates/mighty-composer" }
+mighty-files = { path = "crates/mighty-files" }
 mighty-graph = { path = "crates/mighty-graph" }
 mighty-run = { path = "crates/mighty-run" }
 serde = { version = "1", features = ["derive"] }
