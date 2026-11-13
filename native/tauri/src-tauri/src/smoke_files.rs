@@ -1,8 +1,10 @@
 //! The smoke's files steps (C# MainWindow.WebShell.Panes.cs `RunWebPanesSmoke`'s files part, MainWindow.WebShell.cs
 //! `RunWebReferenceSmoke` and `RunWebPictureSmoke`), and an HTML frame: the host makes a workspace of its own (a temporary folder) with
-//! fixture files, a Claude pane whose 기록 view holds a reply naming `src/a.ts:3`, a Claude pane whose diagram holds a PNG and an
-//! SVG picture, and opens the workspace's files pane; the probe then works the page as a person would.
+//! fixture files, a Claude pane whose 기록 view holds a reply naming `src/a.ts:3` and a Claude pane whose diagram holds a PNG and an
+//! SVG picture; the probe then works the page as a person would.
 //!
+//! - Add pane: the workspace's add menu, its files entry (frame.rs's `addPaneEntry` through `OPEN_FILES`): the workspace's files pane
+//!   opens and shows its tree.
 //! - Files: the tree lists `smoke-folder`, a click opens it, a click on `hello.ts` previews it with line numbers and colour.
 //! - HTML frame: a click on `page/index.html` draws it in the sandboxed frame from the `mightyhtml` protocol; the host must have served
 //!   the page and the style sheet and script beside it.
@@ -32,15 +34,20 @@ const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAEElEQVR4nGPQq
 const SVG: &str =
     "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"40\" height=\"30\"><rect width=\"40\" height=\"30\" fill=\"#c33\"/></svg>";
 
-/// The probe; `__FILES__`, `__REFERENCE__` and `__PICTURES__` are filled in (UUID-shaped ids, no quotes).
+/// The probe; `__WORKSPACE__`, `__FILES__`, `__REFERENCE__` and `__PICTURES__` are filled in (UUID-shaped ids, no quotes).
 const PROBE: &str = r#"(async () => {
   const until = async (test, ms) => { const end = performance.now() + ms; while (performance.now() < end) { const v = await test(); if (v) return v; await new Promise((r) => setTimeout(r, 50)); } return test(); };
-  const filesId = '__FILES__', referenceId = '__REFERENCE__', picturesId = '__PICTURES__';
+  const workspaceId = '__WORKSPACE__', filesId = '__FILES__', referenceId = '__REFERENCE__', picturesId = '__PICTURES__';
   const slot = (id) => document.querySelector('.pane-slot[data-pane-id="' + id + '"]');
   const shown = (id) => { const s = slot(id); return s && !s.classList.contains('hidden') ? s : null; };
   const row = (path) => slot(filesId)?.querySelector('[data-testid=files-tree] [data-path="' + path + '"]');
   const report = {};
   try {
+    // The files pane from the workspace's add menu: its files entry opens the workspace's one files pane.
+    document.querySelector('[data-testid=sidebar-workspace][data-workspace-id="' + workspaceId + '"] [data-testid=sidebar-add]')?.click();
+    const entry = await until(() => document.querySelector('[data-testid="add-entry-files"]'), 10000);
+    report.filesAddEntry = !!entry;
+    entry?.click();
     // Files: the fixture folder in the tree, opened, its file previewed with line numbers and colour.
     report.filesTree = !!(await until(() => shown(filesId) && row('smoke-folder'), 15000));
     row('smoke-folder')?.click();
@@ -119,7 +126,8 @@ fn entry(kind: &str, text: &str, extra: Value) -> Value {
     value
 }
 
-/// The workspace, its two Claude panes and its files pane, in memory (as the other steps add theirs); answers the probe to run.
+/// The workspace and its two Claude panes, in memory (as the other steps add theirs); answers the probe to run (it opens the files pane
+/// from the add menu).
 pub fn start(host: &Host) -> Result<String, String> {
     let folder = fixture_folder().map_err(|e| e.to_string())?;
     let cache = host.engine()?.images.clone();
@@ -157,9 +165,12 @@ pub fn start(host: &Host) -> Result<String, String> {
     state["activeWorkspaceId"] = json!(WORKSPACE);
     state["activeSessionId"] = json!(REFERENCE);
     view.replace(AppSnapshot::read(&state).map_err(|e| e.to_string())?);
-    crate::files::open_files_pane(&mut view, &host.locale, Some(WORKSPACE))?;
     let files = mighty_files::pane::pane_id(WORKSPACE);
-    Ok(PROBE.replace("__FILES__", &files).replace("__REFERENCE__", REFERENCE).replace("__PICTURES__", PICTURES))
+    Ok(PROBE
+        .replace("__WORKSPACE__", WORKSPACE)
+        .replace("__FILES__", &files)
+        .replace("__REFERENCE__", REFERENCE)
+        .replace("__PICTURES__", PICTURES))
 }
 
 /// The steps' checks, from the probe's report and what the frames' protocol served.
@@ -170,6 +181,7 @@ pub fn checks(host: &Host, report: &Value) -> Vec<(&'static str, bool)> {
     let origin = if cfg!(windows) { "http://mightyhtml.h" } else { "mightyhtml://h" };
     vec![
         ("filesNoError", report.get("error").is_none()),
+        ("filesAddPane", yes("filesAddEntry") && yes("filesTree")),
         ("filesTree", yes("filesTree")),
         ("filesFolderOpened", yes("filesFolderOpened")),
         ("filesPreview", yes("filesPreview")),

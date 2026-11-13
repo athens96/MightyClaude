@@ -1,22 +1,21 @@
 //! The work map in the app (C# MainWindow.WorkMap.cs, docs/work-map.md): one pane per workspace, drawn by the page alone, its model from
 //! mighty-workmap's `WorkMapService` (the same one the phone will read through its router).
 //!
-//! - `openWorkMap{workspaceId}` opens the workspace's `workmap:<id>` pane, placed as the files pane is (C# `OpenSlimPane`): beside the
-//!   current pane, or a tab when there is no room for a split; it is never saved. A refusal shows in the error banner, as C#'s `Act`.
+//! - `openWorkMap{workspaceId}` opens the workspace's `workmap:<id>` pane, placed as the files pane is (C# `OpenSlimPane`, files.rs's
+//!   `open_slim_pane`): beside the current pane, or a tab when there is no room for a split; it is never saved. A refusal shows in the
+//!   error banner, as C#'s `Act`.
 //! - `workMapState{workspaceId}` → the model (`WorkMap.Json`: nulls kept); `workMapSummarize{workspaceId, key}` starts a version's summary
 //!   (one at a time per workspace; busy is an error the page shows) and the model is pushed again when it ends (`workmap`).
-//! - `workMapOpenFile{workspaceId, path}` opens the workspace's files pane and pushes `files{paneId, path}`, which the files pane takes as
-//!   "show and preview this file".
+//! - `workMapOpenFile{workspaceId, path}` opens the file in the workspace's files pane, revealed, selected and previewed there (files.rs's
+//!   `open_file_in_pane`), and pushes `files{paneId, path}`.
 //!
 //! The summaries are kept per workspace in `<profile>/work-map` when the app may write its profile, else in this machine's local folder
-//! for the profile (as the picture cache is).
+//! for the profile (as the picture cache is). The requests' edited files are read from the files pane's file originals (files.rs).
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use mighty_core::layout;
-use mighty_core::model::{AppSnapshot, PaneLayoutNode, RunSession, Workspace};
-use mighty_core::shell::{effective_layout, layout_mode};
+use mighty_core::model::Workspace;
 use mighty_workmap::service::Finder;
 use mighty_workmap::summary::{self, Runner};
 use mighty_workmap::{Git, WorkMapService, WorkMapStart, pane};
@@ -50,15 +49,12 @@ pub fn service(host: &Arc<Host>) -> Result<Arc<WorkMapService>, String> {
             summary::run(processes.as_ref(), &command, &env, &prompt, timeout).await
         })
     });
-    let service = WorkMapService::new(
-        store,
-        git,
-        Arc::new(move || state.view().snapshot.clone()),
-        host.data_dir.join("file-originals"),
-        finder,
-        runner,
-        host.locale,
-    );
+    // The file originals the files pane keeps (files.rs: the profile's with --allow-state-write, else this machine's own).
+    let originals = host
+        .app
+        .try_state::<Arc<crate::files::Files>>()
+        .map_or_else(|| host.data_dir.join("file-originals"), |files| files.originals.directory().to_path_buf());
+    let service = WorkMapService::new(store, git, Arc::new(move || state.view().snapshot.clone()), originals, finder, runner, host.locale);
     // A summary that ends (done or failed) is pushed to the page.
     let pushing = Arc::downgrade(host);
     service.on_changed(Arc::new(move |workspace_id: &str| {
@@ -94,114 +90,9 @@ async fn push(host: &Arc<Host>, workspace_id: &str) {
     host.push(&view, "workmap", message.to_string());
 }
 
-// ── the slim pane (C# `OpenSlimPane`) ───────────────────────────────────────────────────────────────────────────────────
-
-fn save_layout(state: &mut AppSnapshot, workspace: &str, node: PaneLayoutNode) {
-    state.pane_layouts.get_or_insert_with(Default::default).insert(workspace.to_string(), Some(node));
-}
-
-fn save_selection(state: &mut AppSnapshot, workspace: &str, id: &str) {
-    state.pane_layout_active_session_ids.get_or_insert_with(Default::default).insert(workspace.to_string(), Some(id.to_string()));
-}
-
-fn save_mode(state: &mut AppSnapshot, workspace: &str, mode: &str) {
-    state.pane_layout_modes.get_or_insert_with(Default::default).insert(workspace.to_string(), Some(mode.to_string()));
-}
-
-/// `FilePaneKind.Place`: the pane left of the current one's group (or of the first group holding another pane), or a tab in it when a
-/// split has no room.
-fn place(tree: &PaneLayoutNode, pane_id: &str, current: Option<&str>) -> PaneLayoutNode {
-    let groups = layout::groups(tree);
-    let target = groups
-        .iter()
-        .find(|g| current.is_some_and(|c| c != pane_id && g.session_ids().any(|id| id == c)))
-        .or_else(|| groups.iter().find(|g| g.session_ids().any(|id| id != pane_id)));
-    let Some(target) = target else { return tree.clone() };
-    let split = layout::move_tab(tree, pane_id, target.id(), "left", None);
-    if layout::groups(&split).iter().any(|g| g.session_ids().collect::<Vec<_>>() == [pane_id]) {
-        return split;
-    }
-    layout::move_tab(tree, pane_id, target.id(), "center", None)
-}
-
-/// `SelectLayoutSession`: the pane's group shows it, and it becomes the active pane of its workspace, which becomes the active one.
-fn select(view: &mut View, id: &str) -> Result<(), String> {
-    view.shows_dashboard = false;
-    let Some(workspace) = view.snapshot.session(id).map(|s| s.workspace_id().to_string()) else { return Ok(()) };
-    let node = effective_layout(&view.snapshot, &workspace, &mut view.layout_defaults).map(|n| layout::select(&n, id));
-    view.update(|state| {
-        if let Some(node) = node {
-            save_layout(state, &workspace, node);
-        }
-        save_selection(state, &workspace, id);
-        state.active_workspace_id = Some(workspace.clone());
-        state.active_session_id = Some(id.to_string());
-    })
-}
-
-/// `OpenSlimPane`: shows the workspace's one pane of `kind` (`files`, `workmap`): selects it when it is open, otherwise adds it beside the
-/// current pane. Never saved, so it does not come back after a restart. The error is the banner's words.
-pub fn open_slim_pane(host: &Host, view: &mut View, workspace_id: Option<&str>, kind: &str, title_key: &str) -> Result<String, String> {
-    let locale = host.locale;
-    let state = view.snapshot.clone();
-    let workspace = workspace_id
-        .or(state.active_workspace_id.as_deref())
-        .and_then(|id| state.workspace(id))
-        .cloned()
-        .ok_or_else(|| locale.get("window.error.addWorkspaceFirst"))?;
-    // A remote workspace's folder is on its host: no such pane reads it here.
-    if workspace.remote.is_some() {
-        return Err(locale.get("remote.windows.workspace.paneUnavailable"));
-    }
-    let id = format!("{kind}:{}", workspace.id());
-    if state.session(&id).is_some() {
-        select(view, &id)?;
-        return Ok(id);
-    }
-    if state.sessions().len() >= layout::MAXIMUM_SESSIONS {
-        return Err(locale.get("files.error.noRoom"));
-    }
-    let current = if state.active_workspace_id.as_deref() == Some(workspace.id()) {
-        state.active_session_id.clone()
-    } else {
-        state.pane_layout_active_session_ids.as_ref().and_then(|m| m.get(workspace.id())).cloned().flatten()
-    };
-    let pane = RunSession {
-        id: Some(id.clone()),
-        workspace_id: Some(workspace.id().to_string()),
-        kind: Some(kind.to_string()),
-        title: Some(locale.get(title_key)),
-        ..RunSession::default()
-    };
-    // The pane joins the tree before it becomes the active one, as a new pane does (AddToLayout).
-    let mut joined = state.clone();
-    joined.sessions_mut().push(Arc::new(pane.clone()));
-    let tree = effective_layout(&joined, workspace.id(), &mut view.layout_defaults);
-    let placed = tree.map(|tree| layout::select(&place(&tree, &id, current.as_deref()), &id));
-    let focus = layout_mode(&joined, workspace.id()) == "focus";
-    let workspace_id = workspace.id().to_string();
-    view.shows_dashboard = false;
-    view.update(|state| {
-        if state.session(&id).is_none() {
-            state.sessions_mut().push(Arc::new(pane));
-        }
-        state.active_workspace_id = Some(workspace_id.clone());
-        state.active_session_id = Some(id.clone());
-        if let Some(placed) = placed {
-            let split = placed.kind() == "split";
-            save_layout(state, &workspace_id, placed);
-            if !focus {
-                save_mode(state, &workspace_id, if split { "custom" } else { "tabs" });
-            }
-        }
-        save_selection(state, &workspace_id, &id);
-    })?;
-    Ok(id)
-}
-
-/// `OpenWorkMapPane`.
-pub fn open_work_map(host: &Host, view: &mut View, workspace_id: Option<&str>) -> Result<String, String> {
-    open_slim_pane(host, view, workspace_id, pane::KIND, "workMap.title")
+/// `OpenWorkMapPane`: the workspace's work map pane, opened as the files pane is (files.rs's `open_slim_pane`, C# `OpenSlimPane`).
+pub fn open_work_map(host: &Host, view: &mut View, workspace_id: Option<&str>) -> Result<(), String> {
+    crate::files::open_slim_pane(view, &host.locale, workspace_id, pane::KIND, "workMap.title")
 }
 
 pub fn register(methods: &mut Registry) {
@@ -229,41 +120,9 @@ pub fn register(methods: &mut Registry) {
             started => Ok(Value::Bool(started == WorkMapStart::Started)),
         }
     });
-    // A changed file opens in the workspace's files pane, shown and previewed there.
+    // A changed file opens in the workspace's files pane, revealed, selected and previewed there (files.rs).
     methods.add("workMapOpenFile", |host: Arc<Host>, args| async move {
-        let path = text(&args, "path").unwrap_or("").replace('\\', "/");
-        let (pane_id, root) = {
-            let mut view = host.view();
-            let Some(workspace) = workspace_of(&view, &args) else { return Err("Workspace not found.".into()) };
-            if view.dialog_open || path.is_empty() || workspace.remote.is_some() {
-                return Ok(Value::Bool(false));
-            }
-            let root = workspace.path().to_string();
-            if mighty_core::workspace_files::resolve(&path, std::path::Path::new(&root)).is_none() {
-                return Ok(Value::Bool(false));
-            }
-            match open_slim_pane(&host, &mut view, Some(workspace.id()), "files", "files.pane.title") {
-                Ok(id) => (id, root),
-                Err(error) => {
-                    view.error = Some(error);
-                    return Ok(Value::Bool(false));
-                }
-            }
-        };
-        let _ = root;
-        let message = json!({"kind": "files", "paneId": pane_id, "path": path}).to_string();
-        host.flush();
-        {
-            let view = host.view();
-            host.push(&view, "files", message.clone());
-        }
-        // A files pane opened just now mounts after the flush: it hears the path once more when it is up.
-        let again = host.clone();
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-            let view = again.view();
-            again.push(&view, "files", message);
-        });
-        Ok(Value::Bool(true))
+        let Some(workspace) = workspace_of(&host.view(), &args) else { return Err("Workspace not found.".into()) };
+        crate::files::open_file_in_pane(&host, workspace.id(), text(&args, "path").unwrap_or("")).await.map(Value::Bool)
     });
 }

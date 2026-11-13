@@ -21,6 +21,7 @@ use std::time::Duration;
 use mighty_composer::images as pictures;
 use mighty_composer::svg;
 use mighty_core::AppSnapshot;
+use mighty_core::graph::MightyGraphRun;
 use mighty_core::layout;
 use mighty_core::locale::Locale;
 use mighty_core::model::{AgentImageRef, PaneLayoutNode, RunSession};
@@ -289,6 +290,11 @@ fn select_session(view: &mut View, id: &str) -> Result<(), String> {
         state.active_workspace_id = Some(workspace.clone());
         state.active_session_id = Some(id.to_string());
     })
+}
+
+/// The add menu's files entry (frame.rs's `OPEN_FILES`): [`open_files_pane`] for the workspace the menu was opened for.
+pub fn open_files(host: Arc<Host>, workspace: Option<String>) -> crate::frame::Pending {
+    Box::pin(async move { open_files_pane(&mut host.view(), &host.locale, workspace.as_deref()) })
 }
 
 /// C# `OpenFilePane`: the workspace's one files pane shown: focused when open, otherwise put left of the current pane (or as a tab
@@ -765,7 +771,7 @@ pub fn register(methods: &mut Registry) {
                             .flat_map(|e| e.images.iter().flatten().flatten())
                             .find(|i| i.hash.as_deref() == Some(hash))
                             .map(|image| PictureAction { value: image.source.clone().unwrap_or_default(), image: Some(image.clone()) }),
-                        None => gallery_image(&pane, root.as_deref(), &args),
+                        None => gallery_image(&pane, &crate::history::loaded(&host, &pane), root.as_deref(), &args),
                     };
                     Ok((action, root))
                 }
@@ -787,7 +793,6 @@ pub fn register(methods: &mut Registry) {
 /// C# `workMapOpenFile`'s files part (MainWindow.WorkMap.cs:45-56), for the work map's page method: a changed file opened in the
 /// workspace's files pane, revealed and selected there and previewed (the page hears `{kind:'files', paneId, path}` and reads the
 /// tree again). False when a dialog is open, the path is empty or does not resolve inside the local workspace.
-#[allow(dead_code, reason = "the work map's workMapOpenFile (W4, its own module) calls it; this module keeps the files pane's trees")]
 pub async fn open_file_in_pane(host: &Arc<Host>, workspace_id: &str, path: &str) -> Result<bool, String> {
     let path = path.replace('\\', "/");
     let root = {
@@ -820,10 +825,11 @@ pub async fn open_file_in_pane(host: &Arc<Host>, workspace_id: &str, path: &str)
     Ok(true)
 }
 
-/// C# `WebGalleryImage`: a diagram tile's picture, its item named by run, step and id.
-fn gallery_image(pane: &RunSession, root: Option<&str>, args: &Value) -> Option<PictureAction> {
+/// C# `WebGalleryImage`: a diagram tile's picture, its item named by run, step and id; `older` the pane's runs read back from its session
+/// record (history.rs), whose tiles the diagram draws too.
+fn gallery_image(pane: &RunSession, older: &[MightyGraphRun], root: Option<&str>, args: &Value) -> Option<PictureAction> {
     let locator = crate::mighty::locate;
-    let page = MightyPane::images(pane, &[], text(args, "runId").unwrap_or(""), text(args, "step").unwrap_or(""), true, root, &locator)?;
+    let page = MightyPane::images(pane, older, text(args, "runId").unwrap_or(""), text(args, "step").unwrap_or(""), true, root, &locator)?;
     let id = text(args, "id").unwrap_or("");
     page.shown.into_iter().find(|item| item.id == id).map(|item| PictureAction { value: item.source, image: item.stored })
 }
