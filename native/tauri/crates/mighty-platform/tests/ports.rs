@@ -47,6 +47,14 @@ async fn a_request_names_what_the_child_does_not_inherit_and_how_a_cli_or_a_shel
     host.spawn(request).await.unwrap().close().await.unwrap();
     assert_eq!(host.spawned()[0].env_remove, ["GIT_DIR"]);
     assert!(host.spawn(SpawnRequest::new(absolute("git"), Vec::<String>::new(), absolute("w")).without("A=B")).await.is_err());
+    // A leading `=` names a hidden drive folder (`=C:`), which the Windows host takes out too.
+    host.spawn(SpawnRequest::new(absolute("git"), Vec::<String>::new(), absolute("w")).without("=C:"))
+        .await
+        .unwrap()
+        .close()
+        .await
+        .unwrap();
+    assert!(host.spawn(SpawnRequest::new(absolute("git"), Vec::<String>::new(), absolute("w")).without("=C:=")).await.is_err());
 
     let env = BTreeMap::from([("NO_COLOR".to_string(), "0".to_string()), ("TOKEN".to_string(), "x".to_string())]);
     let cli = host.cli_request(&absolute("claude"), &["--print".to_string()], &absolute("work"), &env).unwrap();
