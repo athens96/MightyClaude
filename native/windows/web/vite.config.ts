@@ -7,15 +7,18 @@ const repo = (path: string) => fileURLToPath(new URL('../../../' + path, import.
 
 // The built page loads only its own files; the dev server needs React's inline refresh preamble, so the policy is a build-only tag.
 // The Rust + Tauri app's build (`vite build --mode tauri`, native/tauri) also lets the page reach Tauri's IPC, which it fetches
-// from http://ipc.localhost on Windows (ipc: elsewhere); the C# app's build keeps the policy as it was.
+// from http://ipc.localhost on Windows (ipc: elsewhere), and frames HTML previews from the host's `mightyhtml` protocol, which
+// serves each folder under a host of its own (http://mightyhtml.h<id>.html.mighty.invalid on Windows, mightyhtml://h<id>… on
+// the Mac) where C# maps it as a WebView2 virtual host on https; the C# app's build keeps the policy as it was.
 function contentSecurityPolicy(tauri: boolean): Plugin {
   const ipc = tauri ? "; connect-src 'self' ipc: http://ipc.localhost" : '';
+  const frames = tauri ? 'http://*.html.mighty.invalid mightyhtml:' : 'https://*.html.mighty.invalid';
   return {
     name: 'mighty-csp',
     apply: 'build',
     transformIndexHtml: () => [{
       tag: 'meta',
-      attrs: { 'http-equiv': 'Content-Security-Policy', content: "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://*.html.mighty.invalid; object-src 'none'; base-uri 'none'; form-action 'none'" + ipc },
+      attrs: { 'http-equiv': 'Content-Security-Policy', content: "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src " + frames + "; object-src 'none'; base-uri 'none'; form-action 'none'" + ipc },
       injectTo: 'head-prepend',
     }],
   };

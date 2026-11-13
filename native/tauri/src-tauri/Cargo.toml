@@ -19,6 +19,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 mighty-core.workspace = true
 mighty-composer.workspace = true
+mighty-files.workspace = true
 mighty-graph.workspace = true
 mighty-platform.workspace = true
 mighty-run.workspace = true

@@ -111,9 +111,12 @@ impl Runs {
         let catalog = Arc::new(ProviderCatalog::new(processes, environment, finder));
         let images = Arc::new(AgentImageCache::new(image_dir, IMAGE_CACHE_BYTES));
         let store: Arc<dyn ImageStore> = Arc::new(CacheStore(images.clone()));
+        // A Claude run's Edit, Write and MultiEdit results keep the files' originals (files.rs, C# FileOriginalStore).
+        let originals = crate::files::originals_hook(&host.app);
         let configure: Configure = Box::new(move |options| {
             options.graph = Some(Arc::new(TrackerFactory::new()));
             options.images = Some(store);
+            options.file_originals = originals;
         });
         let snapshot = host.view().snapshot.clone();
         let (service, mut events) = RunService::new(

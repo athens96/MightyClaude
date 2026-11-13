@@ -35,3 +35,19 @@ pub fn open_url(url: &str) -> std::result::Result<(), String> {
 pub fn number_grouping() -> Option<(String, Vec<usize>)> {
     os::number_grouping()
 }
+
+/// The files pane's ports (an open file's handle, a PDF's first page, show in the file manager, open with the default app, the
+/// clipboard).
+pub fn file_ports() -> mighty_platform::FilePorts {
+    os::file_ports()
+}
+
+/// C# `ToLocalTime().ToString("g", CultureInfo.CurrentCulture)`, when the OS says.
+pub fn short_date_time(at: std::time::SystemTime) -> Option<String> {
+    os::short_date_time(at)
+}
+
+/// The user's decimal separator, when the OS says.
+pub fn decimal_separator() -> Option<String> {
+    os::decimal_separator()
+}
