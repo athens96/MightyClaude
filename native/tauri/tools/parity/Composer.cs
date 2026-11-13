@@ -11,6 +11,13 @@
 //   media\t<bytes>                      AttachmentSupport.DetectMediaType
 //   make\t<name>                        AttachmentSupport.Make(name, "x").Name as hex UTF-8, or "error"
 //   frontmatter\t<text>                 SlashCommandCatalog.Frontmatter -> "<key>:<value>,…" sorted by key (hex UTF-8)
+//   permission\t<tool>\t<input>         ToolPermissionPresentation.Make -> "<title> <headline|-> <label>:<value>:<code>,…"
+//   questionnaire\t<input>              UserQuestionnaire.Parse -> its questions and options, or null
+//   markdown\t<text>                    AgentMarkdownImages.Extract -> "<alt>:<source>,…"
+//   base64\t<text>                      AgentImageSupport.DecodeBase64 -> the bytes, or "error <error>"
+//   filter\t<query>                     SlashCommandCatalog.Filter over a fixed list -> the invocations in order
+//   headline\t<plan>                    PlanCardSupport.Headline
+//   display\t<width>\t<height>          AgentImageRtf.DisplaySize (numbers as they are)
 using System.Text;
 using System.Text.Json;
 using MightyCode.Core;
@@ -56,6 +63,27 @@ internal static class ComposerParity
                 try { return Hex(AttachmentSupport.Make(Text(1), "x"u8.ToArray()).Name); }
                 catch (ArgumentException) { return "error"; }
             case "frontmatter": return string.Join(",", SlashCommandCatalog.Frontmatter(Text(1)).OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => Hex(p.Key) + ":" + Hex(p.Value)));
+            case "permission":
+            {
+                var shown = ToolPermissionPresentation.Make(Text(1), Text(2));
+                return Hex(shown.Title) + " " + (shown.Headline is { } headline ? Hex(headline) : "-") + " " + string.Join(",", shown.Fields.Select(f => Hex(f.Label) + ":" + Hex(f.Value) + ":" + (f.Code ? 1 : 0)));
+            }
+            case "questionnaire":
+                return UserQuestionnaire.Parse(Text(1)) is { } asked
+                    ? string.Join(",", asked.Questions.Select(q => Hex(q.Header) + ":" + Hex(q.Question) + ":" + (q.MultiSelect ? 1 : 0) + ":" + string.Join(";", q.Options.Select(o => Hex(o.Label) + "=" + Hex(o.Description)))))
+                    : "null";
+            case "markdown": return string.Join(",", AgentMarkdownImages.Extract(Text(1)).Select(i => Hex(i.Alt) + ":" + Hex(i.Source)));
+            case "base64":
+                try { return Convert.ToHexString(AgentImageSupport.DecodeBase64(Text(1))).ToLowerInvariant(); }
+                catch (AgentImageException ex) { return "error " + ex.Error; }
+            case "filter":
+            {
+                SlashCommand[] commands = [.. new[] { "archify", "sc:analyze", "sc:build", "oh-my-claudecode:autopilot", "review", "Plan-Review", "İstanbul", "ß-sharp" }
+                    .Select(i => new SlashCommand(i, i == "review" ? "Analyze a PR" : i == "İstanbul" ? "Straße" : "", "x", SlashCommandOrigin.User))];
+                return string.Join(",", SlashCommandCatalog.Filter(commands, Text(1)).Select(c => Hex(c.Invocation)));
+            }
+            case "headline": return Hex(PlanCardSupport.Headline(Text(1)));
+            case "display": { var (w, h) = AgentImageRtf.DisplaySize(int.Parse(parts[1]), int.Parse(parts[2])); return $"{w} {h}"; }
             default: return "unknown " + parts[0];
         }
     }

@@ -28,18 +28,58 @@ pub struct ToolPermissionPresentation {
 /// C# `ToolPermissionPresentation.MaximumFields`.
 pub const MAXIMUM_FIELDS: usize = 10;
 
-/// `JsonElement.GetRawText()` of a number: its literal as written.
-fn raw_number(value: &Value) -> Option<String> {
-    value.is_number().then(|| value.to_string())
+/// A JSON object's properties in document order with each value's text as written (`JsonElement.EnumerateObject` and
+/// `GetRawText`), duplicates kept.
+struct RawObject(Vec<(String, Box<serde_json::value::RawValue>)>);
+
+impl<'de> serde::Deserialize<'de> for RawObject {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Entries;
+        impl<'de> serde::de::Visitor<'de> for Entries {
+            type Value = RawObject;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("an object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<RawObject, A::Error> {
+                let mut entries = Vec::new();
+                while let Some(entry) = map.next_entry::<String, Box<serde_json::value::RawValue>>()? {
+                    entries.push(entry);
+                }
+                Ok(RawObject(entries))
+            }
+        }
+        deserializer.deserialize_map(Entries)
+    }
+}
+
+impl RawObject {
+    /// `JsonElement.TryGetProperty`: the last property of the name.
+    fn raw(&self, name: &str) -> Option<&str> {
+        self.0.iter().rev().find(|(key, _)| key == name).map(|(_, raw)| raw.get())
+    }
+    fn value(&self, name: &str) -> Option<Value> {
+        self.raw(name).and_then(|raw| serde_json::from_str(raw).ok())
+    }
+    /// A number's literal as written (`GetRawText`).
+    fn number(&self, name: &str) -> Option<String> {
+        self.value(name).filter(Value::is_number).and(self.raw(name)).map(str::to_string)
+    }
 }
 
 impl ToolPermissionPresentation {
     /// C# `ToolPermissionPresentation.Make` (ToolPermissionPresentation.cs:18).
     pub fn make(tool_name: &str, input_json: &str, l: &Locale) -> Self {
-        let Ok(Value::Object(input)) = serde_json::from_str::<Value>(input_json) else {
+        let Ok(input) = serde_json::from_str::<RawObject>(input_json) else {
             return ToolPermissionPresentation { title: l.get("permission.tool.tool"), headline: None, fields: vec![] };
         };
-        let text = |name: &str| input.get(name).and_then(Value::as_str);
+        let strings: std::collections::HashMap<&str, String> = input
+            .0
+            .iter()
+            .filter_map(|(key, _)| input.value(key).and_then(|v| v.as_str().map(|s| (key.as_str(), s.to_string()))))
+            .collect();
+        let text = |name: &str| strings.get(name).map(String::as_str);
+        let raw_number = |name: &str| input.number(name);
+        let flag = |name: &str| input.value(name).and_then(|v| v.as_bool());
         let yes_no = |b: bool| l.get(if b { "permission.value.yes" } else { "permission.value.no" });
         let mut fields: Vec<ToolPermissionField> = Vec::new();
         let push = |fields: &mut Vec<ToolPermissionField>, key: &str, value: String, code: bool| {
@@ -62,11 +102,11 @@ impl ToolPermissionPresentation {
                 if let Some(cmd) = text("command") {
                     push(&mut fields, "permission.field.command", cmd.into(), true);
                 }
-                if let Some(timeout) = input.get("timeout").and_then(raw_number) {
+                if let Some(timeout) = raw_number("timeout") {
                     push(&mut fields, "permission.field.timeout", timeout, false);
                 }
-                if let Some(Value::Bool(b)) = input.get("run_in_background") {
-                    push(&mut fields, "permission.field.runInBackground", yes_no(*b), false);
+                if let Some(b) = flag("run_in_background") {
+                    push(&mut fields, "permission.field.runInBackground", yes_no(b), false);
                 }
                 ToolPermissionPresentation { title: l.get("permission.tool.bash"), headline, fields }
             }
@@ -75,10 +115,10 @@ impl ToolPermissionPresentation {
                 if let Some(path) = text("file_path") {
                     push(&mut fields, "permission.field.file", path.into(), false);
                 }
-                if let Some(offset) = input.get("offset").and_then(raw_number) {
+                if let Some(offset) = raw_number("offset") {
                     push(&mut fields, "permission.field.offset", offset, false);
                 }
-                if let Some(limit) = input.get("limit").and_then(raw_number) {
+                if let Some(limit) = raw_number("limit") {
                     push(&mut fields, "permission.field.limit", limit, false);
                 }
                 simple("permission.tool.read", fields)
@@ -93,10 +133,10 @@ impl ToolPermissionPresentation {
                 if let Some(new) = text("new_string") {
                     push(&mut fields, "permission.field.newString", new.into(), true);
                 }
-                if let Some(Value::Bool(b)) = input.get("replace_all") {
-                    push(&mut fields, "permission.field.replaceAll", yes_no(*b), false);
+                if let Some(b) = flag("replace_all") {
+                    push(&mut fields, "permission.field.replaceAll", yes_no(b), false);
                 }
-                if let Some(Value::Array(edits)) = input.get("edits") {
+                if let Some(Value::Array(edits)) = input.value("edits") {
                     push(&mut fields, "permission.field.edits", edits.len().to_string(), false);
                 }
                 simple("permission.tool.edit", fields)
@@ -114,7 +154,7 @@ impl ToolPermissionPresentation {
                 if let Some(nb) = text("notebook_path") {
                     push(&mut fields, "permission.field.notebook", nb.into(), false);
                 }
-                if let Some(cell) = input.get("cell_number").and_then(raw_number) {
+                if let Some(cell) = raw_number("cell_number") {
                     push(&mut fields, "permission.field.cell", cell, false);
                 }
                 if let Some(mode) = text("edit_mode") {
@@ -169,16 +209,16 @@ impl ToolPermissionPresentation {
 }
 
 /// C# `GenericFields` (ToolPermissionPresentation.cs:149): each property by its name, at most ten, empty ones left out.
-fn generic_fields(input: &serde_json::Map<String, Value>, l: &Locale) -> Vec<ToolPermissionField> {
+fn generic_fields(input: &RawObject, l: &Locale) -> Vec<ToolPermissionField> {
     let mut fields = Vec::new();
-    for (name, value) in input.iter().take(MAXIMUM_FIELDS) {
-        let text = match value {
-            Value::String(s) => s.clone(),
-            Value::Number(_) => value.to_string(),
-            Value::Bool(true) => l.get("permission.value.yes"),
-            Value::Bool(false) => l.get("permission.value.no"),
-            Value::Null => String::new(),
-            other => other.to_string(),
+    for (name, raw) in input.0.iter().take(MAXIMUM_FIELDS) {
+        let text = match serde_json::from_str::<Value>(raw.get()) {
+            Ok(Value::String(s)) => s,
+            Ok(Value::Bool(true)) => l.get("permission.value.yes"),
+            Ok(Value::Bool(false)) => l.get("permission.value.no"),
+            Ok(Value::Null) => String::new(),
+            // A number, an object or an array: its text as written.
+            _ => raw.get().to_string(),
         };
         if !text.is_empty() {
             fields.push(ToolPermissionField { label: name.clone(), value: text, code: false });

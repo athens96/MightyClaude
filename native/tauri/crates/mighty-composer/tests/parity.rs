@@ -341,7 +341,133 @@ fn answer(line: &str) -> String {
             pairs.sort_by(|a, b| mighty_core::normalize::ordinal(&a.0, &b.0));
             pairs.iter().map(|(k, v)| format!("{}:{}", hex(k.as_bytes()), hex(v.as_bytes()))).collect::<Vec<_>>().join(",")
         }
+        "permission" => {
+            let shown = mighty_composer::presentation::ToolPermissionPresentation::make(&text(1), &text(2), &l);
+            let fields: Vec<String> = shown
+                .fields
+                .iter()
+                .map(|f| format!("{}:{}:{}", hex(f.label.as_bytes()), hex(f.value.as_bytes()), u8::from(f.code)))
+                .collect();
+            format!("{} {} {}", hex(shown.title.as_bytes()), shown.headline.map_or("-".into(), |h| hex(h.as_bytes())), fields.join(","))
+        }
+        "questionnaire" => match mighty_composer::presentation::UserQuestionnaire::parse(&text(1)) {
+            Some(asked) => asked
+                .questions
+                .iter()
+                .map(|q| {
+                    let options: Vec<String> =
+                        q.options.iter().map(|o| format!("{}={}", hex(o.label.as_bytes()), hex(o.description.as_bytes()))).collect();
+                    format!(
+                        "{}:{}:{}:{}",
+                        hex(q.header.as_bytes()),
+                        hex(q.question.as_bytes()),
+                        u8::from(q.multi_select),
+                        options.join(";")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(","),
+            None => "null".into(),
+        },
+        "markdown" => images::markdown_images(&text(1))
+            .iter()
+            .map(|i| format!("{}:{}", hex(i.alt.as_bytes()), hex(i.source.as_bytes())))
+            .collect::<Vec<_>>()
+            .join(","),
+        "base64" => match images::decode_base64(&text(1)) {
+            Ok(bytes) => hex(&bytes),
+            Err(e) => format!("error {}", error_name(e)),
+        },
+        "filter" => {
+            let commands: Vec<slash::SlashCommand> =
+                ["archify", "sc:analyze", "sc:build", "oh-my-claudecode:autopilot", "review", "Plan-Review", "İstanbul", "ß-sharp"]
+                    .iter()
+                    .map(|i| {
+                        let description = match *i {
+                            "review" => "Analyze a PR",
+                            "İstanbul" => "Straße",
+                            _ => "",
+                        };
+                        slash::SlashCommand::new(i, description, "x", slash::SlashCommandOrigin::User)
+                    })
+                    .collect();
+            slash::filter(&commands, &text(1)).iter().map(|c| hex(c.invocation.as_bytes())).collect::<Vec<_>>().join(",")
+        }
+        "headline" => hex(mighty_composer::presentation::plan::headline(&text(1)).as_bytes()),
+        "display" => {
+            let (w, h) = images::rtf::display_size(parts[1].parse().unwrap(), parts[2].parse().unwrap());
+            format!("{w} {h}")
+        }
         other => format!("unknown {other}"),
+    }
+}
+
+fn presentation_vectors(out: &mut String) {
+    let inputs = [
+        ("Bash", r#"{"command":"ls","description":"List","timeout":1.50,"run_in_background":true}"#),
+        ("Bash", r#"{"command":"ls","timeout":"5","run_in_background":"yes"}"#),
+        ("command_execution", r#"{"command":"x"}"#),
+        ("Read", r#"{"file_path":"a","offset":10,"limit":2e3}"#),
+        ("Edit", r#"{"file_path":"a","old_string":"x","new_string":"y","replace_all":false}"#),
+        ("MultiEdit", r#"{"file_path":"a","edits":[1,2,3]}"#),
+        ("Write", r#"{"file_path":"a","content":"c"}"#),
+        ("NotebookEdit", r#"{"notebook_path":"n","cell_number":3,"edit_mode":"replace","new_source":"s"}"#),
+        ("Glob", r#"{"pattern":"*.rs","path":"src"}"#),
+        ("Grep", r#"{"pattern":"x","path":"p","glob":"*.cs"}"#),
+        ("WebFetch", r#"{"url":"https://x"}"#),
+        ("WebSearch", r#"{"query":"q"}"#),
+        ("Task", r#"{"subagent_type":"t","model":"m","prompt":"p"}"#),
+        ("mcp__srv__tool", r#"{"a":"b","n":1,"t":true,"f":false,"z":null,"o":{"k": 1},"l":[1, 2]}"#),
+        ("mcp__x", r#"{"a":"b"}"#),
+        ("file_change", r#"{"changes":[]}"#),
+        ("Unknown", r#"{"a1":"1","a2":"2","a3":"3","a4":"4","a5":"5","a6":"6","a7":"7","a8":"8","a9":"9","a10":"10","a11":"11"}"#),
+        ("Bash", "not json"),
+        ("Bash", "[1]"),
+    ];
+    for (tool, input) in inputs {
+        let _ = writeln!(out, "permission\t{}\t{}", hex(tool.as_bytes()), hex(input.as_bytes()));
+    }
+    let question = |header: &str, q: &str, multi: &str, options: &str| {
+        format!(r#"{{"header":"{header}","question":"{q}","multiSelect":{multi},"options":[{options}]}}"#)
+    };
+    let red = r#"{"label":"Red","description":"warm"}"#;
+    let blue = r#"{"label":"Blue","description":""}"#;
+    let questionnaires = [
+        format!(r#"{{"questions":[{}]}}"#, question("Color", "Which?", "false", &format!("{red},{blue}"))),
+        format!(r#"{{"questions":[{},{}]}}"#, question("A", "Same?", "true", red), question("B", "Same?", "false", red)),
+        format!(r#"{{"questions":[{}]}}"#, question(" ", "Q", "false", red)),
+        format!(r#"{{"questions":[{}]}}"#, question("H", "Q", "\"no\"", red)),
+        format!(r#"{{"questions":[{}]}}"#, question("H", "Q", "false", &format!("{red},{red}"))),
+        format!(r#"{{"questions":[{}]}}"#, question("H\\u0001", "Q", "false", red)),
+        format!(r#"{{"questions":[{}]}}"#, question("H", "Q", "false", "")),
+        r#"{"questions":[]}"#.into(),
+        "  {\"questions\":3}".into(),
+        "plain".into(),
+    ];
+    for input in questionnaires {
+        let _ = writeln!(out, "questionnaire\t{}", hex(input.as_bytes()));
+    }
+    let markdown = [
+        "See ![shot](shots/a.png) and ![](<my file.png> \"title\")\n```\n![no](code.png)\n```\n![remote](https://example.com/x.png)",
+        "![a](b 'c') ![d]( e ) ![f](g\"h\")",
+        "  ~~~\n![x](y)\n  ~~~\n![z](w)",
+        "![](  )",
+        "![한글](경로/그림.png)",
+    ];
+    for text in markdown {
+        let _ = writeln!(out, "markdown\t{}", hex(text.as_bytes()));
+    }
+    for text in ["aGVsbG8=", " aGVs\nbG8= ", "aGVsbG8", "aGVsbG9=", "", "====", "@@@", "aGVsbA==\u{3000}"] {
+        let _ = writeln!(out, "base64\t{}", hex(text.as_bytes()));
+    }
+    for query in ["", "a", "auto", "SC:", "zzz", "plan", "İ", "i", "ss", "STRASSE", "straße", "-"] {
+        let _ = writeln!(out, "filter\t{}", hex(query.as_bytes()));
+    }
+    for plan in ["# Title\nbody", "\n\n  ## Second  \n", "", "#", "#### a\tb\u{1b}[31mred", "x".repeat(300).as_str()] {
+        let _ = writeln!(out, "headline\t{}", hex(plan.as_bytes()));
+    }
+    for (w, h) in [(1920, 1080), (600, 1600), (40, 30), (0, 30), (961, 1), (1, 1281), (1441, 721), (2, 3), (-5, 4)] {
+        let _ = writeln!(out, "display\t{w}\t{h}");
     }
 }
 
@@ -389,6 +515,7 @@ fn vectors() -> String {
     for source in frontmatters() {
         let _ = writeln!(out, "frontmatter\t{}", hex(source.as_bytes()));
     }
+    presentation_vectors(&mut out);
     out
 }
 

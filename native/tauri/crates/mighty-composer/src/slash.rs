@@ -269,9 +269,23 @@ fn utf16_len(value: &str) -> usize {
     value.encode_utf16().count()
 }
 
-/// C# `ToLowerInvariant` (simple, one-to-one case mapping).
+/// C# `ToLowerInvariant`: the simple, one-to-one case mapping, which leaves U+0130 (İ, whose full lowercase is two characters) as it
+/// is (checked against .NET, tests/parity.rs).
 pub(crate) fn lower_invariant(value: &str) -> String {
-    value.chars().map(|c| if c.is_ascii() { c.to_ascii_lowercase() } else { c.to_lowercase().next().unwrap_or(c) }).collect()
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii() {
+                c.to_ascii_lowercase()
+            } else {
+                let mut lower = c.to_lowercase();
+                match (lower.next(), lower.next()) {
+                    (Some(single), None) => single,
+                    _ => c,
+                }
+            }
+        })
+        .collect()
 }
 
 /// `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` (SlashCommands.cs:39).
