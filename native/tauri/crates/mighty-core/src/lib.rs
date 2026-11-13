@@ -5,7 +5,9 @@
 //! MightyCode.WinUI `MainWindow.WebShell.Shell.cs`) and the workspace path rules every file reader shares (`workspace_files.rs`,
 //! `WorkspaceFiles.cs`). No Tauri and no OS-specific code, so it builds and tests anywhere.
 
+pub mod add_pane;
 pub mod attachment;
+pub mod browser;
 pub mod demo;
 pub mod graph;
 pub mod json;
@@ -15,10 +17,13 @@ pub mod model;
 pub mod model_label;
 pub mod normalize;
 pub mod permission;
+pub mod rename;
 pub mod shell;
 pub mod store;
+pub mod text_appearance;
 pub mod time;
 pub mod wire;
+pub mod workspace_create;
 pub mod workspace_files;
 
 pub use json::Wire;
