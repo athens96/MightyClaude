@@ -200,7 +200,12 @@ fn decoding_character_references(text: &str) -> Cow<'_, str> {
 /// C# `FilePreviewClassifier.SvgLoadsExternalContent` (WorkspaceFiles.cs:582): the deliberately conservative macOS rule.
 pub fn svg_loads_external_content(data: &[u8]) -> bool {
     let Some(decoded) = text::decode_text(data, false) else { return true };
-    let lowered = lower_invariant(&decoding_character_references(&decoded.text));
+    loads_external_content(&decoded.text, decoded.encoding)
+}
+
+/// [`svg_loads_external_content`] of decoded text.
+fn loads_external_content(decoded: &str, encoding: TextEncodingKind) -> bool {
+    let lowered = lower_invariant(&decoding_character_references(decoded));
     let text = lowered.as_bytes();
     if text.contains(&b'\\') {
         return true;
@@ -217,7 +222,7 @@ pub fn svg_loads_external_content(data: &[u8]) -> bool {
             return true;
         }
     }
-    if !readable_declaration(text, decoded.encoding) {
+    if !readable_declaration(text, encoding) {
         return true;
     }
     for name in ["href", "src", "srcset"] {
@@ -591,6 +596,8 @@ impl SafeSvgDocument {
         reader.config_mut().trim_text(false);
 
         let mut out = String::new();
+        // The document's text as parsed, references read and CDATA sections opened, run together as a style sheet reads its text.
+        let mut parsed = String::new();
         let mut nodes = 0usize;
         let mut depth = 0usize;
         let mut root_seen = false;
@@ -638,6 +645,23 @@ impl SafeSvgDocument {
                     if root_done {
                         return Err(AgentImageError::Undecodable);
                     }
+                    // What the reader cannot read at all, before the node counts: a name that is no XML name (`<script/x>` and
+                    // `<g/onload=…/>`, which an HTML parser reads as a script and an event attribute), a malformed or repeated attribute.
+                    let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
+                    if !xml_name(&name) {
+                        return Err(AgentImageError::Undecodable);
+                    }
+                    let mut attributes = Vec::new();
+                    for attribute in e.attributes().with_checks(true) {
+                        let attribute = attribute.map_err(|_| AgentImageError::Undecodable)?;
+                        let qualified = String::from_utf8_lossy(attribute.key.as_ref()).into_owned();
+                        if !xml_name(&qualified) {
+                            return Err(AgentImageError::Undecodable);
+                        }
+                        let attr_local = String::from_utf8_lossy(attribute.key.local_name().as_ref()).into_owned();
+                        let raw = String::from_utf8_lossy(&attribute.value).into_owned();
+                        attributes.push((qualified, attr_local, attribute_value(&raw)?));
+                    }
                     count(depth, &mut nodes)?;
                     let (namespace, local) = reader.resolve_element(e.name());
                     match namespace {
@@ -649,15 +673,6 @@ impl SafeSvgDocument {
                     let local_name = String::from_utf8_lossy(local.as_ref()).into_owned();
                     if ACTIVE.contains(&lower_invariant(&local_name).as_str()) {
                         return Err(AgentImageError::ExternalSvg);
-                    }
-                    let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
-                    let mut attributes = Vec::new();
-                    for attribute in e.attributes().with_checks(true) {
-                        let attribute = attribute.map_err(|_| AgentImageError::Undecodable)?;
-                        let qualified = String::from_utf8_lossy(attribute.key.as_ref()).into_owned();
-                        let attr_local = String::from_utf8_lossy(attribute.key.local_name().as_ref()).into_owned();
-                        let raw = String::from_utf8_lossy(&attribute.value).into_owned();
-                        attributes.push((qualified, attr_local, attribute_value(&raw)?));
                     }
                     if attributes.len() > 128 {
                         return Err(AgentImageError::TooLarge);
@@ -717,6 +732,7 @@ impl SafeSvgDocument {
                         in_text = true;
                     }
                     escape_text(&mut out, &value);
+                    parsed.push_str(&value);
                 }
                 Event::GeneralRef(ref r) => {
                     if depth == 0 {
@@ -729,6 +745,7 @@ impl SafeSvgDocument {
                         in_text = true;
                     }
                     escape_text(&mut out, &c.to_string());
+                    parsed.push(c);
                 }
                 Event::CData(ref c) => {
                     if depth == 0 {
@@ -738,14 +755,21 @@ impl SafeSvgDocument {
                     out.push_str("<![CDATA[");
                     // Line ends read as LF and written as the new line, as in text.
                     let newline = if std::path::MAIN_SEPARATOR == '\\' { "\r\n" } else { "\n" };
-                    out.push_str(&String::from_utf8_lossy(c).replace("\r\n", "\n").replace('\r', "\n").replace('\n', newline));
+                    let content = String::from_utf8_lossy(c).replace("\r\n", "\n").replace('\r', "\n");
+                    out.push_str(&content.replace('\n', newline));
                     out.push_str("]]>");
+                    parsed.push_str(&content);
                 }
                 Event::Eof => break,
             }
         }
         if depth != 0 || !root_done {
             return Err(AgentImageError::Undecodable);
+        }
+        // The bytes' check reads the markup as written: `@im<!-- -->port` or `ur<![CDATA[l(…]]>` spell nothing there, but a style
+        // sheet reads the parsed text, and the canonical document drops the comment. Both are checked again (C# checks the bytes only).
+        if loads_external_content(&parsed, TextEncodingKind::Utf8) || loads_external_content(&out, TextEncodingKind::Utf8) {
+            return Err(AgentImageError::ExternalSvg);
         }
         let (root_name, root_attributes) = root.ok_or(AgentImageError::Undecodable)?;
         if root_name != "svg" {

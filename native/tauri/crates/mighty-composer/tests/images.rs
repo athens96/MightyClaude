@@ -268,6 +268,35 @@ fn svg_raster_input_refuses_active_or_external_content() {
     }
 }
 
+/// A style sheet reads the parsed text: a comment or a CDATA section between the letters of `@import` or `url(` hides them from the
+/// bytes' check, not from the drawing (and the canonical document drops the comment). C#'s SafeSvgDocument checks the bytes only and
+/// admits these (the parity vectors leave them out); here they are refused. Names XmlReader cannot read are refused as C# refuses them.
+#[test]
+fn references_split_by_markup_and_names_no_parser_reads_are_refused() {
+    for svg in [
+        "<svg><style>@im<!-- x -->port 'https://example.com/a.css';</style></svg>",
+        "<svg><style>@im<![CDATA[port 'https://example.com/a.css';]]></style></svg>",
+        "<svg><style><![CDATA[@im]]><![CDATA[port 'https://example.com/a.css';]]></style></svg>",
+        "<svg><style>rect { fill: ur<!-- -->l(https://example.com/x.png) }</style></svg>",
+        "<svg><style><![CDATA[rect { fill: ur]]><![CDATA[l(https://example.com/x.png) }]]></style></svg>",
+        "<svg><style>rect { fill: url(<!-- -->https://example.com/x.png) }</style></svg>",
+        "<svg><style>@i&#109;<!-- -->port 'https://example.com/a.css';</style></svg>",
+        "<svg><text>i&#109;age-set<!-- -->(</text></svg>",
+    ] {
+        assert_eq!(SafeSvgDocument::parse(svg.as_bytes()).err(), Some(AgentImageError::ExternalSvg), "{svg}");
+    }
+    for svg in [
+        "<svg><set/attributeName='href'/to='https://example.com'/></svg>",
+        "<svg><g/onload='alert(1)'/></svg>",
+        "<svg><script/x>alert(1)</script/x></svg>",
+        "<svg><g a/b='1'/></svg>",
+    ] {
+        assert_eq!(SafeSvgDocument::parse(svg.as_bytes()).err(), Some(AgentImageError::Undecodable), "{svg}");
+    }
+    let kept = SafeSvgDocument::parse(b"<svg><style>rect { fill: red }<!-- c --></style><text>ur<!-- -->l</text></svg>").unwrap();
+    assert_eq!(kept.xml, "<svg><style>rect { fill: red }</style><text>url</text></svg>", "a comment that spells nothing external");
+}
+
 /// The canonical document keeps the drawing and writes it as `XElement.ToString(DisableFormatting)` does: double quotes, `" />"`
 /// for an empty element, references expanded and escaped again, comments gone.
 #[test]
