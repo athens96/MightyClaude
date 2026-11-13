@@ -1,0 +1,39 @@
+[package]
+name = "mighty-run"
+version = "0.1.0"
+description = "Mighty Code's run engine (C# RunManager, ProviderCatalog, OutputParser, ToolPermissions, ClaudePlanMode, ModBridge and the run half of DesktopService), with no Tauri dependency and no OS code."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+# The tests' stand-in agent CLI (C# `Verification.FakeCliAsync`, the test exe relaunched with `--fake-cli`): std and serde_json only,
+# so it builds on every OS, while the checks that run it go through the Windows ProcessHost.
+[[bin]]
+name = "mighty-fake-cli"
+path = "tests/fake/cli.rs"
+test = false
+doc = false
+
+[dependencies]
+mighty-core.workspace = true
+mighty-platform.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+chrono.workspace = true
+sys-locale.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt", "macros", "io-util", "net"] }
+regex = "1"
+sha2 = "0.10"
+base64 = "0.22"
+getrandom = "0.3"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["sync", "time", "rt", "rt-multi-thread", "macros", "io-util", "net"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+mighty-platform-windows.workspace = true
