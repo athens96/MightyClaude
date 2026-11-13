@@ -271,6 +271,7 @@ pub fn registry() -> Registry {
     crate::cards::register(&mut methods);
     crate::mighty::register(&mut methods);
     crate::terminal::register(&mut methods);
+    crate::files::register(&mut methods);
     methods.add("openUrl", |_host: Arc<Host>, args| async move {
         // C# `openUrl`: an http, https or mailto address, to the user's default handler; anything else does nothing.
         if let Some(url) = text(&args, "url").and_then(openable_url) {

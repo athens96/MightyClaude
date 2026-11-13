@@ -11,6 +11,7 @@ use std::task::{Context, Poll};
 use tokio::io::AsyncWrite;
 use tokio::sync::{mpsc, watch};
 
+pub use crate::files::fake::{DesktopCall, FakeFileHandles, FakePdf, FakeSaveDialog, RecordingDesktop};
 use crate::notify::ActivationHandler;
 use crate::*;
 

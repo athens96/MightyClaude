@@ -12,7 +12,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use base64::Engine as _;
 use mighty_composer::images as pictures;
 use mighty_core::graph::GraphBlockSize;
 use mighty_core::model::RunSession;
@@ -31,7 +30,7 @@ use crate::panes::{self, ensure};
 const IMAGE_LIMIT: usize = 8 * 1024 * 1024;
 
 /// The image path rule (`AgentImagePaths.Locate`) as mighty-graph reads it: mighty-composer's reading of the file system.
-fn locate(source: &str, root: Option<&str>) -> AgentImageLocation {
+pub fn locate(source: &str, root: Option<&str>) -> AgentImageLocation {
     let temporary = pictures::temporary_roots();
     match pictures::locate(source, root.map(Path::new), Some(&temporary)) {
         pictures::AgentImageLocation::File { path, root } => {
@@ -48,10 +47,10 @@ fn root_of(view: &View, pane: &RunSession) -> Option<String> {
     view.snapshot.workspace(pane.workspace_id()).filter(|w| w.remote.is_none()).map(|w| w.path().to_string())
 }
 
-/// C# `WebImageUrl`: a picture as a data URL the page's policy allows, or none (nothing read, more than 8 MB).
+/// C# `WebImageUrl`: a picture as a data URL the page's policy allows (an SVG drawn to PNG, files.rs), or none (nothing read, more
+/// than 8 MB, a kind the page does not draw).
 fn image_url(data: Option<Vec<u8>>, media_type: &str) -> Option<String> {
-    let data = data.filter(|d| !d.is_empty() && d.len() <= IMAGE_LIMIT)?;
-    Some(format!("data:{media_type};base64,{}", base64::engine::general_purpose::STANDARD.encode(data)))
+    crate::files::web_image_url(data.filter(|d| !d.is_empty() && d.len() <= IMAGE_LIMIT), media_type)
 }
 
 /// `WebMightyModel(session)`: the pane's projection with what this host has of its sources.
@@ -263,7 +262,7 @@ pub fn register(methods: &mut Registry) {
         dirty(&mut view, &id);
         Ok(Value::Null)
     });
-    // A pane's log picture by its hash, as a data URL (C# `imageData`); SVG is sent as it is (C# draws it to PNG first).
+    // A pane's log picture by its hash, as a data URL (C# `imageData`); an SVG drawn to PNG as C# draws it.
     methods.add("imageData", |host: Arc<Host>, args| async move {
         let Some(hash) = text(&args, "hash").map(str::to_string) else { return Ok(Value::Null) };
         let image = {

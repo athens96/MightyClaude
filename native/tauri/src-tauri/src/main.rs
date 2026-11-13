@@ -9,6 +9,7 @@ mod args;
 mod cards;
 mod composer;
 mod delta;
+mod files;
 mod host;
 mod logfile;
 mod methods;
@@ -17,6 +18,7 @@ mod panes;
 mod platform;
 mod runs;
 mod smoke;
+mod smoke_files;
 mod smoke_runs;
 mod smoke_terminal;
 mod surface;
@@ -191,6 +193,12 @@ fn main() {
     } else {
         platform.paths.local_dir().join("image-cache").join(platform.paths.profile_key())
     };
+    // The file originals (files.rs, C# `FileOriginalStore`) likewise: the profile's `file-originals`, else this machine's own.
+    let originals_dir = if options.allow_state_write {
+        platform.paths.file_originals_dir()
+    } else {
+        platform.paths.local_dir().join("file-originals").join(platform.paths.profile_key())
+    };
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -201,6 +209,8 @@ fn main() {
             smoke_runs::smoke_step,
             smoke_terminal::smoke_terminal
         ])
+        // HTML previews' folders, each under a host of its own, for the page's sandboxed frame (files.rs).
+        .register_asynchronous_uri_scheme_protocol(files::PROTOCOL, files::protocol)
         .setup(move |app| {
             let (state, banner, log, smoke) = parts.take().expect("setup runs once");
             let version = app.package_info().version.to_string();
@@ -216,6 +226,8 @@ fn main() {
                 smoke,
                 methods::registry(),
             );
+            // The files pane's state and the file originals, which the run engine keeps through it (files.rs).
+            files::start(&host, originals_dir.clone());
             // The run engine: the run service owns the state from here on (runs.rs).
             if let Some(fake) = &fake_claude
                 && let Some(folder) = fake.record.parent()

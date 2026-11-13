@@ -73,6 +73,22 @@ mod imp {
         None
     }
 
+    /// The files pane's ports: not written yet on the Mac (W4 stub). A path is walked again after it is opened (C# off Windows), a
+    /// PDF and the desktop's actions are refused.
+    pub fn file_ports() -> mighty_platform::FilePorts {
+        mighty_platform::FilePorts::unsupported()
+    }
+
+    /// The user's short date and time: not yet on the Mac.
+    pub fn short_date_time(_at: std::time::SystemTime) -> Option<String> {
+        None
+    }
+
+    /// The user's decimal separator: not yet on the Mac.
+    pub fn decimal_separator() -> Option<String> {
+        None
+    }
+
     pub fn surfaces(_window: tauri::Window) -> Arc<dyn SurfaceFactory> {
         Arc::new(MacSurfaces)
     }
