@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/mighty-core", "crates/mighty-composer", "crates/mighty-graph", "crates/mighty-platform", "crates/mighty-platform-windows", "crates/mighty-platform-macos", "crates/mighty-run", "src-tauri"]
+members = ["crates/mighty-core", "crates/mighty-composer", "crates/mighty-graph", "crates/mighty-platform", "crates/mighty-platform-windows", "crates/mighty-platform-macos", "crates/mighty-run", "crates/mighty-terminal", "src-tauri"]
 resolver = "3"
 
 [workspace.package]
@@ -14,6 +14,7 @@ mighty-core = { path = "crates/mighty-core" }
 mighty-composer = { path = "crates/mighty-composer" }
 mighty-graph = { path = "crates/mighty-graph" }
 mighty-run = { path = "crates/mighty-run" }
+mighty-terminal = { path = "crates/mighty-terminal" }
 serde = { version = "1", features = ["derive"] }
 # preserve_order: objects keep the order they were read in (C#'s readers and writers see document order); float_roundtrip:
 # every double reads as the closest one, as .NET's parser reads it; raw_value: the host emits the JSON text it wrote as it is.
