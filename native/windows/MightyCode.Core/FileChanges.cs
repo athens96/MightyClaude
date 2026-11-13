@@ -382,19 +382,21 @@ public sealed class FileOriginalStore
 
 /// <summary>
 /// A file's content at git's HEAD (M/MightyCore/FileChanges.swift GitHeadFile), read the way <see cref="WorkspaceGitInfo"/>
-/// reads status: no hooks, no fsmonitor, no optional locks, no GIT_* from the app's environment, output bounded, 2 seconds
-/// at most per command. Only reads: <c>rev-parse</c> and <c>cat-file blob HEAD:./path</c>, which applies no filters.
+/// reads status: no hooks, no fsmonitor, no signature programs, no optional locks, no GIT_* from the app's environment, output
+/// bounded, 2 seconds at most per command. Only reads: <c>rev-parse</c> and <c>cat-file blob HEAD:./path</c>, which applies no
+/// filters. A partial clone's missing blob is never fetched (GIT_NO_LAZY_FETCH, and <c>protocol.allow=never</c> for a git older
+/// than 2.44 that does not know it): the read fails, and the file has no base.
 /// </summary>
 public static class GitHeadFile
 {
     /// <summary><c>Untracked</c>: HEAD has no such file (or there is no commit yet), so everything reads as added.</summary>
     public sealed record Content(byte[] Data, string? ShortSha, bool Untracked);
 
-    private static ProcessStartInfo Command(string binary, string root, IEnumerable<string> arguments)
+    internal static ProcessStartInfo Command(string binary, string root, IEnumerable<string> arguments)
     {
-        var info = ChildProcess.StartInfo(binary, new[] { "--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + (OperatingSystem.IsWindows() ? "NUL" : "/dev/null"), "-c", "gc.auto=0", "-C", root }.Concat(arguments), root);
+        var info = ChildProcess.StartInfo(binary, ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + (OperatingSystem.IsWindows() ? "NUL" : "/dev/null"), "-c", "gc.auto=0", "-c", "protocol.allow=never", .. DelegationGit.NoSignaturePrograms, "-C", root, .. arguments], root);
         foreach (var key in info.Environment.Keys.Where(key => key.StartsWith("GIT_", StringComparison.OrdinalIgnoreCase)).ToArray()) info.Environment.Remove(key);
-        info.Environment["GIT_OPTIONAL_LOCKS"] = "0"; info.Environment["GIT_TERMINAL_PROMPT"] = "0"; info.Environment["LC_ALL"] = "C";
+        info.Environment["GIT_OPTIONAL_LOCKS"] = "0"; info.Environment["GIT_TERMINAL_PROMPT"] = "0"; info.Environment["GIT_NO_LAZY_FETCH"] = "1"; info.Environment["LC_ALL"] = "C";
         return info;
     }
 

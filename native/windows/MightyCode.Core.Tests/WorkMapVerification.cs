@@ -215,6 +215,66 @@ internal static class WorkMapVerification
         finally { Remove(parent); }
     }
 
+    /// <summary>
+    /// A repository whose own config shows signatures in every log and names its own signature programs (each leaves a mark), with
+    /// a commit signed in each format git knows: plain git runs them (the fixture is live), the work map and the app's other git
+    /// reads run none, even for a format that asks for a signature check.
+    /// </summary>
+    internal static async Task ARepositorysSignatureProgramsNeverRun()
+    {
+        if (DelegationGit.Executable is not { } git) return;
+        var parent = Verification.Temp();
+        try
+        {
+            var folder = Directory.CreateDirectory(Path.Combine(parent, "repo")).FullName;
+            await Git(folder, "init", "-q");
+            await Commit(folder, "a.txt", "(mac) one", "2026-01-01T00:00:00+00:00");
+            var tree = DelegationGit.Line((await DelegationGit.Run(["rev-parse", "HEAD^{tree}"], folder))!.Stdout);
+            var head = DelegationGit.Line((await DelegationGit.Run(["rev-parse", "HEAD"], folder))!.Stdout);
+            var programs = Directory.CreateDirectory(Path.Combine(parent, "programs")).FullName;
+            var marks = new List<string>();
+            foreach (var (format, armor, key) in new[] { ("pgp", "PGP SIGNATURE", "gpg.program"), ("ssh", "SSH SIGNATURE", "gpg.ssh.program"), ("x509", "SIGNED MESSAGE", "gpg.x509.program") })
+            {
+                var signed = $"tree {tree}\nparent {head}\nauthor Check <check@example.com> 1767225600 +0000\ncommitter Check <check@example.com> 1767225600 +0000\n"
+                    + $"gpgsig -----BEGIN {armor}-----\n \n AAAA\n -----END {armor}-----\n\n(windows) signed {format}\n";
+                var written = await DelegationGit.Run(["hash-object", "-t", "commit", "-w", "--stdin"], folder, 30, signed);
+                Check(written is { ExitCode: 0 }, "the signed commit is written: " + written?.Stderr);
+                head = DelegationGit.Line(written!.Stdout);
+                var mark = Path.Combine(parent, "ran-" + format); marks.Add(mark);
+                string program;
+                if (OperatingSystem.IsWindows()) { program = Path.Combine(programs, format + ".cmd"); File.WriteAllText(program, "@echo off\r\necho ran> \"" + mark + "\"\r\n"); }
+                else { program = Path.Combine(programs, format); File.WriteAllText(program, "#!/bin/sh\necho ran > '" + mark + "'\n"); File.SetUnixFileMode(program, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+                await Git(folder, "config", key, program);
+            }
+            await Git(folder, "update-ref", "HEAD", head);
+            File.WriteAllText(Path.Combine(parent, "allowed-signers"), "");
+            await Git(folder, "config", "gpg.ssh.allowedSignersFile", Path.Combine(parent, "allowed-signers"));
+            await Git(folder, "config", "log.showSignature", "true");
+
+            // Plain git, as a terminal in the repository runs it: its log checks each signature with the repository's program.
+            var plain = new System.Diagnostics.ProcessStartInfo(git) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+            foreach (var argument in new[] { "-C", folder, "log", "--format=%s" }) plain.ArgumentList.Add(argument);
+            using (var process = System.Diagnostics.Process.Start(plain)!)
+            {
+                var output = process.StandardOutput.ReadToEndAsync(); var errors = process.StandardError.ReadToEndAsync();
+                await process.WaitForExitAsync(); await Task.WhenAll(output, errors);
+            }
+            Check(marks.All(File.Exists), "the fixture is live: plain git log ran the repository's programs: " + string.Join(",", marks.Where(m => !File.Exists(m)).Select(Path.GetFileName)));
+            foreach (var mark in marks) File.Delete(mark);
+
+            var model = await WorkMap.BuildAsync(folder, [], new Dictionary<string, WorkMapStoredSummary>(), null, new Dictionary<string, string>());
+            Check(model.Available && model.Versions.Single().Total == 4, "the work map reads the signed commits");
+            Check(await DelegationGit.Run(["log", "--format=%G?"], folder) is { ExitCode: 0 }, "a log asking for signature checks still reads");
+            Check(await WorkspaceGitInfo.ReadAsync(folder) is { Branch.Length: > 0 }, "the status reads");
+            Check(await GitHeadFile.ReadAsync(folder, "a.txt") is { Untracked: false, Data.Length: > 0 }, "HEAD's copy reads");
+            Check(!marks.Any(File.Exists), "no signature program of the repository ran: " + string.Join(",", marks.Where(File.Exists).Select(Path.GetFileName)));
+
+            var blob = GitHeadFile.Command(git, folder, ["cat-file", "blob", "HEAD:./a.txt"]);
+            Check(blob.Environment["GIT_NO_LAZY_FETCH"] == "1" && blob.ArgumentList.Contains("protocol.allow=never"), "a blob read never fetches a partial clone's missing object");
+        }
+        finally { Remove(parent); }
+    }
+
     // ---- the summary run and its saving ----
 
     internal static async Task ClaudeIsAskedOnceInAFolderOfItsOwn()

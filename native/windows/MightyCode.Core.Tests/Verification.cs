@@ -1215,6 +1215,7 @@ internal static class Verification
         await Test("work map: the prompt fills each placeholder once", WorkMapVerification.ThePromptFillsEveryPlaceholderOnce);
         await Test("work map: a real git repository is read by tags, merges, VERSION and release state", WorkMapVerification.AGitRepositoryIsReadByTagsMergesAndReleaseState);
         await Test("work map: a repository without tags is one unreleased version", WorkMapVerification.ARepositoryWithoutTagsIsOneUnreleasedVersion);
+        await Test("work map: a repository's own signature programs never run (log.showSignature, gpg.program, gpg.ssh.program, gpg.x509.program)", WorkMapVerification.ARepositorysSignatureProgramsNeverRun);
         await Test("work map: Claude is asked once in a folder of its own, with a time limit", WorkMapVerification.ClaudeIsAskedOnceInAFolderOfItsOwn);
         await Test("work map: the service summarizes one version at a time and saves it", WorkMapVerification.TheServiceSummarizesOneVersionAtATimeAndSavesIt);
         await Test("work map: requests come from the open panes' runs and what they edited", WorkMapVerification.RequestsComeFromTheOpenPanesRunsAndWhatTheyEdited);

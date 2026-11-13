@@ -45,9 +45,9 @@ public struct WorkspaceGitInfo: Equatable, Sendable {
         var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
         environment["GIT_OPTIONAL_LOCKS"] = "0"; environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["LC_ALL"] = "C"
-        let args = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
-                    "-c", "core.untrackedCache=false", "-c", "gc.auto=0", "-C", path,
-                    "status", "--porcelain=v2", "--branch", "--untracked-files=normal"]
+        let args: [String] = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
+                              "-c", "core.untrackedCache=false", "-c", "gc.auto=0"] + DelegationGit.noSignaturePrograms
+            + ["-C", path, "status", "--porcelain=v2", "--branch", "--untracked-files=normal"]
         guard let result = try? await ProcessCapture.run(executable: URL(fileURLWithPath: executable), arguments: args,
             environment: environment, cwd: URL(fileURLWithPath: path), timeout: 2, maximumBytes: 262_144),
               !Task.isCancelled, result.exitCode == 0 else { return nil }

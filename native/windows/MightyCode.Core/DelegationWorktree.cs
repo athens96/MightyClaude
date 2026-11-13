@@ -197,7 +197,7 @@ public sealed record GitRun(GitResult? Result, GitFailure Failure)
 
 /// <summary>
 /// Git for delegation (M/DelegationWorktree.swift:148-172): the user's own settings, line endings among them, but no hooks,
-/// fsmonitor, auto gc, prompts or inherited GIT_* variables. Every command of a child's life runs through here with the same
+/// fsmonitor, auto gc, signature programs (<see cref="NoSignaturePrograms"/>), prompts or inherited GIT_* variables. Every command of a child's life runs through here with the same
 /// settings, so a checkout this wrote reads as unchanged to the status this reads. On Windows it also takes paths past 260
 /// characters: a child's worktree sits deeper than its parent's checkout may.
 /// </summary>
@@ -219,6 +219,15 @@ public static class DelegationGit
 
     /// <summary>Points <see cref="NoHooks"/> into the profile at <paramref name="directory"/>.</summary>
     public static void UseProfile(string directory) { if (OperatingSystem.IsWindows()) NoHooks = Path.Combine(directory, "git-no-hooks"); }
+
+    /// <summary>
+    /// Settings that keep a repository's own configuration from starting a program while git reads it. A commit may carry a
+    /// signature, and a repository that sets <c>log.showSignature</c> has <c>git log</c> check it with the program its
+    /// <c>gpg.*program</c> names: no log shows signatures, and each signature program is <see cref="NoHooks"/>, an absolute folder
+    /// (<c>/dev/null</c> off Windows) that cannot be started, so even a format that asks for a signature check (<c>%G?</c>) runs
+    /// nothing. A bare name such as <c>false</c>, or an empty value, would be looked up on the PATH.
+    /// </summary>
+    public static string[] NoSignaturePrograms => ["-c", "log.showSignature=false", "-c", "gpg.program=" + NoHooks, "-c", "gpg.ssh.program=" + NoHooks, "-c", "gpg.x509.program=" + NoHooks];
 
     /// <summary>Whether <see cref="NoHooks"/> is a plain, empty folder, made when it is missing. Git does not run while it is not.</summary>
     public static bool HooksEmpty()
@@ -244,7 +253,7 @@ public static class DelegationGit
         if (Executable is not { } executable || !HooksEmpty()) return GitRun.Failed(GitFailure.NotStarted);
         try
         {
-            string[] settings = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + NoHooks, "-c", "gc.auto=0", .. OperatingSystem.IsWindows() ? new[] { "-c", "core.longpaths=true" } : [], "-C", directory];
+            string[] settings = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + NoHooks, "-c", "gc.auto=0", .. NoSignaturePrograms, .. OperatingSystem.IsWindows() ? new[] { "-c", "core.longpaths=true" } : [], "-C", directory];
             var info = ChildProcess.StartInfo(executable, [.. settings, .. arguments], directory);
             foreach (var key in info.Environment.Keys.Where(key => key.StartsWith("GIT_", StringComparison.OrdinalIgnoreCase)).ToArray()) info.Environment.Remove(key);
             info.Environment["GIT_OPTIONAL_LOCKS"] = "0"; info.Environment["GIT_TERMINAL_PROMPT"] = "0"; info.Environment["LC_ALL"] = "C";

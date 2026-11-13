@@ -170,17 +170,26 @@ public struct ChildWorktreeMaker: Sendable {
 }
 
 /// Git for delegation: the user's own settings, but no hooks, fsmonitor, auto
-/// gc, prompts or inherited GIT_* variables.
+/// gc, signature programs (`noSignaturePrograms`), prompts or inherited GIT_* variables.
 enum DelegationGit {
     static let executable: URL? = ["/Library/Developer/CommandLineTools/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git", "/usr/bin/git"]
         .first(where: { FileManager.default.isExecutableFile(atPath: $0) }).map { URL(fileURLWithPath: $0) }
+
+    /// Settings that keep a repository's own configuration from starting a
+    /// program while git reads it (Windows `DelegationGit.NoSignaturePrograms`):
+    /// a repository that sets `log.showSignature` has `git log` check a signed
+    /// commit with the program its `gpg.*program` names. No log shows
+    /// signatures, and each signature program is `/dev/null`, which cannot be
+    /// started, so even a format that asks for a check (`%G?`) runs nothing.
+    static let noSignaturePrograms = ["-c", "log.showSignature=false", "-c", "gpg.program=/dev/null",
+                                      "-c", "gpg.ssh.program=/dev/null", "-c", "gpg.x509.program=/dev/null"]
 
     /// nil when git is missing, could not start or did not finish in time.
     static func run(_ arguments: [String], in directory: String, timeout: TimeInterval = 10, input: Data? = nil) async -> ProcessResult? {
         guard let executable else { return nil }
         var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
         environment["GIT_OPTIONAL_LOCKS"] = "0"; environment["GIT_TERMINAL_PROMPT"] = "0"; environment["LC_ALL"] = "C"
-        let settings = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-C", directory]
+        let settings: [String] = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0"] + noSignaturePrograms + ["-C", directory]
         return try? await ProcessCapture.run(executable: executable, arguments: settings + arguments, environment: environment,
                                              cwd: URL(fileURLWithPath: directory), input: input, timeout: timeout, maximumBytes: 1_048_576)
     }

@@ -373,17 +373,20 @@ public final class FileOriginalStore: @unchecked Sendable {
 
 /// A file's content at git's HEAD (Windows `GitHeadFile`), read the way
 /// `WorkspaceGitInfo` reads status — the same git, no hooks, no fsmonitor, no
-/// optional locks, no GIT_* from the app's environment, output bounded, 2
-/// seconds at most per command. Only reads: `rev-parse` and
-/// `cat-file blob HEAD:./path`, which applies no filters.
+/// signature programs, no optional locks, no GIT_* from the app's environment,
+/// output bounded, 2 seconds at most per command. Only reads: `rev-parse` and
+/// `cat-file blob HEAD:./path`, which applies no filters. A partial clone's
+/// missing blob is never fetched (GIT_NO_LAZY_FETCH, and `protocol.allow=never`
+/// for a git older than 2.44): the read fails, and the file has no base.
 public enum GitHeadFile {
     /// `untracked`: HEAD has no such file (or there is no commit yet), so everything reads as added.
     public struct Content: Equatable, Sendable { public let data: Data; public let shortSha: String?; public let untracked: Bool }
 
     private static func run(_ executable: String, root: String, _ arguments: [String], maximumBytes: Int) async -> ProcessResult? {
         var environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
-        environment["GIT_OPTIONAL_LOCKS"] = "0"; environment["GIT_TERMINAL_PROMPT"] = "0"; environment["LC_ALL"] = "C"
-        let args = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-C", root] + arguments
+        environment["GIT_OPTIONAL_LOCKS"] = "0"; environment["GIT_TERMINAL_PROMPT"] = "0"; environment["GIT_NO_LAZY_FETCH"] = "1"; environment["LC_ALL"] = "C"
+        let args: [String] = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-c", "protocol.allow=never"]
+            + DelegationGit.noSignaturePrograms + ["-C", root] + arguments
         // ProcessCapture's limit counts stdout and stderr together; past it the read fails.
         return try? await ProcessCapture.run(executable: URL(fileURLWithPath: executable), arguments: args, environment: environment,
                                              cwd: URL(fileURLWithPath: root), timeout: 2, maximumBytes: maximumBytes + 65_536)

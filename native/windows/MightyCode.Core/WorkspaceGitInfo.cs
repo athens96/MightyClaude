@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace MightyCode.Core;
 
-/// <summary>Local Git status only; never contacts remotes, runs hooks or refreshes the index.</summary>
+/// <summary>Local Git status only; never contacts remotes, runs hooks or signature programs, or refreshes the index.</summary>
 public sealed record WorkspaceGitInfo(string Branch, string? Revision, bool IsDirty, int? Ahead, int? Behind)
 {
     public string Label => Branch == "(detached)" ? "HEAD · " + (Revision is { Length: >= 7 } ? Revision[..7] : "—") : Branch;
@@ -31,7 +31,7 @@ public sealed record WorkspaceGitInfo(string Branch, string? Revision, bool IsDi
 
     public static ProcessStartInfo Command(string binary, string path)
     {
-        var info = ChildProcess.StartInfo(binary, ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + (OperatingSystem.IsWindows() ? "NUL" : "/dev/null"), "-c", "core.untrackedCache=false", "-c", "gc.auto=0", "-C", path, "status", "--porcelain=v2", "--branch", "--untracked-files=normal"], path);
+        var info = ChildProcess.StartInfo(binary, ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + (OperatingSystem.IsWindows() ? "NUL" : "/dev/null"), "-c", "core.untrackedCache=false", "-c", "gc.auto=0", .. DelegationGit.NoSignaturePrograms, "-C", path, "status", "--porcelain=v2", "--branch", "--untracked-files=normal"], path);
         foreach (var key in info.Environment.Keys.Where(key => key.StartsWith("GIT_", StringComparison.OrdinalIgnoreCase)).ToArray()) info.Environment.Remove(key);
         info.Environment["GIT_OPTIONAL_LOCKS"] = "0"; info.Environment["GIT_TERMINAL_PROMPT"] = "0"; info.Environment["LC_ALL"] = "C";
         return info;
