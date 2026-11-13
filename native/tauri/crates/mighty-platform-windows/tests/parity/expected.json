@@ -1,0 +1,1162 @@
+{
+  "generatedBy": "native/tauri/crates/mighty-platform-windows/tests/parity (C# MightyCode.Core)",
+  "quote": [
+    {
+      "input": "",
+      "output": "\"\""
+    },
+    {
+      "input": "plain",
+      "output": "plain"
+    },
+    {
+      "input": "a b",
+      "output": "\"a b\""
+    },
+    {
+      "input": "a\"b",
+      "output": "\"a\\\"b\""
+    },
+    {
+      "input": "C:\\dir\\",
+      "output": "C:\\dir\\"
+    },
+    {
+      "input": "C:\\my dir\\",
+      "output": "\"C:\\my dir\\\\\""
+    },
+    {
+      "input": "a\\\"b c",
+      "output": "\"a\\\\\\\"b c\""
+    },
+    {
+      "input": "tab\there",
+      "output": "\"tab\there\""
+    },
+    {
+      "input": "nbsp\u00A0x",
+      "output": "\"nbsp\u00A0x\""
+    },
+    {
+      "input": "ideographic\u3000x",
+      "output": "\"ideographic\u3000x\""
+    },
+    {
+      "input": "line\nbreak",
+      "output": "\"line\nbreak\""
+    },
+    {
+      "input": "\\\\server\\share\\",
+      "output": "\\\\server\\share\\"
+    },
+    {
+      "input": "back\\\\\\\"quote",
+      "output": "\"back\\\\\\\\\\\\\\\"quote\""
+    },
+    {
+      "input": "\"",
+      "output": "\"\\\"\""
+    },
+    {
+      "input": "\\",
+      "output": "\\"
+    },
+    {
+      "input": "\\\"",
+      "output": "\"\\\\\\\"\""
+    },
+    {
+      "input": "한글 인자",
+      "output": "\"한글 인자\""
+    },
+    {
+      "input": "trailing space ",
+      "output": "\"trailing space \""
+    },
+    {
+      "input": " leading",
+      "output": "\" leading\""
+    },
+    {
+      "input": "%PATH%",
+      "output": "%PATH%"
+    },
+    {
+      "input": "a&b|c<d>e^(f)",
+      "output": "a&b|c<d>e^(f)"
+    },
+    {
+      "input": "x!y!",
+      "output": "x!y!"
+    },
+    {
+      "input": "say \"hi\"",
+      "output": "\"say \\\"hi\\\"\""
+    },
+    {
+      "input": "two\\\\",
+      "output": "two\\\\"
+    },
+    {
+      "input": "semi;colon,comma=equals",
+      "output": "semi;colon,comma=equals"
+    }
+  ],
+  "batch": [
+    {
+      "batch": "C:\\Program Files\\nodejs\\npm.cmd",
+      "arguments": [
+        "install",
+        "-g",
+        "a&b|c<d>e^(f)",
+        "C:\\dir\\"
+      ],
+      "output": "\"C:\\Program Files\\nodejs\\npm.cmd\" \"install\" \"-g\" \"a&b|c<d>e^(f)\" \"C:\\dir\\\\\""
+    },
+    {
+      "batch": "C:\\npm\\claude.cmd",
+      "arguments": [
+        "plugin",
+        "list"
+      ],
+      "output": "\"C:\\npm\\claude.cmd\" \"plugin\" \"list\""
+    },
+    {
+      "batch": "x.cmd",
+      "arguments": [],
+      "output": "\"x.cmd\""
+    },
+    {
+      "batch": "x.cmd",
+      "arguments": [
+        ""
+      ],
+      "output": "\"x.cmd\" \"\""
+    },
+    {
+      "batch": "x.cmd",
+      "arguments": [
+        "plain",
+        "with space",
+        "amp&ersand",
+        "caret^here",
+        "pipe|lt<gt>",
+        "paren(s)",
+        "trailing\\",
+        "two\\\\",
+        "mid\\dle",
+        "한글 인자",
+        "",
+        "semi;colon,comma=equals",
+        "tab\there"
+      ],
+      "output": "\"x.cmd\" \"plain\" \"with space\" \"amp&ersand\" \"caret^here\" \"pipe|lt<gt>\" \"paren(s)\" \"trailing\\\\\" \"two\\\\\\\\\" \"mid\\dle\" \"한글 인자\" \"\" \"semi;colon,comma=equals\" \"tab\there\""
+    },
+    {
+      "batch": "C:\\shim dir & ^carets (x)\\tool.cmd",
+      "arguments": [
+        "plain",
+        "with space",
+        "amp&ersand",
+        "caret^here",
+        "pipe|lt<gt>",
+        "paren(s)",
+        "trailing\\",
+        "two\\\\",
+        "mid\\dle",
+        "한글 인자",
+        "",
+        "semi;colon,comma=equals",
+        "tab\there"
+      ],
+      "output": "\"C:\\shim dir & ^carets (x)\\tool.cmd\" \"plain\" \"with space\" \"amp&ersand\" \"caret^here\" \"pipe|lt<gt>\" \"paren(s)\" \"trailing\\\\\" \"two\\\\\\\\\" \"mid\\dle\" \"한글 인자\" \"\" \"semi;colon,comma=equals\" \"tab\there\""
+    },
+    {
+      "batch": "x.cmd",
+      "arguments": [
+        "a\"b"
+      ],
+      "output": null
+    },
+    {
+      "batch": "x.cmd",
+      "arguments": [
+        "%PATH%"
+      ],
+      "output": null
+    },
+    {
+      "batch": "x.cmd",
+      "arguments": [
+        "x!y!"
+      ],
+      "output": null
+    },
+    {
+      "batch": "x.cmd",
+      "arguments": [
+        "a\nb"
+      ],
+      "output": null
+    },
+    {
+      "batch": "x.cmd",
+      "arguments": [
+        "a\rb"
+      ],
+      "output": null
+    },
+    {
+      "batch": "x.cmd",
+      "arguments": [
+        "a\u0000b"
+      ],
+      "output": null
+    },
+    {
+      "batch": "C:\\100%\\x.cmd",
+      "arguments": [],
+      "output": null
+    },
+    {
+      "batch": "x.cmd",
+      "arguments": [
+        "fine",
+        "say \"hi\""
+      ],
+      "output": null
+    }
+  ],
+  "launch": [
+    {
+      "resolved": "C:\\npm\\claude.cmd",
+      "arguments": [
+        "plugin",
+        "list"
+      ],
+      "environment": null,
+      "variables": {
+        "SystemRoot": "D:\\Win"
+      },
+      "programIsInterpreter": true,
+      "program": "C:\\WINDOWS\\system32\\cmd.exe",
+      "argumentList": [],
+      "shellCommand": "\"C:\\npm\\claude.cmd\" \"plugin\" \"list\"",
+      "environmentAfter": {
+        "NoDefaultCurrentDirectoryInExePath": "1",
+        "NO_COLOR": "1"
+      }
+    },
+    {
+      "resolved": "C:\\git\\git.exe",
+      "arguments": [
+        "--version"
+      ],
+      "environment": {
+        "PATH": "x"
+      },
+      "variables": null,
+      "programIsInterpreter": false,
+      "program": "C:\\git\\git.exe",
+      "argumentList": [
+        "--version"
+      ],
+      "shellCommand": null,
+      "environmentAfter": {
+        "NoDefaultCurrentDirectoryInExePath": "1",
+        "NO_COLOR": "1",
+        "Path": "x"
+      }
+    },
+    {
+      "resolved": "C:\\x\\TOOL.BAT",
+      "arguments": [
+        "a b",
+        "c&d"
+      ],
+      "environment": {
+        "no_color": "0",
+        "noDefaultCurrentDirectoryInExePath": "0",
+        "Keep": ""
+      },
+      "variables": null,
+      "programIsInterpreter": true,
+      "program": "C:\\WINDOWS\\system32\\cmd.exe",
+      "argumentList": [],
+      "shellCommand": "\"C:\\x\\TOOL.BAT\" \"a b\" \"c&d\"",
+      "environmentAfter": {
+        "NoDefaultCurrentDirectoryInExePath": "1",
+        "NO_COLOR": "1",
+        "Keep": ""
+      }
+    },
+    {
+      "resolved": "C:\\x\\tool.exe",
+      "arguments": [
+        "a\"b"
+      ],
+      "environment": null,
+      "variables": null,
+      "programIsInterpreter": false,
+      "program": "C:\\x\\tool.exe",
+      "argumentList": [
+        "a\"b"
+      ],
+      "shellCommand": null,
+      "environmentAfter": {
+        "NoDefaultCurrentDirectoryInExePath": "1",
+        "NO_COLOR": "1"
+      }
+    }
+  ],
+  "shellArguments": [
+    {
+      "shell": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "command": null,
+      "noProfile": false,
+      "output": [
+        "-NoLogo",
+        "-NoExit",
+        "-Command",
+        "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;"
+      ]
+    },
+    {
+      "shell": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "command": null,
+      "noProfile": true,
+      "output": [
+        "-NoLogo",
+        "-NoProfile",
+        "-NoExit",
+        "-Command",
+        "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;"
+      ]
+    },
+    {
+      "shell": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "command": "ls",
+      "noProfile": false,
+      "output": [
+        "-NoLogo",
+        "-Command",
+        "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;ls"
+      ]
+    },
+    {
+      "shell": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "command": "ls",
+      "noProfile": true,
+      "output": [
+        "-NoLogo",
+        "-NoProfile",
+        "-Command",
+        "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;ls"
+      ]
+    },
+    {
+      "shell": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "command": "echo \"a b\"",
+      "noProfile": false,
+      "output": [
+        "-NoLogo",
+        "-Command",
+        "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;echo \"a b\""
+      ]
+    },
+    {
+      "shell": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "command": "echo \"a b\"",
+      "noProfile": true,
+      "output": [
+        "-NoLogo",
+        "-NoProfile",
+        "-Command",
+        "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;echo \"a b\""
+      ]
+    },
+    {
+      "shell": "C:\\Windows\\System32\\cmd.exe",
+      "command": null,
+      "noProfile": false,
+      "output": [
+        "/d",
+        "/k",
+        "chcp 65001 >nul"
+      ]
+    },
+    {
+      "shell": "C:\\Windows\\System32\\cmd.exe",
+      "command": null,
+      "noProfile": true,
+      "output": [
+        "/d",
+        "/k",
+        "chcp 65001 >nul"
+      ]
+    },
+    {
+      "shell": "C:\\Windows\\System32\\cmd.exe",
+      "command": "ls",
+      "noProfile": false,
+      "output": [
+        "/d",
+        "/s",
+        "/c",
+        "chcp 65001 >nul & ls"
+      ]
+    },
+    {
+      "shell": "C:\\Windows\\System32\\cmd.exe",
+      "command": "ls",
+      "noProfile": true,
+      "output": [
+        "/d",
+        "/s",
+        "/c",
+        "chcp 65001 >nul & ls"
+      ]
+    },
+    {
+      "shell": "C:\\Windows\\System32\\cmd.exe",
+      "command": "echo \"a b\"",
+      "noProfile": false,
+      "output": [
+        "/d",
+        "/s",
+        "/c",
+        "chcp 65001 >nul & echo \"a b\""
+      ]
+    },
+    {
+      "shell": "C:\\Windows\\System32\\cmd.exe",
+      "command": "echo \"a b\"",
+      "noProfile": true,
+      "output": [
+        "/d",
+        "/s",
+        "/c",
+        "chcp 65001 >nul & echo \"a b\""
+      ]
+    },
+    {
+      "shell": "C:\\tools\\pwsh.exe",
+      "command": null,
+      "noProfile": false,
+      "output": [
+        "/d",
+        "/k",
+        "chcp 65001 >nul"
+      ]
+    },
+    {
+      "shell": "C:\\tools\\pwsh.exe",
+      "command": null,
+      "noProfile": true,
+      "output": [
+        "/d",
+        "/k",
+        "chcp 65001 >nul"
+      ]
+    },
+    {
+      "shell": "C:\\tools\\pwsh.exe",
+      "command": "ls",
+      "noProfile": false,
+      "output": [
+        "/d",
+        "/s",
+        "/c",
+        "chcp 65001 >nul & ls"
+      ]
+    },
+    {
+      "shell": "C:\\tools\\pwsh.exe",
+      "command": "ls",
+      "noProfile": true,
+      "output": [
+        "/d",
+        "/s",
+        "/c",
+        "chcp 65001 >nul & ls"
+      ]
+    },
+    {
+      "shell": "C:\\tools\\pwsh.exe",
+      "command": "echo \"a b\"",
+      "noProfile": false,
+      "output": [
+        "/d",
+        "/s",
+        "/c",
+        "chcp 65001 >nul & echo \"a b\""
+      ]
+    },
+    {
+      "shell": "C:\\tools\\pwsh.exe",
+      "command": "echo \"a b\"",
+      "noProfile": true,
+      "output": [
+        "/d",
+        "/s",
+        "/c",
+        "chcp 65001 >nul & echo \"a b\""
+      ]
+    },
+    {
+      "shell": "C:\\x\\PowerShell",
+      "command": null,
+      "noProfile": false,
+      "output": [
+        "-NoLogo",
+        "-NoExit",
+        "-Command",
+        "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;"
+      ]
+    },
+    {
+      "shell": "C:\\x\\PowerShell",
+      "command": null,
+      "noProfile": true,
+      "output": [
+        "-NoLogo",
+        "-NoProfile",
+        "-NoExit",
+        "-Command",
+        "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;"
+      ]
+    },
+    {
+      "shell": "C:\\x\\PowerShell",
+      "command": "ls",
+      "noProfile": false,
+      "output": [
+        "-NoLogo",
+        "-Command",
+        "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;ls"
+      ]
+    },
+    {
+      "shell": "C:\\x\\PowerShell",
+      "command": "ls",
+      "noProfile": true,
+      "output": [
+        "-NoLogo",
+        "-NoProfile",
+        "-Command",
+        "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;ls"
+      ]
+    },
+    {
+      "shell": "C:\\x\\PowerShell",
+      "command": "echo \"a b\"",
+      "noProfile": false,
+      "output": [
+        "-NoLogo",
+        "-Command",
+        "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;echo \"a b\""
+      ]
+    },
+    {
+      "shell": "C:\\x\\PowerShell",
+      "command": "echo \"a b\"",
+      "noProfile": true,
+      "output": [
+        "-NoLogo",
+        "-NoProfile",
+        "-Command",
+        "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;echo \"a b\""
+      ]
+    }
+  ],
+  "environmentCommand": {
+    "nonce": "0123456789abcdef0123456789abcdef",
+    "command": "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$mightyEnvJson=Microsoft.PowerShell.Utility\\ConvertTo-Json -InputObject ([Environment]::GetEnvironmentVariables('Process')) -Compress;$mightyEnvData=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($mightyEnvJson));[Console]::Out.Write(([string][char]0)+'MIGHTY_ENV_0123456789abcdef0123456789abcdef'+[char]0+$mightyEnvData+[char]0+'MIGHTY_END_0123456789abcdef0123456789abcdef'+[char]0)",
+    "arguments": [
+      "-NoLogo",
+      "-NonInteractive",
+      "-EncodedCommand",
+      "WwBDAG8AbgBzAG8AbABlAF0AOgA6AE8AdQB0AHAAdQB0AEUAbgBjAG8AZABpAG4AZwA9AFsAUwB5AHMAdABlAG0ALgBUAGUAeAB0AC4AVQBUAEYAOABFAG4AYwBvAGQAaQBuAGcAXQA6ADoAbgBlAHcAKAAkAGYAYQBsAHMAZQApADsAJABtAGkAZwBoAHQAeQBFAG4AdgBKAHMAbwBuAD0ATQBpAGMAcgBvAHMAbwBmAHQALgBQAG8AdwBlAHIAUwBoAGUAbABsAC4AVQB0AGkAbABpAHQAeQBcAEMAbwBuAHYAZQByAHQAVABvAC0ASgBzAG8AbgAgAC0ASQBuAHAAdQB0AE8AYgBqAGUAYwB0ACAAKABbAEUAbgB2AGkAcgBvAG4AbQBlAG4AdABdADoAOgBHAGUAdABFAG4AdgBpAHIAbwBuAG0AZQBuAHQAVgBhAHIAaQBhAGIAbABlAHMAKAAnAFAAcgBvAGMAZQBzAHMAJwApACkAIAAtAEMAbwBtAHAAcgBlAHMAcwA7ACQAbQBpAGcAaAB0AHkARQBuAHYARABhAHQAYQA9AFsAQwBvAG4AdgBlAHIAdABdADoAOgBUAG8AQgBhAHMAZQA2ADQAUwB0AHIAaQBuAGcAKABbAFQAZQB4AHQALgBFAG4AYwBvAGQAaQBuAGcAXQA6ADoAVQBUAEYAOAAuAEcAZQB0AEIAeQB0AGUAcwAoACQAbQBpAGcAaAB0AHkARQBuAHYASgBzAG8AbgApACkAOwBbAEMAbwBuAHMAbwBsAGUAXQA6ADoATwB1AHQALgBXAHIAaQB0AGUAKAAoAFsAcwB0AHIAaQBuAGcAXQBbAGMAaABhAHIAXQAwACkAKwAnAE0ASQBHAEgAVABZAF8ARQBOAFYAXwAwADEAMgAzADQANQA2ADcAOAA5AGEAYgBjAGQAZQBmADAAMQAyADMANAA1ADYANwA4ADkAYQBiAGMAZABlAGYAJwArAFsAYwBoAGEAcgBdADAAKwAkAG0AaQBnAGgAdAB5AEUAbgB2AEQAYQB0AGEAKwBbAGMAaABhAHIAXQAwACsAJwBNAEkARwBIAFQAWQBfAEUATgBEAF8AMAAxADIAMwA0ADUANgA3ADgAOQBhAGIAYwBkAGUAZgAwADEAMgAzADQANQA2ADcAOAA5AGEAYgBjAGQAZQBmACcAKwBbAGMAaABhAHIAXQAwACkA"
+    ],
+    "uppercaseNonceCommand": null,
+    "shortNonceCommand": null
+  },
+  "environmentParse": [
+    {
+      "name": "valid",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQYXRoIjoiQzpcXHRydXN0ZWQgYmluIiwiQVdTX0JFQVJFUl9UT0tFTl9CRURST0NLIjoiZml4dHVyZS1zZWNyZXQ9XG5zZWNvbmQtbGluZSJ9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": 2,
+      "values": {
+        "Path": "C:\\trusted bin",
+        "AWS_BEARER_TOKEN_BEDROCK": "fixture-secret=\nsecond-line"
+      }
+    },
+    {
+      "name": "another invocation's nonce",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQYXRoIjoiQzpcXHRydXN0ZWQgYmluIiwiQVdTX0JFQVJFUl9UT0tFTl9CRURST0NLIjoiZml4dHVyZS1zZWNyZXQ9XG5zZWNvbmQtbGluZSJ9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "repeated frame",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQYXRoIjoiQzpcXHRydXN0ZWQgYmluIiwiQVdTX0JFQVJFUl9UT0tFTl9CRURST0NLIjoiZml4dHVyZS1zZWNyZXQ9XG5zZWNvbmQtbGluZSJ9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile outputprofile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQYXRoIjoiQzpcXHRydXN0ZWQgYmluIiwiQVdTX0JFQVJFUl9UT0tFTl9CRURST0NLIjoiZml4dHVyZS1zZWNyZXQ9XG5zZWNvbmQtbGluZSJ9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "end marker twice",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQYXRoIjoiQzpcXHRydXN0ZWQgYmluIiwiQVdTX0JFQVJFUl9UT0tFTl9CRURST0NLIjoiZml4dHVyZS1zZWNyZXQ9XG5zZWNvbmQtbGluZSJ9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "uppercase nonce",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789ABCDEF0123456789ABCDEF\u0000eyJQYXRoIjoiQzpcXHRydXN0ZWQgYmluIiwiQVdTX0JFQVJFUl9UT0tFTl9CRURST0NLIjoiZml4dHVyZS1zZWNyZXQ9XG5zZWNvbmQtbGluZSJ9\u0000MIGHTY_END_0123456789ABCDEF0123456789ABCDEF\u0000after profile output",
+      "nonce": "0123456789ABCDEF0123456789ABCDEF",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "empty object",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000e30=\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "array",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000W10=\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "names in two cases",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIsInBhdGgiOiJ5In0=\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a name twice",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIsIlBBVEgiOiJ5In0=\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a name with =",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIsImJhZD1uYW1lIjoieCJ9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a true value",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIsIkFXU19LRVkiOnRydWV9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a NUL in a value",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIsIkFXU19LRVkiOiJiYWRcdTAwMDB2YWx1ZSJ9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "an object value",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIsIkEiOnsiYiI6ImMifX0=\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a deep value",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIsIkEiOltbWyJjIl1dXX0=\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a null value",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIsIkEiOm51bGx9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a number PATH",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoxfQ==\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a blank PATH",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoiICAifQ==\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "no PATH",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJBIjoiYiJ9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a control character in a name",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIsIkFcdTAwMDEiOiJiIn0=\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a C1 control character in a name",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIsIkFcdTAwODUiOiJiIn0=\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "an empty name",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIsIiI6ImIifQ==\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "escapes and Unicode",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIsIk1JR0hUWSI6Iu2VnOq4gCBcdTAwZTkgXCJxXCIgXFwgXG4ifQ==\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": 2,
+      "values": {
+        "PATH": "x",
+        "MIGHTY": "한글 é \"q\" \\ \n"
+      }
+    },
+    {
+      "name": "a byte order mark",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u000077u/eyJQQVRIIjoiYm9tIn0=\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "tabs inside the base64",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQYXRo\t\t\t\tIjoiQzpcXHRydXN0ZWQgYmluIiwiQVdTX0JFQVJFUl9UT0tFTl9CRURST0NLIjoiZml4dHVyZS1zZWNyZXQ9XG5zZWNvbmQtbGluZSJ9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": 2,
+      "values": {
+        "Path": "C:\\trusted bin",
+        "AWS_BEARER_TOKEN_BEDROCK": "fixture-secret=\nsecond-line"
+      }
+    },
+    {
+      "name": "one tab inside the base64",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQYXRo\tIjoiQzpcXHRydXN0ZWQgYmluIiwiQVdTX0JFQVJFUl9UT0tFTl9CRURST0NLIjoiZml4dHVyZS1zZWNyZXQ9XG5zZWNvbmQtbGluZSJ9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a space inside the base64",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQYXRo    IjoiQzpcXHRydXN0ZWQgYmluIiwiQVdTX0JFQVJFUl9UT0tFTl9CRURST0NLIjoiZml4dHVyZS1zZWNyZXQ9XG5zZWNvbmQtbGluZSJ9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a line break inside the base64",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQYXRo\r\n\r\nIjoiQzpcXHRydXN0ZWQgYmluIiwiQVdTX0JFQVJFUl9UT0tFTl9CRURST0NLIjoiZml4dHVyZS1zZWNyZXQ9XG5zZWNvbmQtbGluZSJ9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "unused trailing bits set",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieHkifR==\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": 1,
+      "values": {
+        "PATH": "xy"
+      }
+    },
+    {
+      "name": "a character outside base64",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000*yJQYXRoIjoiQzpcXHRydXN0ZWQgYmluIiwiQVdTX0JFQVJFUl9UT0tFTl9CRURST0NLIjoiZml4dHVyZS1zZWNyZXQ9XG5zZWNvbmQtbGluZSJ9\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a length not a multiple of 4",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQYXRoIjoiQzpcXHRydXN0ZWQgYmluIiwiQVdTX0JFQVJFUl9UT0tFTl9CRURST0NLIjoiZml4dHVyZS1zZWNyZXQ9XG5zZWNvbmQtbGluZSJ\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "no payload",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "trailing text after the JSON",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCJ9IHg=\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a comment in the JSON",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIvKmMqL30=\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a trailing comma",
+      "output": "profile chatter\n\u0000MIGHTY_ENV_0123456789abcdef0123456789abcdef\u0000eyJQQVRIIjoieCIsfQ==\u0000MIGHTY_END_0123456789abcdef0123456789abcdef\u0000after profile output",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "4096 names",
+      "output": null,
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": 4096,
+      "values": null
+    },
+    {
+      "name": "4097 names",
+      "output": null,
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "a value of 131072 characters",
+      "output": null,
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": 1,
+      "values": null
+    },
+    {
+      "name": "a value of 131073 characters",
+      "output": null,
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    },
+    {
+      "name": "no frame",
+      "output": "profile chatter only",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "count": null,
+      "values": null
+    }
+  ],
+  "userEnvironmentParse": [
+    {
+      "block": "=C:=C:\\\u0000USERPROFILE=C:\\Users\\u\u0000APPDATA=C:\\Users\\u\\AppData\\Roaming\u0000PATHEXT=.COM;.EXE;.BAT;.CMD\u0000SystemRoot=D:\\Other\u0000Path=C:\\Windows\\System32\u0000EMPTY=\u0000\u0000",
+      "values": {
+        "USERPROFILE": "C:\\Users\\u",
+        "APPDATA": "C:\\Users\\u\\AppData\\Roaming",
+        "PATHEXT": ".COM;.EXE;.BAT;.CMD",
+        "SystemRoot": "D:\\Other",
+        "Path": "C:\\Windows\\System32",
+        "EMPTY": ""
+      }
+    },
+    {
+      "block": "A=1\u0000a=2\u0000\u0000",
+      "values": {
+        "A": "2"
+      }
+    },
+    {
+      "block": "=hidden=x\u0000B=\u0000\u0000",
+      "values": {
+        "B": ""
+      }
+    },
+    {
+      "block": "noequals\u0000C==x\u0000\u0000",
+      "values": {
+        "C": "=x"
+      }
+    },
+    {
+      "block": "",
+      "values": {}
+    }
+  ],
+  "hermesInstallFolder": [
+    {
+      "environment": {
+        "USERPROFILE": "C:\\Users\\me",
+        "LOCALAPPDATA": "C:\\Users\\me\\AppData\\Local",
+        "APPDATA": "C:\\Users\\me\\AppData\\Roaming",
+        "ProgramFiles": "C:\\Program Files",
+        "SystemRoot": "C:\\Windows"
+      },
+      "folder": "C:\\Users\\me\\AppData\\Local\\hermes\\bin"
+    },
+    {
+      "environment": {
+        "USERPROFILE": "C:\\Users\\me",
+        "LOCALAPPDATA": "C:\\Users\\me\\AppData\\Local",
+        "APPDATA": "C:\\Users\\me\\AppData\\Roaming",
+        "ProgramFiles": "C:\\Program Files",
+        "SystemRoot": "C:\\Windows",
+        "hermes_home": "D:\\hermes"
+      },
+      "folder": "D:\\hermes\\bin"
+    },
+    {
+      "environment": {
+        "USERPROFILE": "C:\\Users\\me",
+        "LOCALAPPDATA": "C:\\Users\\me\\AppData\\Local",
+        "APPDATA": "C:\\Users\\me\\AppData\\Roaming",
+        "ProgramFiles": "C:\\Program Files",
+        "SystemRoot": "C:\\Windows",
+        "HERMES_HOME": "hermes"
+      },
+      "folder": "C:\\Users\\me\\AppData\\Local\\hermes\\bin"
+    },
+    {
+      "environment": {
+        "USERPROFILE": "C:\\Users\\me",
+        "LOCALAPPDATA": "C:\\Users\\me\\AppData\\Local",
+        "APPDATA": "C:\\Users\\me\\AppData\\Roaming",
+        "ProgramFiles": "C:\\Program Files",
+        "SystemRoot": "C:\\Windows",
+        "HERMES_HOME": "D:\\h\\"
+      },
+      "folder": "D:\\h\\bin"
+    },
+    {
+      "environment": {},
+      "folder": null
+    },
+    {
+      "environment": {
+        "LOCALAPPDATA": "relative"
+      },
+      "folder": null
+    },
+    {
+      "environment": {
+        "LOCALAPPDATA": "C:x"
+      },
+      "folder": null
+    }
+  ],
+  "discoveryFiles": [
+    {
+      "provider": "opencode",
+      "directories": [
+        "C:\\tools",
+        "C:\\Users\\me\\AppData\\Roaming\\npm"
+      ],
+      "windows": true,
+      "files": [
+        "C:\\tools\\opencode.exe",
+        "C:\\tools\\node_modules\\@opencode\\cli\\bin\\opencode.exe",
+        "C:\\tools\\opencode.cmd",
+        "C:\\Users\\me\\AppData\\Roaming\\npm\\opencode.exe",
+        "C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@opencode\\cli\\bin\\opencode.exe",
+        "C:\\Users\\me\\AppData\\Roaming\\npm\\opencode.cmd"
+      ]
+    },
+    {
+      "provider": "hermes",
+      "directories": [
+        "C:\\tools"
+      ],
+      "windows": true,
+      "files": [
+        "C:\\tools\\hermes.exe",
+        "C:\\tools\\hermes.cmd",
+        "C:\\Users\\me\\AppData\\Local\\hermes\\bin\\hermes.exe",
+        "C:\\Users\\me\\AppData\\Local\\hermes\\bin\\hermes.cmd"
+      ]
+    },
+    {
+      "provider": "hermes",
+      "directories": [
+        "C:\\USERS\\ME\\APPDATA\\LOCAL\\HERMES\\BIN"
+      ],
+      "windows": true,
+      "files": [
+        "C:\\USERS\\ME\\APPDATA\\LOCAL\\HERMES\\BIN\\hermes.exe",
+        "C:\\USERS\\ME\\APPDATA\\LOCAL\\HERMES\\BIN\\hermes.cmd"
+      ]
+    },
+    {
+      "provider": "pi",
+      "directories": [
+        "C:\\Users\\me\\AppData\\Roaming\\npm"
+      ],
+      "windows": true,
+      "files": [
+        "C:\\Users\\me\\AppData\\Roaming\\npm\\pi.cmd"
+      ]
+    },
+    {
+      "provider": "codex",
+      "directories": [
+        "C:\\tools"
+      ],
+      "windows": true,
+      "files": [
+        "C:\\tools\\codex.exe"
+      ]
+    },
+    {
+      "provider": "gemini",
+      "directories": [
+        "C:\\tools"
+      ],
+      "windows": true,
+      "files": [
+        "C:\\tools\\agy.exe"
+      ]
+    },
+    {
+      "provider": "claude",
+      "directories": [
+        "C:\\tools",
+        "c:\\TOOLS",
+        "",
+        "a\u0000b"
+      ],
+      "windows": true,
+      "files": [
+        "C:\\tools\\claude.exe"
+      ]
+    },
+    {
+      "provider": "hermes",
+      "directories": [
+        "/usr/local/bin"
+      ],
+      "windows": false,
+      "files": [
+        "/usr/local/bin\\hermes"
+      ]
+    },
+    {
+      "provider": "opencode",
+      "directories": [
+        "/usr/local/bin",
+        "/usr/local/bin"
+      ],
+      "windows": false,
+      "files": [
+        "/usr/local/bin\\opencode"
+      ]
+    },
+    {
+      "provider": "claude",
+      "directories": [
+        "C:\\tools\\"
+      ],
+      "windows": true,
+      "files": [
+        "C:\\tools\\claude.exe"
+      ]
+    }
+  ],
+  "versionText": [
+    {
+      "program": "hermes",
+      "output": "Hermes Agent v0.23.1 (2026.9.24) · stable · local 3b4215785882\nInstall directory: C:\\x\nUp to date\n",
+      "text": "Hermes Agent v0.23.1 (2026.9.24) · stable · local 3b4215785882"
+    },
+    {
+      "program": "hermes",
+      "output": "\r\n  Hermes Agent v0.23.1  \r\nInstall method: git\r\n",
+      "text": "Hermes Agent v0.23.1"
+    },
+    {
+      "program": "hermes",
+      "output": "",
+      "text": ""
+    },
+    {
+      "program": "hermes",
+      "output": null,
+      "text": ""
+    },
+    {
+      "program": "claude",
+      "output": "2.1.300 (Claude Code)\n",
+      "text": "2.1.300 (Claude Code)"
+    },
+    {
+      "program": "codex",
+      "output": " codex-cli 0.160.0 ",
+      "text": "codex-cli 0.160.0"
+    },
+    {
+      "program": "opencode",
+      "output": "opencode v2.2.7\r\n",
+      "text": "opencode v2.2.7"
+    },
+    {
+      "program": "claude",
+      "output": "a\nb\n",
+      "text": "a\nb"
+    }
+  ],
+  "hasLineBreak": [
+    {
+      "text": "echo one && echo two",
+      "value": false
+    },
+    {
+      "text": "",
+      "value": false
+    },
+    {
+      "text": "a\nb",
+      "value": true
+    },
+    {
+      "text": "a\rb",
+      "value": true
+    },
+    {
+      "text": "a\u2028b",
+      "value": true
+    },
+    {
+      "text": "a\u2029b",
+      "value": true
+    },
+    {
+      "text": "a\u0085b",
+      "value": false
+    },
+    {
+      "text": "a\u000Bb",
+      "value": false
+    },
+    {
+      "text": "a\fb",
+      "value": false
+    }
+  ]
+}
