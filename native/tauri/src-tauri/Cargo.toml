@@ -18,7 +18,14 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 mighty-core.workspace = true
+mighty-composer.workspace = true
+mighty-graph.workspace = true
 mighty-platform.workspace = true
+mighty-run.workspace = true
+indexmap.workspace = true
+base64 = "0.22"
+# pickAttachments: the OS's file picker (C# FileOpenPicker), Rust-side only (no page permission).
+tauri-plugin-dialog = "2"
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true

@@ -64,6 +64,22 @@ mod imp {
         AppPaths::resolve(profile, dirs::config_dir(), &LEGACY_FOLDERS, dirs::data_local_dir(), identifier)
     }
 
+    /// C# `Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })`: an http(s) or mailto address handed to the user's
+    /// default handler through `ShellExecuteW` (the handler is never the app's child, so it outlives the app).
+    pub fn open_url(url: &str) -> std::result::Result<(), String> {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let wide = |text: &str| std::ffi::OsStr::new(text).encode_wide().chain(std::iter::once(0)).collect::<Vec<u16>>();
+        let (verb, target) = (wide("open"), wide(url));
+        // SAFETY: two NUL-terminated strings that live across the call; the other pointers are null as documented.
+        let done = unsafe {
+            ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), target.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL)
+        };
+        // ShellExecute's result is greater than 32 when it succeeded.
+        if done as isize > 32 { Ok(()) } else { Err(std::io::Error::last_os_error().to_string()) }
+    }
+
     /// Every port for this run.
     pub fn platform(profile: Option<PathBuf>, identifier: &str) -> Result<Platform> {
         let paths = paths(profile, identifier)?;

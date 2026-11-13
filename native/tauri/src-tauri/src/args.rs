@@ -8,6 +8,9 @@
 //! `--remote-debugging-port <n>`  opens WebView2's DevTools protocol on that port (screenshots, inspection)
 //! `--allow-state-write`          lets the host write the profile's state (saves, the damaged-file recovery, the legacy copy) as
 //!                                C# does; without it nothing in the profile is written but the logs and the smoke's result
+//! `--smoke-fake-cli <exe>`       the smoke's Claude is mighty-run's stand-in CLI (`mighty-fake-cli --replay-cli`), every other
+//!                                provider missing; the smoke then runs its composer, cards and Mighty steps against it
+//! `--smoke-real-claude`          the smoke sends one real request with the installed `claude` CLI and waits for its answer
 
 use std::path::PathBuf;
 
@@ -20,6 +23,8 @@ pub struct Options {
     pub log_dir: Option<PathBuf>,
     pub remote_debugging_port: Option<u16>,
     pub allow_state_write: bool,
+    pub smoke_fake_cli: Option<PathBuf>,
+    pub smoke_real_claude: bool,
 }
 
 fn absolute(flag: &str, value: Option<String>) -> Result<PathBuf, String> {
@@ -39,6 +44,8 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Options, String> 
             "--smoke-test" => options.smoke_test = true,
             "--smoke-exit" => options.smoke_exit = true,
             "--allow-state-write" => options.allow_state_write = true,
+            "--smoke-fake-cli" => options.smoke_fake_cli = Some(absolute("--smoke-fake-cli", args.next())?),
+            "--smoke-real-claude" => options.smoke_real_claude = true,
             "--smoke-out" => options.smoke_out = Some(absolute("--smoke-out", args.next())?),
             "--log-dir" => options.log_dir = Some(absolute("--log-dir", args.next())?),
             "--remote-debugging-port" => {
@@ -50,6 +57,12 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Options, String> 
     }
     if options.smoke_exit && !options.smoke_test {
         return Err("--smoke-exit needs --smoke-test.".into());
+    }
+    if (options.smoke_fake_cli.is_some() || options.smoke_real_claude) && !options.smoke_test {
+        return Err("--smoke-fake-cli and --smoke-real-claude need --smoke-test.".into());
+    }
+    if options.smoke_fake_cli.is_some() && options.smoke_real_claude {
+        return Err("--smoke-fake-cli and --smoke-real-claude go one at a time.".into());
     }
     if options.smoke_test && options.profile.is_none() {
         return Err("--smoke-test needs --profile.".into());
@@ -79,5 +92,10 @@ mod tests {
         assert_eq!(parsed(&["--remote-debugging-port", "9222"]).unwrap().remote_debugging_port, Some(9222));
         assert!(!parsed(&[]).unwrap().allow_state_write, "writing is off unless asked for");
         assert!(parsed(&["--allow-state-write"]).unwrap().allow_state_write);
+        let fake = if cfg!(windows) { "C:\\f.exe" } else { "/f" };
+        assert!(parsed(&["--smoke-fake-cli", fake]).is_err(), "the stand-in CLI is the smoke's");
+        assert!(parsed(&["--smoke-test", "--profile", root, "--smoke-fake-cli", fake]).unwrap().smoke_fake_cli.is_some());
+        assert!(parsed(&["--smoke-test", "--profile", root, "--smoke-fake-cli", fake, "--smoke-real-claude"]).is_err());
+        assert!(parsed(&["--smoke-test", "--profile", root, "--smoke-real-claude"]).unwrap().smoke_real_claude);
     }
 }

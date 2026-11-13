@@ -18,7 +18,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, mpsc};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, mpsc};
 use std::time::Duration;
 
 use mighty_core::AppSnapshot;
@@ -27,13 +27,17 @@ use mighty_core::model::PaneLayoutNode;
 use mighty_core::normalize;
 use mighty_core::shell::{Attention, RemoteConnection, Runtime, ShellContext, ShellModel, WorkspaceGitInfo, shell_model};
 use mighty_core::store::{Saver, Store};
+use mighty_graph::view::MightyPushes;
 use mighty_platform::{ProcessHost, SpawnRequest};
+use mighty_run::{RunEvent, RunService, ServiceEvent};
 use serde_json::value::RawValue;
 use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter};
 
 use crate::delta::Bridge;
 use crate::logfile::LogFile;
+use crate::panes::PaneUi;
+use crate::runs::Runs;
 use crate::smoke::Smoke;
 
 /// The event every host → page message travels on, and the window it goes to.
@@ -81,11 +85,29 @@ pub struct View {
     /// The active workspace's git: the key it was read for (`id|path`) and what it said.
     git: Option<(String, Option<WorkspaceGitInfo>)>,
     saver: Option<Arc<Saver>>,
+    /// The run service, which owns the state once it is attached: `snapshot` is then its copy for the page (`sync`).
+    service: Option<Arc<RunService>>,
+    /// The never-shown pane views the page writes in (C# `views`, `WebPane`): composer, cards and Mighty state per pane.
+    pub panes: HashMap<String, PaneUi>,
+    /// The panes whose Mighty view the page shows, and what was last pushed for each (C# `webMighty`).
+    pub mighty: MightyPushes,
 }
 
 impl View {
     /// C# `DesktopService.UpdateAsync`: the change, normalized as C# normalizes every change, then saved (queued).
     pub fn update(&mut self, change: impl FnOnce(&mut AppSnapshot)) -> Result<(), String> {
+        if let Some(service) = self.service.clone() {
+            // The service normalizes it under its own lock (a run's events may land meanwhile) and asks for the save.
+            service
+                .update(|current| {
+                    let mut next = current.clone();
+                    change(&mut next);
+                    next
+                })
+                .map_err(|e| e.to_string())?;
+            self.sync();
+            return Ok(());
+        }
         let mut next = self.snapshot.clone();
         change(&mut next);
         let next = normalize::normalize(&next, false).map_err(|e| e.to_string())?;
@@ -99,8 +121,19 @@ impl View {
 
     /// The state replaced as it is, without a normalize or a save (a change C# makes to `snapshot` directly).
     pub fn replace(&mut self, next: AppSnapshot) {
+        if let Some(service) = &self.service {
+            service.replace(next.clone());
+        }
         self.snapshot = next;
         self.revision += 1;
+    }
+
+    /// The page's copy taken from the service again (a run event changed it, or a change went through it).
+    pub fn sync(&mut self) {
+        if let Some(service) = &self.service {
+            self.snapshot = service.snapshot();
+            self.revision += 1;
+        }
     }
 }
 
@@ -119,6 +152,8 @@ pub struct Host {
     pub version: String,
     pub log: LogFile,
     pub smoke: Option<Smoke>,
+    /// The run engine, attached once the host exists (runs.rs).
+    runs: OnceLock<Arc<Runs>>,
     view: Arc<Mutex<View>>,
     saver: Arc<Saver>,
     registry: Registry,
@@ -129,7 +164,7 @@ pub struct Host {
     closed: AtomicBool,
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
@@ -177,6 +212,9 @@ impl Host {
             error: banner,
             git: None,
             saver: None,
+            service: None,
+            panes: HashMap::new(),
+            mighty: MightyPushes::default(),
         }));
         // Saves: the state as it is now when a scheduled one fires; written by the store (which writes nothing unless allowed).
         let (current, writer, failed_view, failed_log) = (view.clone(), store.clone(), view.clone(), LogFile::new(log.dir().to_path_buf()));
@@ -203,6 +241,7 @@ impl Host {
             version,
             log,
             smoke,
+            runs: OnceLock::new(),
             view,
             saver,
             registry,
@@ -217,13 +256,83 @@ impl Host {
         lock(&self.view)
     }
 
+    /// The run service takes the state from here on (runs.rs).
+    pub fn attach(&self, runs: Arc<Runs>) {
+        let mut view = self.view();
+        view.service = Some(runs.service.clone());
+        let _ = self.runs.set(runs);
+    }
+
+    /// The run engine, or the refusal a page method gives without it (only while the app starts).
+    pub fn engine(&self) -> Result<Arc<Runs>, String> {
+        self.runs.get().cloned().ok_or_else(|| "the run engine is not ready".to_string())
+    }
+
+    /// The run engine, when attached.
+    pub fn runs(&self) -> Option<&Arc<Runs>> {
+        self.runs.get()
+    }
+
+    /// Every pane view's composer and cards are looked at again on the next tick (a runtime read, a setting).
+    pub fn panes_changed(&self) {
+        for pane in self.view().panes.values_mut() {
+            pane.dirty = true;
+        }
+    }
+
+    /// One event of the run service (C# `RunEventReceived`, `ToolPermissionChanged`, the save queue).
+    pub fn service_event(self: &Arc<Self>, event: ServiceEvent) {
+        match event {
+            ServiceEvent::Run { event, .. } => {
+                let drain = {
+                    let mut view = self.view();
+                    view.sync();
+                    // WebBridge.ReceiveRunEvent: a log line and a graph run go without their record, which the delta carries a frame later.
+                    let light = if matches!(event.kind.as_str(), "log" | "graph_run") {
+                        RunEvent { entry: None, graph_run: None, ..(*event).clone() }
+                    } else {
+                        (*event).clone()
+                    };
+                    self.push(&view, "event", format!("{{\"kind\":\"event\",\"event\":{}}}", light.to_json()));
+                    // The window drops the pane's waiting requests once its run ended (MainWindow.cs:88 ClearToolPermissions).
+                    if event.kind == "status"
+                        && matches!(event.status.as_deref(), Some("stopped" | "completed" | "error"))
+                        && let Some(runs) = self.runs.get()
+                    {
+                        runs.service.clear_permissions(&event.session_id);
+                    }
+                    crate::composer::run_event(&mut view, &event)
+                };
+                self.schedule();
+                if drain {
+                    crate::composer::drain_queue(self.clone(), event.session_id.clone());
+                }
+            }
+            ServiceEvent::ToolPermission(request) => {
+                let mut view = self.view();
+                self.push(&view, "permission", format!("{{\"kind\":\"permission\",\"request\":{}}}", request.to_json()));
+                if let Some(pane) = view.panes.get_mut(&request.run_id) {
+                    pane.dirty = true;
+                }
+                view.mighty.dirty(&request.run_id);
+            }
+            ServiceEvent::SaveNow => {
+                let snapshot = self.view().snapshot.clone();
+                self.saver.queue(snapshot);
+            }
+            ServiceEvent::SaveSoon => self.saver.schedule(),
+            // The resume list's known sessions are W4's; a request starting needs nothing more here.
+            ServiceEvent::RequestStarting(_) | ServiceEvent::RememberSession(_) => {}
+        }
+    }
+
     /// Posts a message whatever the page's state (a call's result).
     fn post(&self, kind: &str, json: String) {
         let _ = lock(&self.outbox).send(Outgoing { kind: kind.to_string(), json });
     }
 
     /// Posts a push, or drops it when the page has not called `ready` since it loaded.
-    fn push(&self, view: &View, kind: &str, json: String) {
+    pub fn push(&self, view: &View, kind: &str, json: String) {
         if !view.ready {
             return;
         }
@@ -239,6 +348,11 @@ impl Host {
         view.ready = false;
         view.bridge.reset();
         view.sent_shell = None;
+        // The page asks for its panes' composer, cards and Mighty views again as it mounts them.
+        view.mighty = MightyPushes::default();
+        for pane in view.panes.values_mut() {
+            pane.forget_sent();
+        }
     }
 
     /// `ready`: pushes the whole snapshot (before the call's result) and turns pushes on.
@@ -346,6 +460,22 @@ impl Host {
             .expect("the bridge poll");
         let host = self.clone();
         std::thread::Builder::new()
+            .name("pane-clock".into())
+            .spawn(move || {
+                // The composer and cards pushes (30 ms coalesce, C# FlushWebComposers / FlushWebCards) and the Mighty views' (120 ms).
+                let mut ticks = 0u64;
+                while !host.closed.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(30));
+                    ticks += 1;
+                    crate::panes::flush(&host);
+                    if ticks.is_multiple_of(4) {
+                        crate::mighty::flush(&host);
+                    }
+                }
+            })
+            .expect("the pane clock");
+        let host = self.clone();
+        std::thread::Builder::new()
             .name("shell-clock".into())
             .spawn(move || {
                 while !host.closed.load(Ordering::SeqCst) {
@@ -389,6 +519,10 @@ impl Host {
     pub fn close(&self) {
         if self.closed.swap(true, Ordering::SeqCst) {
             return;
+        }
+        // Every run stopped first (its children with it), as DisposeAsync stops them before its last save.
+        if let Some(runs) = self.runs.get() {
+            tauri::async_runtime::block_on(runs.service.dispose());
         }
         let last = self.view().snapshot.clone();
         self.saver.close(last);

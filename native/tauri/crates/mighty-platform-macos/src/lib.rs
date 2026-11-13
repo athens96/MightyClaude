@@ -63,6 +63,11 @@ mod imp {
     }
 
     /// The native views of `window` (its NSView will host Ghostty and the browser; unused until the Mac stage).
+    /// An address handed to the default handler (`NSWorkspace.open`): not yet on the Mac.
+    pub fn open_url(_url: &str) -> std::result::Result<(), String> {
+        Err("opening addresses is not available on this platform yet".into())
+    }
+
     pub fn surfaces(_window: tauri::Window) -> Arc<dyn SurfaceFactory> {
         Arc::new(MacSurfaces)
     }

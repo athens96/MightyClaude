@@ -6,12 +6,18 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod args;
+mod cards;
+mod composer;
 mod delta;
 mod host;
 mod logfile;
 mod methods;
+mod mighty;
+mod panes;
 mod platform;
+mod runs;
 mod smoke;
+mod smoke_runs;
 mod surface;
 
 use std::sync::Arc;
@@ -130,14 +136,39 @@ fn main() {
         state.replace = host::replace_file;
     }
     let smoke = options.smoke_test.then(|| {
-        Smoke::new(options.smoke_out.clone().unwrap_or_else(|| data_dir.join("smoke-result.json")), options.smoke_exit, load.clone())
+        let mode = match (&options.smoke_fake_cli, options.smoke_real_claude) {
+            (Some(_), _) => smoke::Mode::FakeClaude,
+            (None, true) => smoke::Mode::RealClaude,
+            (None, false) => smoke::Mode::Page,
+        };
+        let record = options.log_dir.clone().unwrap_or_else(|| data_dir.join("tauri-logs")).join("fake-claude").join("replay");
+        Smoke::new(
+            options.smoke_out.clone().unwrap_or_else(|| data_dir.join("smoke-result.json")),
+            options.smoke_exit,
+            load.clone(),
+            mode,
+            options.smoke_fake_cli.is_some().then_some(record),
+        )
     });
     let theme = snapshot.theme().to_string();
     let mut parts = Some((state, banner, log, smoke));
     let debugging_port = options.remote_debugging_port;
+    // The smoke's stand-in Claude records what it was sent beside the smoke's logs.
+    let fake_claude = options.smoke_fake_cli.clone().map(|binary| runs::FakeClaude {
+        binary,
+        recording: smoke::RECORDING.into(),
+        record: options.log_dir.clone().unwrap_or_else(|| data_dir.join("tauri-logs")).join("fake-claude").join("replay"),
+    });
+    // The picture cache: the profile's own when the app may write it, else this machine's local folder for the profile.
+    let image_dir = if options.allow_state_write {
+        platform.paths.image_cache_dir()
+    } else {
+        platform.paths.local_dir().join("image-cache").join(platform.paths.profile_key())
+    };
 
     let app = tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![host_post, smoke_probe, smoke::smoke_surface])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![host_post, smoke_probe, smoke::smoke_surface, smoke_runs::smoke_step])
         .setup(move |app| {
             let (state, banner, log, smoke) = parts.take().expect("setup runs once");
             let version = app.package_info().version.to_string();
@@ -153,6 +184,13 @@ fn main() {
                 smoke,
                 methods::registry(),
             );
+            // The run engine: the run service owns the state from here on (runs.rs).
+            if let Some(fake) = &fake_claude
+                && let Some(folder) = fake.record.parent()
+            {
+                let _ = std::fs::create_dir_all(folder);
+            }
+            runs::Runs::start(&host, platform.processes.clone(), platform.environment.clone(), fake_claude.clone(), image_dir.clone());
             host.start_clocks();
             let (inbound, mut calls) = tokio::sync::mpsc::unbounded_channel::<Value>();
             app.manage(Inbound(inbound));

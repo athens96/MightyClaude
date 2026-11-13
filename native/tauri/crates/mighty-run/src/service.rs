@@ -225,6 +225,34 @@ impl RunService {
         Ok(())
     }
 
+    /// `UpdateDraft` (DesktopService.cs:198): a pane's draft, cleaned to at most 100,000 characters, replaced on that pane alone without
+    /// the whole state's normalize and saved on the schedule (a draft streams as it is typed). False when the pane is gone or its draft
+    /// is that already.
+    pub fn update_draft(&self, session_id: &str, draft: &str) -> Result<bool> {
+        {
+            let mut state = lock(&self.shared.state);
+            if state.closing {
+                return Err(RunError::State("the service is closing".into()));
+            }
+            let bounded = wire::clean(draft, 100_000);
+            let Some(at) = state.snapshot.sessions().iter().position(|s| s.id() == session_id) else { return Ok(false) };
+            if state.snapshot.sessions()[at].draft.as_deref().unwrap_or("") == bounded {
+                return Ok(false);
+            }
+            let mut next = (*state.snapshot.sessions()[at]).clone();
+            next.draft = Some(bounded);
+            state.snapshot.sessions_mut()[at] = Arc::new(next);
+        }
+        self.shared.send(ServiceEvent::SaveSoon);
+        Ok(true)
+    }
+
+    /// C# `PaneView.ClearToolPermissions` (MainWindow.cs:88): a pane whose run ended (stopped, completed, error) has no request waiting
+    /// any more; the window drops them all, whether or not the channel settled each. False when none was waiting.
+    pub fn clear_permissions(&self, session_id: &str) -> bool {
+        lock(&self.shared.pending).remove(session_id).is_some()
+    }
+
     /// The waiting tool-permission requests of a pane, oldest first.
     pub fn pending_permissions(&self, session_id: &str) -> Vec<ToolPermissionRequest> {
         lock(&self.shared.pending).get(session_id).map(|p| p.values().cloned().collect()).unwrap_or_default()

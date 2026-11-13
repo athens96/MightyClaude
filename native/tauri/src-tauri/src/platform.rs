@@ -25,3 +25,8 @@ pub fn platform(profile: Option<PathBuf>, identifier: &str) -> Result<Platform> 
 pub fn surfaces(window: tauri::Window) -> Arc<dyn SurfaceFactory> {
     os::surfaces(window)
 }
+
+/// An http(s) or mailto address opened with the user's default handler (C# `Process.Start` with `UseShellExecute`).
+pub fn open_url(url: &str) -> std::result::Result<(), String> {
+    os::open_url(url)
+}

@@ -9,9 +9,13 @@
 //! checks that the view's real bounds (read back from the OS) are the slot's in device pixels, has the host push a page dialog and
 //! checks that the view hides under it, closes the dialog and checks that the view shows again.
 //!
+//! With `--smoke-fake-cli` the run steps follow (smoke_runs.rs: the composer, the permission and plan cards, the Mighty diagram, the
+//! progress panel and a stop, against mighty-run's stand-in CLI); with `--smoke-real-claude` one real request to the installed
+//! `claude` CLI follows the first probe instead of the browser step.
+//!
 //! The host adds whether its own state took the click, the calls it saw and the methods it answered "unimplemented", and writes
-//! `smoke-result.json`; with `--smoke-exit` the app then quits, 0 when the smoke passed, else 1. A smoke that has no result after
-//! 90 s fails.
+//! `smoke-result.json`; with `--smoke-exit` the app then quits, 0 when the smoke passed, else 1. A smoke that has no result in time
+//! (90 s, 240 s with the stand-in CLI, 420 s with the real one) fails.
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -27,7 +31,27 @@ use tauri::Manager;
 use crate::host::{Host, WINDOW};
 use crate::surface::SurfaceManager;
 
-const TIMEOUT: Duration = Duration::from_secs(90);
+pub use crate::smoke_runs::RECORDING;
+
+/// Which steps follow the first probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// The page and, where the platform draws browsers natively, the browser surface.
+    Page,
+    /// Then the run steps against mighty-run's stand-in CLI.
+    FakeClaude,
+    /// The page, then one real request to the installed `claude` CLI.
+    RealClaude,
+}
+
+/// Which probe's report comes next.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Stage {
+    #[default]
+    Main,
+    Browser,
+    Runs,
+}
 
 const PROBE: &str = r#"(async () => {
   const until = async (test, ms) => { const end = performance.now() + ms; while (performance.now() < end) { const v = test(); if (v) return v; await new Promise((r) => setTimeout(r, 50)); } return test(); };
@@ -120,8 +144,12 @@ struct Progress {
     snapshot_sent: bool,
     shell_sent: bool,
     injected: bool,
-    /// The first probe's report, kept while the browser step runs.
+    stage: Stage,
+    /// The first probe's report, kept while the later steps run.
     main: Option<Value>,
+    /// The host's active pane when the first probe reported (its click must have reached the state).
+    main_active: Option<String>,
+    browser: Option<Value>,
     finished: bool,
 }
 
@@ -131,12 +159,27 @@ pub struct Smoke {
     started: Instant,
     /// What the load found, for the result.
     load: Value,
+    mode: Mode,
+    /// Where the stand-in CLI records what it was sent (`<record>.answers` …).
+    fake_record: Option<PathBuf>,
     progress: Mutex<Progress>,
 }
 
 impl Smoke {
-    pub fn new(out: PathBuf, exit: bool, load: Value) -> Smoke {
-        Smoke { out, exit, started: Instant::now(), load, progress: Mutex::new(Progress::default()) }
+    pub fn new(out: PathBuf, exit: bool, load: Value, mode: Mode, fake_record: Option<PathBuf>) -> Smoke {
+        Smoke { out, exit, started: Instant::now(), load, mode, fake_record, progress: Mutex::new(Progress::default()) }
+    }
+
+    pub fn fake_record(&self) -> Option<&PathBuf> {
+        self.fake_record.as_ref()
+    }
+
+    fn timeout(&self) -> Duration {
+        Duration::from_secs(match self.mode {
+            Mode::Page => 90,
+            Mode::FakeClaude => 240,
+            Mode::RealClaude => 420,
+        })
     }
 
     fn progress(&self) -> std::sync::MutexGuard<'_, Progress> {
@@ -187,26 +230,59 @@ impl Smoke {
         }
     }
 
-    /// A probe's report: the first one starts the browser step (or finishes where there is none), the second one finishes.
+    /// A probe's report: the first one starts the browser step, the browser step's the run steps; the last one finishes.
     pub fn probed(&self, host: &Host, probe: Value) {
-        let main = {
+        let stage = {
             let mut progress = self.progress();
             if progress.finished {
                 return;
             }
-            match progress.main.clone() {
-                Some(main) => Some(main),
-                None => {
-                    progress.main = Some(probe.clone());
-                    None
-                }
+            match progress.stage {
+                Stage::Main => progress.main = Some(probe.clone()),
+                Stage::Browser => progress.browser = Some(probe.clone()),
+                Stage::Runs => {}
+            }
+            progress.stage
+        };
+        if stage == Stage::Main {
+            let active = host.view().snapshot.active_session_id.clone();
+            self.progress().main_active = active;
+        }
+        let next = match stage {
+            Stage::Main if probe.get("error").is_some() => None,
+            Stage::Main if self.mode != Mode::RealClaude && self.start_browser(host) => Some(Stage::Browser),
+            Stage::Main | Stage::Browser if self.start_runs(host) => Some(Stage::Runs),
+            _ => None,
+        };
+        match next {
+            Some(next) => self.progress().stage = next,
+            None => {
+                let runs = (stage == Stage::Runs).then_some(probe);
+                self.finish(host, runs);
+            }
+        }
+    }
+
+    /// Adds the run steps' pane and runs their probe; false in the page-only smoke.
+    fn start_runs(&self, host: &Host) -> bool {
+        let script = match self.mode {
+            Mode::Page => return false,
+            Mode::FakeClaude => crate::smoke_runs::FAKE_PROBE
+                .replace("__TYPED__", crate::smoke_runs::FAKE_REQUEST)
+                .replace("__STOP__", crate::smoke_runs::STOP_REQUEST),
+            Mode::RealClaude => crate::smoke_runs::REAL_PROBE.replace("__TYPED__", crate::smoke_runs::REAL_REQUEST),
+        };
+        let pane = match crate::smoke_runs::add_pane(host) {
+            Ok(pane) => pane,
+            Err(error) => {
+                host.log.line(&format!("smoke: the run steps' pane was not added: {error}"));
+                return false;
             }
         };
-        match main {
-            Some(main) => self.finish(host, main, Some(probe)),
-            None if probe.get("error").is_none() && self.start_browser(host) => {}
-            None => self.finish(host, probe, None),
-        }
+        host.flush();
+        host.log.line(&format!("smoke: run steps ({:?})", self.mode));
+        self.eval(host, &script.replace("__PANE__", &pane));
+        true
     }
 
     /// Adds the browser pane and runs the second probe; false where the platform has no native browser surface.
@@ -233,14 +309,15 @@ impl Smoke {
     }
 
     /// Writes the result (once) and, with `--smoke-exit`, quits.
-    pub fn finish(&self, host: &Host, probe: Value, browser: Option<Value>) {
-        let calls = {
+    pub fn finish(&self, host: &Host, runs: Option<Value>) {
+        let (calls, probe, browser, main_active) = {
             let mut progress = self.progress();
             if progress.finished {
                 return;
             }
             progress.finished = true;
-            progress.calls.clone()
+            let probe = progress.main.clone().unwrap_or_else(|| json!({"error": "no probe report"}));
+            (progress.calls.clone(), probe, progress.browser.clone(), progress.main_active.clone())
         };
         let (snapshot_sent, shell_sent) = {
             let progress = self.progress();
@@ -254,8 +331,8 @@ impl Smoke {
         let count = |key: &str| probe.get(key).and_then(Value::as_u64).unwrap_or(0);
         let text = |key: &str| probe.get(key).and_then(Value::as_str).unwrap_or("");
         let click_target = probe.get("clickTarget").and_then(Value::as_str);
-        // The browser step selects its own pane afterwards: the click's pane was active before it ran.
-        let host_selected = click_target.map(|target| browser.is_some() || active.as_deref() == Some(target));
+        // The later steps select their own panes: the click's pane must have been the host's active one when the first probe reported.
+        let host_selected = click_target.map(|target| main_active.as_deref() == Some(target));
         let up = ["getLocale", "ready"].iter().all(|m| calls.iter().any(|c| c == m));
         let mut checks = json!({
             "getLocaleAndReady": up,
@@ -278,12 +355,53 @@ impl Smoke {
                     && yes("shownAfterDialog")
             );
         }
+        match self.mode {
+            Mode::Page => {}
+            Mode::FakeClaude => {
+                let empty = json!({"error": "the run steps did not report"});
+                let r = runs.as_ref().unwrap_or(&empty);
+                let yes = |key: &str| r.get(key) == Some(&Value::Bool(true));
+                let text = |key: &str| r.get(key).and_then(Value::as_str).unwrap_or("");
+                checks["runsNoError"] = json!(r.get("error").is_none());
+                checks["composerSend"] = json!(yes("available") && yes("typed") && yes("drafted") && text("outcome") == "started");
+                checks["permissionCard"] = json!(yes("permissionShown") && text("permissionTool") == "Bash");
+                checks["planCard"] = json!(yes("planShown") && r.get("answers").and_then(Value::as_u64).unwrap_or(0) >= 2);
+                checks["mightyDiagram"] = json!(
+                    yes("requestBlock")
+                        && matches!(text("status"), "completed" | "idle")
+                        && !text("resultText").is_empty()
+                        && r.get("agentCards").and_then(Value::as_u64).unwrap_or(0) + r.get("blocks").and_then(Value::as_u64).unwrap_or(0)
+                            >= 3
+                );
+                checks["progressSteps"] = json!(
+                    yes("stepsDrawn") && text("stepsCount") == "1/3" && text("stepsStates") == "done,current,pending" && yes("stepsHidden")
+                );
+                checks["stopRun"] = json!(yes("stopPermission") && yes("stopped") && yes("stopCardGone"));
+            }
+            Mode::RealClaude => {
+                let empty = json!({"error": "the real request did not report"});
+                let r = runs.as_ref().unwrap_or(&empty);
+                let state = r.get("state").cloned().unwrap_or(Value::Null);
+                let usage = state.get("usage").filter(|u| u.is_object());
+                let tokens = usage.is_some_and(|u| {
+                    ["outputTokens", "totalTokens", "inputTokens"].iter().any(|k| u.get(*k).is_some_and(Value::is_number))
+                });
+                checks["realNoError"] = json!(r.get("error").is_none());
+                checks["realSent"] =
+                    json!(r.get("available") == Some(&Value::Bool(true)) && r.get("outcome").and_then(Value::as_str) == Some("started"));
+                checks["realCompleted"] = json!(matches!(state.get("status").and_then(Value::as_str), Some("completed" | "idle")));
+                checks["realResultOk"] = json!(r.get("resultBlock").and_then(Value::as_str).is_some());
+                checks["realUsage"] = json!(tokens);
+            }
+        }
         let passed = checks.as_object().is_some_and(|c| c.values().all(|v| v == &Value::Bool(true)));
         let result = json!({
             "passed": passed,
             "checks": checks,
             "probe": probe,
             "browser": browser,
+            "runs": runs,
+            "mode": format!("{:?}", self.mode),
             "host": {"workspaces": workspaces, "panes": panes, "theme": theme, "activeSessionId": active, "language": host.locale.language()},
             "load": self.load,
             "calls": calls,
@@ -307,14 +425,20 @@ impl Smoke {
     /// Fails the smoke when it has no result in time.
     pub fn watch(host: Arc<Host>) {
         std::thread::spawn(move || {
-            std::thread::sleep(TIMEOUT);
+            let Some(timeout) = host.smoke.as_ref().map(Smoke::timeout) else { return };
+            std::thread::sleep(timeout);
             if let Some(smoke) = &host.smoke {
-                let main = smoke.progress().main.clone();
-                let error = json!({"error": format!("no result after {} s", TIMEOUT.as_secs())});
-                match main {
-                    Some(main) => smoke.finish(&host, main, Some(error)),
-                    None => smoke.finish(&host, error, None),
-                }
+                let error = json!({"error": format!("no result after {} s", timeout.as_secs())});
+                let stage = {
+                    let mut progress = smoke.progress();
+                    match progress.stage {
+                        Stage::Main => progress.main = Some(error.clone()),
+                        Stage::Browser => progress.browser = Some(error.clone()),
+                        Stage::Runs => {}
+                    }
+                    progress.stage
+                };
+                smoke.finish(&host, (stage == Stage::Runs).then_some(error));
             }
         });
     }

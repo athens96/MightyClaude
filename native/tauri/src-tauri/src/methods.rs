@@ -13,16 +13,16 @@ use serde_json::{Value, json};
 
 use crate::host::{Host, Registry, Reply, View};
 
-fn text<'a>(args: &'a Value, name: &str) -> Option<&'a str> {
+pub fn text<'a>(args: &'a Value, name: &str) -> Option<&'a str> {
     args.get(name).and_then(Value::as_str)
 }
 
 /// C# `ArgNumber`: a JSON number.
-fn number(args: &Value, name: &str) -> Option<f64> {
+pub fn number(args: &Value, name: &str) -> Option<f64> {
     args.get(name).filter(|v| v.is_number()).and_then(Value::as_f64)
 }
 
-fn flag(args: &Value, name: &str) -> bool {
+pub fn flag(args: &Value, name: &str) -> bool {
     args.get(name) == Some(&Value::Bool(true))
 }
 
@@ -267,6 +267,19 @@ pub fn registry() -> Registry {
     });
     methods.add("renameCheck", |host: Arc<Host>, args| async move { Ok(rename_check(&host.locale, text(&args, "text").unwrap_or(""))) });
     crate::surface::register(&mut methods);
+    crate::composer::register(&mut methods);
+    crate::cards::register(&mut methods);
+    crate::mighty::register(&mut methods);
+    methods.add("openUrl", |_host: Arc<Host>, args| async move {
+        // C# `openUrl`: an http, https or mailto address, to the user's default handler.
+        let Some(url) =
+            text(&args, "url").filter(|u| ["http://", "https://", "mailto:"].iter().any(|s| u.to_ascii_lowercase().starts_with(s)))
+        else {
+            return Ok(Value::Null);
+        };
+        crate::platform::open_url(url)?;
+        Ok(Value::Null)
+    });
     methods
 }
 
