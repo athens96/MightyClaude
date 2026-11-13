@@ -57,6 +57,8 @@ enum Stage {
     Terminal,
     /// The files pane, an HTML frame, the reference bubble and the picture viewer (smoke_files.rs).
     Files,
+    /// The work map and the resume list (smoke_history.rs).
+    History,
     Runs,
 }
 
@@ -159,6 +161,7 @@ struct Progress {
     browser: Option<Value>,
     terminal: Option<Value>,
     files: Option<Value>,
+    history: Option<Value>,
     finished: bool,
 }
 
@@ -185,8 +188,9 @@ impl Smoke {
 
     fn timeout(&self) -> Duration {
         Duration::from_secs(match self.mode {
-            Mode::Page => 150,
-            Mode::FakeClaude => 300,
+            // The terminal step and the history step (smoke_history.rs) add up to a minute each.
+            Mode::Page => 210,
+            Mode::FakeClaude => 360,
             Mode::RealClaude => 420,
         })
     }
@@ -251,6 +255,7 @@ impl Smoke {
                 Stage::Browser => progress.browser = Some(probe.clone()),
                 Stage::Terminal => progress.terminal = Some(probe.clone()),
                 Stage::Files => progress.files = Some(probe.clone()),
+                Stage::History => progress.history = Some(probe.clone()),
                 Stage::Runs => {}
             }
             progress.stage
@@ -264,7 +269,12 @@ impl Smoke {
             Stage::Main if self.mode != Mode::RealClaude && self.start_browser(host) => Some(Stage::Browser),
             Stage::Main | Stage::Browser if self.mode != Mode::RealClaude && self.start_terminal(host) => Some(Stage::Terminal),
             Stage::Main | Stage::Browser | Stage::Terminal if self.mode != Mode::RealClaude && self.start_files(host) => Some(Stage::Files),
-            Stage::Main | Stage::Browser | Stage::Terminal | Stage::Files if self.start_runs(host) => Some(Stage::Runs),
+            Stage::Main | Stage::Browser | Stage::Terminal | Stage::Files
+                if self.mode != Mode::RealClaude && crate::smoke_history::start(host) =>
+            {
+                Some(Stage::History)
+            }
+            Stage::Main | Stage::Browser | Stage::Terminal | Stage::Files | Stage::History if self.start_runs(host) => Some(Stage::Runs),
             _ => None,
         };
         match next {
@@ -359,7 +369,7 @@ impl Smoke {
 
     /// Writes the result (once) and, with `--smoke-exit`, quits.
     pub fn finish(&self, host: &Host, runs: Option<Value>) {
-        let (calls, probe, browser, main_active, terminal, files) = {
+        let (calls, probe, browser, main_active, terminal, files, history) = {
             let mut progress = self.progress();
             if progress.finished {
                 return;
@@ -373,6 +383,7 @@ impl Smoke {
                 progress.main_active.clone(),
                 progress.terminal.clone(),
                 progress.files.clone(),
+                progress.history.clone(),
             )
         };
         let (snapshot_sent, shell_sent) = {
@@ -419,6 +430,10 @@ impl Smoke {
         if self.mode != Mode::RealClaude {
             let empty = json!({"error": "the files steps did not report"});
             for (name, passed) in crate::smoke_files::checks(host, files.as_ref().unwrap_or(&empty)) {
+                checks[name] = json!(passed);
+            }
+            let missing = json!({"error": "the history step did not report"});
+            for (name, passed) in crate::smoke_history::checks(history.as_ref().unwrap_or(&missing)) {
                 checks[name] = json!(passed);
             }
         }
@@ -470,6 +485,7 @@ impl Smoke {
             "terminal": terminal,
             "files": files,
             "framesServed": crate::smoke_files::served(host),
+            "history": history,
             "runs": runs,
             "mode": format!("{:?}", self.mode),
             "host": {"workspaces": workspaces, "panes": panes, "theme": theme, "activeSessionId": active, "language": host.locale.language()},
@@ -506,6 +522,7 @@ impl Smoke {
                         Stage::Browser => progress.browser = Some(error.clone()),
                         Stage::Terminal => progress.terminal = Some(error.clone()),
                         Stage::Files => progress.files = Some(error.clone()),
+                        Stage::History => progress.history = Some(error.clone()),
                         Stage::Runs => {}
                     }
                     progress.stage

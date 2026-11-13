@@ -5,8 +5,9 @@
 //! page's thread and handed back (`LookThroughResultFiles`); a step's pictures and a log picture are read from the picture cache, the
 //! workspace or the inline data (`mightyImages`, `imageData`).
 //!
-//! What lives in later stages comes in empty (`Sources`): the session record's older requests and history words (W4), the Ouroboros
-//! dashboard (`NoDashboard`), the background output tails, the custom agents' definitions and the guided style (W9).
+//! The session record's older requests and the history block's words come from history.rs (`mightyLoadOlder` reads the next chunk).
+//! What lives in later stages comes in empty (`Sources`): the Ouroboros dashboard (`NoDashboard`), the background output tails, the
+//! custom agents' definitions and the guided style (W9).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -65,9 +66,11 @@ fn projection(host: &Host, view: &mut View, pane: &RunSession) -> Option<MightyP
     let tails = HashMap::new();
     let definitions = HashMap::new();
     let locator = locate;
+    // The session record's older requests and the history block's words (history.rs, C# `GraphHistoryRuns`).
+    let (older, history) = crate::history::older(host, view, pane);
     let sources = Sources {
-        older: &[],
-        history: None,
+        older: &older,
+        history,
         pending_plan,
         executions: &[],
         dashboard: &NoDashboard,
@@ -156,7 +159,8 @@ pub fn register(methods: &mut Registry) {
         };
         let node = text(&args, "nodeId").unwrap_or("").to_string();
         let target = text(&args, "target").unwrap_or("block").to_string();
-        let next = panes::ui(&mut view, &id)?.mighty.save_size(&pane, &node, &target, size, &[]);
+        let older = crate::history::loaded(&host, &pane);
+        let next = panes::ui(&mut view, &id)?.mighty.save_size(&pane, &node, &target, size, &older);
         if let Some(next) = next {
             change(&mut view, &id, |_| next)?;
         }
@@ -179,14 +183,11 @@ pub fn register(methods: &mut Registry) {
         dirty(&mut view, &id);
         Ok(Value::Null)
     });
-    // LoadOlderGraphHistory: the session record reader is W4's; the request it would read is known, and the view is marked.
+    // LoadOlderGraphHistory: the next older chunk of the session record, read off the page's thread (history.rs).
     methods.add("mightyLoadOlder", |host: Arc<Host>, args| async move {
         let mut view = host.view();
         let id = ensure(&mut view, text(&args, "paneId"))?;
-        let pane = session(&view, &id)?;
-        if let Some(request) = MightyPane::load_older(&pane, root_of(&view, &pane).as_deref()) {
-            host.log.line(&format!("mightyLoadOlder: the session record ({} {}) is read from W4 on", request.provider, request.resume_id));
-        }
+        crate::history::load_older(&host, &mut view, &id);
         dirty(&mut view, &id);
         Ok(Value::Null)
     });
@@ -199,9 +200,10 @@ pub fn register(methods: &mut Registry) {
             (pane, root)
         };
         let locator = locate;
+        let older = crate::history::loaded(&host, &pane);
         let Some(page) = MightyPane::images(
             &pane,
-            &[],
+            &older,
             text(&args, "runId").unwrap_or(""),
             text(&args, "step").unwrap_or(""),
             flag(&args, "expanded"),

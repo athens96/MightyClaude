@@ -10,6 +10,7 @@ mod cards;
 mod composer;
 mod delta;
 mod files;
+mod history;
 mod host;
 mod logfile;
 mod methods;
@@ -19,10 +20,12 @@ mod platform;
 mod runs;
 mod smoke;
 mod smoke_files;
+mod smoke_history;
 mod smoke_runs;
 mod smoke_terminal;
 mod surface;
 mod terminal;
+mod workmap;
 
 use std::sync::Arc;
 
@@ -207,7 +210,8 @@ fn main() {
             smoke_probe,
             smoke::smoke_surface,
             smoke_runs::smoke_step,
-            smoke_terminal::smoke_terminal
+            smoke_terminal::smoke_terminal,
+            smoke_history::smoke_history
         ])
         // HTML previews' folders, each under a host of its own, for the page's sandboxed frame (files.rs).
         .register_asynchronous_uri_scheme_protocol(files::PROTOCOL, files::protocol)

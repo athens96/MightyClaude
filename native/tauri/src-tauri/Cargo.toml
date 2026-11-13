@@ -24,6 +24,8 @@ mighty-graph.workspace = true
 mighty-platform.workspace = true
 mighty-run.workspace = true
 mighty-terminal.workspace = true
+mighty-history.workspace = true
+mighty-workmap.workspace = true
 indexmap.workspace = true
 base64 = "0.22"
 # pickAttachments: the OS's file picker (C# FileOpenPicker), Rust-side only (no page permission).

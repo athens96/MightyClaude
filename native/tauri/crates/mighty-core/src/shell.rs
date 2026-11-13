@@ -1086,7 +1086,7 @@ fn host_with_os(locale: &Locale, host: &str, platform: Option<&str>) -> String {
 }
 
 /// C# `WorkDashboard.Ordered`: waiting, running, failed, done, stopped, idle; the newest first within each.
-fn ordered<'a>(mut cards: Vec<Card<'a>>) -> Vec<Card<'a>> {
+pub fn ordered<'a>(mut cards: Vec<Card<'a>>) -> Vec<Card<'a>> {
     cards.sort_by(|a, b| {
         let rank = Tone::of(&a.display_status).rank().cmp(&Tone::of(&b.display_status).rank());
         let newer = match (a.updated_at, b.updated_at) {
