@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::{BoxFuture, Result};
 
@@ -114,10 +115,54 @@ pub trait NativeSurface: Send + Sync {
     fn close(&self) -> Result<()>;
 }
 
-/// A browser pane's view. Back/forward state, popups, downloads and per-workspace profiles are W4's.
+/// What a browser view tells its host as it browses (the engine's events C#'s pane follows, MainWindow.WebShell.Panes.cs:385-395).
+/// Sent on the OS's UI thread: a listener must not block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BrowserEvent {
+    /// A navigation ended: the address the engine reports (else the one it started with) and whether it succeeded. The host's
+    /// history follows these (C# `BrowserHistory.Visit` on `NavigationCompleted`).
+    Navigated { url: Option<String>, success: bool },
+    /// The page asked for a new window (`window.open`, a link to one): refused, nothing opened.
+    PopupRefused,
+    /// A download started: cancelled.
+    DownloadRefused,
+    /// The view took the keyboard (a press in the page): its pane becomes the active one.
+    Focused,
+}
+
+/// Where a browser view sends its [`BrowserEvent`]s.
+#[derive(Clone)]
+pub struct BrowserListener(Arc<dyn Fn(BrowserEvent) + Send + Sync>);
+
+impl BrowserListener {
+    pub fn new(listener: impl Fn(BrowserEvent) + Send + Sync + 'static) -> BrowserListener {
+        BrowserListener(Arc::new(listener))
+    }
+
+    pub fn send(&self, event: BrowserEvent) {
+        (self.0)(event);
+    }
+}
+
+impl std::fmt::Debug for BrowserListener {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("BrowserListener")
+    }
+}
+
+impl PartialEq for BrowserListener {
+    fn eq(&self, other: &BrowserListener) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for BrowserListener {}
+
+/// A browser pane's view: it refuses popups and downloads, shows no script dialog, and tells its listener where it went.
 pub trait BrowserSurface: NativeSurface {
     /// Loads `url` (already resolved: C# `BrowserAddress.Resolve`).
     fn navigate(&self, url: &str) -> Result<()>;
+    /// The engine's own back and forward (C# `CoreWebView2.GoBack`/`GoForward`); the host's history moves with them.
     fn go_back(&self) -> Result<()>;
     fn go_forward(&self) -> Result<()>;
     fn reload(&self) -> Result<()>;
@@ -147,10 +192,12 @@ pub struct BrowserOptions {
     pub pane_id: String,
     /// The first address.
     pub url: String,
-    /// Where its web data lives (cookies, storage): per workspace in W4, one folder per profile for now.
+    /// Where its web data lives (cookies, storage): its workspace's profile (C# `BrowserProfile`), shared by that workspace's panes.
     pub data_dir: PathBuf,
     /// The slot it opens over (it opens shown).
     pub bounds: DeviceRect,
+    /// Where its events go, from before its first address loads.
+    pub listener: Option<BrowserListener>,
 }
 
 #[derive(Clone, PartialEq, Eq)]

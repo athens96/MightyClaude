@@ -2,20 +2,37 @@
 //! (C# `MainWindow.WebShell.Panes.cs`, which places a child WebView2 by `browserBounds`). The slot comes in device pixels and
 //! Tauri takes physical pixels, so the rectangle goes through unchanged.
 //!
-//! W1 makes navigation, placement, hiding and closing work. Back/forward state, popups, downloads, per-workspace profiles and the
-//! picture shown while a page overlay hides the view are W4's (`snapshot` answers None until then).
+//! As C#'s `StartWebBrowserAsync` sets its engine up: new windows are refused, downloads cancelled, script dialogs never shown, and the
+//! engine's own navigation events tell the host where the view went (`NavigationCompleted`: the address the engine reports, else the
+//! one the navigation started with, and whether it succeeded); back and forward are the engine's; a press in the page reports the view
+//! focused. The picture a page overlay shows in the view's place is the engine's `CapturePreview` (PNG). Each workspace's panes share
+//! one web profile (`BrowserOptions::data_dir`, the host's `BrowserProfile` folder).
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
+use base64::Engine as _;
 use mighty_platform::{
-    BoxFuture, BrowserOptions, BrowserSurface, DeviceRect, Drawing, NativeSurface, PetWindow, PlatformError, Result, SurfaceFactory,
-    SurfaceKind, SurfaceState, TerminalOptions, TerminalSurface,
+    BoxFuture, BrowserEvent, BrowserListener, BrowserOptions, BrowserSurface, DeviceRect, Drawing, NativeSurface, PetWindow, PlatformError,
+    Result, SurfaceFactory, SurfaceKind, SurfaceState, TerminalOptions, TerminalSurface,
 };
-use tauri::webview::WebviewBuilder;
+use tauri::webview::{DownloadEvent, NewWindowResponse, WebviewBuilder};
 use tauri::{PhysicalPosition, PhysicalSize, Rect, Url, Webview, WebviewUrl, Window};
-use windows::Win32::Foundation::{HWND, POINT, RECT};
+use webview2_com::Microsoft::Web::WebView2::Win32::{COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG, ICoreWebView2Controller};
+use webview2_com::{
+    CapturePreviewCompletedHandler, FocusChangedEventHandler, NavigationCompletedEventHandler, NavigationStartingEventHandler,
+    ScriptDialogOpeningEventHandler, take_pwstr,
+};
+use windows::Win32::Foundation::{HGLOBAL, HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::MapWindowPoints;
+use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
+use windows::Win32::System::Com::{IStream, STREAM_SEEK_SET};
 use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetParent, IsWindowVisible};
+use windows::core::{BOOL, PWSTR};
+
+/// The address a view is made with before its first one: the engine's events are attached before anything real loads.
+const BLANK: &str = "about:blank";
 
 fn refused(what: &str, error: impl std::fmt::Display) -> PlatformError {
     PlatformError::Refused(format!("{what}: {error}"))
@@ -40,6 +57,83 @@ fn label(pane_id: &str, serial: u64) -> String {
     format!("browser-{pane}-{serial}")
 }
 
+/// Runs `work` on the UI thread that owns the view's WebView2 and waits for its answer.
+async fn on_ui<T: Send + 'static>(
+    webview: &Webview,
+    what: &str,
+    work: impl FnOnce(&ICoreWebView2Controller) -> windows::core::Result<T> + Send + 'static,
+) -> Result<T> {
+    let (sender, answer) = tokio::sync::oneshot::channel();
+    webview
+        .with_webview(move |platform| {
+            let _ = sender.send(work(&platform.controller()));
+        })
+        .map_err(|error| refused(what, error))?;
+    answer.await.map_err(|error| refused(what, error))?.map_err(|error| refused(what, error))
+}
+
+/// C# `StartWebBrowserAsync`'s engine settings and events: script dialogs off and dismissed, navigations reported to `listener`
+/// (each by the address the engine reports, else the one it started with), and the view's focus.
+///
+/// # Safety
+/// On the UI thread that owns `controller`.
+unsafe fn attach(controller: &ICoreWebView2Controller, listener: Option<BrowserListener>) -> windows::core::Result<()> {
+    unsafe {
+        let core = controller.CoreWebView2()?;
+        core.Settings()?.SetAreDefaultScriptDialogsEnabled(false)?;
+        let mut token = 0i64;
+        // With the default dialogs off a handler that never accepts dismisses every alert, confirm and prompt.
+        core.add_ScriptDialogOpening(&ScriptDialogOpeningEventHandler::create(Box::new(|_, _| Ok(()))), &mut token)?;
+        let Some(listener) = listener else { return Ok(()) };
+        let started: Arc<Mutex<HashMap<u64, String>>> = Arc::default();
+        let starting = started.clone();
+        core.add_NavigationStarting(
+            &NavigationStartingEventHandler::create(Box::new(move |_, args| {
+                if let Some(args) = args {
+                    let mut id = 0u64;
+                    args.NavigationId(&mut id)?;
+                    let mut uri = PWSTR::null();
+                    args.Uri(&mut uri)?;
+                    starting.lock().unwrap_or_else(|p| p.into_inner()).insert(id, take_pwstr(uri));
+                }
+                Ok(())
+            })),
+            &mut token,
+        )?;
+        let navigated = listener.clone();
+        core.add_NavigationCompleted(
+            &NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
+                let Some(args) = args else { return Ok(()) };
+                let mut id = 0u64;
+                args.NavigationId(&mut id)?;
+                let mut success = BOOL::default();
+                args.IsSuccess(&mut success)?;
+                let begun = started.lock().unwrap_or_else(|p| p.into_inner()).remove(&id);
+                let source = match sender {
+                    Some(engine) => {
+                        let mut source = PWSTR::null();
+                        engine.Source(&mut source)?;
+                        take_pwstr(source)
+                    }
+                    None => String::new(),
+                };
+                let url = if source.is_empty() { begun } else { Some(source) };
+                navigated.send(BrowserEvent::Navigated { url, success: success.as_bool() });
+                Ok(())
+            })),
+            &mut token,
+        )?;
+        controller.add_GotFocus(
+            &FocusChangedEventHandler::create(Box::new(move |_, _| {
+                listener.send(BrowserEvent::Focused);
+                Ok(())
+            })),
+            &mut token,
+        )?;
+        Ok(())
+    }
+}
+
 impl SurfaceFactory for WebviewSurfaces {
     fn drawing(&self, kind: SurfaceKind) -> Drawing {
         match kind {
@@ -53,11 +147,29 @@ impl SurfaceFactory for WebviewSurfaces {
             let url = Url::parse(&options.url).map_err(|error| PlatformError::Invalid(format!("address: {error}")))?;
             let label = label(&options.pane_id, self.next.fetch_add(1, Ordering::Relaxed));
             let window = self.window.clone();
-            let BrowserOptions { data_dir, bounds, .. } = options;
+            let BrowserOptions { data_dir, bounds, listener, .. } = options;
+            let (popups, downloads) = (listener.clone(), listener.clone());
             // add_child waits for the UI thread: never on the UI thread itself, never on an async worker.
             let webview = tauri::async_runtime::spawn_blocking(move || {
-                // Its own WebView2 data: never the page's (whose environment options differ) and never the C# app's.
-                let builder = WebviewBuilder::new(label, WebviewUrl::External(url)).data_directory(data_dir).focused(false);
+                // Its own WebView2 data: never the page's (whose environment options differ) and never the C# app's. No remote
+                // debugging port, no extra arguments; a new window or a download is refused and the host hears of it.
+                let builder = WebviewBuilder::new(label, WebviewUrl::External(Url::parse(BLANK).expect("about:blank")))
+                    .data_directory(data_dir)
+                    .focused(false)
+                    .on_new_window(move |_, _| {
+                        if let Some(listener) = &popups {
+                            listener.send(BrowserEvent::PopupRefused);
+                        }
+                        NewWindowResponse::Deny
+                    })
+                    .on_download(move |_, event| {
+                        if matches!(event, DownloadEvent::Requested { .. })
+                            && let Some(listener) = &downloads
+                        {
+                            listener.send(BrowserEvent::DownloadRefused);
+                        }
+                        false
+                    });
                 window.add_child(
                     builder,
                     PhysicalPosition::new(bounds.x, bounds.y),
@@ -67,6 +179,11 @@ impl SurfaceFactory for WebviewSurfaces {
             .await
             .map_err(|error| refused("the browser view", error))?
             .map_err(|error| refused("the browser view", error))?;
+            // SAFETY: on_ui runs the closure on the UI thread that owns the controller.
+            on_ui(&webview, "the browser engine", move |controller| unsafe { attach(controller, listener) }).await?;
+            if url.as_str() != BLANK {
+                webview.navigate(url).map_err(|error| refused("navigate", error))?;
+            }
             Ok(Box::new(WebviewBrowser { webview }) as Box<dyn BrowserSurface>)
         })
     }
@@ -85,6 +202,26 @@ struct WebviewBrowser {
     webview: Webview,
 }
 
+/// Everything an `IStream` holds, from its start.
+///
+/// # Safety
+/// On the thread that made the stream.
+unsafe fn read_stream(stream: &IStream) -> windows::core::Result<Vec<u8>> {
+    unsafe {
+        stream.Seek(0, STREAM_SEEK_SET, None)?;
+        let mut bytes = Vec::new();
+        let mut buffer = vec![0u8; 65_536];
+        loop {
+            let mut read = 0u32;
+            stream.Read(buffer.as_mut_ptr().cast(), buffer.len() as u32, Some(&mut read as *mut u32)).ok()?;
+            if read == 0 {
+                return Ok(bytes);
+            }
+            bytes.extend_from_slice(&buffer[..read as usize]);
+        }
+    }
+}
+
 impl NativeSurface for WebviewBrowser {
     fn place(&self, rect: DeviceRect) -> Result<()> {
         let bounds =
@@ -100,37 +237,57 @@ impl NativeSurface for WebviewBrowser {
         self.webview.set_focus().map_err(|error| refused("focus", error))
     }
 
+    /// The engine's `CapturePreview` as a PNG `data:` URL: what the page shows in the slot while an overlay hides the view.
     fn snapshot(&self) -> BoxFuture<'_, Result<Option<String>>> {
-        Box::pin(async { Ok(None) })
+        Box::pin(async move {
+            let (sender, answer) = tokio::sync::oneshot::channel::<windows::core::Result<Vec<u8>>>();
+            let sender = Arc::new(Mutex::new(Some(sender)));
+            let started = sender.clone();
+            on_ui(&self.webview, "snapshot", move |controller| {
+                // SAFETY: on the UI thread that owns the controller; the stream lives in the completion closure until it is read.
+                unsafe {
+                    let stream = CreateStreamOnHGlobal(HGLOBAL::default(), true)?;
+                    let kept = stream.clone();
+                    let handler = CapturePreviewCompletedHandler::create(Box::new(move |result| {
+                        let picture = result.and_then(|()| read_stream(&kept));
+                        if let Some(sender) = started.lock().unwrap_or_else(|p| p.into_inner()).take() {
+                            let _ = sender.send(picture);
+                        }
+                        Ok(())
+                    }));
+                    controller.CoreWebView2()?.CapturePreview(COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG, &stream, &handler)
+                }
+            })
+            .await?;
+            let png = tokio::time::timeout(std::time::Duration::from_secs(2), answer)
+                .await
+                .map_err(|error| refused("snapshot", error))?
+                .map_err(|error| refused("snapshot", error))?
+                .map_err(|error| refused("snapshot", error))?;
+            drop(sender);
+            Ok((!png.is_empty()).then(|| format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png))))
+        })
     }
 
     /// What Windows says, not what was last asked, read on the UI thread: the WebView2 controller's host window (wry's child
     /// HWND) in the main window's client coordinates, shown only when that window is visible and the controller is too.
     fn inspect(&self) -> BoxFuture<'_, Result<SurfaceState>> {
         Box::pin(async move {
-            let (sender, answer) = tokio::sync::oneshot::channel();
-            self.webview
-                .with_webview(move |platform| {
-                    let controller = platform.controller();
-                    // SAFETY: the controller's and its window's getters, on the UI thread that owns them, into locals.
-                    let read = unsafe {
-                        (|| {
-                            let mut window = HWND::default();
-                            controller.ParentWindow(&mut window)?;
-                            let mut client = RECT::default();
-                            GetClientRect(window, &mut client)?;
-                            let mut origin = [POINT { x: client.left, y: client.top }];
-                            MapWindowPoints(Some(window), Some(GetParent(window)?), &mut origin);
-                            let mut visible = windows::core::BOOL::default();
-                            controller.IsVisible(&mut visible)?;
-                            Ok::<_, windows::core::Error>((origin[0], client, IsWindowVisible(window).as_bool() && visible.as_bool()))
-                        })()
-                    };
-                    let _ = sender.send(read);
-                })
-                .map_err(|error| refused("inspect", error))?;
-            let (origin, client, visible) =
-                answer.await.map_err(|error| refused("inspect", error))?.map_err(|error| refused("inspect", error))?;
+            let (origin, client, visible) = on_ui(&self.webview, "inspect", |controller| {
+                // SAFETY: the controller's and its window's getters, on the UI thread that owns them, into locals.
+                unsafe {
+                    let mut window = HWND::default();
+                    controller.ParentWindow(&mut window)?;
+                    let mut client = RECT::default();
+                    GetClientRect(window, &mut client)?;
+                    let mut origin = [POINT { x: client.left, y: client.top }];
+                    MapWindowPoints(Some(window), Some(GetParent(window)?), &mut origin);
+                    let mut visible = BOOL::default();
+                    controller.IsVisible(&mut visible)?;
+                    Ok((origin[0], client, IsWindowVisible(window).as_bool() && visible.as_bool()))
+                }
+            })
+            .await?;
             let bounds = DeviceRect {
                 x: origin.x,
                 y: origin.y,
@@ -153,16 +310,35 @@ impl BrowserSurface for WebviewBrowser {
     }
 
     fn go_back(&self) -> Result<()> {
-        self.webview.eval("history.back()").map_err(|error| refused("back", error))
+        self.webview
+            .with_webview(|platform| {
+                // SAFETY: on the UI thread that owns the controller.
+                let _ = unsafe { platform.controller().CoreWebView2().and_then(|core| core.GoBack()) };
+            })
+            .map_err(|error| refused("back", error))
     }
 
     fn go_forward(&self) -> Result<()> {
-        self.webview.eval("history.forward()").map_err(|error| refused("forward", error))
+        self.webview
+            .with_webview(|platform| {
+                // SAFETY: on the UI thread that owns the controller.
+                let _ = unsafe { platform.controller().CoreWebView2().and_then(|core| core.GoForward()) };
+            })
+            .map_err(|error| refused("forward", error))
     }
 
     fn reload(&self) -> Result<()> {
         self.webview.reload().map_err(|error| refused("reload", error))
     }
+}
+
+/// C# `WebView2RuntimeLocator.GetRuntimeVersion`: the installed Evergreen runtime's version, or none.
+pub fn runtime_version() -> Option<String> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::GetAvailableCoreWebView2BrowserVersionString;
+    let mut version = PWSTR::null();
+    // SAFETY: a null folder asks for the installed runtime; the version string is the caller's to free (take_pwstr frees it).
+    unsafe { GetAvailableCoreWebView2BrowserVersionString(windows::core::PCWSTR::null(), &mut version) }.ok()?;
+    Some(take_pwstr(version)).filter(|v| !v.is_empty())
 }
 
 #[cfg(test)]
@@ -173,5 +349,10 @@ mod tests {
     fn labels_are_tauri_labels_and_unique() {
         assert_eq!(label("a1:b/c", 3), "browser-a1_b_c-3");
         assert_ne!(label("p", 1), label("p", 2));
+    }
+
+    #[test]
+    fn this_computer_has_a_webview2_runtime() {
+        assert!(super::runtime_version().is_some(), "the app's own page needs one");
     }
 }

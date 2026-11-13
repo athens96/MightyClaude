@@ -34,6 +34,8 @@ pub mod user_environment;
 #[cfg(windows)]
 mod variables;
 #[cfg(windows)]
+pub mod webview2_install;
+#[cfg(windows)]
 mod win;
 
 #[cfg(windows)]
@@ -47,7 +49,7 @@ mod imp {
     use mighty_platform::unsupported::Unsupported;
     use mighty_platform::{AppPaths, Paths, Platform, PlatformProfile, Result, SurfaceFactory};
 
-    pub use crate::browser::WebviewSurfaces;
+    pub use crate::browser::{WebviewSurfaces, runtime_version as browser_runtime};
     pub use crate::cli::{CliRunResult, CliRunner};
     pub use crate::dpapi::{DpapiVault, FOLDER as REMOTE_KEYS_FOLDER, file_name as remote_key_file_name};
     pub use crate::environment::{CliEnvironmentSnapshot, WindowsShellEnvironment};
@@ -55,6 +57,7 @@ mod imp {
     pub use crate::process::{KILLED_EXIT_CODE, WindowsProcessHost};
     pub use crate::pty::WindowsPtyHost;
     pub use crate::variables::Variables;
+    pub use crate::webview2_install::{download_bootstrapper, is_microsoft_signed, run_installer};
 
     /// The folders of the app before its rename, under `%APPDATA%` (C# `Program.cs`, `RenameMigration`).
     pub const LEGACY_FOLDERS: [&str; 2] = ["MightyClaude", "mighty-claude"];
@@ -77,6 +80,52 @@ mod imp {
             ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), target.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL)
         };
         // ShellExecute's result is greater than 32 when it succeeded.
+        if done as isize > 32 { Ok(()) } else { Err(std::io::Error::last_os_error().to_string()) }
+    }
+
+    /// .NET's `PasteArguments.AppendArgument` (what `ProcessStartInfo.ArgumentList` writes): an argument as it stands when it has no
+    /// blank or quote, else quoted with the quotes and the backslashes before them escaped.
+    pub fn quoted_argument(argument: &str) -> String {
+        if !argument.is_empty() && !argument.contains([' ', '\t', '"']) {
+            return argument.to_string();
+        }
+        let mut quoted = String::from('"');
+        let mut slashes = 0;
+        for c in argument.chars() {
+            match c {
+                '\\' => slashes += 1,
+                '"' => {
+                    quoted.push_str(&"\\".repeat(slashes * 2 + 1));
+                    quoted.push('"');
+                    slashes = 0;
+                }
+                other => {
+                    quoted.push_str(&"\\".repeat(slashes));
+                    quoted.push(other);
+                    slashes = 0;
+                }
+            }
+        }
+        quoted.push_str(&"\\".repeat(slashes * 2));
+        quoted.push('"');
+        quoted
+    }
+
+    /// C# `ShowWorkspaceInExplorer` (MainWindow.Navigation.cs:330): `%WINDIR%\explorer.exe <folder>`, started by the shell (Explorer
+    /// hands the folder to the running shell and is never the app's child).
+    pub fn show_in_explorer(folder: &std::path::Path) -> std::result::Result<(), String> {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let windows = std::env::var_os("SystemRoot").or_else(|| std::env::var_os("windir")).ok_or("no Windows folder is known")?;
+        let explorer = std::path::Path::new(&windows).join("explorer.exe");
+        let wide = |text: &std::ffi::OsStr| text.encode_wide().chain(std::iter::once(0)).collect::<Vec<u16>>();
+        let (verb, program) = (wide("open".as_ref()), wide(explorer.as_os_str()));
+        let argument = wide(quoted_argument(&folder.to_string_lossy()).as_ref());
+        // SAFETY: NUL-terminated strings that live across the call; the other pointers are null as documented.
+        let done = unsafe {
+            ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), program.as_ptr(), argument.as_ptr(), std::ptr::null(), SW_SHOWNORMAL)
+        };
         if done as isize > 32 { Ok(()) } else { Err(std::io::Error::last_os_error().to_string()) }
     }
 
@@ -138,6 +187,16 @@ mod imp {
             let (separator, sizes) = number_grouping().expect("Windows names the user's number format");
             assert!(separator.encode_utf16().count() <= 4, "a separator, not a sentence: {separator:?}");
             assert!(!sizes.is_empty() && sizes.iter().all(|size| *size <= 9), "group sizes {sizes:?}");
+        }
+
+        /// .NET's `ArgumentList` quoting, which C# hands Explorer the folder with.
+        #[test]
+        fn arguments_are_quoted_as_dotnet_quotes_them() {
+            assert_eq!(quoted_argument(r"C:\Work\app"), r"C:\Work\app");
+            assert_eq!(quoted_argument(r"C:\My Work\app"), r#""C:\My Work\app""#);
+            assert_eq!(quoted_argument(r"C:\My Work\"), r#""C:\My Work\\""#, "a closing backslash doubled before the quote");
+            assert_eq!(quoted_argument(r#"a"b"#), r#""a\"b""#);
+            assert_eq!(quoted_argument(""), r#""""#);
         }
 
         #[test]
