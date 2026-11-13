@@ -4,6 +4,10 @@
 #   .\native\tauri\scripts\smoke.ps1 -Language ko            the same in Korean
 #   .\native\tauri\scripts\smoke.ps1 -Profile <folder>       an existing profile, read-only: the result and the logs go to -Out,
 #                                                            and workspace-state.json's hash and time are compared before/after
+#   .\native\tauri\scripts\smoke.ps1 -NoRuns                  without the run steps (the composer, cards and Mighty steps run a
+#                                                            stand-in Claude, mighty-run's mighty-fake-cli, unless this is given)
+#   .\native\tauri\scripts\smoke.ps1 -RealClaude              one real request to the installed claude CLI instead of the run steps
+#                                                            (a new demo profile, writes off, a temporary workspace folder)
 #
 # Exits with the app's code: 0 when the smoke passed.
 param(
@@ -11,7 +15,9 @@ param(
     [string]$Language = 'en',
     [string]$Profile,
     [string]$Out,
-    [int]$RemoteDebuggingPort = 0
+    [int]$RemoteDebuggingPort = 0,
+    [switch]$NoRuns,
+    [switch]$RealClaude
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'env.ps1')
@@ -42,6 +48,15 @@ function Listing { Get-ChildItem -Force $Profile | ForEach-Object { $_.Name } | 
 
 $before = Fingerprint; $namesBefore = Listing
 $arguments = @('--smoke-test', '--smoke-exit', '--profile', $Profile, '--smoke-out', $result)
+if ($RealClaude) {
+    $arguments += '--smoke-real-claude'
+} elseif (-not $NoRuns) {
+    # The run steps' stand-in Claude: mighty-run's fake CLI in its --replay-cli mode (asks a permission and a plan, then replays).
+    Push-Location (Join-Path $PSScriptRoot '..')
+    try { cargo build -q -p mighty-run --bin mighty-fake-cli; if ($LASTEXITCODE -ne 0) { throw 'building mighty-fake-cli failed' } }
+    finally { Pop-Location }
+    $arguments += @('--smoke-fake-cli', (Resolve-Path (Join-Path (Split-Path $Exe) 'mighty-fake-cli.exe')).Path)
+}
 if ($readOnly) { $arguments += @('--log-dir', (Join-Path $Out 'tauri-logs')) }
 if ($RemoteDebuggingPort -gt 0) { $arguments += @('--remote-debugging-port', "$RemoteDebuggingPort") }
 $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -66,7 +81,7 @@ if (-not $readOnly) {
     # folder name>) goes with it.
     $name = $Profile -replace '[^A-Za-z0-9-]', '_'
     if ($name.Length -gt 80) { $name = $name.Substring($name.Length - 80) }
-    foreach ($kind in 'webview', 'browser') {
+    foreach ($kind in 'webview', 'browser', 'image-cache') {
         Remove-Item -Recurse -Force (Join-Path $env:LOCALAPPDATA "dev.mightycode.tauri\$kind\$name") -ErrorAction SilentlyContinue
     }
 }
