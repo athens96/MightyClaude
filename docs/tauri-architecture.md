@@ -61,6 +61,34 @@
 
 플랫폼마다 일부러 다르게 동작하는 규칙(예: 플러그인 목록 읽는 중 Mac은 `busy`, Windows는 읽기에 합류; CLI 업데이트 Homebrew ↔ winget)은 `PlatformProfile` 값 하나로 공통 로직에 넘긴다.
 
+### 2.1 포트 목록 (W1에 확정, `native/tauri/crates/mighty-platform`)
+
+계약(무엇을 보장하는지)은 각 trait의 문서 주석에 있고, 가짜 구현은 `mighty_platform::fake`, 아직 없는 구현은 `mighty_platform::unsupported::Unsupported`(모든 동작이 `PlatformError::Unsupported`)다. 공통 로직은 `Platform` 하나(아래 포트 전부 + `profile`)를 받는다. 화면 포트는 창이 있어야 해서 따로(`SurfaceFactory`) 만든다.
+
+| 포트 | 한 줄 |
+|---|---|
+| `Paths` | 데이터 폴더(`%APPDATA%\MightyCode` / `~/Library/Application Support/MightyCode`, `--profile`이면 그 폴더), 이름 바꾸기 전 폴더, 이 기계 전용 폴더(`<local>/<identifier>`), 그 아래 상태 파일·`.bak`·로그·이미지 캐시·웹뷰·브라우저 데이터. 구현은 공통 `AppPaths` 하나에 OS마다 뿌리만 다름 |
+| `ProcessHost` | `spawn(SpawnRequest{program(절대 경로), args, cwd, env(덧씌움), shell_command(Windows `.cmd`용)})` → `Child{stdin, stdout, stderr, control}`. 창 없음, UTF-8, **앱보다 오래 못 삶**(Windows: 일시정지로 만들어 kill-on-close Job에 넣은 뒤 시작; Mac: 프로세스 그룹) |
+| `ChildControl` | `kill`(자식과 그 아래 전부), `wait` → 종료 코드, `close`(kill + 3초 대기 + Job이 빌 때까지 3초) |
+| `capture()` | `ProcessHost` 위의 공통 함수: stdin을 쓰고 닫고, 두 출력을 한도까지 읽고, 시간 넘으면 죽임(Swift `ProcessCapture.run`) |
+| `PtyHost` | `default_shell`, `shell_arguments(shell, command, no_profile)`, `open(PtyRequest{program, args, cwd, env(전체), size})` → `PtySession{output 채널, control}` |
+| `PtyControl` | `write`(64 KiB 이하), `resize`(2–1000 × 1–1000), `process_ids`, `wait`, `close`(Job·콘솔 닫고 마지막 출력까지 읽음) |
+| `ShellEnvironment` | CLI가 시작할 환경: `resolve(workspace, force)`(실패 없음, 4초 한도, 10초 재사용), `current`, `invalidate`. 값은 로그·`Debug`에 안 나옴 |
+| `SecretVault` | `load(id)` → 없거나 못 읽으면 None, `save(id, secret)`, `delete(id)`. Windows는 C# `DpapiRemoteKeyVault`와 같은 파일·엔트로피(바이트 단위로 서로 읽힘), Mac은 Keychain `dev.mightycode.native.remote` |
+| `PrefsStore` | `get/set/remove(key)` → `PrefValue{Int, Text, Bool, Other}`; Windows `HKCU\Software\MightyCode`, Mac UserDefaults `dev.mightycode.native`, 이름은 같음(`delegation.enabled`, `setup.neverShow`, `textScale` …) |
+| `PairingStore` | 휴대폰 페어링 신원(`host_id`, `host_token`, `pairing_key`, 비밀 키, 기기 목록)을 `load`/`save`(한 번에 함께 저장) |
+| `Notifier` | `notify(Notification{title, body, pane_id})`, `on_activated(클릭 → pane id)` |
+| `Firewall` | `read` → 규칙 없음/있음(포트)/못 읽음, `apply(ports)`(빈 목록은 삭제, 관리자 확인) — Mac은 `Unsupported` |
+| `UpdateInstaller` | `install_location`, `hand_off(StagedUpdate, relaunch)`(도우미를 띄우고 돌아옴; 0.4.x `--update-helper` 인자 그대로) |
+| `SurfaceFactory` | 창 하나의 네이티브 뷰: `drawing(kind)` → `web`/`native`, `open_browser(BrowserOptions)`, `open_terminal(TerminalOptions)`, `open_pet()` |
+| `NativeSurface` | `place(DeviceRect)`, `set_visible`, `focus`, `snapshot`(PNG `data:` URL 또는 None), `inspect`(OS가 말하는 실제 위치·보임), `close` |
+| `BrowserSurface` | `NativeSurface` + `navigate(url)`, `go_back`, `go_forward`, `reload` |
+| `TerminalSurface` | `NativeSurface` + `send_text`, `set_font`, `set_theme` (Mac Ghostty, PTY는 뷰가 가짐) |
+| `PetWindow` | `show_at(LogicalRect)`, `hide`, `set_click_through`, `close` |
+| `PlatformProfile` | 값: `os`, `path_style`, `plugin_list_while_reading`(Busy/Join), `cli_updater`(Homebrew/Winget), `settings_store`, `pairing_layout`, `agent_sign_in`, `mcp_transport`, `m1_platform`("win32"/"darwin"), `remote_decodes_request_paths`, `direct_connection_firewall`, `update_needs_public_key`, `build_update_url_wins`, `update_rechecks_sha256`, `auto_update_keys`, `saves_files_pane` |
+
+W1 현재 실제 구현: 양쪽 `Paths`; Windows `PrefsStore` 읽기, `SecretVault`(DPAPI), `SurfaceFactory`의 브라우저(Tauri 자식 웹뷰). 나머지는 `Unsupported`(Windows 프로세스는 W1-C). 어떤 구현을 쓸지는 `src-tauri/src/platform.rs` 한 곳에서 `cfg`로 정한다.
+
 ## 3. NativeSlot: 페이지 위에 네이티브 뷰 올리기
 
 지금 Windows의 브라우저 창이 쓰는 방식(`browserBounds`)을 모든 네이티브 화면으로 넓힌다.
@@ -71,6 +99,23 @@
 4. **가림 처리:** 페이지의 대화 상자·메뉴·팝오버가 슬롯을 덮으면 `occluded:true` → 네이티브 뷰를 숨기고, 숨기기 직전 화면을 이미지로 받아 슬롯에 대신 그린다(깜박임 없이 대화 상자가 위에 보이게). 지금 Windows 브라우저 창이 하는 규칙을 그대로 넓힌 것.
 5. **키보드:** 네이티브 뷰가 포커스를 가진 동안 앱 단축키(⌘T, ⌘K, Ctrl+Tab 등)는 호스트가 받아 페이지로 넘긴다. 포커스를 페이지로 돌려주는 신호(Esc 등 기존 규칙)도 같은 경로.
 6. **메시지:** 터미널·브라우저와 주고받는 내용(입력, 제목, 작업 폴더, 복사·붙여넣기, 주소, 뒤로·앞으로)은 지금의 `terminal`/`browser` push와 메서드를 그대로 쓴다. 웹 터미널이든 Ghostty든 위쪽 규약은 같다.
+
+### 3.1 메시지 모양 (W1에 확정)
+
+| 방향 | 메시지 | 모양 |
+|---|---|---|
+| host → page | `host` | `{kind:'host', platform:'windows'\|'macos', surfaces:{terminal:'web'\|'native', browser:'web'\|'native'}}`. 페이지가 `ready`를 부르면 **스냅샷보다 먼저** 보낸다(그래서 창이 그려질 때 이미 안다). 페이지를 다시 읽으면 다시 보낸다. 지금 값: Windows `{terminal:'web', browser:'native'}`, Mac `{terminal:'native', browser:'native'}` |
+| page → host | `surfaceBounds` | `{paneId, surface:'terminal'\|'browser', rect:{x, y, width, height}, visible, occluded}` → `null`. `rect`는 페이지 왼쪽 위 기준 기기 픽셀(CSS 픽셀 × devicePixelRatio, 바깥쪽으로 정수 반올림 — `slotBounds`와 같은 규칙). 바뀐 때만, 한 프레임에 한 번. 슬롯이 사라지면 `{rect:{0,0,0,0}, visible:false, occluded:false}` |
+| page → host | `surfaceAction` | `{paneId, surface, action:'focus'}` → `null`; `{paneId, surface, action:'snapshot'}` → PNG `data:` URL 또는 `null`(그림을 줄 수 없는 플랫폼, 뷰가 아직 없음) |
+| host → page | `browser` | `{kind:'browser', paneId, state:{status:'starting'\|'ready'\|'disabled'\|'missing'\|'failed', url?, canGoBack, canGoForward}}` (C#과 같음) |
+
+규칙:
+- 호스트는 `visible && !occluded && rect`가 비어 있지 않을 때만 뷰를 그 자리에 보이고, 아니면 숨긴다. 같은 자리면 다시 옮기지 않는다(옮긴 뒤에 보인다 — 예전 자리에서 깜박이지 않게).
+- `occluded`는 브라우저 창의 기존 규칙과 같다: 호스트 흐름의 대화 상자, 페이지가 그리는 호스트 화면(설정·시트), 창 자체의 대화 상자가 열려 있으면 모든 슬롯이 가려지고, 페이지의 메뉴·팝오버·창 안 대화 상자(`data-page-overlay`)는 겹치는 슬롯만 가린다(`slot/bounds.ts` `pageCovers`).
+- 보이던 슬롯이 가려지면 페이지는 `surfaceAction snapshot`을 **먼저** 보내고 `surfaceBounds{occluded:true}`를 보낸다. 호스트는 호출을 순서대로 처리하므로 뷰가 아직 보일 때 그림을 찍고, 그다음 숨긴다. 그림이 오면 슬롯이 가려져 있는 동안만 슬롯 배경으로 그린다(Windows 웹뷰는 W1에서 `null` — W4에서 `CapturePreview`).
+- 뷰는 슬롯이 처음 보일 수 있을 때 열린다(브라우저는 `browserOpen`이 주소를 준 뒤). 페이지를 다시 읽으면 모든 뷰가 숨고 슬롯이 다시 알려질 때 돌아온다. 창(pane)이 상태에서 없어지면 뷰를 닫는다.
+- C# 호스트는 `host`를 보내지 않는다. `host`가 없으면 페이지는 지금 규약(`browserBounds{x,y,width,height,visible}`) 그대로다. 새 페이지 코드는 모두 `import.meta.env.MODE === 'tauri'` 뒤에 있어 C# 빌드(`dist/`)는 바이트 단위로 같다.
+- 브라우저 자식 웹뷰(Windows)는 메인 페이지와 다른 WebView2 데이터 폴더(`<local>/browser/<profile>`)를 쓰고, `host_post`는 메인 웹뷰(`main`)에서 온 것만 받는다.
 
 ## 4. 폴더
 
@@ -92,3 +137,5 @@ native/
 
 ## 5. CI
 W1부터 `native/tauri`를 **Windows와 Mac 둘 다**에서 빌드·테스트한다(공통 crate 테스트는 양쪽에서 같은 결과). Mac 구현이 아직 비어 있어도 공통 로직이 Mac에서 깨지지 않게 하기 위해서다. Mac 네이티브 모듈(Ghostty, CEF)은 Mac 단계에서 채우되, 포트와 NativeSlot 규약은 W1에 확정한다.
+
+`.github/workflows/native-tauri.yml`(`feat/tauri` push, `native/tauri`·페이지를 건드리는 PR): `windows-latest`와 `macos-latest`(arm64)에서 페이지 타입 검사·단위 테스트, `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace`, Tauri 앱 debug 빌드; Windows는 데모 프로필 smoke(브라우저 화면 단계 포함)까지. 0.4.x 워크플로와 따로 돈다.

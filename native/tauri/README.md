@@ -8,10 +8,13 @@ the page asks for stays in memory. The C# app (`native/windows/MightyCode.*`) is
 
 | Path | What |
 |---|---|
-| `Cargo.toml` | The workspace: `crates/mighty-core`, `src-tauri`. |
+| `Cargo.toml` | The workspace: `crates/mighty-core`, `crates/mighty-platform`, `crates/mighty-platform-windows`, `crates/mighty-platform-macos`, `src-tauri`. |
 | `crates/mighty-core` | No Tauri, no OS code. The state models (`model.rs`, C# `Models.cs`), loading (`store.rs`, C# `StateStore.cs`), the page normalize (`normalize.rs`), the locale catalogues (`locale.rs`, the repo's `locales/*.json` embedded), the pane layout rules (`layout.rs`, C# `PaneLayout.cs`), the frame model (`shell.rs`, C# `MainWindow.WebShell.Shell.cs`), the demo state (`demo.rs`). |
 | `crates/mighty-core/examples` | `seed_demo` (a test profile from the help capture's demo), `roundtrip` (checks any state file loads and writes back without loss, read-only). |
-| `src-tauri` | The app. `main.rs` (window, startup), `host.rs` (the bridge), `methods.rs` (the page methods), `smoke.rs` (`--smoke-test`), `args.rs`, `logfile.rs`. |
+| `crates/mighty-platform` | No OS code. The ports (traits) between the shared logic and the OS, each with its contract, a fake of each (`fake.rs`) and `Unsupported` (`unsupported.rs`), and `PlatformProfile`, the deliberate Windows/Mac differences as named values (docs/tauri-architecture.md §2.1). |
+| `crates/mighty-platform-windows` | The Windows ports, everything behind `cfg(windows)`: `Paths`, `RegistryPrefs` (HKCU `Software\MightyCode`, reads), `DpapiVault` (C# `DpapiRemoteKeyVault`'s files, read and written both ways), `WebviewSurfaces` (browser panes as WebView2 child webviews). The rest is `Unsupported` for now. |
+| `crates/mighty-platform-macos` | The Mac ports in Rust, everything behind `cfg(target_os = "macos")`: `Paths`; the surfaces say terminal and browser are native (Ghostty, CEF/WKWebView) but open nothing yet. |
+| `src-tauri` | The app. `main.rs` (window, startup), `host.rs` (the bridge), `methods.rs` (the page methods), `platform.rs` (the one place the OS crate is chosen), `surface.rs` (`SurfaceManager`, the NativeSlot protocol), `smoke.rs` (`--smoke-test`), `args.rs`, `logfile.rs`. |
 | `scripts/env.ps1` | Loads the MSVC environment and `~/.cargo/bin` into the PowerShell session (dot-source it before any cargo or tauri command). |
 | `scripts/smoke.ps1` | Seeds a demo profile and runs the smoke; `-Profile <folder>` runs it read-only against an existing profile. |
 | `scripts/screenshot.mjs` | A picture of the running page over WebView2's DevTools protocol. |
@@ -74,6 +77,27 @@ porting checklist.
 `setSidebarCollapsed`, `setSidebarWidth`, `toggleDisclosure`, `applyLayoutPreset` — each C#'s rule (`SelectLayoutSession`,
 `ActivatePane`, `SelectWorkspace`, `ApplyLayoutPreset`, `WorkspaceDisclosure.Toggle`, ...), on the in-memory state.
 
+The NativeSlot protocol (`surface.rs`, registered from `methods.rs` with one line): `surfaceBounds`, `surfaceAction`, and the
+browser pane's `browserOpen`, `browserNavigate` (C# `BrowserAddress.Resolve`), `browserBack`, `browserForward`, `browserReload`.
+
+## Platform ports and native surfaces
+
+The host reaches the OS only through the `mighty-platform` ports; `platform.rs` picks `mighty-platform-windows` or
+`mighty-platform-macos` by target (the only place either is named) and hands the rest of the host a `Platform` and a
+`SurfaceFactory` for the main window. The data folder and the pre-rename folders come from `Platform::paths`.
+
+Native views over the page (docs/tauri-architecture.md §3): when the page calls `ready`, before the snapshot, the host pushes
+`{kind:'host', platform, surfaces:{terminal, browser}}` (Windows: terminal `web`, browser `native`). From then on the page reports
+each native slot with `surfaceBounds{paneId, surface, rect (device px), visible, occluded}` and the `SurfaceManager` opens, places,
+shows and hides the platform's view there; a page reload hides every view until it is reported again, and a pane that leaves the
+state closes its view. On Windows a browser pane is a Tauri child webview of the main window (`unstable` multi-webview) with its own
+WebView2 data (`%LOCALAPPDATA%\dev.mightycode.tauri\browser\<profile>`), placed in physical pixels as the slot reports them; the
+child webview never reaches the host (`host_post` only listens to the `main` webview, and Tauri refuses app commands from remote
+origins). Back/forward state, popups, downloads, per-workspace profiles and the occlusion picture are W4.
+
+The C# host never sends `host`, and every page change for it sits behind `import.meta.env.MODE === 'tauri'`, so the C# page build
+(`dist/`) is byte for byte what it was.
+
 The frame model (`shell.rs`) ports C# `WebShellModel` for the sidebar (workspaces, disclosure, pane rows with their status word,
 tone, agent mark and "· 20 days ago" meta), the header, the layout (saved tree, else the mode's preset, kept stable between models
 as C#'s `layoutDefaults`; focus shows the active group) and the status bar. Not yet: tool-permission and question counts, the
@@ -122,7 +146,21 @@ before its first git read), runtime checks, usage, app update, dashboard, compan
 `MightyCode.exe --smoke-test --smoke-exit --profile <folder>` waits until the page has called `getLocale` and `ready` and the host
 has pushed the snapshot and the frame model, then runs a probe in the page: the sidebar's pane titles, the selected pane, the theme,
 tabs, groups, header and status bar, then a click on another pane's row (the page must show it and the host's state must take it).
-It writes `smoke-result.json` (`passed`, `checks`, `probe`, the calls it saw, the unimplemented methods) and quits. The demo
+Where the platform draws browsers natively, the browser-surface step follows: the host adds a browser pane in a workspace of its
+own (in memory) and makes it active; a second probe types the address of a fixture page this process serves on `127.0.0.1` into
+the pane's address field, waits until the native view shows it, checks the view's bounds read back from Windows (the WebView2
+host window in the main window's client coordinates) against the slot in device pixels (±1 px), has the host push a page dialog
+and checks the view hides, closes it and checks the view shows again (`checks.browserSurface`, details under `browser`).
+It writes `smoke-result.json` (`passed`, `checks`, `probe`, `browser`, the calls it saw, the unimplemented methods) and quits with
+0 when it passed, else 1 (Tauri's event loop would end with 0 either way; `main.rs` keeps the code). The demo
 profile is made by `cargo run -p mighty-core --example seed_demo -- <folder> [ko|en|zh|ja]` from
 `native/contracts/fixtures/demo-profile.json`, as the C# help capture seeds it (without playing the runs). With `-Profile`, the
 script compares `workspace-state.json`'s SHA-256 and time before and after and lists any file added to the profile.
+
+## CI
+
+`.github/workflows/native-tauri.yml` runs on pushes to `feat/tauri` and on pull requests touching `native/tauri/**` or the page,
+on `windows-latest` and `macos-latest` (arm64): the page's typecheck and unit tests, `cargo fmt --all --check`,
+`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `npm run tauri build -- --debug`, and on Windows
+the smoke against the seeded demo profile (its result is kept as the `tauri-smoke-windows` artifact). It is independent of the
+0.4.x workflows. The Mac build bundles `assets/icons/mightycode.png` and `MightyCode.icns`, which tauri-codegen needs there.

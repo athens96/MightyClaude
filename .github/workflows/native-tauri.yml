@@ -1,0 +1,102 @@
+name: Native clients — Tauri (0.5)
+# The Rust + Tauri 2 rewrite (native/tauri, docs/tauri-conversion.md), on Windows and on the Mac: the shared crates' tests run
+# against the ports' fakes on both, so the shared logic gives the same result on each OS (docs/tauri-architecture.md §5). The
+# shipping 0.4.x workflows (native-windows.yml, native-macos.yml) are untouched and independent of this one.
+on:
+  push:
+    branches: [feat/tauri]
+  pull_request:
+    paths:
+      - 'native/tauri/**'
+      - 'native/windows/web/**'
+      - 'native/contracts/**'
+      - 'locales/**'
+      - '.github/workflows/native-tauri.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-tauri-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  tauri:
+    name: Tauri ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows
+            runner: windows-latest
+          # Apple silicon (arm64), as the Mac app ships.
+          - os: macos
+            runner: macos-latest
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CARGO_TERM_COLOR: always
+      # scripts/env.ps1 imports vcvars64 on the development PC, whose Build Tools vswhere does not list; the runners' Visual
+      # Studio is found by rustc itself.
+      MIGHTY_TAURI_ENV: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            native/windows/web/package-lock.json
+            native/tauri/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/tauri -> target
+      - name: Install the page's and the Tauri CLI's packages
+        run: |
+          npm ci --no-audit --no-fund --prefix native/windows/web
+          if ($LASTEXITCODE -ne 0) { throw 'npm ci (page) failed' }
+          npm ci --no-audit --no-fund --prefix native/tauri
+          if ($LASTEXITCODE -ne 0) { throw 'npm ci (Tauri CLI) failed' }
+      - name: Page — typecheck and unit tests
+        working-directory: native/windows/web
+        run: |
+          npm run typecheck
+          if ($LASTEXITCODE -ne 0) { throw 'page typecheck failed' }
+          npm test
+          if ($LASTEXITCODE -ne 0) { throw 'page unit tests failed' }
+      - name: Rust — format
+        working-directory: native/tauri
+        run: |
+          cargo fmt --all --check
+          if ($LASTEXITCODE -ne 0) { throw 'cargo fmt --check failed' }
+      - name: Rust — clippy
+        working-directory: native/tauri
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw 'cargo clippy failed' }
+      - name: Rust — tests
+        working-directory: native/tauri
+        run: |
+          cargo test --workspace
+          if ($LASTEXITCODE -ne 0) { throw 'cargo test failed' }
+      - name: Build the Tauri app (debug)
+        working-directory: native/tauri
+        # beforeBuildCommand builds the page with --mode tauri into dist-tauri/ (never the dist/ the C# app ships).
+        run: |
+          npm run tauri build -- --debug
+          if ($LASTEXITCODE -ne 0) { throw 'tauri build failed' }
+      - name: Smoke against the seeded demo profile
+        if: matrix.os == 'windows'
+        timeout-minutes: 5
+        run: ./native/tauri/scripts/smoke.ps1 -Out "$env:RUNNER_TEMP/tauri-smoke"
+      - name: Keep the smoke's result and logs
+        if: always() && matrix.os == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-smoke-windows
+          path: ${{ runner.temp }}/tauri-smoke
+          if-no-files-found: ignore
