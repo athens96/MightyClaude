@@ -134,6 +134,25 @@ public sealed class MobileDesktopRouter : IDisposable
         Changed();
     }
     private ToolPermissionRequest[] Pending(string id) { lock (sync) return permissions.Values.Where(p => p.RunId == id).ToArray(); }
+    /// <summary>The pane's tool, question and plan requests waiting for an answer, as the phone sees them (the remote mirror reads them too, RemoteMirrorDesktopHost).</summary>
+    public IReadOnlyList<ToolPermissionRequest> PendingRequests(string id) => Pending(id).OrderBy(p => p.ReceivedAt, StringComparer.Ordinal).ToArray();
+    /// <summary>
+    /// A send into one of this PC's agent panes with its files already here (the remote mirror's <c>submit</c>, docs/remote-workspaces.md):
+    /// the phone's submit after its uploads, through the same desktop action and slots. The desktop's answer (a <see cref="SubmitReceipt"/>).
+    /// </summary>
+    public async Task<object?> SubmitInlineAsync(string sessionId, string text, IReadOnlyList<RunAttachment> attachments, CancellationToken token)
+    {
+        var pane = Session(sessionId); Agent(pane);
+        var body = JsonSerializer.SerializeToElement(new { text }, Wire.Json);
+        await submitSlots.WaitAsync(token);
+        try
+        {
+            token.ThrowIfCancellationRequested();
+            var result = await action(new(pane.Id, "submit", body, attachments.Count == 0 ? null : attachments), token);
+            Changed(); return result;
+        }
+        finally { submitSlots.Release(); }
+    }
     private RunSession Session(string id)
     {
         var snapshot = service.Snapshot;

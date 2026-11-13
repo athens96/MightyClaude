@@ -16,8 +16,9 @@ public static class PaneLayout
 {
     /// <summary>The most panes the app holds, every workspace together (M/MightyCore/PaneLayout.swift:37).</summary>
     public const int MaximumSessions = 128;
-    /// <summary>Whether one more pane may be added: the 129th is refused (M/AppStore.swift:573).</summary>
-    public static bool HasRoom(AppSnapshot state) => state.Sessions.Count < MaximumSessions;
+    /// <summary>Whether one more pane of this PC may be added: the 129th is refused (M/AppStore.swift:573). The remote mirror's panes are the
+    /// host's and never count (<see cref="RemoteMirrorSnapshots.OwnSessionCount"/>, M/AppStore+RemoteMirror.swift ownSessionCount).</summary>
+    public static bool HasRoom(AppSnapshot state) => state.OwnSessionCount() < MaximumSessions;
     /// <summary>How far down a tab group the strip over its tabs reaches for a drop, and the share of the group an edge's zone takes (M/PaneDockDrag.swift:81, M/PaneDockView.swift:13).</summary>
     public const double DropMergeStrip = 36, DropEdgeShare = .24;
     /// <summary>

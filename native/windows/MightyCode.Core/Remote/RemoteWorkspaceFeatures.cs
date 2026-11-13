@@ -12,6 +12,8 @@ public static class RemoteWorkspaceFeatures
     /// add a workspace as in a local one (macOS <c>WorkspaceAddMenuItems</c>). Each adds a workspace on this PC, never on the host.
     /// </summary>
     public static IReadOnlyList<string> AddPaneEntries(Workspace? workspace) => workspace?.Remote is null ? AddPaneMenu.Entries()
+        // A mirror workspace's new pane is an agent pane made on its host: no command pane there (docs/remote-workspaces.md "그 컴퓨터의 창 그대로").
+        : workspace.Remote.Mirror ? [.. Wire.Providers.Where(p => !ProviderCatalog.IsLocalOnly(p)).Select(p => AddPaneMenu.AgentPrefix + p), AddPaneMenu.Separator, AddPaneMenu.OpenProject, AddPaneMenu.NewFolder, AddPaneMenu.FromGit]
         // pi, opencode and Hermes run on this PC only for now: a remote workspace's menu leaves them out (M/WorkspaceView.swift).
         : [.. Wire.Providers.Where(p => !ProviderCatalog.IsLocalOnly(p)).Select(p => AddPaneMenu.AgentPrefix + p), AddPaneMenu.Separator, AddPaneMenu.Shell, AddPaneMenu.Separator, AddPaneMenu.OpenProject, AddPaneMenu.NewFolder, AddPaneMenu.FromGit];
 

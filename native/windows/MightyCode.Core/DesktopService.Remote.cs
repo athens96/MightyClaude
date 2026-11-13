@@ -30,7 +30,15 @@ public sealed partial class DesktopService
         lock (sync)
         {
             ObjectDisposedException.ThrowIf(closing, this);
-            return Remote ??= new RemoteClientService(store, dataDirectory, keys, Receive, value => ToolPermissionChanged?.Invoke(value), options);
+            if (Remote is not null) return Remote;
+            Remote = new RemoteClientService(store, dataDirectory, keys, Receive, value => ToolPermissionChanged?.Invoke(value), options);
+            // A connection that comes up starts its remote mirror, one that goes down stops it (DesktopService.Mirror.cs); off the client's thread.
+            Remote.Changed += () => _ = Task.Run(() =>
+            {
+                try { RemoteConnectionsChanged(); }
+                catch (Exception ex) when (ex is not OutOfMemoryException) { System.Diagnostics.Trace.TraceWarning("remote mirror: " + ex.GetType().Name); }
+            });
+            return Remote;
         }
     }
 

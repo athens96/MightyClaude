@@ -152,7 +152,8 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         try
         {
             if (!loaded) throw new InvalidOperationException(Locale.Get("store.error.notLoaded"));
-            snapshot = Normalize(snapshot, false);
+            // The remote mirror's workspaces and panes are another computer's, held while connected: never written (M/StateRepository.save).
+            snapshot = Normalize(snapshot.WithoutMirrors(), false);
             lock (approved)
                 foreach (var workspace in snapshot.Workspaces)
                     if (!approved.TryGetValue(workspace.Id, out var original) || workspace.Path != original.Path || workspace.Remote != original.Remote) throw new InvalidOperationException(Locale.Get("store.error.pathNotApproved"));
@@ -249,7 +250,10 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
     {
         if (value.Version != 1) return new();
         value = value with { PhaseModels = PhaseModelPreferences.Normalize(value.PhaseModels) };
-        var workspaces = (value.Workspaces ?? []).Where(ValidWorkspace).DistinctBy(w => w.Id).Take(64).Select(w => w with { Name = Wire.Clean(w.Name, 120), Remote = w.Remote is { } r ? r with { HostName = Wire.Clean(r.HostName, 120) } : null })
+        // The remote mirror's workspaces (RemoteMirror.cs) are held beside this PC's 64, as many as its connections may share.
+        int ownWorkspaces = 0, mirrorWorkspaces = 0;
+        var workspaces = (value.Workspaces ?? []).Where(ValidWorkspace).DistinctBy(w => w.Id)
+            .Where(w => w.Remote?.Mirror == true ? ++mirrorWorkspaces <= RemoteProtocol.MaximumConnections * RemoteProtocol.MaximumSharedWorkspaces : ++ownWorkspaces <= 64).ToList().Select(w => w with { Name = Wire.Clean(w.Name, 120), Remote = w.Remote is { } r ? r with { HostName = Wire.Clean(r.HostName, 120) } : null })
             // The pane worktree settings are a local folder's (PaneWorktree.cs): a remote workspace drops them all.
             .Select(w => w.Remote is not null ? w with { PaneWorktreeMode = null, WorktreeSetupCommand = null, WorktreeCopyPaths = null, KeptPaneWorktrees = null }
                 : w with { PaneWorktreeMode = MightyCode.Core.PaneWorktreeMode.Saved(w.PaneWorktreeMode), WorktreeSetupCommand = PaneWorktreeSetup.NormalizedCommand(w.WorktreeSetupCommand), WorktreeCopyPaths = PaneWorktreeCopy.NormalizedPaths(w.WorktreeCopyPaths), KeptPaneWorktrees = KeptPaneWorktree.Normalized(w.KeptPaneWorktrees, restoring) }).ToList();
@@ -315,7 +319,15 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
                 ShellBlockRuns = s.Kind == "claude" ? ShellBlockRunSupport.Normalized(s.ShellBlockRuns, restoring) : null };
             return restoring ? PaneTitle.Restored(normalized) : normalized;
         }
-        var sessions = (value.Sessions ?? []).Where(s => s is not null && Wire.Identifier(s.Id) && ids.Contains(s.WorkspaceId) && (s.Kind is "claude" or "shell" or "browser" || !restoring && FilePaneKind.IsFilePane(s.Kind) && s.Id == FilePaneKind.PaneId(s.WorkspaceId) || !restoring && WorkMapPaneKind.IsWorkMap(s.Kind) && s.Id == WorkMapPaneKind.PaneId(s.WorkspaceId) || !restoring && AgentIOPaneKind.IsAgentIO(s.Kind) && s.OwnerSessionId is { } owner && s.Id == AgentIOPaneKind.PaneId(owner, s.Kind) && (value.Sessions ?? []).Any(parent => parent.Id == owner && parent.Kind == "claude" && parent.WorkspaceId == s.WorkspaceId))).DistinctBy(s => s.Id).Take(128).Select(NormalizeSession).ToList();
+        var listedSessions = (value.Sessions ?? []).Where(s => s is not null && Wire.Identifier(s.Id) && ids.Contains(s.WorkspaceId) && (s.Kind is "claude" or "shell" or "browser" || !restoring && FilePaneKind.IsFilePane(s.Kind) && s.Id == FilePaneKind.PaneId(s.WorkspaceId) || !restoring && WorkMapPaneKind.IsWorkMap(s.Kind) && s.Id == WorkMapPaneKind.PaneId(s.WorkspaceId) || !restoring && AgentIOPaneKind.IsAgentIO(s.Kind) && s.OwnerSessionId is { } owner && s.Id == AgentIOPaneKind.PaneId(owner, s.Kind) && (value.Sessions ?? []).Any(parent => parent.Id == owner && parent.Kind == "claude" && parent.WorkspaceId == s.WorkspaceId))).DistinctBy(s => s.Id).ToList();
+        // This PC's 128 panes take the text budget first; the remote mirror's panes (the host's, bounded there) are held beside them with a
+        // budget of their own, so a connected host's transcripts never cut this PC's. Only a mirror pane of a mirror workspace is one.
+        var mirrorWorkspaceIds = workspaces.Where(w => w.Remote?.Mirror == true).Select(w => w.Id).ToHashSet();
+        var ownSessions = listedSessions.Where(s => s.Mirror is null && !mirrorWorkspaceIds.Contains(s.WorkspaceId)).Take(PaneLayout.MaximumSessions).Select(NormalizeSession).ToList();
+        textBudget = 16 * 1024 * 1024;
+        var mirroredSessions = listedSessions.Where(s => s.Mirror is not null && mirrorWorkspaceIds.Contains(s.WorkspaceId) && s.Kind == "claude").Take(RemoteProtocol.MaximumConnections * RemoteMirrorProtocol.MaximumSessions).Select(NormalizeSession).ToList();
+        var normalizedById = ownSessions.Concat(mirroredSessions).ToDictionary(s => s.Id, StringComparer.Ordinal);
+        var sessions = listedSessions.Where(s => normalizedById.ContainsKey(s.Id)).Select(s => normalizedById[s.Id]).ToList();
         var workspaceId = ids.Contains(value.ActiveWorkspaceId ?? "") ? value.ActiveWorkspaceId : workspaces.FirstOrDefault()?.Id;
         value = value with { ExpandedWorkspaceIds = value.ExpandedWorkspaceIds?.Where(ids.Contains).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList() };
         var activeSessionId = sessions.FirstOrDefault(s => s.WorkspaceId == workspaceId && s.Id == value.ActiveSessionId)?.Id ?? sessions.FirstOrDefault(s => s.WorkspaceId == workspaceId)?.Id;

@@ -39,6 +39,34 @@ export interface PaneInfo {
   dashWait?: string;
   /** The branch marker's words when the pane works in its own worktree (paneWorktree.marker). */
   worktree?: string | null;
+  /** Another computer's pane (the remote mirror): its strip's words (MainWindow.RemoteMirror.cs WebMirrorStrip). */
+  mirror?: MirrorStrip | null;
+}
+
+/** The strip over a mirrored pane (M/RemoteMirrorViews.swift MirrorPaneBanner): "원격 창 · ● {host}에서 실행 중 · {state}", branch and queue. */
+export interface MirrorStrip {
+  badge: string;
+  state: string;
+  tone: Tone;
+  branch?: string | null;
+  queued?: string | null;
+  queuedHelp?: string | null;
+  help: string;
+}
+
+/** One server in the sidebar (MainWindow.RemoteMirror.cs WebRemoteServers): a saved connection, or one a remote workspace still names. */
+export interface RemoteServer {
+  id: string;
+  /** "원격 · {name}". */
+  title: string;
+  /** "{address} · {state}". */
+  line: string;
+  state: string;
+  tone: Tone;
+  connected: boolean;
+  /** A saved connection (one that can be connected or disconnected from here). */
+  known: boolean;
+  help: string;
 }
 
 export interface CardAction {
@@ -67,6 +95,10 @@ export interface SidebarWorkspace {
   path: string;
   remoteHost?: string;
   local: boolean;
+  /** The connection a remote workspace runs through: it is listed under that server's header. */
+  server?: string | null;
+  /** A remote mirror's workspace: the host's own, named and shared there. */
+  mirror?: boolean;
   counts: Counts;
   expanded: boolean;
   items?: SidebarItem[];
@@ -108,6 +140,8 @@ export interface StatusModel {
   machine: string;
   /** Present for a remote workspace: whether its computer is connected. */
   remote?: boolean;
+  /** While a mirror workspace is shown: "원격 · {host}에서 실행 중 · {state}". */
+  mirror?: string | null;
   panes: string;
   running: string;
   update?: string;
@@ -156,6 +190,8 @@ export interface ShellModel {
   panes: PaneInfo[];
   entry: Counts;
   workspaces: SidebarWorkspace[];
+  /** The servers whose workspaces the sidebar lists under this PC's own. */
+  servers?: RemoteServer[];
   header?: HeaderModel;
   layout?: LayoutModel;
   error?: string;

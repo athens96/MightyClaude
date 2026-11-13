@@ -49,6 +49,9 @@ public sealed record RemoteWorkspaceReference(string ConnectionId, string Worksp
 {
     public const int CurrentVersion = 2;
     public int Version { get; init; } = CurrentVersion;
+    /// <summary>A workspace the remote mirror shows (docs/remote-workspaces.md "그 컴퓨터의 창 그대로"): its panes are the host's own, read
+    /// from its list. Never saved: such a workspace lives only while the app runs (<see cref="RemoteMirrorSnapshots.WithoutMirrors"/>).</summary>
+    [JsonIgnore] public bool Mirror { get; init; }
 }
 
 public sealed record Workspace
@@ -196,6 +199,8 @@ public sealed record RunSession : IJsonOnDeserializing
     // The shell code blocks of the agent's replies the user ran, one record per block (ShellBlockRuns.cs). Absent (older saves) is
     // none; damage in a record drops that record only, and StateStore.Normalize keeps them within their limits.
     [JsonPropertyName("shellRuns"), JsonConverter(typeof(LenientListConverter<ShellBlockRun>))] public List<ShellBlockRun>? ShellBlockRuns { get; init; }
+    // The host pane a remote mirror pane shows (RemoteMirror.cs, macOS RunSession.mirror): never saved, never in the JSON.
+    [JsonIgnore] public RemoteMirrorReference? Mirror { get; init; }
 
     internal RunSession Apply(RunEvent ev)
     {

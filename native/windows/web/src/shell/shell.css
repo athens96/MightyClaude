@@ -369,3 +369,12 @@ button { font: inherit; color: inherit; }
 .resume-row-title { font-size: 12px; font-weight: 500; display: flex; gap: var(--space-sm); }
 .resume-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-sm); height: 100%; text-align: center; }
 .resume-footer { display: flex; gap: var(--space-md); align-items: center; }
+/* A server's header over its shared workspaces (Sidebar.tsx ServerHeader; M/RemoteMirrorViews.swift RemoteServerHeader). */
+.sidebar-server { display: flex; align-items: center; gap: var(--space-sm, 8px); padding: var(--space-md, 12px) 10px 2px; color: var(--sidebar-ink2); }
+.sidebar-server-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--ink3); }
+.sidebar-server-dot.tone-bg-done { background: var(--done, #3fb950); }
+.sidebar-server-dot.tone-bg-wait { background: var(--wait, #d29922); }
+.sidebar-server-names { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
+.sidebar-server-title { font-size: 10px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-server-line { font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-server-menu { flex: none; }

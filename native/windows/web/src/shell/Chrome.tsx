@@ -141,7 +141,8 @@ export function StatusBar({ shell, usageOpen, setUsageOpen }: { shell: ShellMode
       {status.remote === undefined
         ? <Icon name="monitor" size={12} weight={1.75} />
         : <span className={'status-remote-dot' + (status.remote ? ' connected' : '')} />}
-      <span className="status-machine" title={status.remote === undefined ? undefined : status.machine} data-testid="status-machine">{status.machine}</span>
+      {/* A mirror workspace's words: "원격 · {host}에서 실행 중 · {state}" (M/WorkspaceView.swift status-remote-host). */}
+      <span className="status-machine" title={status.remote === undefined ? undefined : status.mirror ?? status.machine} data-testid="status-machine">{status.mirror ?? status.machine}</span>
       <span className="spacer" />
       <span data-testid="status-panes">{status.panes}</span>
       <span className="status-dot-sep">·</span>

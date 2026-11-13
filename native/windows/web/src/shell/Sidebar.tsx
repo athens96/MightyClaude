@@ -6,9 +6,9 @@ import { useServices, useStoreState } from '../app/context';
 import { ProviderMark } from '../conversation/ProviderMark';
 import { activeSessionId } from '../store/store';
 import { useAddMenu, useWorkspaceAddChoices } from './addMenu';
-import { filterWorkspaces } from './filter';
+import { sidebarGroups } from './servers';
 import { BetaBadge, StatusCounts, StatusGlyph, useCall, useMenu, usePaneInfo, useShell, type MenuItem } from './parts';
-import type { CardAction, ChildCard, PaneInfo, SidebarItem, SidebarWorkspace } from './types';
+import type { CardAction, ChildCard, PaneInfo, RemoteServer, SidebarItem, SidebarWorkspace } from './types';
 import { Icon } from '../icons/Icon';
 import appIcon from '../assets/app-icon.png';
 import { Pending } from '../pending/Pending';
@@ -55,8 +55,9 @@ const PaneRow = memo(function PaneRow({ info, active, child }: { info: PaneInfo;
   const call = useCall();
   const menu = useMenu();
   const choose = useChoosePane();
+  // A mirrored pane carries its host's name; its close closes it on that computer.
   const items: MenuItem[] = [
-    { label: t('menu.rename'), action: () => call('renameSession', { id: info.id }) },
+    ...(info.mirror ? [] : [{ label: t('menu.rename'), action: () => call('renameSession', { id: info.id }) }]),
     { label: t('menu.closePane'), action: () => call('closeSession', { id: info.id }) },
   ];
   if (child?.menu?.length) items.push({ separator: true }, ...childMenu(call, info.id, child.menu));
@@ -88,7 +89,8 @@ function WorkspaceGroup({ workspace, selected, activeId, panes, dashboard }: { w
   const menu = useMenu();
   const addMenu = useAddMenu();
   const worktreeMode = useStoreState().snapshot?.workspaces.find((w) => w.id === workspace.id)?.paneWorktreeMode ?? 'ask';
-  const items: MenuItem[] = [
+  // A mirror workspace is the host's: named and shared there, it leaves when that computer stops sharing it.
+  const items: MenuItem[] = workspace.mirror ? [] : [
     { label: t('menu.rename'), action: () => call('renameWorkspace', { id: workspace.id }) },
     { label: t('workspace.menu.remove'), action: () => call('removeWorkspace', { id: workspace.id }) },
   ];
@@ -111,7 +113,7 @@ function WorkspaceGroup({ workspace, selected, activeId, panes, dashboard }: { w
   const disclosure = t(workspace.expanded ? 'workspace.collapseAccessibility' : 'workspace.expandAccessibility', { workspace: workspace.name });
   return (
     <section className={'sidebar-workspace' + (selected ? ' selected' : '')} data-workspace-id={workspace.id} data-testid="sidebar-workspace">
-      <div className="sidebar-workspace-row" onContextMenu={(event) => menu.atPointer(event, items)}>
+      <div className="sidebar-workspace-row" onContextMenu={(event) => items.length > 0 && menu.atPointer(event, items)}>
         <button type="button" className="sidebar-workspace-select" title={workspace.path} onClick={() => call('selectWorkspace', { id: workspace.id })}>
           <Icon name={workspace.local ? 'folder' : 'monitor'} size={15} weight={1.5} className="sidebar-workspace-icon" />
           <span className="sidebar-workspace-names">
@@ -168,6 +170,29 @@ function WorkspaceGroup({ workspace, selected, activeId, panes, dashboard }: { w
   );
 }
 
+/** A server's header over its workspaces (M/RemoteMirrorViews.swift RemoteServerHeader): "원격 · 이름", "주소 · 상태", its dot, and its menu. */
+function ServerHeader({ server }: { server: RemoteServer }) {
+  const { t } = useServices();
+  const call = useCall();
+  const menu = useMenu();
+  const items: MenuItem[] = [];
+  if (server.known) items.push(server.connected
+    ? { label: t('remote.mirror.disconnect'), action: () => call('serverDisconnect', { id: server.id }) }
+    : { label: t('remote.mirror.connect'), action: () => call('serverConnect', { id: server.id }) });
+  items.push({ label: t('remote.mirror.settings'), action: () => call('connectRemote') });
+  return (
+    <div className="sidebar-server" title={server.help} data-testid={'sidebar-remote-server-' + server.id} aria-label={server.title + (server.state ? ', ' + server.state : '')}>
+      <span className={'sidebar-server-dot tone-bg-' + server.tone} aria-hidden="true" />
+      <span className="sidebar-server-names">
+        <span className="sidebar-server-title">{server.title}</span>
+        {server.line && <span className="sidebar-server-line mono">{server.line}</span>}
+      </span>
+      <button type="button" className="icon-button sidebar-server-menu" title={server.title} aria-label={server.title} data-testid={'sidebar-remote-server-menu-' + server.id}
+        onClick={(event) => menu.under(event.currentTarget, items)}><Icon name="ellipsis" size={13} weight={2.6} /></button>
+    </div>
+  );
+}
+
 export function Sidebar() {
   const { t } = useServices();
   const state = useStoreState();
@@ -180,7 +205,8 @@ export function Sidebar() {
   const snapshot = state.snapshot;
   if (!snapshot || !shell) return <nav className="sidebar" />;
   const dashboard = shell.dashboard !== undefined;
-  const listed = filterWorkspaces(shell.workspaces, search);
+  const groups = sidebarGroups(shell.workspaces, shell.servers, search);
+  const listed = groups.local;
   const activeId = activeSessionId(state);
   const entryCounts = shell.entry;
   return (
@@ -198,7 +224,7 @@ export function Sidebar() {
       </button>
       <div className="sidebar-section">
         <span className="sidebar-section-title">{t('sidebar.workspacesHeader')}</span>
-        <span className="sidebar-section-count">{shell.workspaces.length}</span>
+        <span className="sidebar-section-count">{groups.ownCount}</span>
         <span className="spacer" />
         {/* The three ways to add a workspace, as the Mac's sidebar menu offers them (M/WorkspaceView.swift:132). */}
         <button type="button" className="icon-button" title={t('workspace.add.menu')} aria-label={t('workspace.add.menu')} data-testid="sidebar-add-workspace"
@@ -210,12 +236,22 @@ export function Sidebar() {
         </button>
       </div>
       <div className="sidebar-list">
-        {listed.length === 0 && (
+        {listed.length === 0 && groups.servers.every((g) => g.workspaces.length === 0) && (
           <div className="sidebar-empty">{t(search.trim().length > 0 ? 'sidebar.noSearchResults' : 'dashboard.empty')}</div>
         )}
         {listed.map((workspace) => (
           <WorkspaceGroup key={workspace.id} workspace={workspace} panes={panes} activeId={activeId} dashboard={dashboard}
             selected={!dashboard && snapshot.activeWorkspaceId === workspace.id} />
+        ))}
+        {/* Each connected computer's shared workspaces under its own header (the remote mirror). */}
+        {groups.servers.map((group) => (
+          <div key={group.server.id} className="sidebar-server-group" data-testid="sidebar-server-group">
+            <ServerHeader server={group.server} />
+            {group.workspaces.map((workspace) => (
+              <WorkspaceGroup key={workspace.id} workspace={workspace} panes={panes} activeId={activeId} dashboard={dashboard}
+                selected={!dashboard && snapshot.activeWorkspaceId === workspace.id} />
+            ))}
+          </div>
         ))}
       </div>
       {/* With no workspace listed (none yet, or none matching the search) these are the sidebar's ways in (M/WorkspaceView.swift:164-171). */}

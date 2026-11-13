@@ -16,6 +16,8 @@ import { providerLabel } from '../conversation/format';
 import { drawsDiagram } from '../pending/requests';
 import { useCall, useMenu, type MenuItem } from '../shell/parts';
 import { WorktreeBar } from './WorktreeBar';
+import { MirrorStrip } from './MirrorStrip';
+import { usePaneInfo } from '../shell/parts';
 
 /** The header's clock, redrawn each second while the run is not finished (MW.Composer.cs RefreshElapsed). */
 function Clock({ session }: { session: RunSession }) {
@@ -38,8 +40,10 @@ function PaneMenu({ session }: { session: RunSession }) {
   const menu = useMenu();
   const call = useCall();
   const focused = useStoreState().shell?.layout?.mode === 'focus';
+  // A mirrored pane carries its host's name: no rename here (M/WorkspaceView.swift).
+  const mirrored = !!usePaneInfo().get(session.id)?.mirror;
   const items: MenuItem[] = [
-    { label: t('menu.rename'), action: () => call('renameSession', { id: session.id }) },
+    ...(mirrored ? [] : [{ label: t('menu.rename'), action: () => call('renameSession', { id: session.id }) }]),
     { label: t(focused ? 'pane.menu.restoreLayout' : 'menu.focusPane'), action: () => call('focusPane', { id: session.id, toggle: true }) },
   ];
   if (session.kind !== 'shell') items.push({ label: t('pane.menu.newConversation'), disabled: session.status === 'running' || !session.resumeId, action: () => void bridge.call('newConversation', { paneId: session.id }).catch(() => {}) });
@@ -60,6 +64,8 @@ export const PaneView = memo(function PaneView({ session: saved }: { session: Ru
   const session = useShownSession(saved);
   const store = useStoreState();
   const header = store.composers[session.id]?.header;
+  // Another computer's pane (the remote mirror): its strip under the header.
+  const mirror = usePaneInfo().get(session.id)?.mirror;
   const agent = session.kind === 'claude' || session.kind === 'shell';
   // An agent pane with a Mighty view always shows it; the conversation stays for the panes that have none.
   const mighty = drawsDiagram(session);
@@ -120,6 +126,7 @@ export const PaneView = memo(function PaneView({ session: saved }: { session: Ru
           <PaneMenu session={session} />
         </span>
       </header>
+      {mirror && <MirrorStrip id={session.id} strip={mirror} />}
       {session.paneWorktree && <WorktreeBar key={'worktree-' + session.id} session={session} />}
       {body}
     </section>

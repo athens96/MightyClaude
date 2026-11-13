@@ -68,6 +68,7 @@ public sealed partial class MainWindow
             return Task.FromResult<object?>(new { valid = RenameSupport.IsValid(text), messages = RenameSupport.Messages(text) });
         });
         RegisterWorkspaceCreateMethods(bridge);
+        RegisterMirrorMethods(bridge);
         bridge.Register("removeWorkspace", async args => { if (args.Text("id") is { } id) await ConfirmRemoveWorkspace(id); return null; });
         bridge.Register("showInExplorer", async args => { if (args.Text("id") is { } id) await ShowWorkspaceInExplorer(id); return null; });
         bridge.Register("openFiles", async args => { if (!dialogOpen) { HideDashboard(); await OpenFilePane(args.Text("workspaceId")); } return null; });
@@ -361,6 +362,8 @@ public sealed partial class MainWindow
             dashWait = attention.Total > 0 ? DashboardAttentionWord(attention) : null,
             // A pane in its own worktree carries the branch marker on its row and tab (PaneWorktree.cs).
             worktree = session.PaneWorktree is { } worktreePane ? Locale.Get("paneWorktree.marker", new Dictionary<string, string> { ["branch"] = worktreePane.Branch, ["base"] = worktreePane.BaseBranch }) : null,
+            // Another computer's pane (the remote mirror): its strip's words (MainWindow.RemoteMirror.cs).
+            mirror = WebMirrorStrip(session),
         };
     }
 
@@ -486,10 +489,13 @@ public sealed partial class MainWindow
             entry = WebCounts(WorkDashboard.WorkspaceBadges(state.Sessions, DashboardAttention)),
             workspaces = state.Workspaces.Select(w => new
             {
-                id = w.Id, name = w.Name, path = w.Path, remoteHost = w.Remote?.HostName, local = w.Remote is null,
+                // A mirror workspace sits under its server's header and carries no host line of its own (M/WorkspaceView.swift).
+                id = w.Id, name = w.Name, path = w.Path, remoteHost = w.Remote is { Mirror: false } ? w.Remote.HostName : null, local = w.Remote is null,
+                server = w.Remote?.ConnectionId, mirror = w.Remote?.Mirror == true,
                 counts = WebCounts(WorkDashboard.WorkspaceBadges(state.Sessions.Where(s => s.WorkspaceId == w.Id), DashboardAttention)),
                 expanded = expanded.Contains(w.Id), items = expanded.Contains(w.Id) ? WebSidebarItems(state, w.Id) : null,
             }).ToList(),
+            servers = WebRemoteServers(state),
             header = active is null ? null : new
             {
                 id = active.Id, name = active.Name, path = active.Path, git = WebGit(activeGit), remoteHost = active.Remote is null ? null : RemoteHostLabel(active),
@@ -502,7 +508,7 @@ public sealed partial class MainWindow
             countdown = appUpdateCountdown?.Visibility == Visibility.Visible && appUpdateCountdownMessage is { } said ? said.Text : null,
             status = new
             {
-                machine = status.Text, remote = active?.Remote is null ? (bool?)null : connection?.Status == RemoteConnectionStatus.Connected,
+                machine = status.Text, remote = active?.Remote is null ? (bool?)null : connection?.Status == RemoteConnectionStatus.Connected, mirror = MirrorStatusText(active),
                 panes = statusPanes.Text, running = statusRunning.Text,
                 update = updateBadge?.Visibility == Visibility.Visible ? updateBadgeText.Text : null, updateHelp = Locale.Get("window.status.updateBadgeHelp"),
                 staged = updateStaged.Visibility == Visibility.Visible ? updateStagedText.Text : null, stagedVersion = version,

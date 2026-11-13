@@ -303,6 +303,8 @@ public sealed partial class MainWindow
         {
             var connection = RemoteConnection(active);
             status.Text = RemoteWorkspaceFeatures.StatusLine(remote, connection);
+            // A mirror workspace's bar: "원격 · {host}에서 실행 중 · {state}" (M/WorkspaceView.swift status-remote-host).
+            if (MirrorStatusText(active) is { } mirrored) status.Text = mirrored;
             statusRemoteDot.Fill = brushes.Brush(connection?.Status == RemoteConnectionStatus.Connected ? DesignToken.Done : DesignToken.Ink3);
         }
         foreach (var part in statusMachineParts) part.Visibility = active?.Remote is null ? Visibility.Visible : Visibility.Collapsed;

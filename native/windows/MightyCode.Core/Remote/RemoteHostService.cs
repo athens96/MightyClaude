@@ -274,13 +274,14 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
 
     /// <summary>
     /// How much body is read, decided from the head before any of it: none without the key (the head alone gets its 401), the larger
-    /// attachment body only for an authenticated run request.
+    /// attachment body only for an authenticated run request or mirror send.
     /// </summary>
     public static int BodyLimit(RemoteHttpRequest head, string key, bool allowLoopback)
     {
         if (head.Headers.ContainsKey("origin") || !RemotePeerPolicy.Allowed(head.RemoteAddress, allowLoopback) || head.Headers.GetValueOrDefault(RemoteProtocol.Header) != RemoteProtocol.Version.ToString()
             || !KeyPresented(head.Headers, key)) return 0;
-        return head.Method == "POST" && head.Target == RemoteProtocol.PathPrefix + "runs" ? AttachmentSupport.MaximumRequestBytes : RemoteProtocol.MaximumRequestBytes;
+        // A run's start and the mirror's send (RemoteMirrorRoutes.IsSubmit) may bring attachments.
+        return head.Method == "POST" && (head.Target == RemoteProtocol.PathPrefix + "runs" || RemoteMirrorRoutes.IsSubmit(head.Target)) ? AttachmentSupport.MaximumRequestBytes : RemoteProtocol.MaximumRequestBytes;
     }
 
     /// <summary>The request's bearer key is the sharing's (at most 256 characters in all, compared in constant time).</summary>
@@ -322,6 +323,7 @@ public sealed partial class RemoteHostService(RemoteHostOptions options) : IAsyn
             if (!TargetText.IsMatch(request.Target) || !path.StartsWith(RemoteProtocol.PathPrefix, StringComparison.Ordinal)) throw new HostFailure(400, Locale.Get("remote.host.error.badPath"));
             var route = path[RemoteProtocol.PathPrefix.Length..].Split('/');
             if (request.Method == "GET" && route is ["info"] && query.Length == 0) return await InfoAsync(revision);
+            if (route[0] == "mirror") return await ServeMirrorAsync(request, route[1..], query, revision);
             return await ServeRunsAsync(request, route, query, revision);
         }
         catch (HostFailure failure) { return Failure(failure.Status, failure.Message); }

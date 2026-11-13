@@ -229,7 +229,10 @@ public sealed partial class MainWindow : Window
     {
         using var perf = PerfLog.Measure("add pane " + kind + " (wall)");
         var added = false;
-        await Act(async () => { var state = service.Snapshot; var workspace = state.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); var target = state.Workspaces.FirstOrDefault(w => w.Id == workspace); if (kind is not ("claude" or "shell") && !RemoteWorkspaceFeatures.AllowsLocalOnly(target)) throw new InvalidOperationException(RemoteWindowsStrings.PaneUnavailable); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get(target?.Remote is null ? "session.title.shell" : "remote.pane.commandTitle") : ProviderCatalog.Name(provider) }; pane = SessionTemplate.Inherit(pane, state.Sessions); if (shape is not null) pane = shape(pane); var saving = service.UpdateAsync(s => PaneLayout.HasRoom(s) ? AddToLayout(s, workspace, pane, groupId) : throw new InvalidOperationException(Locale.Get("workspace.paneLimit"))); added = true; HideDashboard(); if (!AddPaneInPlace(pane.Id)) Render(); await saving; });
+        await Act(async () => { var state = service.Snapshot; var workspace = state.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); var target = state.Workspaces.FirstOrDefault(w => w.Id == workspace);
+            // A mirror workspace's new agent pane is made on its computer and shows here at the next read (M/AppStore+RemoteMirror.swift createMirrorPane).
+            if (target?.Remote is { Mirror: true }) { HideDashboard(); if (await service.CreateMirrorPaneAsync(workspace, kind, provider) is { } made) { added = true; ActivatePane(made); } return; }
+            if (kind is not ("claude" or "shell") && !RemoteWorkspaceFeatures.AllowsLocalOnly(target)) throw new InvalidOperationException(RemoteWindowsStrings.PaneUnavailable); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get(target?.Remote is null ? "session.title.shell" : "remote.pane.commandTitle") : ProviderCatalog.Name(provider) }; pane = SessionTemplate.Inherit(pane, state.Sessions); if (shape is not null) pane = shape(pane); var saving = service.UpdateAsync(s => PaneLayout.HasRoom(s) ? AddToLayout(s, workspace, pane, groupId) : throw new InvalidOperationException(Locale.Get("workspace.paneLimit"))); added = true; HideDashboard(); if (!AddPaneInPlace(pane.Id)) Render(); await saving; });
         return added;
     }
     // While a check runs the status bar says so; at rest it names the machine, as the Mac's does (RefreshStatusBar).
@@ -417,7 +420,8 @@ public sealed partial class MainWindow : Window
         /// Why this pane cannot run with <paramref name="runtime"/> (M/AppStore.swift runBlockedReason): a remote pane's reason is its host's
         /// (its connection gone, its CLI missing or without the mode), never this PC's CLI.
         /// </summary>
-        private string? RunBlockReason(ProviderRuntime? runtime) => owner.service.RemoteReference(id) is { } remote
+        private string? RunBlockReason(ProviderRuntime? runtime) => Session.Mirror is { } mirror ? owner.service.MirrorBlockedReason(mirror)
+            : owner.service.RemoteReference(id) is { } remote
             ? RemoteWorkspaceFeatures.BlockedReason(Session, remote, owner.service.Remote?.Connection(remote.ConnectionId)) : RunBlock.Reason(Session, runtime);
         internal PaneView(MainWindow owner, string id)
         {
@@ -532,6 +536,8 @@ public sealed partial class MainWindow : Window
         /// </summary>
         internal async Task<SubmitReceipt> Submit(bool secondSend = false, bool wrapsAsk = true)
         {
+            // Another computer's pane (the remote mirror): the text is its next request there, queued there while it runs.
+            if (Session.Mirror is { } mirror) return await SubmitMirror(mirror);
             if (owner.ManualMutationBlockReason(Session) is not null) { RefreshComposerState(); return new("blocked"); }
             if (await AnswerGuidedQuestion()) return new("answered");
             if (await SubmitTypedBuiltin()) return new("builtin");
@@ -586,6 +592,38 @@ public sealed partial class MainWindow : Window
                     var kept = pendingAttachments.Select(file => file.Id).ToHashSet(); pendingAttachments.InsertRange(0, files.Where(file => !kept.Contains(file.Id))); RefreshAttachments();
                 }
                 if (owner.service.Snapshot.Sessions.Any(p => p.Id == id)) Refresh();
+            }
+        }
+        /// <summary>
+        /// A mirrored pane's send (M/AppStore+RemoteMirror.swift submitMirror): the composer's text and files go to the host pane and are
+        /// cleared here; a pane whose computer is not connected keeps them, and a refusal puts them back with the host's words.
+        /// </summary>
+        private async Task<SubmitReceipt> SubmitMirror(RemoteMirrorReference mirror)
+        {
+            var typed = input.Text; var text = typed.Trim(); RunAttachment[] files = pendingAttachments.ToArray();
+            if (text.Length == 0 && files.Length == 0 || starting) return new("none");
+            if (owner.service.MirrorBlockedReason(mirror) is { } reason) { owner.error.Text = reason; return new("blocked"); }
+            starting = true; var sent = false;
+            var taken = files.Select(file => file.Id).ToHashSet(); pendingAttachments.RemoveAll(file => taken.Contains(file.Id)); RefreshAttachments();
+            updating = true; input.Text = ""; updating = false;
+            RefreshComposerState();
+            try
+            {
+                var outcome = await owner.service.MirrorSubmitAsync(id, text, files);
+                sent = true;
+                if (QueuePaneAlive && input.Text.Length == 0) await Change(p => p with { Draft = "" });
+                return new(outcome is "started" or "steered" or "queued" ? outcome : "started");
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { owner.error.Text = ex.Message; return new("notStarted"); }
+            finally
+            {
+                starting = false;
+                if (!sent && QueuePaneAlive)
+                {
+                    if (input.Text.Length == 0) { updating = true; input.Text = typed; updating = false; }
+                    var kept = pendingAttachments.Select(file => file.Id).ToHashSet(); pendingAttachments.InsertRange(0, files.Where(file => !kept.Contains(file.Id))); RefreshAttachments();
+                }
+                if (QueuePaneAlive) Refresh();
             }
         }
         private Task PrimaryAction() => ComposerPrimaryAction();

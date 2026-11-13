@@ -547,6 +547,8 @@ public sealed partial class DesktopService : IDelegationHost
     /// </summary>
     public async Task<ChildCleanupOutcome?> CloseSessionAsync(string id, Action? closed = null)
     {
+        // A mirrored pane is its host's: the close closes it there, as the phone's does (DesktopService.Mirror.cs).
+        if (MirrorReference(id) is not null) { await CloseMirrorPaneAsync(id); closed?.Invoke(); return null; }
         await StopAndWait(id);
         await UpdateAsync(s => s with { Sessions = s.Sessions.Where(p => p.Id != id).ToList() });
         closed?.Invoke();

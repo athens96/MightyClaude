@@ -43,6 +43,8 @@ public sealed partial class MainWindow
         var hostName = string.IsNullOrWhiteSpace(machine) ? RemoteWindowsStrings.HostOS("win32") : machine;
         remoteHost = new RemoteHostService(service.HostOptions(hostName, AppVersion.Normalized(AppVersionText) ?? "0.1.0", RemoteHostAdmission,
             count => DispatcherQueue.TryEnqueue(() => { remoteHostRuns = count; if (!closing) { RefreshRemoteViews(); NotifyAutomaticUpdates(); } }), loopback));
+        // A connected client mirrors this PC's shared panes through the phone's handlers (MainWindow.RemoteMirror.cs).
+        InitializeRemoteMirror(remoteHost);
     }
 
     /// <summary>
@@ -489,7 +491,9 @@ public sealed partial class MainWindow
             if (connection.Shared.Count == 0) row.Children.Add(SettingsText(Locale.Get("settings.remote.noShared"), 11, DesignToken.Ink2));
             foreach (var hosted in connection.Shared)
             {
-                var opened = snapshot.Workspaces.Any(w => w.Remote?.ConnectionId == connection.Id && w.Remote.WorkspaceId == hosted.Id);
+                var opened = snapshot.Workspaces.Any(w => w.Remote is { Mirror: false } r && r.ConnectionId == connection.Id && r.WorkspaceId == hosted.Id);
+                // 보기 shows the host's own panes (the remote mirror); a host without the mirror (it answered 404) keeps the old 열기.
+                var mirrored = service.MirrorLink(connection.Id) is not { Unsupported: true };
                 var line = new Grid { ColumnSpacing = DesignMetrics.Spacing.Sm, Margin = new Thickness(DesignMetrics.Spacing.Xl, 0, 0, 0) };
                 line.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                 line.Children.Add(SettingsSymbol("\uE977", 12, DesignToken.Ink2));
@@ -498,8 +502,9 @@ public sealed partial class MainWindow
                 // The host's folder, shown only: it is that computer's path, never one on this PC.
                 var hostPath = SettingsText(hosted.Path, 10, DesignToken.Ink2, mono: true); hostPath.TextWrapping = TextWrapping.NoWrap; hostPath.TextTrimming = TextTrimming.CharacterEllipsis;
                 labels.Children.Add(hostPath); Grid.SetColumn(labels, 1); line.Children.Add(labels);
-                var open = SettingsPush(SafeButton(Locale.Get(opened ? "settings.remote.openedButton" : "settings.remote.openButton"), () => RemoteAction(async () =>
+                var open = SettingsPush(SafeButton(mirrored ? Locale.Get("remote.mirror.view") : Locale.Get(opened ? "settings.remote.openedButton" : "settings.remote.openButton"), () => RemoteAction(async () =>
                 {
+                    if (mirrored && await ShowMirrorWorkspace(connection.Id, hosted.Id)) return;
                     // Listed in the sidebar and made active, Settings closes and a workspace with no pane gets a Claude pane (M openRemoteWorkspace, addWorkspace).
                     var workspace = await service.OpenRemoteWorkspaceAsync(connection.Id, hosted.Id);
                     settingsWindow?.Close(); CloseWebSettings();

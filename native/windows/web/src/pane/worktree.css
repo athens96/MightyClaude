@@ -31,3 +31,10 @@
 .worktree-list-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .worktree-list-row .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .worktree-list-row .text span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The strip over another computer's pane (MirrorStrip.tsx), drawn as the worktree bar. */
+.mirror-strip-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--ink3); }
+.mirror-strip-dot.tone-bg-done { background: var(--done, #3fb950); }
+.mirror-strip-dot.tone-bg-wait { background: var(--wait, #d29922); }
+.mirror-strip-state, .mirror-strip-branch { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mirror-strip-branch { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; }
+.mirror-strip-queued { font-size: 10px; font-weight: 500; white-space: nowrap; }
