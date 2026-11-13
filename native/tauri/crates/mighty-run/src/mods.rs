@@ -218,8 +218,9 @@ impl Inner {
 
 struct Host {
     address: SocketAddr,
-    stop: Arc<tokio::sync::Notify>,
-    stopped: Arc<AtomicBool>,
+    /// True once the server stops: a value, not a notification, so an accept loop that is not waiting at that moment (not started
+    /// yet, or handing a connection on) still sees it.
+    stop: tokio::sync::watch::Sender<bool>,
 }
 
 /// C# `ModBridge`: one loopback server for every run of the app, started with the first registration.
@@ -298,8 +299,7 @@ impl ModBridge {
             connection.dispose();
         }
         if let Some(host) = host.take() {
-            host.stopped.store(true, Ordering::SeqCst);
-            host.stop.notify_waiters();
+            host.stop.send_replace(true);
         }
     }
 }
@@ -308,17 +308,16 @@ impl ModBridge {
 async fn start(inner: Arc<Inner>) -> std::io::Result<Host> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
     let address = listener.local_addr()?;
-    let stop = Arc::new(tokio::sync::Notify::new());
-    let stopped = Arc::new(AtomicBool::new(false));
-    let (stop_wait, stopped_flag) = (stop.clone(), stopped.clone());
+    let (stop, mut stopping) = tokio::sync::watch::channel(false);
     let slots = Arc::new(Semaphore::new(64));
     tokio::spawn(async move {
         loop {
             let accepted = tokio::select! {
+                biased;
+                _ = stopping.wait_for(|stopped| *stopped) => break,
                 accepted = listener.accept() => accepted,
-                _ = stop_wait.notified() => break,
             };
-            if stopped_flag.load(Ordering::SeqCst) {
+            if *stopping.borrow() {
                 break;
             }
             let Ok((stream, remote)) = accepted else { continue };
@@ -340,7 +339,7 @@ async fn start(inner: Arc<Inner>) -> std::io::Result<Host> {
             });
         }
     });
-    Ok(Host { address, stop, stopped })
+    Ok(Host { address, stop })
 }
 
 fn status(code: StatusCode) -> Response<Empty<Bytes>> {
