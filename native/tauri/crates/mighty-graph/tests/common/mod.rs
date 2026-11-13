@@ -428,7 +428,10 @@ impl ManifestStyle {
                 .map(|l| l.iter().filter_map(Value::as_str).map(str::to_string).collect())
                 .unwrap_or_default(),
             lowercase: recognition.get("lowercase").and_then(Value::as_bool).unwrap_or(false),
-            actions: list("actions").iter().map(|a| (manifest_text(a, "id").expect("an action id"), manifest_text(a, "match"), manifest_text(a, "phase"))).collect(),
+            actions: list("actions")
+                .iter()
+                .map(|a| (manifest_text(a, "id").expect("an action id"), manifest_text(a, "match"), manifest_text(a, "phase")))
+                .collect(),
             aliases: list("aliases").iter().map(|a| (manifest_text(a, "name"), manifest_text(a, "phase"))).collect(),
             kind: manifest_text(&rule, "kind").unwrap_or_else(|| "none".into()),
             default: manifest_text(&rule, "default"),
