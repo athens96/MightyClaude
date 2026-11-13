@@ -299,7 +299,17 @@ public actor StateRepository {
                       CoreValidation.identifier(remote.workspaceId), !remote.hostName.isEmpty else { continue }
                 workspace.remote?.hostName = String(remote.hostName.prefix(120))
             }
-            workspace.name = String(workspace.name.prefix(120)); workspaceIds.insert(workspace.id); output.workspaces.append(workspace)
+            workspace.name = String(workspace.name.prefix(120))
+            // Pane worktrees are this Mac's checkouts: a remote workspace has neither setting.
+            if workspace.remote != nil {
+                workspace.paneWorktreeMode = nil; workspace.worktreeSetupCommand = nil; workspace.worktreeCopyPaths = nil; workspace.keptPaneWorktrees = nil
+            } else {
+                if workspace.paneWorktreeMode == .ask { workspace.paneWorktreeMode = nil }
+                workspace.worktreeSetupCommand = PaneWorktreeSetup.normalizedCommand(workspace.worktreeSetupCommand)
+                workspace.worktreeCopyPaths = PaneWorktreeCopy.normalizedPaths(workspace.worktreeCopyPaths)
+                workspace.keptPaneWorktrees = KeptPaneWorktree.normalized(workspace.keptPaneWorktrees, restoring: false)
+            }
+            workspaceIds.insert(workspace.id); output.workspaces.append(workspace)
         }
         // Shares are computed over the sessions that will survive, so a
         // dropped or duplicate session cannot take budget from a real one.
@@ -422,7 +432,14 @@ public actor StateRepository {
         if session.kind == SessionKind.claude {
             if let parent = session.parentSessionId, !CoreValidation.identifier(parent) || parent == session.id { session.parentSessionId = nil }
             if let folder = session.workingFolder, !absolutePath(folder) { session.workingFolder = nil }
-        } else { session.parentSessionId = nil; session.workingFolder = nil }
+            // A pane worktree is a parentless pane that works in its own folder; a child is never one, nor a pane without its folder.
+            if session.parentSessionId != nil || session.workingFolder == nil { session.paneWorktree = nil }
+            session.paneWorktree = session.paneWorktree?.normalized(sessionId: session.id, restoring: restoring)
+        } else if session.kind == SessionKind.shell {
+            // A terminal opened in a pane worktree keeps that folder ("이 worktree에서 터미널 열기"); nothing else of a pane's.
+            session.parentSessionId = nil; session.paneWorktree = nil
+            if let folder = session.workingFolder, !absolutePath(folder) { session.workingFolder = nil }
+        } else { session.parentSessionId = nil; session.workingFolder = nil; session.paneWorktree = nil }
         // Only a Claude agent pane asks other CLIs; a saved id that is no longer available is kept and reads as Claude.
         if !(session.kind == SessionKind.claude && session.provider == "claude") { session.askTarget = nil }
         // Migration: retitle automatic agent panes from their most recent user request.

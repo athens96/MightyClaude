@@ -123,6 +123,19 @@ public struct ChildWorktreeMaker: Sendable {
         return .created(ChildWorktree(sessionId: sessionId, worktreePath: worktree, workingFolder: folder, branch: branch, parentBranch: base.parentBranch, baseCommit: base.baseCommit))
     }
 
+    /// The worktree of a workspace's agent pane that works on its own (``PaneWorktree``): the same branch
+    /// `mighty/<session id>` at the base commit and the same place as a child's, without a child's TASK.md and REPORT.md.
+    /// Never replaces an existing branch or folder.
+    public func makePane(sessionId: String, base: ChildWorktreeBase, timeout: TimeInterval = 300) async -> ChildWorktreeOutcome {
+        guard Self.isSafeSessionId(sessionId) else { return .failed("The session id cannot name a branch and a folder.") }
+        let worktree = worktreePath(for: sessionId), branch = ChildRecord.branchName(for: sessionId)
+        do { try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true) } catch { return .failed(error.localizedDescription) }
+        guard let added = await DelegationGit.run(["worktree", "add", "-b", branch, worktree, base.baseCommit], in: base.repository, timeout: timeout) else { return .failed("Git did not finish.") }
+        guard added.exitCode == 0 else { return .failed(DelegationGit.message(added)) }
+        let folder = base.prefix.isEmpty ? worktree : URL(fileURLWithPath: worktree).appendingPathComponent(base.prefix, isDirectory: true).path
+        return .created(ChildWorktree(sessionId: sessionId, worktreePath: worktree, workingFolder: folder, branch: branch, parentBranch: base.parentBranch, baseCommit: base.baseCommit))
+    }
+
     /// ``check(workspace:)`` and then ``make(sessionId:base:task:timeout:)``.
     public func create(sessionId: String, workspace: String, task: String) async -> ChildWorktreeOutcome {
         switch await check(workspace: workspace) {

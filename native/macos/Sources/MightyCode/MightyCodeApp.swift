@@ -68,7 +68,7 @@ struct MightyCodeApp: App {
                     .disabled(!store.isLoaded || store.hasModal)
                 Button(L("workspace.add.fromGit")) { store.showWorkspaceCreate(.fromGit) }
                     .disabled(!store.isLoaded || store.hasModal)
-                Button(L("menu.newClaudePane")) { store.addSession(kind: "claude") }
+                Button(L("menu.newClaudePane")) { store.addAgentPane() }
                     .keyboardShortcut("n", modifiers: .command)
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.hasModal)
             }

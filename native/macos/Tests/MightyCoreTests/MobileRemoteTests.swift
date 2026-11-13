@@ -188,6 +188,13 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
         commands.append("command:\(action)")
         return action == "clear" ? nil : "본문 " + action
     }
+    /// A pane worktree's action: a merge the fake refuses for a conflict, everything else done.
+    func mobilePaneWorktree(sessionId: String, action: String) async throws -> MobilePaneWorktreeResult {
+        lock.lock(); defer { lock.unlock() }
+        try known(sessionId)
+        commands.append("worktree:\(action)")
+        return action == "merge" ? MobilePaneWorktreeResult(done: false, message: "충돌합니다.") : MobilePaneWorktreeResult(done: true)
+    }
     func bump(state: Bool, session: Bool) { lock.lock(); if state { stateRevision += 1 }; if session { sessionRevision += 1 }; lock.unlock() }
     func recorded() -> [String] { lock.lock(); defer { lock.unlock() }; return commands }
 }
@@ -743,6 +750,48 @@ struct MobileRemoteTests {
         #expect(try await call(service, "POST", "/m1/sessions/session-1/command", body: ["action": "model"]).0 == 400)
         #expect(try await call(service, "POST", "/m1/sessions/session-1/command", body: [:]).0 == 400)
         #expect(host.recorded() == ["command:help", "command:clear"])
+    }
+
+    @Test func aPaneWorktreeActionReachesTheHostAndAnUnknownOneIsRefused() async throws {
+        let host = FakeMobileHost()
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let merged = try await call(service, "POST", "/m1/sessions/session-1/worktree", body: ["action": "merge"])
+        #expect(merged.0 == 200 && merged.1["done"] as? Bool == false && merged.1["message"] as? String == "충돌합니다.")
+        let refreshed = try await call(service, "POST", "/m1/sessions/session-1/worktree", body: ["action": "refresh"])
+        #expect(refreshed.0 == 200 && refreshed.1["done"] as? Bool == true && refreshed.1["message"] == nil)
+        for action in ["commitMerge", "undo", "resolveConflict", "discard"] {
+            #expect(try await call(service, "POST", "/m1/sessions/session-1/worktree", body: ["action": action]).0 == 200)
+        }
+        // A word outside the list, or none, never reaches the host; an unknown pane is a 404.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/worktree", body: ["action": "push"]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/worktree", body: [:]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/sessions/missing/worktree", body: ["action": "merge"]).0 == 404)
+        #expect(host.recorded() == ["worktree:merge", "worktree:refresh", "worktree:commitMerge", "worktree:undo", "worktree:resolveConflict", "worktree:discard"])
+        // A new pane from a host without worktrees answers its id alone.
+        let created = try await call(service, "POST", "/m1/workspaces/workspace-1/sessions", body: ["kind": "claude"])
+        #expect(created.0 == 201 && created.1["sessionId"] as? String == "session-2" && created.1["worktree"] == nil && created.1["notice"] == nil)
+    }
+
+    @Test func aPaneWorktreeSummaryCarriesNoPathAndBoundsWhatItSays() throws {
+        var pane = PaneWorktree(worktreePath: "/Users/someone/.mightycode/worktrees/p", branch: "mighty/p", baseBranch: String(repeating: "b", count: 300),
+                                baseCommit: String(repeating: "a", count: 40), checkout: "/Users/someone/repo", port: 4321)
+        let fresh = MobileRemoteSupport.paneWorktree(pane, status: nil, busy: false, conflict: false, children: 0)
+        #expect(fresh == MobilePaneWorktree(branch: "mighty/p", base: String(repeating: "b", count: MobileRemoteSupport.maximumWorktreeBranch), port: 4321))
+        pane.mergedCommit = String(repeating: "c", count: 40); pane.preMergeCommit = String(repeating: "d", count: 40); pane.setupStatus = .failed
+        let read = MobileRemoteSupport.paneWorktree(pane, status: PaneWorktreeStatus(ahead: 3, behind: -1, changedFiles: 200_000), busy: true, conflict: true, children: 2)
+        #expect(read.ahead == 3 && read.behind == 0 && read.changed == 99_999 && read.setup == "failed")
+        #expect(read.canUndo == true && read.conflict == true && read.busy == true && read.children == 2)
+        let wire = String(decoding: try JSONEncoder().encode(read), as: UTF8.self)
+        #expect(!wire.contains("/Users/") && !wire.contains("worktreePath") && !wire.contains("checkout"))
+        // Absent facts stay off the wire.
+        let quiet = String(decoding: try JSONEncoder().encode(fresh), as: UTF8.self)
+        #expect(!quiet.contains("ahead") && !quiet.contains("busy") && !quiet.contains("canUndo") && !quiet.contains("children"))
+        // A child pane on the pane's branch, or an open delegation record, counts against a discard.
+        var child = RunSession(id: "c", workspaceId: "w", title: "c", kind: "claude", provider: "claude", model: "default", settings: RunSettings(), status: "idle")
+        child.parentSessionId = "p"
+        #expect(MobileRemoteSupport.paneWorktreeChildren(sessionId: "p", sessions: [child], children: []) == 1)
+        #expect(MobileRemoteSupport.paneWorktreeChildren(sessionId: "q", sessions: [child], children: []) == 0)
     }
 
     @Test func aLocalShellPaneIsRefusedWithAConflict() async throws {

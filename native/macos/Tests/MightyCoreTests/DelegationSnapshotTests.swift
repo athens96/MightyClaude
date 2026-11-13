@@ -61,7 +61,8 @@ import Testing
             #expect(links("self") == [nil, nil])
             #expect(links("bad") == [nil, nil])
             #expect(links("long") == ["p", nil])
-            #expect(links("shell") == [nil, nil])
+            // A terminal keeps an absolute folder (one opened in a pane worktree) but is never a child.
+            #expect(links("shell") == [nil, "/tmp/worktrees/shell"])
             #expect(links("browser") == [nil, nil])
             #expect(links("plain") == [nil, nil])
         }

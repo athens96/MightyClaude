@@ -23,7 +23,9 @@ extension AppStore {
             try Task.checkCancellation()
             guard canEditAttachments(id), localTerminals[id] == nil else { return }
             let controller = sharedTerminalController()
-            let terminal = LocalTerminalSession(id: id, directory: workspace.path, controller: controller, smoke: isolatedTerminalSmoke, statusChanged: { [weak self] status in
+            // A terminal opened in a pane worktree starts there while that folder is still on disk.
+            let folder = session.workingFolder.flatMap { DelegationPanes.isDirectory($0) ? $0 : nil } ?? workspace.path
+            let terminal = LocalTerminalSession(id: id, directory: folder, controller: controller, smoke: isolatedTerminalSmoke, statusChanged: { [weak self] status in
                 self?.updateSession(id) { $0.status = status }
             }, focused: { [weak self] in
                 guard self?.snapshot.activeSessionId != id else { return }

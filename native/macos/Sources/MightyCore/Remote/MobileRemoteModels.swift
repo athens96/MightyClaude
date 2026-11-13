@@ -82,6 +82,10 @@ public enum MobileWire {
     public static let mightyStyles = ["cli", "ouroboros"]
     /// What `POST …/command` performs; the other actions the phone handles itself.
     public static let performedActions = ["clear", "usage", "help"]
+    /// What `POST …/worktree` does to a pane that works in its own worktree (``MobilePaneWorktree``).
+    public static let paneWorktreeActions = ["refresh", "merge", "commitMerge", "undo", "resolveConflict", "discard"]
+    /// The words of ``MobilePaneWorktree/setup``.
+    public static let paneWorktreeSetupStates = ["running", "done", "failed"]
     /// The Mac's `mightyStyle` is nil where the wire says "cli".
     public static let cliStyle = "cli"
     public static let maximumTitle = 80
@@ -212,16 +216,65 @@ public struct MobileSessionSummary: Codable, Sendable, Equatable, Identifiable {
     /// That child's state as its sidebar row says it (`ChildState`, with a running
     /// child that waits on a human shown as waiting); absent with `parentSessionId`.
     public var childState: String?
+    /// The pane works in its own worktree (Mac 0.4.61+, ``PaneWorktree``): its branch, base, PORT and where it stands.
+    /// Absent on every other pane and from older hosts; a phone that sees it may call `POST …/worktree`.
+    public var worktree: MobilePaneWorktree?
     public init(id: String, workspaceId: String, title: String, kind: String, provider: String, model: String, status: String, revision: Int, updatedAt: String,
                 preview: MobilePreview? = nil, pendingPermissions: Int = 0, pendingQuestions: Int = 0, queued: Int = 0, resumeId: String? = nil, terminal: Bool = false,
                 agentViewMode: String? = nil, mightyStyle: String? = nil, styleId: String? = nil, titleMode: String? = nil, resolvedModel: String? = nil, canSteer: Bool? = nil,
-                parentSessionId: String? = nil, childState: String? = nil) {
+                parentSessionId: String? = nil, childState: String? = nil, worktree: MobilePaneWorktree? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.status = status
         self.revision = revision; self.updatedAt = updatedAt; self.preview = preview; self.pendingPermissions = pendingPermissions
         self.pendingQuestions = pendingQuestions; self.queued = queued; self.resumeId = resumeId; self.terminal = terminal
         self.agentViewMode = agentViewMode; self.mightyStyle = mightyStyle; self.styleId = styleId; self.titleMode = titleMode
         self.resolvedModel = resolvedModel; self.canSteer = canSteer; self.parentSessionId = parentSessionId; self.childState = childState
+        self.worktree = worktree
     }
+}
+
+/// A pane's own worktree as the phone shows it (``PaneWorktree``): nothing a phone could not see on the Mac's bar, and no
+/// path. Counts are absent until the Mac has read them (`git` runs off the main thread every 20 s and after each run).
+public struct MobilePaneWorktree: Codable, Sendable, Equatable {
+    /// `mighty/<pane id>`, at most 200 characters.
+    public var branch: String
+    /// The branch a merge goes into, at most 200 characters.
+    public var base: String
+    /// The `PORT` every run of the pane gets.
+    public var port: Int
+    /// Commits the base lacks, commits the base moved ahead since, files changed and not committed (new ones too).
+    public var ahead: Int?
+    public var behind: Int?
+    public var changed: Int?
+    /// How the workspace's setup command went (``MobileWire/paneWorktreeSetupStates``); absent without one.
+    public var setup: String?
+    /// The last merge can still be undone from here (the Mac checks again when asked).
+    public var canUndo: Bool?
+    /// The last merge was refused for a conflict: `resolveConflict` is worth offering.
+    public var conflict: Bool?
+    /// A merge, undo or discard of the pane is under way.
+    public var busy: Bool?
+    /// Open children on the pane's branch: discard is refused while there are any.
+    public var children: Int?
+    public init(branch: String, base: String, port: Int, ahead: Int? = nil, behind: Int? = nil, changed: Int? = nil, setup: String? = nil,
+                canUndo: Bool? = nil, conflict: Bool? = nil, busy: Bool? = nil, children: Int? = nil) {
+        self.branch = branch; self.base = base; self.port = port; self.ahead = ahead; self.behind = behind; self.changed = changed
+        self.setup = setup; self.canUndo = canUndo; self.conflict = conflict; self.busy = busy; self.children = children
+    }
+}
+
+/// `POST /m1/sessions/{id}/worktree`: one of ``MobileWire/paneWorktreeActions``. The phone confirms `discard` itself.
+public struct MobilePaneWorktreeRequest: Codable, Sendable, Equatable {
+    public var action: String
+    public init(action: String) { self.action = action }
+}
+
+/// What a worktree action came to: `done` false is a refusal the Mac also wrote in the pane (`message` says why, in the
+/// Mac's words); `message` is absent when there is nothing to say (a refresh, a conflict request that started).
+public struct MobilePaneWorktreeResult: Codable, Sendable, Equatable {
+    public var `protocol`: Int = 1
+    public var done: Bool
+    public var message: String?
+    public init(done: Bool, message: String? = nil) { self.done = done; self.message = message }
 }
 
 public struct MobileState: Codable, Sendable, Equatable {
@@ -984,7 +1037,12 @@ public struct MobileCreateSessionRequest: Codable, Sendable {
 public struct MobileCreatedSession: Codable, Sendable, Equatable {
     public var `protocol`: Int = 1
     public var sessionId: String
-    public init(sessionId: String) { self.sessionId = sessionId }
+    /// The new pane works in its own worktree (the workspace's setting chose one); absent when it works in the folder.
+    public var worktree: Bool?
+    /// One line for the phone to show: where the worktree pane works, or why a worktree the setting chose could not be
+    /// made and the pane works in the workspace folder instead (the Mac's words, also in the pane). Absent otherwise.
+    public var notice: String?
+    public init(sessionId: String, worktree: Bool? = nil, notice: String? = nil) { self.sessionId = sessionId; self.worktree = worktree; self.notice = notice }
 }
 
 /// What the desktop shows in its settings; the phone reads the QR/URL.

@@ -72,6 +72,8 @@ export function HostWorkspaces({
       try {
         const created = await client.createSession(creatingFor, choice);
         setCreatingFor(undefined);
+        // The Mac's line about where the pane works: its own worktree, or why the worktree its setting chose could not be made.
+        if (created.notice) showToast(created.notice, created.worktree ? 'success' : 'info');
         onCreated?.();
         router.push(`/host/${hostId}/session/${created.sessionId}`);
       } catch (error) {

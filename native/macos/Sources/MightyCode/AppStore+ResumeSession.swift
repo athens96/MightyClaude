@@ -98,8 +98,8 @@ extension AppStore {
 
     private func startAgentPane(provider: String, workspaceId: String) {
         guard snapshot.workspaces.contains(where: { $0.id == workspaceId }) else { return }
-        selectWorkspace(workspaceId)
-        addSession(kind: SessionKind.claude, provider: provider)
+        // A further agent pane of the workspace may work in its own worktree (``PaneWorktreePolicy``).
+        addAgentPaneChoosingFolder(provider: provider, workspaceId: workspaceId)
     }
 
     /// Sessions of `provider` recorded for the workspace folder that no open

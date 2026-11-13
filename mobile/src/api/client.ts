@@ -28,6 +28,8 @@ import {
   type CommandsResponse,
   type CompletedUpload,
   type CreateSessionResponse,
+  type PaneWorktreeAction,
+  type PaneWorktreeResult,
   type EntriesPage,
   type FileChangesRequest,
   type FileListing,
@@ -330,6 +332,11 @@ export interface MobileClient {
     input: { kind: SessionKind; provider?: Provider },
     signal?: AbortSignal,
   ): Promise<CreateSessionResponse>;
+  /**
+   * One of the Mac's worktree actions on a pane whose summary carries `worktree` (host 0.4.61+): the Mac does the git
+   * work and answers what it wrote in the pane.
+   */
+  paneWorktree(sessionId: string, action: PaneWorktreeAction, signal?: AbortSignal): Promise<PaneWorktreeResult>;
   /** One folder of a workspace, read-only ("files"); `""` is the workspace root. */
   listFiles(workspaceId: string, path: string, signal?: AbortSignal): Promise<FileListing>;
   /**
@@ -674,6 +681,13 @@ export function createClient(channel: RelayChannel): MobileClient {
         'POST',
         `/m1/workspaces/${encodeURIComponent(workspaceId)}/sessions`,
         input,
+        signal,
+      ),
+    paneWorktree: (sessionId, action, signal) =>
+      request<PaneWorktreeResult>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/worktree`,
+        { action },
         signal,
       ),
 

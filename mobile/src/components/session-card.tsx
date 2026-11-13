@@ -13,6 +13,8 @@ import {
 } from '@/lib/dashboard';
 import { t } from '@/lib/i18n';
 import { childStateLabel, rowMark, rowMeta, rowNote, waitLabel } from '@/lib/session-row';
+import { worktreeMarker } from '@/lib/pane-worktree';
+import { Icon } from '@/components/icons';
 import { statusWord } from '@/lib/status-glyph';
 import { useRunsAntigravity } from '@/hooks/use-capabilities';
 import { useNow } from '@/hooks/use-now';
@@ -51,7 +53,8 @@ const MARK_SIZE = 12;
  * revision (`freshGlance`); the pane list itself carries neither number. Rows after the
  * first draw a hairline rule from the title's edge. A Mighty Orchestration child pane
  * (`nested`) sits one step in under its parent and always ends in its state, as the Mac
- * sidebar draws it; merging and discarding a child stay on the Mac.
+ * sidebar draws it; merging and discarding a child stay on the Mac. A pane that works in its own worktree adds a line
+ * with a branch mark, its branch and the branch it merges into.
  */
 export function SessionRow({
   hostId,
@@ -89,13 +92,15 @@ export function SessionRow({
   const note = rowNote(session);
   const child = childStateLabel(session);
   const word = child?.text ?? (attention > 0 ? t('phone.card.attention', { count: attention }) : statusWord(status));
+  const worktree = session.worktree;
+  const spokenStatus = note?.kind === 'reason' ? `${word}, ${note.text}` : word;
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={t('phone.card.label', {
         title,
-        status: note?.kind === 'reason' ? `${word}, ${note.text}` : word,
+        status: worktree ? `${spokenStatus}, ${worktreeMarker(worktree)}` : spokenStatus,
       })}
       onPress={onPress}
       style={({ pressed }) => [styles.row, nested && styles.nested, pressed && styles.pressed]}
@@ -126,6 +131,14 @@ export function SessionRow({
             {[...lead, ...rest].join(' · ')}
           </Text>
         )}
+        {worktree ? (
+          <View style={styles.metaRow}>
+            <Icon name="branch" color={palette.textMuted} size={MARK_SIZE} />
+            <Text numberOfLines={1} ellipsizeMode="middle" style={[styles.meta, styles.metaRest]}>
+              {worktree.branch} → {worktree.base}
+            </Text>
+          </View>
+        ) : null}
         {note ? (
           <Text numberOfLines={1} style={[styles.note, note.kind === 'reason' && styles.reason]}>
             {note.text}

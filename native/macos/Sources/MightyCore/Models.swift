@@ -142,8 +142,31 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     public var modelDefaults: ModelDefaultsConfig?
     /// Set when the folder is on another computer; `path` is then the host's path.
     public var remote: RemoteWorkspaceReference?
+    /// Where the workspace's agent panes work (``PaneWorktreeMode``): nil (older saves) is `.ask`.
+    public var paneWorktreeMode: PaneWorktreeMode?
+    /// Run once in each new pane worktree right after it is made (`npm ci`, …); nil is none (``PaneWorktreeSetup``).
+    public var worktreeSetupCommand: String?
+    /// Files the workspace folder has but git ignores (`.env`, …), copied into each new pane worktree before its setup
+    /// command (``PaneWorktreeCopy``); nil is none.
+    public var worktreeCopyPaths: [String]?
+    /// Pane worktrees kept after their pane closed with unmerged work, so the worktree list can reopen, merge or delete
+    /// them (``KeptPaneWorktree``); nil is none.
+    public var keptPaneWorktrees: [KeptPaneWorktree]?
     public init(id: String = UUID().uuidString, name: String, path: String, createdAt: String = mightyTimestamp(), modelDefaults: ModelDefaultsConfig? = nil, remote: RemoteWorkspaceReference? = nil) {
         self.id = id; self.name = name; self.path = path; self.createdAt = createdAt; self.modelDefaults = modelDefaults; self.remote = remote
+    }
+    enum CodingKeys: String, CodingKey { case id, name, path, createdAt, modelDefaults, remote, paneWorktreeMode, worktreeSetupCommand, worktreeCopyPaths, keptPaneWorktrees }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id); name = try c.decode(String.self, forKey: .name); path = try c.decode(String.self, forKey: .path)
+        createdAt = try c.decode(String.self, forKey: .createdAt)
+        modelDefaults = try c.decodeIfPresent(ModelDefaultsConfig.self, forKey: .modelDefaults)
+        remote = try c.decodeIfPresent(RemoteWorkspaceReference.self, forKey: .remote)
+        // The pane worktree settings are optional extras: a damaged one never costs the workspace.
+        paneWorktreeMode = try? c.decodeIfPresent(PaneWorktreeMode.self, forKey: .paneWorktreeMode)
+        worktreeSetupCommand = try? c.decodeIfPresent(String.self, forKey: .worktreeSetupCommand)
+        worktreeCopyPaths = try? c.decodeIfPresent([String].self, forKey: .worktreeCopyPaths)
+        keptPaneWorktrees = (try? c.decodeIfPresent([LossyDecoded<KeptPaneWorktree>].self, forKey: .keptPaneWorktrees))?.compactMap(\.value)
     }
     public var isRemote: Bool { remote != nil }
 }
@@ -359,6 +382,9 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     /// Present only on a delegated child pane (macOS): the absolute path of its worktree,
     /// where its runs work instead of the workspace folder.
     public var workingFolder: String?
+    /// Present only on a workspace's agent pane that works in its own worktree (macOS, ``PaneWorktree``): its branch, base,
+    /// port and setup. Its `workingFolder` is the worktree folder; it has no parent.
+    public var paneWorktree: PaneWorktree?
     /// The composer's "send to" choice on a Claude agent pane: the id of an `AskTargets` entry.
     /// nil (older saves) sends to Claude; an id that is no longer available reads as Claude too.
     public var askTarget: String?
@@ -370,7 +396,7 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         // Mighty is the one view an agent pane has.
         self.agentViewMode = kind == "claude" && MightyGraphSupport.providers.contains(provider) ? "mighty" : nil
     }
-    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphSizesLayout, graphResultSize, graphPlanSize, graphViewMode, flowLogCollapsed, workspaceProfileKey, ownerSessionId, titleMode, planHistory, todoProgress, backgroundWork, parentSessionId, workingFolder, askTarget, shellRuns }
+    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphSizesLayout, graphResultSize, graphPlanSize, graphViewMode, flowLogCollapsed, workspaceProfileKey, ownerSessionId, titleMode, planHistory, todoProgress, backgroundWork, parentSessionId, workingFolder, paneWorktree, askTarget, shellRuns }
     /// How the pane's Mighty view draws its requests; the diagram unless the timeline was chosen.
     public var mightyViewMode: MightyGraphViewMode { graphViewMode ?? .diagram }
     /// Full text of the most recent user log entry that would update the automatic title,
@@ -428,6 +454,7 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         // Optional delegation links; damage must not discard the conversation.
         parentSessionId = try? c.decodeIfPresent(String.self, forKey: .parentSessionId)
         workingFolder = try? c.decodeIfPresent(String.self, forKey: .workingFolder)
+        paneWorktree = try? c.decodeIfPresent(PaneWorktree.self, forKey: .paneWorktree)
         askTarget = try? c.decodeIfPresent(String.self, forKey: .askTarget)
         // Optional run results; a damaged one is dropped, not the conversation.
         shellRuns = (try? c.decodeIfPresent([LossyDecoded<ShellBlockRun>].self, forKey: .shellRuns))?.compactMap(\.value)
@@ -556,6 +583,11 @@ public struct StartRunRequest: Codable, Sendable, Equatable {
     /// computer that runs it puts them in agy's settings for this run, or for
     /// good. Not persisted; a remote run carries it beside the request.
     public var antigravityGrant: AntigravityAllowGrant?
+    /// The run's own environment values from its pane: a pane worktree's `PORT`, `MIGHTY_WORKSPACE_FOLDER` and
+    /// `MIGHTY_WORKTREE` (``PaneWorktree/environment(workspaceFolder:)``). Only the keys
+    /// ``StartRunRequest/paneEnvironmentKeys`` name are set. Not persisted; a remote run never carries it.
+    public var paneEnvironment: [String: String]?
+    public static let paneEnvironmentKeys: Set<String> = ["PORT", "MIGHTY_WORKSPACE_FOLDER", "MIGHTY_WORKTREE"]
     public init(sessionId: String, workspaceId: String, kind: String = "claude", input: String, model: String = "default", provider: String = "claude", settings: RunSettings = .init(), resumeId: String? = nil, attachments: [RunAttachment] = [], registeredModels: [RegisteredModelEntry] = []) {
         self.sessionId = sessionId; self.workspaceId = workspaceId; self.kind = kind; self.input = input; self.model = model; self.provider = provider; self.settings = settings; self.resumeId = resumeId; self.attachments = attachments; self.registeredModels = registeredModels
     }

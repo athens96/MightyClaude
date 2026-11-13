@@ -196,6 +196,46 @@ export interface MobileSessionSummary {
   parentSessionId?: string;
   /** That child's state as the Mac sidebar says it (`ChildState`): an open string. */
   childState?: string;
+  /**
+   * The pane works in its own git worktree (Mac 0.4.61+): its branch, the branch it merges into, its PORT and where it
+   * stands. Absent on every other pane and from older hosts; a pane that has it takes `POST …/worktree`.
+   */
+  worktree?: MobilePaneWorktree;
+}
+
+/** A pane's own worktree as the Mac's bar shows it (no path). Counts are absent until the Mac has read them. */
+export interface MobilePaneWorktree {
+  /** `mighty/<pane id>`. */
+  branch: string;
+  /** The branch a merge goes into. */
+  base: string;
+  port: number;
+  /** Commits the base lacks. */
+  ahead?: number;
+  /** Commits the base moved ahead since the worktree was made. */
+  behind?: number;
+  /** Files changed and not committed, new ones too. */
+  changed?: number;
+  /** The workspace's setup command: `running`, `done` or `failed` (an open string). */
+  setup?: string;
+  /** The last merge can still be undone (the Mac checks again). */
+  canUndo?: boolean;
+  /** The last merge was refused for a conflict. */
+  conflict?: boolean;
+  /** A merge, undo or discard of the pane is under way on the Mac. */
+  busy?: boolean;
+  /** Open children on the pane's branch: the Mac refuses a discard while there are any. */
+  children?: number;
+}
+
+/** What `POST /m1/sessions/{id}/worktree` does. The phone confirms `discard` itself. */
+export type PaneWorktreeAction = 'refresh' | 'merge' | 'commitMerge' | 'undo' | 'resolveConflict' | 'discard';
+
+/** A worktree action's answer: `done` false is a refusal the Mac also wrote in the pane, `message` its words. */
+export interface PaneWorktreeResult {
+  protocol: number;
+  done: boolean;
+  message?: string;
 }
 
 export interface MobileState {
@@ -1063,6 +1103,10 @@ export interface RunNowResponse extends OkResponse {
 export interface CreateSessionResponse {
   protocol: number;
   sessionId: string;
+  /** The new pane works in its own worktree (the workspace's setting on the Mac chose one). */
+  worktree?: boolean;
+  /** One line to show: where the worktree pane works, or why a worktree could not be made and the pane works in the folder. */
+  notice?: string;
 }
 
 export interface QuestionAnswer {

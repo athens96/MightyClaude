@@ -86,6 +86,14 @@ describe('createClient over a relay channel', () => {
     ]);
   });
 
+  it('sends a pane worktree action to its own route', async () => {
+    const fake = fakeChannel({ status: 200, body: { protocol: 1, done: false, message: '충돌합니다.' } });
+    const client = createClient(fake.channel);
+    const result = await client.paneWorktree('a/b', 'commitMerge');
+    expect(fake.calls[0]).toEqual({ method: 'POST', path: '/m1/sessions/a%2Fb/worktree', body: { action: 'commitMerge' } });
+    expect(result).toEqual({ protocol: 1, done: false, message: '충돌합니다.' });
+  });
+
   it('asks for the structure view only when told to, with the tag it holds', async () => {
     const fake = fakeChannel({ status: 200, body: { protocol: 1, ok: true } });
     const client = createClient(fake.channel);

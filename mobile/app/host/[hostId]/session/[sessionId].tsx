@@ -52,6 +52,7 @@ import { PlanCard } from '@/components/plan-card';
 import { TerminalPromptCard } from '@/components/terminal-prompt-card';
 import { QuestionnaireCard } from '@/components/questionnaire-card';
 import { QueuedList } from '@/components/queued-list';
+import { PaneWorktreeBar } from '@/components/pane-worktree-bar';
 import {
   SessionHeader,
   SessionTitle,
@@ -963,6 +964,13 @@ export default function SessionScreen() {
     })();
   }, [client, leavePane, sessionId]);
 
+  /** The pane was discarded with its worktree from the bar: the Mac closed it, so the phone leaves as after a close. */
+  const worktreeDiscarded = useCallback(() => {
+    closedRef.current = true;
+    setClosed(true);
+    leavePane();
+  }, [leavePane]);
+
   const settings = canSettings ? detail?.settings : undefined;
 
   const openPicker = useCallback(
@@ -1429,6 +1437,16 @@ export default function SessionScreen() {
         <ErrorBanner message={describeRepairNeeded(poll.error)} />
       ) : poll.error ? (
         <ErrorBanner message={poll.error} />
+      ) : null}
+
+      {!closed && session?.worktree && sessionId ? (
+        <PaneWorktreeBar
+          sessionId={sessionId}
+          worktree={session.worktree}
+          client={client}
+          running={running}
+          onDiscarded={worktreeDiscarded}
+        />
       ) : null}
 
       <GestureDetector

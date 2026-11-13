@@ -141,9 +141,15 @@ public enum ChildCleanup {
     /// The parent's branch and checkout, and the branches of nested
     /// worktrees, are never touched.
     public static func discard(_ child: ChildRecord, parentCheckout: String, worktreeRoot: URL) async -> ChildDiscardOutcome {
-        // Only the child's own place is ever forced away, never a folder a record names elsewhere.
-        let own = canonical(child.worktreePath)
-        guard ChildWorktreeMaker.isSafeSessionId(child.id), own == canonical(worktreeRoot.appendingPathComponent(child.id, isDirectory: true).path) else {
+        await removeOwnWorktree(id: child.id, worktreePath: child.worktreePath, branch: child.branch, checkout: parentCheckout, worktreeRoot: worktreeRoot)
+    }
+
+    /// ``discard(_:parentCheckout:worktreeRoot:)`` for any pane's own worktree under `worktreeRoot`: a delegated child's, or a
+    /// workspace's agent pane that works in its own worktree (``PaneWorktree``).
+    static func removeOwnWorktree(id: String, worktreePath: String, branch: String, checkout parentCheckout: String, worktreeRoot: URL) async -> ChildDiscardOutcome {
+        // Only the pane's own place is ever forced away, never a folder a record names elsewhere.
+        let own = canonical(worktreePath)
+        guard ChildWorktreeMaker.isSafeSessionId(id), own == canonical(worktreeRoot.appendingPathComponent(id, isDirectory: true).path) else {
             return .failed(L("delegation.card.error.worktreeMisplaced"))
         }
         guard DelegationGit.executable != nil else { return .failed(L("delegation.card.error.gitMissing")) }
@@ -153,13 +159,13 @@ public enum ChildCleanup {
             guard let removed = await DelegationGit.run(["worktree", "remove", "--force", "--force", path], in: parentCheckout, timeout: gitTimeout) else { return .failed(L("delegation.card.error.gitUnfinished")) }
             guard removed.exitCode == 0 else { return .failed(DelegationGit.message(removed)) }
         }
-        if FileManager.default.fileExists(atPath: child.worktreePath) {
-            do { try FileManager.default.removeItem(atPath: child.worktreePath) } catch { return .failed(error.localizedDescription) }
+        if FileManager.default.fileExists(atPath: worktreePath) {
+            do { try FileManager.default.removeItem(atPath: worktreePath) } catch { return .failed(error.localizedDescription) }
         }
-        guard let found = await DelegationGit.run(["rev-parse", "-q", "--verify", "refs/heads/" + child.branch], in: parentCheckout),
+        guard let found = await DelegationGit.run(["rev-parse", "-q", "--verify", "refs/heads/" + branch], in: parentCheckout),
               found.exitCode == 0 || found.exitCode == 1 else { return .failed(L("delegation.card.error.childBranchUnread")) }
         if found.exitCode == 0 {
-            guard let deleted = await DelegationGit.run(["branch", "-D", child.branch], in: parentCheckout) else { return .failed(L("delegation.card.error.gitUnfinished")) }
+            guard let deleted = await DelegationGit.run(["branch", "-D", branch], in: parentCheckout) else { return .failed(L("delegation.card.error.gitUnfinished")) }
             guard deleted.exitCode == 0 else { return .failed(DelegationGit.message(deleted)) }
         }
         return .discarded

@@ -569,6 +569,8 @@ public actor ProcessRunner {
             guard !run.stopping, !shuttingDown, !run.finished else { await cancelPending(run); if !request.attachments.isEmpty { throw CancellationError() }; return }
             if let detail = snapshot.fallbackDetail { emitLog(run, kind: "system", text: detail) }
             var environment = snapshot.values
+            // A pane worktree's own values (its PORT), so two panes' dev servers do not collide.
+            for (key, value) in request.paneEnvironment ?? [:] where StartRunRequest.paneEnvironmentKeys.contains(key) && !value.contains("\0") { environment[key] = value }
             var executable: URL; var arguments: [String]
             var standardInput = Data()
             if request.kind == "shell" {

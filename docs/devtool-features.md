@@ -99,6 +99,51 @@
 - **이 요청이 한 일**: 마이티 보기의 결과 블록 머리에 목록 단추가 붙는다(도구를 쓴 요청만). 요청과 하위 에이전트의 도구 활동을 실행한 명령·바꾼 파일·웹·읽은 파일·그 밖으로 나눠 한 줄씩(같은 활동은 마지막 상태로 한 번) 보이고, 실패한 것을 표시하며, 글로 복사할 수 있다.
 - **진단 정보 내보내기…**(메뉴 워크스페이스): 앱 버전·빌드, macOS·로캘·아키텍처, CLI별 설치 상태와 안내 글, 워크스페이스·창 수, 기능 켜짐 여부, 마지막 오류를 JSON으로 저장한다. 요청·출력·워크스페이스 경로·토큰은 넣지 않고 홈 폴더는 `~`로 바꾼다.
 
+## 12. 창마다 worktree (2026-11-13)
+
+한 워크스페이스에서 여러 에이전트가 동시에 일하도록, 워크스페이스의 첫 단계 에이전트 창도 자기 git worktree에서 일할 수 있다(`PaneWorktree`, `PaneWorktreeTools.swift`, `AppStore+PaneWorktree.swift`, `PaneWorktreeBar.swift`). 규칙은 MightyCore에 있고, Windows와 폰은 아래 "옮길 규칙"을 그대로 따른다.
+
+- **언제 worktree인가**(`PaneWorktreePolicy.decide`): 워크스페이스의 `paneWorktreeMode`(`PaneWorktreeMode`, 저장 값 `ask`/`further`/`every`, 모르는 값과 없음은 `ask`)를 따른다.
+  - `ask`(기본): 워크스페이스 폴더에서 일하는 에이전트 창이 **이미 열려 있으면**(실행 중이 아니어도) 묻는다. 없으면 워크스페이스 폴더.
+  - `further`: 그런 창이 있으면 묻지 않고 worktree. 첫 창은 워크스페이스 폴더.
+  - `every`: 첫 창까지 모든 에이전트 창이 worktree. 워크스페이스 폴더는 병합만 받는다(병합이 "워크스페이스 폴더에 변경이 있음"으로 막히지 않게 하는 모드).
+  - 세지 않는 창: 위임 자식, 이미 자기 worktree에서 일하는 창, 터미널, 닫히는 중인 창. 원격 워크스페이스는 언제나 워크스페이스 폴더. 이어 하기 창도 워크스페이스 폴더(CLI 기록이 그 폴더에 묶여 있다).
+  - 모든 경로가 같은 규칙: "창 추가"의 새 에이전트 창, ⌘N과 메뉴의 새 Claude 창, 빈 레이아웃의 단추(`AppStore.addAgentPane`). 폰에서 연 창은 물을 수 없으므로 `decideWithoutAsking`(묻기는 워크스페이스 폴더)이고, `mobileCreateSession`이 async로 worktree를 만든 뒤 창 id를 돌려준다.
+  - 설정이 고른 worktree(`further`/`every`, 폰)를 만들 수 없으면 창은 워크스페이스 폴더에서 열리고 이유가 창에 남는다(`paneWorktree.log.fellBack`). 사람이 고른 worktree는 만들지 못하면 창을 열지 않는다.
+- **고르기**: "새 worktree에서 열기"(기본), "새 worktree에서 열고, 이 워크스페이스는 앞으로도 항상"(`further`로 바꿈), "같은 폴더에서 열기". worktree를 만들 수 없는 폴더는 이유 한 줄과 같은 폴더만. 워크스페이스 행 메뉴: **에이전트 창의 worktree**(세 모드), **worktree 준비 명령…**, **worktree에 복사할 파일…**, **worktree 목록…**.
+- **만들기**: 위임 자식과 같은 규칙과 자리(`ChildWorktreeMaker.makePane`): 워크스페이스 브랜치의 지금 커밋에서 `mighty/<창 id>`, `~/.mightycode/worktrees/<창 id>`, 디스크 10 GB 미만이면 거절, TASK.md·REPORT.md 없음. worktree 다음에 창. 창의 실행 폴더는 `workingFolder`(워크스페이스가 저장소의 하위 폴더면 worktree 안의 같은 하위 폴더, `PaneWorktree.workingFolder`/`runFolder`). 부모는 없다(`parentSessionId` 없음). 기록은 `RunSession.paneWorktree`.
+- **에이전트에게 알림**(`PaneWorktreeNote`): 창의 첫 요청(슬래시 명령이 아닌 것)에 앱의 한 단락을 붙인다: worktree 폴더, 브랜치와 기준, `PORT=<포트>`, "끝나면 이 브랜치에 커밋하고 커밋 안 한 변경·새 파일을 남기지 말 것, 병합은 사람이 앱에서 함, 병합·push·rebase·브랜치 바꾸기 금지". 한 번 붙이면 `noteGiven`. 대화 기록에는 보이지 않고 CLI에만 간다. 모든 에이전트(Claude·Codex·Antigravity·pi·opencode·Hermes)에 같다. 커밋하지 않는 에이전트는 막대의 **커밋하고 병합**이 앱의 커밋 경로다.
+- **실행 환경**: 창의 모든 실행과 준비 명령에 `PORT`, `MIGHTY_WORKSPACE_FOLDER`(만든 워크스페이스 폴더), `MIGHTY_WORKTREE`(창의 실행 폴더)를 넣는다(`PaneWorktree.environment`, `StartRunRequest.paneEnvironmentKeys`). PORT는 4100–4899에서 창 id로 정한 값부터 다른 창과 이 Mac이 쓰지 않는 값.
+- **복사할 파일과 준비 명령**: 만든 직후 `worktreeCopyPaths`(예: `.env, .env.local`)를 워크스페이스 폴더에서 창의 실행 폴더로 복사한다(`PaneWorktreeCopy`): 상대 경로만(`..`, `/`, `~`, `.git` 거절, 32개까지), 링크는 항목이든 안쪽이든 복사하지 않음, 실제 위치가 워크스페이스 밖이면 거절, worktree에 이미 있는 파일은 덮어쓰지 않음, 모두 합쳐 50 MB·2,000개까지. 복사한 것과 안 한 것(이유: 없음·링크·밖·이미 있음·한도·실패)을 창에 쓴다. 그다음 `worktreeSetupCommand`(한 줄)를 로그인 셸로 한 번(30분 제한, 출력 끝 12줄과 종료 코드, 실패해도 창은 쓸 수 있음).
+- **창 위 막대**(`PaneWorktreeBar`): `worktree mighty/<id> → <기준>`, `↑기준에 없는 커밋 수`, `↓기준이 앞서간 커밋 수`(있을 때), `±변경 파일 수`(있을 때, 누르면 변경 보기), `PORT`(누르면 localhost:포트를 창의 브라우저로 연다), 준비 상태, (충돌로 거절됐으면) **충돌 해결 요청**, **병합** 또는 변경이 있으면 **커밋하고 병합**, 그리고 메뉴: 변경 보기, 이 worktree에서 터미널 열기, Finder에서 보기, localhost 열기, 마지막 병합 되돌리기, PR 만들기, 버리기. 상태는 실행이 끝날 때와 20초마다 git으로 다시 읽는다(메인 스레드 밖, `PaneWorktreeGit.status`).
+- **병합**(`PaneWorktreeGit.merge`): 자식 카드 병합과 같은 git. 처음 걸리는 규칙에서 답하고 거절은 모두 git 쓰기 전이다: worktree 없음, worktree에 변경 있음(**새 파일 포함**, ignore된 파일 제외), 병합할 커밋 없음, 워크스페이스 폴더가 기준 브랜치가 아님, 워크스페이스 폴더에 추적 파일 변경, `merge-tree` 충돌. 아니면 빨리 감기, 기준이 움직였으면 확인한 트리 그대로 병합 커밋 하나. 결과는 `merged(commit, preMerge)`이고 둘 다 기록한다(되돌리기용).
+- **커밋하고 병합**(`PaneWorktreeGit.commitAll`): 추적 파일 변경과 새 파일을 한 커밋으로(`mighty: commit <branch> for its merge`, hook·서명 없이). 비밀처럼 보이는 새 파일(`ChildAutoCommit.looksSecret`)과 5 MB 넘는 새 파일은 빼고, 그런 파일이 남으면 병합하지 않고 목록과 함께 알린다(지우거나 .gitignore에 넣거나 직접 커밋). 풀지 않은 충돌이 있으면 커밋하지 않는다.
+- **충돌 해결 요청**: 충돌로 거절되면 막대에 단추가 생기고, 누르면 창의 에이전트에게 다음 실행으로 `PaneWorktreeNote.conflictPrompt`(기준을 `git merge`로 가져와 양쪽 변경을 살려 풀고 검사 후 커밋, push·rebase·브랜치 바꾸기 금지)를 보낸다. 창이 지금 실행을 받을 수 없으면 이유를 쓰고 보내지 않는다.
+- **병합 되돌리기**(`PaneWorktreeGit.undoMerge`): 기록된 병합이 있고, 워크스페이스 폴더가 기준 브랜치이며 그 머리가 병합 커밋 그대로이고, 추적 파일 변경이 없을 때만. 자식 카드 되돌리기처럼 `read-tree -m -u`(untracked 파일은 남음)와 compare-and-swap `update-ref`. 창의 브랜치는 커밋을 그대로 가져 다시 병합할 수 있다.
+- **변경 보기**(`PaneWorktreeChangesSheet`): 기준과 공유하는 커밋(merge-base) 대비 바뀐 파일(커밋된 것과 아직 안 한 것, 새 파일은 `?`)을 왼쪽에, 고른 파일의 diff를 오른쪽에 요청 변경 검토와 같은 `FileDiffView`로.
+- **PR 만들기**(`PaneWorktreePR`): 확인을 받고 브랜치를 `origin`에 같은 이름으로 push한다(강제 없음: 원격 브랜치가 다른 커밋이면 거절). origin이 GitHub이면 `https://github.com/<owner>/<repo>/compare/<기준>...<브랜치>?expand=1`을 창의 브라우저로 연다(`gh` 없이 같은 화면). 다른 호스트는 push만 하고 알린다.
+- **터미널**: "이 worktree에서 터미널 열기"는 `workingFolder`가 창의 실행 폴더인 터미널 창을 연다. 터미널 창은 저장 시 `workingFolder`를 유지하고(`StateRepository`), 그 폴더가 없으면 워크스페이스 폴더에서 연다.
+- **표시**: worktree 창의 탭과 사이드바 행에 브랜치 아이콘(`PaneWorktreeMarker`, 도움말에 브랜치와 기준).
+- **버리기와 닫기**: 버리기는 확인을 받고 worktree와 브랜치를 지우고 창을 닫는다. 그 창의 브랜치에서 갈라진 자식(열린 자식 창, 또는 열린 상태의 위임 자식 기록)이 있으면 거절하고 이유를 쓴다(`PaneWorktreePolicy.discardBlocker`). 창을 닫으면: 병합 안 된 작업도 자식도 없으면 worktree를 함께 지우고, 있으면 남긴 뒤 워크스페이스의 `keptPaneWorktrees`(`KeptPaneWorktree`: 세션 id·제목·에이전트·기록)에 올리고 경로를 알린다. 부모를 닫아도 자식은 그대로다(자식 창 규칙).
+- **worktree 목록**(`PaneWorktreeListSheet`, `PaneWorktreeInventory`): 열린 창의 worktree, 닫은 창에서 남긴 것, 기록 없이 git에 남은 것(`git worktree list --porcelain`에서 `<root>/<id>` 폴더와 `mighty/<id>` 브랜치, 위임 자식 id는 뺌; 기준은 지금 워크스페이스 브랜치)을 보여 주고, 각 줄에서 창으로 열기(닫힌 창의 id를 다시 써서 브랜치가 그대로 그 창의 것), 병합/커밋하고 병합, 지우기(열린 창은 창의 버리기로)를 한다. 줄마다 기준 대비 커밋·변경 수와 경로.
+- **저장**: `Workspace`는 새 설정을 너그럽게 읽는다(망가진 남긴 기록 하나는 그것만 버리고 워크스페이스는 살린다). 남긴 기록은 세션 하나에 하나, 최신 50개(`KeptPaneWorktree.normalized`). 원격 워크스페이스는 이 설정을 모두 버린다.
+
+- **플랫폼**(2026-11-13): Windows도 같은 규칙을 따른다(Core `PaneWorktree.cs`, WinUI `MainWindow.PaneWorktree.cs`, 웹 `src/pane/WorktreeBar.tsx`·`worktree.ts`). 다른 점: 변경 보기는 git의 diff 글이고, 막대는 호스트가 밀어 주는 대신 20초마다와 동작 뒤에 스스로 읽으며, 웹 화면이 없을 때의 WinUI 대체 화면에는 "항상" 선택이 없다. 휴대폰은 맥 호스트의 창에서만 worktree 막대를 그린다(`POST /m1/sessions/{id}/worktree`, `docs/mobile-remote.md`); Windows 호스트는 아직 `worktree`를 보내지 않는다.
+
+### 옮길 규칙 (Windows·폰)
+
+1. 결정: `every` → worktree, 그 외에는 워크스페이스 폴더에서 일하는 열린 에이전트 창(자식·worktree 창·터미널·닫히는 창·다른 워크스페이스 제외)이 있을 때 `further` → worktree, `ask` → 묻기, 없으면 폴더. 원격은 폴더. 물을 수 없는 경로는 묻기 → 폴더. 설정이 고른 worktree를 못 만들면 폴더로 열고 이유를 적는다.
+2. 만들기: `mighty/<창 id>` 브랜치, `<사용자 홈>/.mightycode/worktrees/<창 id>`, 워크스페이스 브랜치 머리에서, 10 GB 미만 거절. 실행 폴더는 worktree 안의 워크스페이스 하위 폴더.
+3. 첫 요청(슬래시 명령 제외)에 `PaneWorktreeNote.text`와 같은 영어 단락을 한 번 붙이고 표시한다. 실행 환경에 `PORT`, `MIGHTY_WORKSPACE_FOLDER`, `MIGHTY_WORKTREE`.
+4. PORT: 4100–4899, 창 id의 FNV-1a 32비트 해시를 범위 크기로 나눈 나머지부터 다른 창과 바인딩된 포트를 건너뜀.
+5. 복사: 위 `PaneWorktreeCopy` 규칙 그대로(상대 경로, 링크·밖 거절, 덮어쓰기 없음, 50 MB·2,000개). 그다음 준비 명령.
+6. 병합 거절 순서와 이유 코드: `worktreeMissing`, `uncommittedChanges`(새 파일 포함), `nothingToMerge`, `branchNotCheckedOut`, `trackedChanges`, `mergeConflict`. 성공은 병합 커밋과 병합 전 커밋을 기록.
+7. 커밋하고 병합: 비밀처럼 보이는 새 파일·5 MB 초과 새 파일 제외, 남으면 병합하지 않음, 충돌 미해결이면 커밋하지 않음.
+8. 되돌리기: 기록, 기준 브랜치 체크아웃, 머리가 병합 커밋, 추적 변경 없음 → read-tree와 compare-and-swap. 거절 코드 `notMerged`, `branchNotCheckedOut`, `baseMoved`, `trackedChanges`.
+9. 버리기 거절: 그 창 id를 부모로 하는 열린 자식 창이나 열린 위임 자식 기록. 닫을 때 작업이나 자식이 남으면 남긴 기록으로.
+10. 목록: 열린 창 → 남긴 기록 → 기록 없는 git worktree(위임 자식 제외), 다시 열 때 같은 id.
+11. PR: origin으로 같은 이름 push(강제 없음), GitHub이면 compare 주소.
+
 ## 확인과 남은 일
 
 - 확인: 새 Core 검사 13개 묶음과 관련 기존 검사(슬래시 명령·휴대폰 원격·Antigravity·FileChanges 등)를 포함해 `--filter`로 2,468개 검사 통과, `check-locales --check`·`check-design-tokens --check`·`check-style-freeze` 통과, 앱 번들 빌드와 `--smoke-test --smoke-exit` 통과.

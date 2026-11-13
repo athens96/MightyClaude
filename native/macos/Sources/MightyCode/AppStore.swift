@@ -314,6 +314,18 @@ final class AppStore: ObservableObject, DelegationHost {
     /// The "Add Pane" agent step that is open: "Start New" or "Continue…", then the
     /// session picker for that agent.
     @Published var resumePicker: ResumePickerRequest?
+    /// A new agent pane waiting on where it works (``PaneWorktreeChoice``).
+    @Published var paneWorktreeChoice: PaneWorktreeChoice?
+    /// Pane worktrees whose merge or discard is going now.
+    @Published var paneWorktreeBusy: Set<String> = []
+    /// Each pane worktree's distance from its base (``PaneWorktreeStatus``), refreshed by its bar.
+    @Published var paneWorktreeStatus: [String: PaneWorktreeStatus] = [:]
+    /// Pane worktrees whose last merge was refused for a conflict: their bar offers to ask the agent to resolve it.
+    @Published var paneWorktreeConflicts: Set<String> = []
+    /// The change review of a pane worktree, while it is open.
+    @Published var paneWorktreeChangesTarget: PaneWorktreeChangesTarget?
+    /// The workspace whose worktree list is open.
+    @Published var paneWorktreeListWorkspace: String?
     /// The look-up "Add Pane" runs before asking about an agent's earlier sessions;
     /// the token tells its answer from a cancelled one's.
     var addPaneProbe: (token: UUID, task: Task<Void, Never>)?
@@ -818,7 +830,8 @@ final class AppStore: ObservableObject, DelegationHost {
     }
 
     @discardableResult
-    func addSession(kind: String, provider: String = "claude", targetGroupId: String? = nil, placement: String = "tab", workspaceId: String? = nil) -> String? {
+    func addSession(kind: String, provider: String = "claude", targetGroupId: String? = nil, placement: String = "tab", workspaceId: String? = nil,
+                    id: String? = nil, prepare: ((inout RunSession) -> Void)? = nil) -> String? {
         guard !hasBlockingModal, let workspace = workspaceId.flatMap({ id in snapshot.workspaces.first { $0.id == id } }) ?? activeWorkspace else { return nil }
         // A pane started any other way (⌘N, the phone) answers "Add Pane"'s pending look-up.
         cancelAddPaneProbe()
@@ -826,10 +839,11 @@ final class AppStore: ObservableObject, DelegationHost {
         // Files and browser panes read this Mac's disk and network, not the host's.
         if workspace.remote != nil, kind != SessionKind.claude, kind != SessionKind.shell { error = L("remote.workspace.paneUnavailable"); return nil }
         let name = kind == "shell" ? (workspace.remote != nil ? L("remote.pane.commandTitle") : L("agentTerminal.terminalPane.title")) : kind == "browser" ? L("browser.tab.title") : ProviderOptions.label(provider)
-        var session = RunSession(workspaceId: workspace.id, title: name, kind: kind, provider: provider)
+        var session = RunSession(id: id ?? UUID().uuidString, workspaceId: workspace.id, title: name, kind: kind, provider: provider)
         if kind == "browser" { session.workspaceProfileKey = workspace.id }
         // Start from the most recently used pane of the same provider.
         if let template = RunSession.template(kind: kind, provider: provider, in: snapshot.sessions) { session.inheritSettings(from: template) }
+        prepare?(&session)
         reconcilePaneLayout(workspace.id)
         let previousGroup = targetGroupId ?? snapshot.activeSessionId.flatMap { layoutForWorkspace(workspace.id)?.group(containing: $0)?.id }
         let previousMode = paneLayoutMode(workspace.id)
@@ -879,6 +893,8 @@ final class AppStore: ObservableObject, DelegationHost {
             if let delegation, closing?.parentSessionId != nil || delegationChildren.contains(where: { $0.id == id }) {
                 delegationCloseOutcomes[id] = await delegation.closeChild(id)
             }
+            // A pane in its own worktree: the worktree goes with it when nothing in it is unmerged.
+            if let closing, let pane = closing.paneWorktree { await paneWorktreeClosed(id, pane: pane, session: closing) }
         }
     }
 
@@ -1404,6 +1420,8 @@ final class AppStore: ObservableObject, DelegationHost {
                 // A resumed conversation continues its checklist (task tools keep their ids).
                 if current.resumeId != nil { request.todoProgress = current.todoProgress }
                 request.delegationWorktreeRoot = delegationWorktreeRoot(current)
+                // A pane in its own worktree gives its runs its own PORT.
+                preparePaneWorktreeRun(&request, session: current, workspace: currentWorkspace)
                 // §1.17: a plan-mode style starts every new request in plan mode,
                 // leaving the pane's stored mode as it is; a queued item keeps
                 // the decision made when it was queued.

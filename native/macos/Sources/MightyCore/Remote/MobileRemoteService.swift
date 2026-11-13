@@ -45,6 +45,11 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     /// user agreed that running requests stop. Where the update stands afterwards.
     func mobileAppUpdate(install: Bool, confirm: Bool) async throws -> MobileAppUpdate
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String
+    /// The new pane and, for a Mac that gives panes their own worktree, whether it got one and the line to show.
+    func mobileCreateSessionResult(workspaceId: String, kind: String, provider: String) async throws -> MobileCreatedSession
+    /// One of ``MobileWire/paneWorktreeActions`` on a pane that works in its own worktree (``MobilePaneWorktree``).
+    /// Throws `notFound` for no such pane, `conflict` for a pane without a worktree or one busy with another action.
+    func mobilePaneWorktree(sessionId: String, action: String) async throws -> MobilePaneWorktreeResult
     func mobileRemoveQueued(sessionId: String, itemId: String) async throws
     func mobileRunNextQueued(sessionId: String) async throws
     /// 바로 실행 on the queued row `itemId`, decided as the pane is now: "worktree" or "here".
@@ -117,6 +122,14 @@ public extension MobileHostDelegate {
     /// A host without 바로 실행 on its rows knows no such row.
     func mobileRunQueuedNow(sessionId: String, itemId: String) async throws -> String {
         throw MobileHostError.notFound(L("remote.error.queueItemNotFound"))
+    }
+    /// A host without pane worktrees answers the new pane's id alone.
+    func mobileCreateSessionResult(workspaceId: String, kind: String, provider: String) async throws -> MobileCreatedSession {
+        MobileCreatedSession(sessionId: try await mobileCreateSession(workspaceId: workspaceId, kind: kind, provider: provider))
+    }
+    /// A host without pane worktrees has no such route.
+    func mobilePaneWorktree(sessionId: String, action: String) async throws -> MobilePaneWorktreeResult {
+        throw MobileHostError.notFound(L("remote.error.routeNotFound"))
     }
     /// A host without the "send to" switch offers no targets, so every value but Claude is refused.
     func mobileSetAskTarget(sessionId: String, target: String?) async throws {
@@ -1341,6 +1354,10 @@ public actor MobileRemoteService {
                     let request = try decode(body, as: MobileSetAskTargetRequest.self)
                     try await perform { try await delegate.mobileSetAskTarget(sessionId: id, target: request.target) }
                     return reply(200, MobileOK())
+                case "worktree":
+                    let request = try decode(body, as: MobilePaneWorktreeRequest.self)
+                    guard MobileWire.paneWorktreeActions.contains(request.action) else { throw Failure(400, L("remote.error.badAction")) }
+                    return reply(200, try await perform { try await delegate.mobilePaneWorktree(sessionId: id, action: request.action) })
                 case "command":
                     let request = try decode(body, as: MobileCommandRequest.self)
                     guard MobileWire.performedActions.contains(request.action) else { throw Failure(400, L("remote.error.badAction")) }
@@ -1375,8 +1392,7 @@ public actor MobileRemoteService {
                 guard ["claude", "shell"].contains(request.kind) else { throw Failure(400, L("remote.error.badKind")) }
                 let provider = request.provider ?? "claude"
                 guard ProviderOptions.ids.contains(provider) else { throw Failure(400, L("common.unsupportedProvider")) }
-                let created = try await perform { try await delegate.mobileCreateSession(workspaceId: route[1], kind: request.kind, provider: provider) }
-                return reply(201, MobileCreatedSession(sessionId: created))
+                return reply(201, try await perform { try await delegate.mobileCreateSessionResult(workspaceId: route[1], kind: request.kind, provider: provider) })
             }
             if route.count == 2, route[0] == "screen-share", url.query == nil {
                 return try await screenShareRoute(method: method, leaf: route[1], body: body, deviceId: deviceId)

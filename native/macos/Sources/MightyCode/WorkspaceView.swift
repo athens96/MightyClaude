@@ -48,6 +48,24 @@ struct WorkspaceView: View {
             }
         }
         .sheet(item: $store.terminalHistorySession) { LegacyTerminalHistory(session: $0) }
+        .sheet(item: $store.paneWorktreeChangesTarget) { target in
+            PaneWorktreeChangesSheet(target: target) { store.paneWorktreeChangesTarget = nil }
+        }
+        .sheet(item: Binding(get: { store.paneWorktreeListWorkspace.map(PaneWorktreeListTarget.init) }, set: { store.paneWorktreeListWorkspace = $0?.id })) { target in
+            PaneWorktreeListSheet(workspaceId: target.id).environmentObject(store)
+        }
+        .confirmationDialog(L("paneWorktree.choice.title"), isPresented: Binding(get: { store.paneWorktreeChoice != nil }, set: { if !$0 { store.paneWorktreeChoice = nil } }),
+                            titleVisibility: .visible, presenting: store.paneWorktreeChoice) { choice in
+            if choice.gitRefusal == nil {
+                Button(L("paneWorktree.choice.worktree")) { store.answerPaneWorktreeChoice(choice, worktree: true) }
+                    .keyboardShortcut(.defaultAction)
+                Button(L("paneWorktree.choice.always")) { store.answerPaneWorktreeChoice(choice, worktree: true, always: true) }
+            }
+            Button(L("paneWorktree.choice.sameFolder")) { store.answerPaneWorktreeChoice(choice, worktree: false) }
+            Button(L("common.cancel"), role: .cancel) { store.paneWorktreeChoice = nil }
+        } message: { choice in
+            Text(verbatim: choice.gitRefusal.map { L("paneWorktree.choice.notGit", ["reason": $0]) } ?? L("paneWorktree.choice.detail"))
+        }
         .sheet(item: $store.resumePicker) { request in
             Group {
                 switch request.stage {
@@ -264,6 +282,14 @@ struct WorkspaceView: View {
                 Button(L("workspace.menu.remove"), role: .destructive) { store.pendingRemoval = workspace }
                 if workspace.remote == nil {
                     Button(L("menu.showInFinder")) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path) }
+                    Divider()
+                    Picker(L("paneWorktree.menu.mode"), selection: Binding(get: { workspace.paneWorktreeMode ?? .ask },
+                                                                            set: { store.setPaneWorktreeMode(workspace.id, $0) })) {
+                        ForEach(PaneWorktreeMode.allCases, id: \.self) { mode in Text(verbatim: AppStore.modeText(mode)).tag(mode) }
+                    }
+                    Button(L("paneWorktree.menu.setup")) { store.editWorktreeSetupCommand(workspace.id) }
+                    Button(L("paneWorktree.menu.copy")) { store.editWorktreeCopyPaths(workspace.id) }
+                    Button(L("paneWorktree.menu.list")) { store.showPaneWorktreeList(workspace.id) }
                 }
             }
             if expanded {
@@ -305,6 +331,7 @@ struct WorkspaceView: View {
                         Text(session.title).font(.ui(size: 12.5, weight: settled ? .medium : .semibold)).foregroundStyle(Palette.ink)
                             .lineLimit(1).help(session.titleHelp)
                         if beta { BetaBadge() }
+                        if let worktree = session.paneWorktree { PaneWorktreeMarker(worktree: worktree, size: 10) }
                     }
                     .frame(minHeight: 17)
                     // Only a running pane with a clock of its own ticks every second.
@@ -681,7 +708,7 @@ struct WorkspaceView: View {
         ContentUnavailableView {
             Label(L("layout.empty.addPane"), systemImage: "square.stack.3d.up")
         } description: { Text(L("layout.empty.addPaneDetail")) }
-        actions: { Button(L("menu.newClaudePane")) { store.addSession(kind: "claude") }.buttonStyle(.borderedProminent) }
+        actions: { Button(L("menu.newClaudePane")) { store.addAgentPane() }.buttonStyle(.borderedProminent) }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 

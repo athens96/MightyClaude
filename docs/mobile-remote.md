@@ -42,7 +42,7 @@ PC에서 실행 중인 Mighty Code에 휴대폰으로 접속해 워크스페이�
 | POST | `/m1/sessions/{id}/permission` | `{ requestId, runId, allow, always? }` | `{ protocol, ok: true }` — `always`는 Antigravity 권한 카드에만(아래 "Antigravity 권한 카드" 절) |
 | POST | `/m1/sessions/{id}/answers` | `{ requestId, runId, answers: { "<질문 문장>": { selectedOptions, customText? } } }` | `{ protocol, ok: true }` |
 | POST | `/m1/sessions/{id}/plan` | `{ requestId, runId, decision: "approveAutoEdit" \| "approveConfirmEach" \| "revise" \| "cancel", feedback? }` | `{ protocol, ok: true }` — Claude 계획(ExitPlanMode) 카드의 네 답. `feedback`은 `revise`에만 쓰며 앞뒤 공백을 뺀 뒤 비어 있거나 16 KiB를 넘으면 400(`plan.error.emptyFeedback` / `plan.error.feedbackTooLong` 문구). 모르는 `decision` 400(`plan.error.invalidDecision`), 형식이 틀린 `requestId`·`runId` 400(`plan.error.invalidRequest`), 이미 끝났거나 계획이 아닌 요청 409 |
-| POST | `/m1/workspaces/{id}/sessions` | `{ kind: "claude" \| "shell", provider?: "claude" \| "codex" \| "gemini" }` | 201 `{ protocol, sessionId }` |
+| POST | `/m1/workspaces/{id}/sessions` | `{ kind: "claude" \| "shell", provider?: "claude" \| "codex" \| "gemini" }` | 201 `{ protocol, sessionId, worktree?, notice? }` — `worktree: true`면 새 창이 자기 worktree에서 일한다, `notice`는 휴대폰이 보일 한 줄(아래 "창마다 worktree") |
 
 ```
 MobileState {
@@ -62,11 +62,38 @@ MobileSessionSummary {
   resolvedModel?: string,              // model이 지금 가리키는 전체 id(opus → claude-opus-5-5); 모르면 없음
   canSteer?: boolean,                  // 0.4.35부터 언제나 false(구버전 휴대폰용으로 남김). 구버전 호스트에서는 Claude 에이전트 창만 true
   parentSessionId?: string,            // 마이티 오케스트레이션 자식 창의 부모 창 id(Mac 호스트가 싣는다. Windows 호스트는 아직 싣지 않는다); 자식이 아니면 없음
-  childState?: string                  // 그 자식의 상태(Mac 사이드바 자식 행과 같은 ChildState 값); parentSessionId와 함께만
+  childState?: string,                 // 그 자식의 상태(Mac 사이드바 자식 행과 같은 ChildState 값); parentSessionId와 함께만
+  worktree?: MobilePaneWorktree        // 창이 자기 git worktree에서 일함(Mac 0.4.61+, 아래 "창마다 worktree"); 다른 창과 구버전·Windows 호스트는 없음
 }
 ```
 
 `canSteer`(선택)는 예전에 호스트가 그 창에서 조정(실행 중인 턴에 글을 합류시키기)을 할 수 있는지를 창마다 알려 주던 필드다. 0.4.35부터 데스크톱 입력창이 사람이 보낸 글을 실행 중인 턴에 넣지 않으므로(바쁜 창의 Enter는 언제나 대기열, ⌘Enter·Ctrl+Enter는 새 worktree 자식 아니면 대기열), 호스트는 모든 창에 `canSteer: false`를 싣는다. 필드는 구버전 휴대폰이 "바로 전달" 버튼을 숨기도록 남겨 둔다. 지금 휴대폰은 이 필드를 읽지 않고, 바쁜 창에는 "대기열에 추가"만 보이며 언제나 `mode: "queue"`를 보낸다. 구버전 호스트(0.4.34 이하)는 Claude 에이전트 창(`kind: "claude"`, `provider: "claude"`)에만 `true`를 싣고 `mode: "steer"`를 받으면 조정해 `steered`로 답했다. 휴대폰은 그때를 위해 `steered` 라벨을 계속 그린다.
+
+### 창마다 worktree (Mac 0.4.61+)
+
+Mac에서 자기 git worktree에서 일하는 워크스페이스 창(`PaneWorktree`, docs/devtool-features.md §12)은 요약에 `worktree`를 싣는다(`MobileRemoteSupport.paneWorktree`):
+
+```
+MobilePaneWorktree {
+  branch: string,      // mighty/<창 id>, 200자까지
+  base: string,        // 병합해 들어갈 브랜치, 200자까지
+  port: number,        // 창의 실행이 받는 PORT
+  ahead?: number,      // base에 없는 커밋 수 ┐ Mac이 git으로 읽은 뒤에만(실행이 끝날 때, Mac 막대가 보이면 20초마다,
+  behind?: number,     // base가 앞서간 커밋 수 │ 휴대폰의 refresh 때). 0…99,999
+  changed?: number,    // 커밋 안 한 변경 파일 수(새 파일 포함) ┘
+  setup?: "running" | "done" | "failed",   // 워크스페이스 준비 명령; 없으면 없음
+  canUndo?: true,      // 마지막 병합을 되돌릴 기록이 있음(Mac이 조건을 다시 확인한다)
+  conflict?: true,     // 마지막 병합이 충돌로 거절됨: resolveConflict를 보일 때
+  busy?: true,         // 병합·되돌리기·버리기가 진행 중
+  children?: number    // 그 창 브랜치에서 갈라진 열린 자식 수: 0보다 크면 Mac이 버리기를 거절한다
+}
+```
+
+경로(worktree 폴더, 저장소 폴더)와 커밋 id는 싣지 않는다. `worktree`가 바뀌면(개수, busy, conflict) 요약이 바뀌어 상태와 세션 리비전이 오른다.
+
+`POST /m1/sessions/{id}/worktree`는 Mac 막대의 동작을 그대로 한다(`AppStore.mobilePaneWorktree`, 막대와 같은 `runPaneWorktreeMerge`·`runPaneWorktreeUndo`·`runPaneConflictRequest`·`runPaneWorktreeDiscard`): `refresh`는 개수를 다시 읽기만 하고 `{ done: true }`, `merge`·`commitMerge`·`undo`는 결과를 창 기록에 쓰고 같은 글을 `message`로 돌려준다(거절·실패는 `done: false`), `resolveConflict`는 창의 에이전트에게 충돌 해결 요청을 다음 실행으로 보내고 시작되면 `{ done: true }`, 창이 지금 실행을 받을 수 없으면 이유와 함께 `done: false`, `discard`는 휴대폰이 먼저 확인을 받은 뒤 부르며 Mac은 확인 창 없이 자식이 남았으면 거절하고(`message`가 이유) 아니면 실행을 멈추고 worktree와 브랜치를 지운 뒤 창을 닫는다. 목록에 없는 동작은 400, 없는 창은 404, worktree가 없는 창과 같은 창의 다른 동작이 진행 중이면 409, Mac에 막는 창이 떠 있으면 409(`remote.error.closeMacWindow`). 글은 모두 Mac의 언어다.
+
+휴대폰은 창 목록 행에 브랜치 표시와 `mighty/… → base` 한 줄을 더하고(`SessionRow`, 읽기 이름에 `paneWorktree.marker`), 창 화면 맨 위에 막대를 둔다(`PaneWorktreeBar`): 브랜치 → base, PORT, 개수와 준비 상태, 주 단추(변경이 있으면 커밋하고 병합, 아니면 병합; 충돌로 거절된 뒤에는 충돌 해결 요청이 앞에), ⋯ 메뉴(다른 병합, 되돌릴 수 있을 때 되돌리기, 버리기 — 자식이 있으면 이유와 함께 흐리게). 결과는 Mac이 준 `message`를 토스트로 보이고, 버리기가 되면 창을 떠난다. 창을 열 때와 실행이 끝날 때 `refresh`를 한 번 보낸다. 휴대폰에서 연 새 창은 워크스페이스 설정(`decideWithoutAsking`, 묻기는 폴더)을 따르고, 만들기 응답의 `notice`(worktree에서 열었음과 그 브랜치·PORT, 또는 설정이 고른 worktree를 못 만들어 폴더에서 연 이유)를 토스트로 보인다. 문구는 모두 기존 `paneWorktree.*` 키다. Windows 호스트는 아직 `worktree`를 싣지 않고 이 경로가 없다(`routeNotFound`).
 
 마이티 오케스트레이션 자식 창은 Mac 호스트에서는 Mac의 위임 파일이 자식으로 적어 둔 창만 `parentSessionId`·`childState`를 싣는다(`MobileRemoteSupport.childLink`). `childState`는 사이드바 자식 행이 보이는 그대로다(`creating`·`running`·`waiting`·`reported`·`merged`·`ended`·`interrupted`·`failed`·`closed`·`discarded`, 사람이 답해야 하는 요청을 기다리는 실행 중 자식은 `waiting`). 휴대폰은 같은 워크스페이스 목록에 부모 창이 있고 그 부모가 자식이 아니면 자식 행을 부모 바로 아래 한 단 들여 그리고 오른쪽에 상태 낱말을 보인다(`groupSessionsByWorkspace`·`childStateLabel`). 부모가 닫혔거나 목록에 없으면 보통 창처럼 둔다. 병합·버리기·되돌리기는 휴대폰에 없고 데스크톱 앱의 자식 카드에서만 한다. 지금 이 두 필드는 Mac 호스트만 싣는다: Windows 호스트의 `MobileDesktopRouter`는 아직 `parentSessionId`·`childState`를 보내지 않아서, Windows 호스트의 자식 창은 휴대폰 목록에서 평범한 창으로 보인다. 구버전 휴대폰은 두 필드를 무시하고, 구버전 Mac에서는 필드가 없어 목록이 지금처럼 평평하다.
 
@@ -159,6 +186,7 @@ MobilePermission {
 | POST | `/m1/sessions/{id}/setAskTarget` | `{ target: string \| null }` | `{ protocol, ok }` — 이 창의 보낼 대상. 세부 정보의 `askTargets`에 있는 id이거나 Claude를 뜻하는 `null`(`target`을 빼도 Claude)이다. 그 창이 내놓지 않는 id, 문자열도 `null`도 아닌 `target`, 객체가 아닌 본문은 400(`remote.error.badBody`). 알 수 없는 창은 404, Mac은 셸·로컬 터미널 창에도 409. 아래 "보낼 대상" 절 |
 | GET | `/m1/sessions/{id}/commands` | | `{ protocol, commands: [MobileCommand] }` |
 | POST | `/m1/sessions/{id}/command` | `{ action }` (`clear` `usage` `help`만) | `{ protocol, ok, message? }` — `usage`·`help`는 `message`에 본문 |
+| POST | `/m1/sessions/{id}/worktree` | `{ action }` (`refresh` `merge` `commitMerge` `undo` `resolveConflict` `discard`만) | `{ protocol, done, message? }` — 창의 `worktree`가 있을 때만. 아래 "창마다 worktree" |
 | POST | `/m1/sessions/{id}/guided` | 새 형식 `{ styleId, actionId, text? }` · 레거시 `{ style: "ouroboros", skill, text? }` | 202 `{ protocol, accepted }` — 호스트가 Mac과 같은 함수로 프롬프트를 만든다(`/ouroboros:seed`, `/re0 docs/spec.md`). 스타일을 모르거나 승인되지 않음 400, 이 창이 그 스타일이 아님 409, 행동(스킬)을 모름 400. 자세한 값은 아래 "스타일" 절 |
 | POST | `/m1/sessions/{id}/uploads` | `{ name, size, mimeType? }` | 201 `{ protocol, uploadId, chunkSize }` · 크기·개수 한도 초과 413 · 열어 둔 업로드가 너무 많으면 429(실행 창당 16개, 호스트 전체 64개) |
 | POST | `/m1/uploads/{uploadId}/chunks/{index}` | `{ dataBase64 }` | `{ protocol, ok, received }` — 순서대로 0부터. 이 라우트만 본문 한도 300 KiB |

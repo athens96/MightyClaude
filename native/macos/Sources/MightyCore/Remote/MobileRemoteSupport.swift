@@ -198,6 +198,27 @@ public enum MobileRemoteSupport {
         guard let row = children.first(where: { $0.id == sessionId }) else { return nil }
         return (row.parentSessionId, DelegationSidebar.shownState(row.state, asksHuman: asksHuman).rawValue)
     }
+
+    /// The longest branch name the phone is told.
+    public static let maximumWorktreeBranch = 200
+
+    /// The summary's `worktree` (``MobilePaneWorktree``) for a pane that works in its own worktree: its names cut to
+    /// ``maximumWorktreeBranch``, counts kept to 0…99,999, and only the facts the Mac's bar shows (never a path).
+    /// `status` is the last read of ``PaneWorktreeGit/status(_:)``, nil before one.
+    public static func paneWorktree(_ pane: PaneWorktree, status: PaneWorktreeStatus?, busy: Bool, conflict: Bool, children: Int) -> MobilePaneWorktree {
+        func count(_ value: Int) -> Int { min(max(value, 0), 99_999) }
+        return MobilePaneWorktree(branch: String(pane.branch.prefix(maximumWorktreeBranch)), base: String(pane.baseBranch.prefix(maximumWorktreeBranch)),
+                                  port: pane.port, ahead: status.map { count($0.ahead) }, behind: status.map { count($0.behind) },
+                                  changed: status.map { count($0.changedFiles) }, setup: pane.setupStatus?.rawValue,
+                                  canUndo: pane.mergedCommit != nil && pane.preMergeCommit != nil ? true : nil,
+                                  conflict: conflict ? true : nil, busy: busy ? true : nil, children: children > 0 ? count(children) : nil)
+    }
+
+    /// How many open children branch from the pane `sessionId`: its child panes, or its open delegation records, whichever
+    /// says more (``PaneWorktreePolicy/discardBlocker(sessionId:sessions:children:)``'s count).
+    public static func paneWorktreeChildren(sessionId: String, sessions: [RunSession], children: [DelegationChildRow]) -> Int {
+        max(sessions.filter { $0.parentSessionId == sessionId }.count, children.filter { $0.parentSessionId == sessionId && $0.state.isOpen }.count)
+    }
 }
 
 /// The Mighty graph as a phone reads it. Every string that reaches the wire is

@@ -212,7 +212,17 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         try await MainActor.run { try store.mobileCheckPermissionOutcome(sessionId: sessionId, requestId: requestId) }
     }
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String {
-        try await MainActor.run { try store.orClosing().mobileCreateSession(workspaceId: workspaceId, kind: kind, provider: provider) }
+        let host = try await MainActor.run { try store.orClosing() }
+        return try await host.mobileCreateSession(workspaceId: workspaceId, kind: kind, provider: provider)
+    }
+    func mobileCreateSessionResult(workspaceId: String, kind: String, provider: String) async throws -> MobileCreatedSession {
+        let host = try await MainActor.run { try store.orClosing() }
+        return try await host.mobileCreateSessionResult(workspaceId: workspaceId, kind: kind, provider: provider)
+    }
+    func mobilePaneWorktree(sessionId: String, action: String) async throws -> MobilePaneWorktreeResult {
+        // Awaits git and the pane's run, so it cannot be folded into MainActor.run.
+        let host = try await MainActor.run { try store.orClosing() }
+        return try await host.mobilePaneWorktree(sessionId: sessionId, action: action)
     }
     func mobileRemoveQueued(sessionId: String, itemId: String) async throws {
         try await MainActor.run { try store.orClosing().mobileRemoveQueued(sessionId, itemId: itemId) }
@@ -306,6 +316,11 @@ extension AppStore {
         $delegationHeld.sink { [weak self] value in self?.mobileObserve(held: value) }.store(in: &mobileSubscriptions)
         // A child pane's parent and state ride in its summary.
         $delegationChildren.sink { [weak self] value in self?.mobileObserve(children: value) }.store(in: &mobileSubscriptions)
+        // A worktree pane's counts, its busy action and a refused conflict ride in its summary too. @Published fires before
+        // the value is stored, and mobileObserve reads these from the store, so it runs on the next turn.
+        $paneWorktreeStatus.map { _ in () }.merge(with: $paneWorktreeBusy.map { _ in () }, $paneWorktreeConflicts.map { _ in () })
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.mobileObserve() }.store(in: &mobileSubscriptions)
         configureMobilePush()
         // Asleep, the Mac missed the relay's pings and its control socket may be
         // gone on the relay's side while it still looks open here.
@@ -453,7 +468,13 @@ extension AppStore {
             resolvedModel: MobileRemoteSupport.resolvedModel(session, catalog: providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog),
             // Always false since 0.4.35 (a busy pane only queues), for older phones.
             canSteer: false,
-            parentSessionId: child?.parent, childState: child?.state)
+            parentSessionId: child?.parent, childState: child?.state,
+            worktree: session.paneWorktree.map { pane in
+                MobileRemoteSupport.paneWorktree(pane, status: paneWorktreeStatus[session.id], busy: paneWorktreeBusy.contains(session.id),
+                                                 conflict: paneWorktreeConflicts.contains(session.id),
+                                                 children: MobileRemoteSupport.paneWorktreeChildren(sessionId: session.id, sessions: snapshot.sessions,
+                                                                                                  children: children ?? delegationChildren))
+            })
     }
 
     func mobileViewMode(_ session: RunSession) -> String { MobileRemoteSupport.viewMode(session.agentViewMode) }
@@ -1100,12 +1121,20 @@ extension AppStore {
         }
     }
 
-    func mobileCreateSession(workspaceId: String, kind: String, provider: String) throws -> String {
-        guard snapshot.workspaces.contains(where: { $0.id == workspaceId && $0.remote == nil }) else { throw MobileHostError.notFound(L("remote.error.workspaceNotFound")) }
+    func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String {
+        guard let workspace = snapshot.workspaces.first(where: { $0.id == workspaceId && $0.remote == nil }) else { throw MobileHostError.notFound(L("remote.error.workspaceNotFound")) }
         // A command pane runs in the app's own terminal, which the phone
         // cannot drive; creating one would hand it a dead window.
         guard kind != "shell" else { throw MobileHostError.conflict(L("remote.error.shellUnavailable")) }
         guard !hasBlockingModal else { throw MightyError(L("remote.error.closeMacWindow")) }
+        // Nobody can be asked from the phone: the workspace's setting alone says whether the pane gets its own worktree.
+        if kind == SessionKind.claude, PaneWorktreePolicy.decideWithoutAsking(workspace: workspace, sessions: snapshot.sessions, closing: closingSessions) == .worktree {
+            let previous = error
+            if let id = await makeWorktreePane(provider: provider, workspaceId: workspaceId, fallbackToFolder: true) { return id }
+            let failure = error != previous ? error : nil
+            if failure != nil { error = previous }
+            throw MightyError(failure ?? L("remote.error.createFailed"))
+        }
         let created = mobileCapturingError { addSession(kind: kind, provider: provider, workspaceId: workspaceId) }
         guard let id = created.value else { throw MightyError(created.failure ?? L("remote.error.createFailed")) }
         return id
