@@ -264,6 +264,7 @@ fn start(request: &PtyRequest) -> Result<PtySession> {
         closing,
         exit,
         done: Arc::new(done),
+        pid,
     };
     Ok(PtySession { id: pid, output, control: Arc::new(terminal) })
 }
@@ -284,6 +285,8 @@ struct Terminal {
     closing: Arc<AtomicBool>,
     exit: ExitWatch,
     done: Arc<watch::Sender<bool>>,
+    /// The shell's process id (C# `ProcessId`), which the shell-activity reading starts from.
+    pid: u32,
 }
 
 impl Terminal {
@@ -340,6 +343,11 @@ impl PtyControl for Terminal {
             return None;
         }
         job_process_ids(raw(state.job.as_ref()?))
+    }
+
+    /// C# `ShellProcessProbe.IsBusy(terminal)` (ShellActivity.cs:48-52) over this session's job and its shell.
+    fn busy(&self) -> Option<bool> {
+        crate::shell_activity::probe(self, self.pid)
     }
 
     fn wait(&self) -> BoxFuture<'_, Result<i32>> {

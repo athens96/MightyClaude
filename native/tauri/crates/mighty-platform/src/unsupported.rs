@@ -94,6 +94,15 @@ impl Firewall for Unsupported {
     }
 }
 
+impl Clipboard for Unsupported {
+    fn read_text(&self) -> Result<Option<String>> {
+        no("Clipboard", "read_text")
+    }
+    fn write_text(&self, _text: &str) -> Result<()> {
+        no("Clipboard", "write_text")
+    }
+}
+
 impl UpdateInstaller for Unsupported {
     fn install_location(&self) -> Option<PathBuf> {
         None
@@ -134,6 +143,7 @@ mod tests {
         assert!(PrefsStore::get(&port, "k").unwrap_err().is_unsupported());
         assert!(Firewall::read(&port).await.unwrap_err().is_unsupported());
         assert_eq!(ShellEnvironment::resolve(&port, None, false).await.source, EnvironmentSource::ProcessFallback);
+        assert!(port.read_text().unwrap_err().is_unsupported() && port.write_text("x").unwrap_err().is_unsupported());
         assert!(
             port.open_browser(BrowserOptions {
                 pane_id: "p".into(),

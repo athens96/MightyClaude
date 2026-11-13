@@ -13,6 +13,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+pub mod clipboard;
 pub mod environment;
 mod error;
 pub mod fake;
@@ -29,6 +30,7 @@ pub mod surface;
 pub mod unsupported;
 pub mod update;
 
+pub use clipboard::Clipboard;
 pub use environment::{CliEnvironment, EnvironmentSource, ShellEnvironment};
 pub use error::{PlatformError, Result};
 pub use firewall::{Firewall, FirewallChange, FirewallRule};
