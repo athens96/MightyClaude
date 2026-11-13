@@ -379,7 +379,7 @@ pub mod flow {
 
     /// `FlowFixtures.Layout(runs, running, opened, fanOut, expanded, sizes, plan)`: the role view of the shown runs.
     pub fn flow_layout(runs: &[MightyGraphRun], running: bool, opened: &[String], fan_out: bool) -> Layout {
-        flow_layout_with(runs, running, opened, fan_out, &[], None)
+        flow_layout_with(runs, running, opened, fan_out, &[], None, None)
     }
 
     pub fn flow_layout_with(
@@ -388,10 +388,12 @@ pub mod flow {
         opened: &[String],
         fan_out: bool,
         expanded: &[String],
+        sizes: Option<std::collections::HashMap<String, mighty_core::graph::GraphBlockSize>>,
         plan: Option<&str>,
     ) -> Layout {
         let shown = support::shown_runs(runs, &ko());
         let options = Options {
+            block_sizes: sizes,
             plan_run_id: plan.map(str::to_string),
             splits_execution: true,
             fan_out: fan_out.then(|| FanOut::opened(opened.iter().cloned())),
