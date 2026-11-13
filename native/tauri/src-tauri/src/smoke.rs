@@ -3,22 +3,27 @@
 //! titles, reads the DOM (pane titles, the selected pane, the theme, tabs, header, status bar), clicks another pane's sidebar row and
 //! waits for the page to show it selected, then hands what it saw to the `smoke_probe` command.
 //!
-//! Then, where the platform draws browser panes natively, the browser-surface step (the NativeSlot protocol): the host adds a
-//! browser pane in a workspace of its own to the in-memory state and makes it active; a second probe types the address of a local
-//! fixture page (served on 127.0.0.1 by this process) into the pane's address field and waits until the native view shows it,
-//! checks that the view's real bounds (read back from the OS) are the slot's in device pixels, has the host push a page dialog and
-//! checks that the view hides under it, closes the dialog and checks that the view shows again.
+//! Then the page's steps, in this order ([`STEPS`]), each where its platform has what it checks:
 //!
-//! Then, where the page draws terminals, the terminal step (smoke_terminal.rs: a shell pane's shell started, typed into through the
-//! page's xterm and its marker read back, the footer, the pane's status running and idle again, the pane closed).
+//! - the frame (smoke_frame.rs: the sidebar, a row click, the add menu's terminal entry, tab switches, the columns preset);
+//! - where the platform draws browser panes natively, the browser surface (the NativeSlot protocol): the host adds a browser pane in a
+//!   workspace of its own to the in-memory state and makes it active; a probe types the address of a local fixture page (served on
+//!   127.0.0.1 by this process) into the pane's address field and waits until the native view shows it, checks that the view's real
+//!   bounds (read back from the OS) are the slot's in device pixels, has the host push a page dialog and checks that the view hides
+//!   under it and shows again once it closes, then the history's address, back, a refused popup and a menu over the view;
+//! - where the page draws terminals, the terminal (smoke_terminal.rs: a shell pane's shell started, typed into through the page's xterm
+//!   and its marker read back, the footer, the pane's status running and idle again, the pane closed);
+//! - the files pane opened from the add menu, an HTML frame, the reference bubble and the picture viewer (smoke_files.rs);
+//! - the work map and the resume flow end to end, from the add menu's Claude entry to the resumed pane's older requests (smoke_history.rs);
+//! - with git on PATH, a clone through the Git sheet, then a rename sheet that survives a page reload (smoke_frame.rs).
 //!
 //! With `--smoke-fake-cli` the run steps follow (smoke_runs.rs: the composer, the permission and plan cards, the Mighty diagram, the
 //! progress panel and a stop, against mighty-run's stand-in CLI); with `--smoke-real-claude` one real request to the installed
-//! `claude` CLI follows the first probe instead of the browser step.
+//! `claude` CLI follows the first probe instead of the page's steps.
 //!
 //! The host adds whether its own state took the click, the calls it saw and the methods it answered "unimplemented", and writes
 //! `smoke-result.json`; with `--smoke-exit` the app then quits, 0 when the smoke passed, else 1. A smoke that has no result in time
-//! (150 s, 300 s with the stand-in CLI, 420 s with the real one) fails.
+//! (330 s, 480 s with the stand-in CLI, 420 s with the real one) fails.
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -340,7 +345,7 @@ impl Smoke {
         }
     }
 
-    /// A probe's report: the first one starts the browser step, the browser step's the run steps; the last one finishes.
+    /// A probe's report: each one starts the next step that can start ([`STEPS`]); the last one finishes.
     pub fn probed(&self, host: &Host, probe: Value) {
         let stage = {
             let mut progress = self.progress();

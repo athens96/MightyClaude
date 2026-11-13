@@ -44,7 +44,8 @@ const PROBE: &str = r#"(async () => {
   const report = {};
   try {
     // The files pane from the workspace's add menu: its files entry opens the workspace's one files pane.
-    document.querySelector('[data-testid=sidebar-workspace][data-workspace-id="' + workspaceId + '"] [data-testid=sidebar-add]')?.click();
+    const add = await until(() => document.querySelector('[data-testid=sidebar-workspace][data-workspace-id="' + workspaceId + '"] [data-testid=sidebar-add]'), 15000);
+    add?.click();
     const entry = await until(() => document.querySelector('[data-testid="add-entry-files"]'), 10000);
     report.filesAddEntry = !!entry;
     entry?.click();
