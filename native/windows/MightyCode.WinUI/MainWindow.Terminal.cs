@@ -297,7 +297,8 @@ public sealed partial class MainWindow
         { terminalColumns = Math.Clamp(columns, 2, 1000); terminalRows = Math.Clamp(rows, 1, 1000); if (terminalGrid is not null) terminalGrid.Text = terminalColumns + "×" + terminalRows; }
         private async Task StartTerminalShellAsync()
         {
-            var workspacePath = LocalFolder(Workspace);
+            // A terminal opened "in this worktree" starts in the pane's folder (PaneWorktree.cs); one whose folder is gone starts in the workspace.
+            var workspacePath = DelegationPanes.IsWorkingFolder(Session.WorkingFolder) && Directory.Exists(Session.WorkingFolder) ? Session.WorkingFolder! : LocalFolder(Workspace);
             terminalProcessStart = Task.Run(() => PseudoTerminal.Start(workspacePath, ReceiveTerminalOutput, terminalColumns, terminalRows,
                 arguments: PseudoTerminal.ShellArguments(PseudoTerminal.DefaultShell, noProfile: owner.options.SmokeTest)));
             terminal = await terminalProcessStart;

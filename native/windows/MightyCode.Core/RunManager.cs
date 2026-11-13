@@ -105,7 +105,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     /// <summary>A client's run works in the shared folder alone, and with no local grants: it never brings a worktree folder of its own
     /// or a local style's tool permissions.</summary>
     Task IRemoteRunner.StartAsync(StartRunRequest value) =>
-        value.WorkingFolder is null && value.DelegationWorktreeRoot is null && value.StyleAutoAllow is null ? StartAsync(value) : throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
+        value.WorkingFolder is null && value.DelegationWorktreeRoot is null && value.StyleAutoAllow is null && value.PaneEnvironment is null ? StartAsync(value) : throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
     /// <summary>
     /// Starts the run and returns once its process is up with its input open, or throws why it never got that far
     /// (M/AppStore.swift:1049 startReachedRunner). A one-shot run has its prompt written by then. A stream-json run has only begun
@@ -307,6 +307,9 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             }
             await providers.RefreshEnvironmentAsync(true, token);
             var environment = ProviderCatalog.QuietEnvironment();
+            // A pane worktree's own values (its PORT and folders), so two panes' dev servers do not collide (PaneWorktree.Environment).
+            foreach (var (key, value) in request.PaneEnvironment ?? new Dictionary<string, string>())
+                if (StartRunRequest.PaneEnvironmentKeys.Contains(key) && !value.Contains('\0')) environment[key] = value;
             codexHome = request.Provider == "codex" ? CliAccountSupport.CodexHome(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), environment) : null;
             antigravityBrain = request.Provider == "gemini" ? AntigravityRecords.Brain(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) : null;
             if (tracker is not null) graphTask = PublishGraphs();

@@ -160,9 +160,17 @@ public static class ChildCleanup
     /// removed, and a later discard goes on with what is left (git drops a worktree's registration even when it could not empty
     /// its folder, and step 2 then takes the rest).
     /// </summary>
-    public static async Task<ChildDiscardOutcome> Discard(ChildRecord child, string parentCheckout, string worktreeRoot)
+    public static Task<ChildDiscardOutcome> Discard(ChildRecord child, string parentCheckout, string worktreeRoot) =>
+        RemoveOwnWorktree(child.Id, child.WorktreePath, child.Branch, parentCheckout, worktreeRoot);
+
+    /// <summary>
+    /// <see cref="Discard"/>'s steps for any worktree the app made under <paramref name="worktreeRoot"/> for the session
+    /// <paramref name="id"/>: a delegated child's, or a pane's own (PaneWorktree, M/DelegationCleanup.swift removeOwnWorktree).
+    /// </summary>
+    public static async Task<ChildDiscardOutcome> RemoveOwnWorktree(string id, string worktreePath, string branch, string parentCheckout, string worktreeRoot)
     {
         static ChildDiscardOutcome Failed(string message) => new ChildDiscardOutcome.Failed(message);
+        var child = new { Id = id, WorktreePath = worktreePath, Branch = branch };
         // Only the child's own place is ever forced away, never a folder a record names elsewhere.
         var own = DelegationPaths.Canonical(child.WorktreePath);
         if (!ChildWorktreeMaker.IsSafeSessionId(child.Id) || !DelegationPaths.Same(own, DelegationPaths.Canonical(Path.Combine(worktreeRoot, child.Id)))) return Failed(Locale.Get("delegation.card.error.worktreeMisplaced"));

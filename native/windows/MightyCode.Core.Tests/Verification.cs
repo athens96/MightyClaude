@@ -636,6 +636,10 @@ internal static class Verification
         else { skipped++; Console.WriteLine("SKIP Agent IO real ConPTY process (requires Windows)"); }
         // Agent delegation (Core half): docs/help/content/ko/delegation.md, ported from the Mac's Delegation*Tests.
         await Test("state: a save starts at most every 1.5 s and is never pushed back for ever", StateSaveVerification.TheScheduleKeepsTheDebounceAndTheGapAndNeverWaitsForEver);
+        // Per-pane worktrees (PaneWorktree.cs, docs/devtool-features.md §12).
+        await Test("pane worktree: the decision, the PORT, the note and saved records", PaneWorktreeVerification.PolicyPortsNoteAndRecords);
+        await Test("pane worktree: the copy rules, the list and the pull request page", PaneWorktreeVerification.CopyListAndPullRequest);
+        await Test("pane worktree: merge, commit and merge, undo, status and discard with real git", PaneWorktreeVerification.GitMergeCommitUndoStatusAndDiscard);
         await Test("delegation: child states, events and the only moves between them", DelegationVerification.StatesAndMoves);
         await Test("delegation: reason codes, records on the wire and the request key", DelegationVerification.NamesRecordsAndRequestKey);
         await Test("delegation: the file saves, restores, refuses at 4 MiB and waits out a reader", DelegationVerification.FileStoreSavesRestoresAndRefuses);

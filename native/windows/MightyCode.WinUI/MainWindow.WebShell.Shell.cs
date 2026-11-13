@@ -224,7 +224,7 @@ public sealed partial class MainWindow
         if (!AddPaneMenu.MayAskResume(provider, fromMenu: true) || service.Snapshot.ActiveWorkspaceId is not { } workspaceId
             || service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == workspaceId) is not { } workspace || LocalPath(workspace) is null)
         {
-            await AddPane("claude", provider, groupId);
+            await AddNewAgentPane(provider, groupId);
             return;
         }
         if (resumeLookup || dialogOpen) return;
@@ -237,7 +237,7 @@ public sealed partial class MainWindow
             var quiet = options.SmokeTest || await Task.WhenAny(reading, Task.Delay(AddPaneMenu.QuietLookUp)) == reading;
             if (service.Snapshot.ActiveWorkspaceId != workspaceId) return;
             bool Asks(ResumableSessionListing found) => AddPaneMenu.AsksResume(provider, found.Items, ResumableSessions.InUse(service.Snapshot.Sessions));
-            if (quiet && !Asks(await reading)) { await AddPane("claude", provider, groupId); return; }
+            if (quiet && !Asks(await reading)) { await AddNewAgentPane(provider, groupId); return; }
             var agent = ProviderMark.Label(provider);
             dialogOpen = true;
             try
@@ -260,7 +260,7 @@ public sealed partial class MainWindow
             finally { dialogOpen = false; }
         }
         finally { resumeLookup = false; }
-        if (picked == "new") await AddPane("claude", provider, groupId);
+        if (picked == "new") await AddNewAgentPane(provider, groupId);
         else if (picked == "resume") await WebPickResumedSession(provider, workspace, groupId);
     });
 
@@ -359,6 +359,8 @@ public sealed partial class MainWindow
             wait = SidebarWaitText(attention), tabMark = WorkDashboard.IsCounted(session.Kind) && tone != DesignTone.Idle, waiting = attention.Total,
             dashMeta = DashboardMeta(card), activity = session.Status == "running" ? card.LastActivity : null, activityError = card.ActivityIsError,
             dashWait = attention.Total > 0 ? DashboardAttentionWord(attention) : null,
+            // A pane in its own worktree carries the branch marker on its row and tab (PaneWorktree.cs).
+            worktree = session.PaneWorktree is { } worktreePane ? Locale.Get("paneWorktree.marker", new Dictionary<string, string> { ["branch"] = worktreePane.Branch, ["base"] = worktreePane.BaseBranch }) : null,
         };
     }
 

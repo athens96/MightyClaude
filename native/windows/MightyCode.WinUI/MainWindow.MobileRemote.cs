@@ -506,7 +506,14 @@ public sealed partial class MainWindow
         if (request.Action == "create")
         {
             var created = SessionTemplate.Inherit(new RunSession { WorkspaceId = request.SessionId, Provider = request.Body.Text("provider") ?? "claude", Kind = "claude", Title = ProviderCatalog.Name(request.Body.Text("provider") ?? "claude") }, service.Snapshot.Sessions);
-            await service.UpdateAsync(s => !s.Workspaces.Any(w => w.Id == request.SessionId && w.Remote is null) ? throw new MobileRequestException(404, "Workspace not found.") : PaneLayout.HasRoom(s) ? s with { Sessions = s.Sessions.Append(created).ToList() } : throw new MobileRequestException(409, Locale.Get("workspace.paneLimit"))); Render(); return created.Id;
+            // The phone cannot be asked: the workspace's mode alone decides whether the pane gets its own worktree (PaneWorktreePolicy.DecideWithoutAsking).
+            var createdWorkspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == request.SessionId && w.Remote is null);
+            var (worktree, fellBack) = createdWorkspace is null ? (null, null) : await WorktreeWithoutAsking(createdWorkspace, created.Id);
+            if (worktree is not null) created = created with { WorkingFolder = worktree.RunFolder, PaneWorktree = worktree, Logs = [.. created.Logs, SystemLog(Locale.Get("paneWorktree.log.made", Words(("branch", worktree.Branch), ("base", worktree.BaseBranch), ("port", worktree.Port.ToString(System.Globalization.CultureInfo.InvariantCulture)))), created.Provider)] };
+            else if (fellBack is not null) created = created with { Logs = [.. created.Logs, SystemLog(fellBack, created.Provider)] };
+            await service.UpdateAsync(s => !s.Workspaces.Any(w => w.Id == request.SessionId && w.Remote is null) ? throw new MobileRequestException(404, "Workspace not found.") : PaneLayout.HasRoom(s) ? s with { Sessions = s.Sessions.Append(created).ToList() } : throw new MobileRequestException(409, Locale.Get("workspace.paneLimit"))); Render();
+            if (worktree is not null && createdWorkspace is not null) _ = PreparePaneWorktree(created.Id, createdWorkspace, worktree);
+            return created.Id;
         }
         var pane = MobilePane(request.SessionId); var body = request.Body;
         switch (request.Action)

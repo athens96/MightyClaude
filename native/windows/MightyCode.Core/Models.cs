@@ -62,6 +62,14 @@ public sealed record Workspace
     // Set when the folder is on another computer; Path is then the host's path and never a local folder.
     public RemoteWorkspaceReference? Remote { get; init; }
     [JsonIgnore] public bool IsRemote => Remote is not null;
+    // Where the workspace's agent panes work (PaneWorktree.cs, macOS Workspace.paneWorktreeMode): ask (null, older saves), further or every.
+    [JsonPropertyName("paneWorktreeMode"), JsonConverter(typeof(LenientJsonConverter<string>))] public string? PaneWorktreeMode { get; init; }
+    // Run once in each new pane worktree right after it is made (npm ci, …); null is none.
+    [JsonPropertyName("worktreeSetupCommand"), JsonConverter(typeof(LenientJsonConverter<string>))] public string? WorktreeSetupCommand { get; init; }
+    // Files the workspace folder has but git leaves out of a worktree (.env, …), copied into each new pane worktree (PaneWorktreeCopy).
+    [JsonPropertyName("worktreeCopyPaths"), JsonConverter(typeof(LenientListConverter<string>))] public List<string>? WorktreeCopyPaths { get; init; }
+    // Pane worktrees kept after their pane closed with work in them (KeptPaneWorktree); damage drops that record only.
+    [JsonPropertyName("keptPaneWorktrees"), JsonConverter(typeof(LenientListConverter<KeptPaneWorktree>))] public List<KeptPaneWorktree>? KeptPaneWorktrees { get; init; }
 }
 /// <param name="Advisor">A Claude pane's advisor (Claude Code's experimental server-side advisor tool): null follows Claude's own settings and passes
 /// nothing, a model's name is passed as <c>--advisor</c>, <see cref="AdvisorOff"/> turns it off for the run. Absent in older saves; other agents never
@@ -179,6 +187,9 @@ public sealed record RunSession : IJsonOnDeserializing
     // file is the authority. Damage in either loads as nothing instead of failing the snapshot.
     [JsonPropertyName("parentSessionId"), JsonConverter(typeof(LenientJsonConverter<string>))] public string? ParentSessionId { get; init; }
     [JsonPropertyName("workingFolder"), JsonConverter(typeof(LenientJsonConverter<string>))] public string? WorkingFolder { get; init; }
+    // Present only on a workspace's agent pane that works in its own worktree (PaneWorktree.cs, macOS RunSession.paneWorktree): its branch,
+    // base, port and setup. Its WorkingFolder is the worktree folder; it has no parent. Damage loads as nothing.
+    [JsonPropertyName("paneWorktree"), JsonConverter(typeof(LenientJsonConverter<PaneWorktree>))] public PaneWorktree? PaneWorktree { get; init; }
     // The composer's "send to" choice on a Claude agent pane (macOS RunSession.askTarget): an AskTargets id. Absent (older saves)
     // sends to Claude, and so does an id no longer offered. Damage loads as nothing instead of failing the snapshot.
     [JsonPropertyName("askTarget"), JsonConverter(typeof(LenientJsonConverter<string>))] public string? AskTarget { get; init; }
@@ -436,6 +447,10 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
     // A delegated child pane's worktree folder, where its run works instead of the workspace folder. Captured from the pane's saved
     // record at acceptance, never supplied by remote JSON.
     [JsonIgnore] public string? WorkingFolder { get; init; }
+    // A pane worktree's own run environment (PaneWorktree.Environment): only the keys PaneEnvironmentKeys names reach the process.
+    // Captured from the pane's saved record at acceptance; never persisted, never read from remote JSON.
+    [JsonIgnore] public IReadOnlyDictionary<string, string>? PaneEnvironment { get; init; }
+    public static readonly IReadOnlySet<string> PaneEnvironmentKeys = new HashSet<string>(StringComparer.Ordinal) { "PORT", "MIGHTY_WORKSPACE_FOLDER", "MIGHTY_WORKTREE" };
     // A delegated child's worktree when its run works in a folder inside it (a workspace that is a subfolder of its repository):
     // REPORT.md lies outside that folder, so a Codex run may also write here and an Antigravity run adds it. Not persisted.
     [JsonIgnore] public string? DelegationWorktreeRoot { get; init; }

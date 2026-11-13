@@ -601,7 +601,7 @@ internal static class DelegationVerification
         var again = StateStore.Normalize(JsonSerializer.Deserialize<AppSnapshot>(JsonSerializer.Serialize(snapshot, Wire.Json), Wire.Json)!, true);
         Check(again.Sessions[1].ParentSessionId == "parent" && again.Sessions[1].WorkingFolder == childFolder && JsonSerializer.Serialize(again.Sessions[0], Wire.Json) is var plain && !plain.Contains("parentSessionId", StringComparison.Ordinal) && !plain.Contains("workingFolder", StringComparison.Ordinal), "saving writes both keys back for a child and neither for any other pane");
 
-        // Normalize keeps well-formed links, even for a closed parent, and drops the rest.
+        // Normalize keeps well-formed links, even for a closed parent, and drops the rest; a terminal keeps only its folder (a pane worktree's terminal).
         RunSession Linked(string id, string? parentId, string? folderPath, string kind = "claude", string provider = "claude") => new() { Id = id, WorkspaceId = "w", Kind = kind, Provider = provider, CreatedAt = "2026-10-09T00:00:00Z", ParentSessionId = parentId, WorkingFolder = folderPath };
         var shell = Path.Combine(childFolder, "shell");
         List<RunSession> linked =
@@ -615,7 +615,7 @@ internal static class DelegationVerification
             (string?, string?) Links(string id) => output.Sessions.Single(session => session.Id == id) is var session ? (session.ParentSessionId, session.WorkingFolder) : default;
             SameList(output.Sessions.Select(session => session.Id), linked.Select(session => session.Id), "no pane is dropped");
             Check(Links("child") == ("closed-parent", childFolder) && Links("codex") == ("closed-parent", childFolder) && Links("self") == (null, null) && Links("bad") == (null, null) && Links("long") == ("p", null) && Links("rooted") == ("p", null)
-                && Links("shell") == (null, null) && Links("browser") == (null, null) && Links("plain") == (null, null), "well-formed links stay and malformed ones go, restoring " + restoring);
+                && Links("shell") == (null, shell) && Links("browser") == (null, null) && Links("plain") == (null, null), "well-formed links stay and malformed ones go, restoring " + restoring);
         }
         Check(DelegationPanes.IsWorkingFolder(childFolder) && !DelegationPanes.IsWorkingFolder(null) && !DelegationPanes.IsWorkingFolder("") && !DelegationPanes.IsWorkingFolder("C:relative"), "a working folder is a full path");
     }

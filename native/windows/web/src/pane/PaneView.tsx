@@ -15,6 +15,7 @@ import { Icon } from '../icons/Icon';
 import { providerLabel } from '../conversation/format';
 import { drawsDiagram } from '../pending/requests';
 import { useCall, useMenu, type MenuItem } from '../shell/parts';
+import { WorktreeBar } from './WorktreeBar';
 
 /** The header's clock, redrawn each second while the run is not finished (MW.Composer.cs RefreshElapsed). */
 function Clock({ session }: { session: RunSession }) {
@@ -119,6 +120,7 @@ export const PaneView = memo(function PaneView({ session: saved }: { session: Ru
           <PaneMenu session={session} />
         </span>
       </header>
+      {session.paneWorktree && <WorktreeBar key={'worktree-' + session.id} session={session} />}
       {body}
     </section>
   );

@@ -50,6 +50,18 @@ Claude·Codex·Antigravity 창이 실행 중일 때 요청을 쓰고 {{kbd:⌘En
 - 자식을 만들 수 없거나 만든 뒤 시작하지 못하면(열린 자식이 이미 3개, 디스크 부족, worktree나 첫 실행 실패 등) 창의 대화에 이유가 남습니다. 그러면 글은 {{kbd:Enter}}를 누른 것처럼 그 창의 다음 요청이 됩니다. 대기열이 가득 차 있으면 입력창으로 돌아갑니다. 시작하지 못한 자식은 카드에서 폐기할 때까지 목록에 남습니다.
 - 자식 창이나 마이티 오케스트레이션을 끈 창에서는 {{kbd:⌘Enter}}도 {{kbd:Enter}}처럼 대기열에 넣습니다. 휴대폰에서 실행 중인 창에 보낸 글도 언제나 대기열에 들어갑니다. 사람이 보낸 글은 실행 중인 작업에 바로 전달되지 않습니다.
 
+## 창마다 worktree {#pane-worktree}
+한 워크스페이스에서 에이전트 창 여러 개가 동시에 일하도록, 워크스페이스의 에이전트 창도 자식처럼 자기 git worktree와 브랜치에서 일할 수 있습니다. 서로의 파일을 덮어쓰지 않고, 끝나면 창 위의 막대에서 워크스페이스 브랜치로 병합합니다.
+
+- **언제 worktree에서 열리나**: 같은 워크스페이스에 워크스페이스 폴더에서 일하는 에이전트 창이 이미 열려 있으면 새 에이전트 창을 열 때 {{ui:paneWorktree.choice.worktree}}, {{ui:paneWorktree.choice.always}}, {{ui:paneWorktree.choice.sameFolder}} 중에서 고릅니다. 사이드바 워크스페이스 행의 오른쪽 클릭 메뉴 {{ui:paneWorktree.menu.mode}}에서 {{ui:paneWorktree.mode.ask}}, {{ui:paneWorktree.mode.further}}, {{ui:paneWorktree.mode.every}} 중 하나로 정해 둘 수 있습니다. {{ui:paneWorktree.mode.every}}로 두면 첫 창도 worktree에서 일해서, 워크스페이스 폴더는 병합만 받습니다(다른 창이 워크스페이스 폴더에서 일하는 중이면 병합이 막히기 때문입니다). 폰에서 연 창은 이 설정을 따르고, 묻는 설정이면 워크스페이스 폴더에서 열립니다. 이어 하기로 연 창은 언제나 워크스페이스 폴더입니다.
+- **만드는 방식**: 자식과 같은 규칙입니다. 워크스페이스 브랜치의 마지막 커밋에서 `mighty/<창 id>` 브랜치가 생기고 worktree는 `~/.mightycode/worktrees/<창 id>`에 생깁니다. git 저장소가 아니라서 만들 수 없으면 그 이유와 함께 같은 폴더에서만 열 수 있습니다.
+- **에이전트에게 알림**: 창의 첫 요청에 앱이 한 단락을 붙여, 에이전트가 자기 worktree와 브랜치, PORT를 알고 끝나면 커밋하도록 합니다. 병합은 사람이 앱에서 합니다.
+- **막대**: 창 위에 브랜치와 기준 브랜치, 기준에 없는 커밋 수(↑), 그새 기준이 앞서간 커밋 수(↓), 커밋하지 않은 변경 파일 수(±, 누르면 변경 보기), PORT(누르면 localhost를 엽니다)가 보입니다. 변경이 남아 있으면 단추가 {{ui:paneWorktree.bar.commitMerge}}으로 바뀌어, 새 파일까지 커밋한 뒤 병합합니다. 비밀번호처럼 보이는 새 파일이나 5MB가 넘는 새 파일은 커밋하지 않고 알려 줍니다.
+- **충돌**: 병합이 충돌로 막히면 {{ui:paneWorktree.bar.resolve}} 단추가 생깁니다. 누르면 에이전트에게 기준 브랜치를 가져와 충돌을 풀고 커밋하라고 요청합니다.
+- **막대의 메뉴**: {{ui:paneWorktree.bar.changes}}(기준 대비 바뀐 파일과 diff), {{ui:paneWorktree.bar.terminal}}, {{ui:paneWorktree.bar.finder}} (Windows: {{ui:menu.showInExplorer}}), 마지막 병합 되돌리기(워크스페이스 폴더가 그 뒤로 바뀌지 않았을 때만), {{ui:paneWorktree.bar.pr}}(확인 후 브랜치를 origin에 올리고, GitHub이면 PR 만들기 화면을 엽니다. 강제로 덮어쓰지 않습니다), {{ui:paneWorktree.bar.discard}}(자식 창이 이 창의 브랜치에서 갈라져 있으면 거절합니다).
+- **준비**: 워크스페이스 행 메뉴의 {{ui:paneWorktree.menu.copy}}에 적은 파일(예: `.env`)을 새 worktree에 복사하고, {{ui:paneWorktree.menu.setup}}을 한 번 실행합니다. 창의 실행에는 `PORT`, `MIGHTY_WORKSPACE_FOLDER`, `MIGHTY_WORKTREE` 환경 변수가 들어갑니다.
+- **닫기와 목록**: 병합하지 않은 작업이 없으면 창을 닫을 때 worktree도 지웁니다. 작업이 남아 있으면 남겨 두고, 워크스페이스 행 메뉴의 {{ui:paneWorktree.menu.list}}에서 다시 창으로 열거나 병합하거나 지울 수 있습니다.
+
 ## Claude에게 나눠 맡기기 {#delegate}
 Claude나 Codex 창(부모)이 일을 나눠 다른 창(자식)에게 맡길 수도 있습니다. 다른 에이전트를 지정하지 않으면 자식은 부모와 같은 에이전트입니다. 자식이 보고하면 부모가 알림을 받아 보고서를 읽고, 결과를 병합할지 정합니다. Claude와 Codex 부모 모두 Mac 앱과 Windows 앱에서 됩니다.
 

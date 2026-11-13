@@ -11,6 +11,8 @@ import type { DialogRequest, OpenDialog, ResumeRows } from '../shell/types';
 import { GitCreate, NewFolder } from './WorkspaceCreate';
 import { Pending } from '../pending/Pending';
 import { DialogLoading, DialogShell } from './DialogShell';
+import { diffLines } from '../pane/worktree';
+import '../pane/worktree.css';
 
 /**
  * A sheet over the window (popup standard kind A or B): its title (and subtitle) in the header, its form in the body, its
@@ -129,6 +131,84 @@ function ResumeList({ id, dialog, answer }: { id: number; dialog: Extract<Dialog
   );
 }
 
+/** Where a new agent pane works (MainWindow.PaneWorktree.cs AskPaneWorktreeChoice): its own worktree, always for this workspace, or the folder. */
+function PaneWorktreeChoice({ id, dialog, answer }: { id: number; dialog: Extract<DialogRequest, { type: 'paneWorktreeChoice' }>; answer: (value: unknown) => void }) {
+  return (
+    <Sheet id={id} width={520} label={dialog.title} icon={<Icon name="git-branch" size={18} />} onCancel={() => answer(null)}
+      buttons={<>
+        <button type="button" className="btn" onClick={() => answer(null)}>{dialog.cancel}</button>
+        <button type="button" className="btn" onClick={() => answer('same')} data-testid="pane-worktree-same" data-autofocus={dialog.canWorktree ? undefined : true}>{dialog.sameFolder}</button>
+        {dialog.canWorktree && <button type="button" className="btn" onClick={() => answer('always')} data-testid="pane-worktree-always">{dialog.always}</button>}
+        {dialog.canWorktree && <button type="button" className="btn primary" data-autofocus onClick={() => answer('worktree')} data-testid="pane-worktree-new">{dialog.worktree}</button>}
+      </>}>
+      <p className="dialog-message">{dialog.message}</p>
+    </Sheet>
+  );
+}
+
+/** A one-line worktree setting: the setup command or the files copied into new worktrees. */
+function PaneWorktreeText({ id, dialog, answer }: { id: number; dialog: Extract<DialogRequest, { type: 'paneWorktreeText' }>; answer: (value: unknown) => void }) {
+  const [text, setText] = useState(dialog.current);
+  return (
+    <Sheet id={id} width={460} label={dialog.title} onCancel={() => answer(null)}
+      buttons={<>
+        <button type="button" className="btn" onClick={() => answer(null)}>{dialog.cancel}</button>
+        <button type="button" className="btn primary" onClick={() => answer(text)} data-testid="pane-worktree-text-save">{dialog.save}</button>
+      </>}>
+      <p className="dialog-message">{dialog.message}</p>
+      <input className="dialog-field" data-autofocus placeholder={dialog.placeholder} aria-label={dialog.title} value={text} data-testid="pane-worktree-text"
+        onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); answer(text); } }} />
+    </Sheet>
+  );
+}
+
+/** The files a worktree pane changed against its base, and the picked file's diff (paneWorktreeDiff). */
+function PaneWorktreeChanges({ id, dialog, answer }: { id: number; dialog: Extract<DialogRequest, { type: 'paneWorktreeChanges' }>; answer: (value: unknown) => void }) {
+  const { bridge } = useServices();
+  const [picked, setPicked] = useState<string | null>(dialog.files[0]?.path ?? null);
+  const [diff, setDiff] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true; setDiff(null);
+    if (picked) void bridge.call<string | null>('paneWorktreeDiff', { id: dialog.paneId, path: picked }).then((value) => { if (live) setDiff(value ?? ''); }, () => {});
+    return () => { live = false; };
+  }, [bridge, dialog.paneId, picked]);
+  return (
+    <Sheet id={id} width={880} label={dialog.title} onCancel={() => answer(null)} buttons={<button type="button" className="btn" data-autofocus onClick={() => answer(null)}>OK</button>}>
+      {dialog.files.length === 0 ? <p className="dialog-message">{dialog.none}</p> : (
+        <div className="worktree-changes">
+          <ul>{dialog.files.map((file) => (
+            <li key={file.path}><button type="button" className={file.path === picked ? 'active' : ''} title={file.path} onClick={() => setPicked(file.path)}>{file.status + '  ' + file.path}</button></li>
+          ))}</ul>
+          {picked ? diff === null ? <Pending busy showsLabel={false} /> : (
+            <pre className="worktree-diff selectable">{diffLines(diff).map((line, index) => <div key={index} className={line.kind}>{line.text || ' '}</div>)}</pre>
+          ) : <p className="quiet">{dialog.pick}</p>}
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
+/** A workspace's pane worktrees: open, kept and found ones, each with its actions (MainWindow.PaneWorktree.cs ShowWorktreeList). */
+function PaneWorktreeList({ id, dialog, answer }: { id: number; dialog: Extract<DialogRequest, { type: 'paneWorktreeList' }>; answer: (value: unknown) => void }) {
+  return (
+    <Sheet id={id} width={640} label={dialog.title} onCancel={() => answer(null)} buttons={<button type="button" className="btn" data-autofocus onClick={() => answer(null)}>{dialog.close}</button>}>
+      {dialog.rows.length === 0 ? <p className="dialog-message">{dialog.empty}</p> : dialog.rows.map((row) => (
+        <div key={row.id} className="worktree-list-row" data-testid={'worktree-row-' + row.id}>
+          <Icon name="git-branch" size={14} />
+          <div className="text">
+            <span><strong>{row.branch}</strong> · {row.originText}</span>
+            <span className="quiet small">{row.counts}</span>
+            <span className="quiet small" title={row.path}>{row.path}</span>
+          </div>
+          {row.actions.map((item) => (
+            <button key={item.action} type="button" className={'btn small' + (item.action === 'delete' ? ' danger' : '')} onClick={() => answer({ id: row.id, action: item.action })}>{item.label}</button>
+          ))}
+        </div>
+      ))}
+    </Sheet>
+  );
+}
+
 function DialogView({ open }: { open: OpenDialog }) {
   const { bridge, store } = useServices();
   const answer = (value: unknown) => {
@@ -143,6 +223,10 @@ function DialogView({ open }: { open: OpenDialog }) {
     case 'resumeList': return <ResumeList id={open.id} dialog={dialog} answer={answer} />;
     case 'newFolder': return <NewFolder id={open.id} dialog={dialog} answer={answer} />;
     case 'gitCreate': return <GitCreate id={open.id} dialog={dialog} answer={answer} />;
+    case 'paneWorktreeChoice': return <PaneWorktreeChoice id={open.id} dialog={dialog} answer={answer} />;
+    case 'paneWorktreeText': return <PaneWorktreeText id={open.id} dialog={dialog} answer={answer} />;
+    case 'paneWorktreeChanges': return <PaneWorktreeChanges id={open.id} dialog={dialog} answer={answer} />;
+    case 'paneWorktreeList': return <PaneWorktreeList id={open.id} dialog={dialog} answer={answer} />;
   }
 }
 

@@ -50,6 +50,18 @@ section: delegation
 - 无法创建子窗格或创建后无法启动时（已有 3 个打开的子窗格、磁盘空间不足、worktree 或第一次运行失败等），窗格的对话中会写明原因。随后，你的文字会像按 {{kbd:Enter}} 那样成为该窗格的下一个请求。队列已满时会放回输入框。启动失败的子窗格会一直列出，直到你在卡片上丢弃它。
 - 在子窗格中，或关闭 Mighty 编排的窗格中，{{kbd:⌘Enter}} 也会像 {{kbd:Enter}} 一样放入队列。从手机发给运行中窗格的内容同样总是进入队列。人发送的内容不会插入正在运行的任务。
 
+## 窗格使用自己的 worktree {#pane-worktree}
+为了让同一工作区的多个代理窗格同时工作,工作区的代理窗格也可以像子窗格一样在自己的 git worktree 和分支中工作。各窗格不会覆盖彼此的文件,完成后在窗格上方的栏中合并到工作区分支。
+
+- **何时在 worktree 中打开**:当同一工作区已有在工作区文件夹中工作的代理窗格时,新代理窗格会询问:{{ui:paneWorktree.choice.worktree}}、{{ui:paneWorktree.choice.always}} 或 {{ui:paneWorktree.choice.sameFolder}}。也可以在侧边栏工作区行的右键菜单 {{ui:paneWorktree.menu.mode}} 中预先设置为 {{ui:paneWorktree.mode.ask}}、{{ui:paneWorktree.mode.further}} 或 {{ui:paneWorktree.mode.every}}。设为 {{ui:paneWorktree.mode.every}} 时第一个窗格也在 worktree 中工作,工作区文件夹只接收合并(否则在工作区文件夹中工作的窗格会阻止合并)。从手机打开的窗格遵循此设置,设置为询问时在工作区文件夹中打开。继续之前会话的窗格总是在工作区文件夹中工作。
+- **创建方式**:与子窗格规则相同。从工作区分支的最新提交创建分支 `mighty/<窗格 id>`,worktree 位于 `~/.mightycode/worktrees/<窗格 id>`。无法创建时(例如不是 git 仓库)会说明原因,只能在同一文件夹中打开。
+- **告知代理**:窗格的第一个请求会附上应用的说明,让代理知道自己的 worktree、分支和 PORT,并在完成后提交。合并由你在应用中进行。
+- **栏**:窗格上方显示分支和基础分支、基础分支没有的提交数(↑)、之后基础分支前进的提交数(↓)、未提交的更改文件数(±,点击查看)和 PORT(点击打开 localhost)。有未提交的更改时按钮变为 {{ui:paneWorktree.bar.commitMerge}},会连同新文件一起提交后合并。看起来像密钥的新文件或超过 5 MB 的新文件不会提交,并会提示。
+- **冲突**:合并因冲突被拒绝时会出现 {{ui:paneWorktree.bar.resolve}} 按钮,点击后请代理合入基础分支、解决冲突并提交。
+- **栏的菜单**:{{ui:paneWorktree.bar.changes}}(相对基础分支更改的文件及差异)、{{ui:paneWorktree.bar.terminal}}、{{ui:paneWorktree.bar.finder}} (Windows: {{ui:menu.showInExplorer}})、撤销最近一次合并(仅当工作区文件夹此后没有变化时)、{{ui:paneWorktree.bar.pr}}(确认后将分支推送到 origin,从不强制;如果是 GitHub 则打开创建拉取请求的页面)、{{ui:paneWorktree.bar.discard}}(有子窗格基于此窗格的分支时会拒绝)。
+- **准备**:工作区行菜单中 {{ui:paneWorktree.menu.copy}} 列出的文件(如 `.env`)会复制到新 worktree,然后运行一次 {{ui:paneWorktree.menu.setup}}。窗格的运行会获得 `PORT`、`MIGHTY_WORKSPACE_FOLDER` 和 `MIGHTY_WORKTREE` 环境变量。
+- **关闭与列表**:没有未合并工作的窗格关闭时会一并删除其 worktree。仍有工作的会保留,可在工作区行菜单的 {{ui:paneWorktree.menu.list}} 中重新作为窗格打开、合并或删除。
+
 ## 让 Claude 分工 {#delegate}
 Claude 或 Codex 窗格（父窗格）也可以把工作拆开，交给其他窗格（子窗格）；除非它指定别的代理，子窗格运行它自己的代理。子窗格报告后，父窗格收到通知，阅读报告，再决定是否合并结果。Claude 和 Codex 父窗格在 Mac 应用和 Windows 应用中都可使用。
 

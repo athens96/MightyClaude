@@ -37,6 +37,28 @@ export interface Workspace {
   createdAt: string;
   modelDefaults?: ModelDefaultsConfig;
   remote?: RemoteWorkspaceReference;
+  /** Where the workspace's agent panes work (Core PaneWorktreeMode): absent is ask, else further or every. */
+  paneWorktreeMode?: string;
+  worktreeSetupCommand?: string;
+  worktreeCopyPaths?: string[];
+  keptPaneWorktrees?: { sessionId: string; title: string; provider: string; worktree: PaneWorktree; keptAt: string }[];
+}
+
+/** A workspace agent pane's own worktree (Core PaneWorktree.cs, the Mac's PaneWorktree). */
+export interface PaneWorktree {
+  worktreePath: string;
+  branch: string;
+  baseBranch: string;
+  baseCommit: string;
+  checkout: string;
+  port: number;
+  setupCommand?: string | null;
+  setupStatus?: 'running' | 'done' | 'failed' | null;
+  setupExitCode?: number | null;
+  mergedCommit?: string | null;
+  preMergeCommit?: string | null;
+  workingFolder?: string | null;
+  noteGiven?: boolean | null;
 }
 
 /** RunSettingsJsonConverter: maxTurns and maxBudgetUsd are always written (null when unset); the Codex-only ones only when not default. */
@@ -317,6 +339,8 @@ export interface RunSession {
   backgroundWork?: BackgroundWork;
   parentSessionId?: string;
   workingFolder?: string;
+  /** Present on an agent pane that works in its own worktree (Core RunSession.PaneWorktree). */
+  paneWorktree?: PaneWorktree | null;
   /** The shell blocks of the agent's replies the user ran (MightyCode.Core/ShellBlockRuns.cs), one per block key. */
   shellRuns?: ShellBlockRun[];
 }

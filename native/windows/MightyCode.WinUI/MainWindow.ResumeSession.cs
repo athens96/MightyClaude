@@ -61,7 +61,7 @@ public sealed partial class MainWindow
             // A remote workspace's sessions are its host's: its agent pane starts new (M/AppStore+ResumeSession.swift).
             || LocalPath(workspace) is null)
         {
-            await AddPane("claude", provider, groupId);
+            await AddNewAgentPane(provider, groupId);
             return;
         }
         if (resumeLookup) return;
@@ -76,11 +76,11 @@ public sealed partial class MainWindow
             var quiet = options.SmokeTest || await Task.WhenAny(reading, Task.Delay(AddPaneMenu.QuietLookUp)) == reading;
             // Moved to another workspace meanwhile: the answer is about another folder.
             if (service.Snapshot.ActiveWorkspaceId != workspaceId) return;
-            if (quiet && !AddPaneMenu.AsksResume(provider, (await reading).Items, ResumableSessions.InUse(service.Snapshot.Sessions))) { await AddPane("claude", provider, groupId); return; }
+            if (quiet && !AddPaneMenu.AsksResume(provider, (await reading).Items, ResumableSessions.InUse(service.Snapshot.Sessions))) { await AddNewAgentPane(provider, groupId); return; }
             picked = await ShowResumeDialog(ResumeChoiceDialog(provider, quiet ? null : reading));
         }
         finally { resumeLookup = false; }
-        if (picked == ContentDialogResult.Primary) await AddPane("claude", provider, groupId);
+        if (picked == ContentDialogResult.Primary) await AddNewAgentPane(provider, groupId);
         else if (picked == ContentDialogResult.Secondary) await PickResumedSession(provider, workspace, groupId);
     });
 

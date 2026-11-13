@@ -1,0 +1,33 @@
+/* The bar over an agent pane in its own worktree (WorktreeBar.tsx). */
+.worktree-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm, 8px);
+  padding: 0 var(--space-md, 12px);
+  min-height: 28px;
+  font-size: 11px;
+  color: var(--ink2);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-bottom: 1px solid var(--border);
+}
+.worktree-bar > svg { color: var(--accent); flex: none; }
+.worktree-bar-branch { color: var(--ink); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.worktree-bar-count, .worktree-bar-port { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.worktree-bar .link { background: none; border: 0; padding: 0; color: inherit; cursor: pointer; font: inherit; }
+.worktree-bar .link:hover { color: var(--ink); text-decoration: underline; }
+.worktree-bar-setup { white-space: nowrap; }
+.worktree-bar .spacer { flex: 1; }
+.worktree-bar .btn.small { padding: 2px 8px; font-size: 11px; }
+.sidebar-worktree-mark { color: var(--accent); display: inline-flex; flex: none; }
+.worktree-diff { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; white-space: pre; overflow: auto; margin: 0; }
+.worktree-diff .add { color: var(--done, #2e8b57); }
+.worktree-diff .del { color: var(--err, #c0392b); }
+.worktree-diff .hunk { color: var(--accent); }
+.worktree-diff .meta { color: var(--ink2); }
+.worktree-changes { display: grid; grid-template-columns: 220px 1fr; gap: 8px; height: 420px; }
+.worktree-changes ul { list-style: none; margin: 0; padding: 0; overflow: auto; border-right: 1px solid var(--border); }
+.worktree-changes li button { width: 100%; text-align: left; background: none; border: 0; padding: 3px 6px; font: inherit; font-size: 11px; cursor: pointer; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.worktree-changes li button.active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.worktree-list-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.worktree-list-row .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.worktree-list-row .text span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

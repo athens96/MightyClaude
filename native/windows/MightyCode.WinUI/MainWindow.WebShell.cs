@@ -43,7 +43,7 @@ public sealed partial class MainWindow
             PerfLog.Mark(line); options.TraceStartup(line);
             return Task.FromResult<object?>(null);
         });
-        RegisterConversationMethods(bridge); RegisterComposerMethods(bridge); RegisterCardMethods(bridge); RegisterMightyMethods(bridge); RegisterShellMethods(bridge); RegisterPaneMethods(bridge); RegisterSettingsMethods(bridge); RegisterShellBlockMethods(bridge); RegisterTerminalPromptMethods(bridge);
+        RegisterConversationMethods(bridge); RegisterComposerMethods(bridge); RegisterCardMethods(bridge); RegisterMightyMethods(bridge); RegisterShellMethods(bridge); RegisterPaneWorktreeMethods(bridge); RegisterPaneMethods(bridge); RegisterSettingsMethods(bridge); RegisterShellBlockMethods(bridge); RegisterTerminalPromptMethods(bridge);
         webShell = new WebShell(bridge, StateDirectory, options.SmokeTest, brushes.Brush(DesignToken.Page).Color);
         root.KeyboardAccelerators.Clear(); root.Children.Clear();
         // The forms the page draws stay in the tree under it, invisible (MainWindow.WebShell.Settings.cs).

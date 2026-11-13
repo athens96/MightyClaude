@@ -303,7 +303,7 @@ public sealed partial class MainWindow
     private async Task AddPaneFromShortcut()
     {
         if (dialogOpen || service.Snapshot.ActiveWorkspaceId is null) return;
-        await AddPane("claude", AddPaneMenu.NewPaneShortcutProvider);
+        await AddNewAgentPane(AddPaneMenu.NewPaneShortcutProvider);
     }
     internal bool HasAddPaneShortcuts => new[] { VirtualKey.O, VirtualKey.N }.All(key => root.KeyboardAccelerators.Any(a => a.Key == key && a.Modifiers == VirtualKeyModifiers.Control));
     /// <summary>

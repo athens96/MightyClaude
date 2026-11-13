@@ -68,6 +68,7 @@ const PaneRow = memo(function PaneRow({ info, active, child }: { info: PaneInfo;
         <span className="sidebar-pane-line">
           <span className={'sidebar-pane-title' + (info.settled ? '' : ' strong')} title={info.help}>{info.title}</span>
           {info.beta && <BetaBadge />}
+          {info.worktree && <span className="sidebar-worktree-mark" title={info.worktree} aria-label={info.worktree} data-testid="sidebar-worktree-mark"><Icon name="git-branch" size={11} weight={2.2} /></span>}
         </span>
         <span className="sidebar-pane-meta">
           {info.agent && <ProviderMark provider={info.agent} size={11} />}
@@ -86,6 +87,7 @@ function WorkspaceGroup({ workspace, selected, activeId, panes, dashboard }: { w
   const call = useCall();
   const menu = useMenu();
   const addMenu = useAddMenu();
+  const worktreeMode = useStoreState().snapshot?.workspaces.find((w) => w.id === workspace.id)?.paneWorktreeMode ?? 'ask';
   const items: MenuItem[] = [
     { label: t('menu.rename'), action: () => call('renameWorkspace', { id: workspace.id }) },
     { label: t('workspace.menu.remove'), action: () => call('removeWorkspace', { id: workspace.id }) },
@@ -95,6 +97,16 @@ function WorkspaceGroup({ workspace, selected, activeId, panes, dashboard }: { w
     { separator: true },
     { label: t('menu.showFiles'), action: () => call('openFiles', { workspaceId: workspace.id }) },
     { label: t('workMap.open'), action: () => call('openWorkMap', { workspaceId: workspace.id }) },
+    // Where its agent panes work and what each new worktree gets (MainWindow.PaneWorktree.cs WorkspaceWorktreeAction).
+    { separator: true },
+    { label: t('paneWorktree.menu.mode'), disabled: true },
+    ...(['ask', 'further', 'every'] as const).map((mode) => ({
+      label: (worktreeMode === mode ? '✓ ' : '    ') + t('paneWorktree.mode.' + mode),
+      action: () => call('workspaceWorktree', { workspaceId: workspace.id, action: 'mode', mode }),
+    })),
+    { label: t('paneWorktree.menu.setup'), action: () => call('workspaceWorktree', { workspaceId: workspace.id, action: 'setup' }) },
+    { label: t('paneWorktree.menu.copy'), action: () => call('workspaceWorktree', { workspaceId: workspace.id, action: 'copy' }) },
+    { label: t('paneWorktree.menu.list'), action: () => call('workspaceWorktree', { workspaceId: workspace.id, action: 'list' }) },
   );
   const disclosure = t(workspace.expanded ? 'workspace.collapseAccessibility' : 'workspace.expandAccessibility', { workspace: workspace.name });
   return (

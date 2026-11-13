@@ -37,6 +37,8 @@ export interface PaneInfo {
   activity?: string;
   activityError: boolean;
   dashWait?: string;
+  /** The branch marker's words when the pane works in its own worktree (paneWorktree.marker). */
+  worktree?: string | null;
 }
 
 export interface CardAction {
@@ -186,7 +188,23 @@ export type DialogRequest =
   | { type: 'resumeChoice'; provider: string; title: string; message: string; checking: boolean }
   | { type: 'resumeList'; provider: string; title: string; path: string }
   | { type: 'newFolder'; title: string; subtitle: string; labels: CreateLabels; location: string }
-  | { type: 'gitCreate'; title: string; subtitle: string; labels: CreateLabels; location: string };
+  | { type: 'gitCreate'; title: string; subtitle: string; labels: CreateLabels; location: string }
+  | { type: 'paneWorktreeChoice'; title: string; message: string; canWorktree: boolean; worktree: string; always: string; sameFolder: string; cancel: string }
+  | { type: 'paneWorktreeText'; title: string; message: string; current: string; placeholder: string; save: string; cancel: string }
+  | { type: 'paneWorktreeChanges'; title: string; paneId: string; files: { path: string; status: string }[]; none: string; pick: string }
+  | { type: 'paneWorktreeList'; title: string; empty: string; close: string; rows: WorktreeListRow[] };
+
+/** One row of a workspace's worktree list (MainWindow.PaneWorktree.cs ShowWorktreeList). */
+export interface WorktreeListRow {
+  id: string;
+  title: string;
+  branch: string;
+  path: string;
+  origin: 'open' | 'kept' | 'found';
+  originText: string;
+  counts: string;
+  actions: { action: string; label: string }[];
+}
 
 /**
  * The create sheets' words (MainWindow.WorkspaceCreate.cs WorkspaceCreateLabels), each from its locale key: `path` keeps its

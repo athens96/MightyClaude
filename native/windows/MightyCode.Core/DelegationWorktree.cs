@@ -115,6 +115,22 @@ public sealed class ChildWorktreeMaker(string? root = null, Func<string, long?>?
         return new ChildWorktreeOutcome.Created(new(sessionId, worktree, folder, branch, start.ParentBranch, start.BaseCommit));
     }
 
+    /// <summary>
+    /// A workspace pane's own worktree (PaneWorktree, M/DelegationWorktree.swift makePane): the branch <c>mighty/&lt;session id&gt;</c>
+    /// at the base commit in the same place as a child's, without a child's TASK.md and REPORT.md.
+    /// </summary>
+    public async Task<ChildWorktreeOutcome> MakePane(string sessionId, ChildWorktreeBase start, double timeout = 300)
+    {
+        static ChildWorktreeOutcome Failed(string message) => new ChildWorktreeOutcome.Failed(message);
+        if (!IsSafeSessionId(sessionId)) return Failed("The session id cannot name a branch and a folder.");
+        var worktree = WorktreePath(sessionId); var branch = ChildRecord.BranchName(sessionId);
+        try { Directory.CreateDirectory(Root); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException) { return Failed(ex.Message); }
+        if (await DelegationGit.Run(["worktree", "add", "-b", branch, worktree, start.BaseCommit], start.Repository, timeout) is not { } added) return Failed("Git did not finish.");
+        if (added.ExitCode != 0) return Failed(DelegationGit.Message(added));
+        var folder = start.Prefix.Length == 0 ? worktree : DelegationPaths.Standardized(Path.Combine(worktree, start.Prefix));
+        return new ChildWorktreeOutcome.Created(new(sessionId, worktree, folder, branch, start.ParentBranch, start.BaseCommit));
+    }
+
     /// <summary><see cref="Check"/> and then <see cref="Make"/>.</summary>
     public async Task<ChildWorktreeOutcome> Create(string sessionId, string workspace, string task) => await Check(workspace) switch
     {

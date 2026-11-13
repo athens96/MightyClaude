@@ -138,10 +138,13 @@ public sealed partial class MainWindow
     /// </summary>
     private async Task ClosePane(string id)
     {
+        var closed = service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id);
         var gone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var close = service.CloseSessionAsync(id, () => gone.TrySetResult());
         if (await Task.WhenAny(gone.Task, close) == close) await close;
         if (!closing) Render();
+        // A worktree pane's worktree goes with it, or is kept on the workspace when work or children are left (PaneWorktree.cs).
+        if (closed?.PaneWorktree is not null && !closing && !service.Snapshot.Sessions.Any(s => s.Id == id)) await PaneWorktreeClosed(closed);
     }
 
     /// <summary>The parent-close confirmation (M/WorkspaceView.swift:91-96): only the parent closes, its open children go on. True when the human confirmed.</summary>

@@ -218,7 +218,7 @@ public sealed partial class MainWindow : Window
     private async Task OpenWorkspaceFolder(string path)
     {
         var workspace = await service.AddWorkspaceAsync(path); HideDashboard(); Render();
-        if (!service.Snapshot.Sessions.Any(s => s.WorkspaceId == workspace.Id)) await AddPane("claude", AddPaneMenu.NewPaneShortcutProvider);
+        if (!service.Snapshot.Sessions.Any(s => s.WorkspaceId == workspace.Id)) await AddNewAgentPane(AddPaneMenu.NewPaneShortcutProvider);
     }
     private Task RemoveWorkspace() => service.Snapshot.ActiveWorkspaceId is { } id ? ConfirmRemoveWorkspace(id) : Task.CompletedTask;
     /// <summary>

@@ -345,13 +345,21 @@ public sealed partial class DesktopService : IAsyncDisposable
             // A delegated child runs only in its own worktree, never in its parent's checkout (M/AppStore.swift:490-491).
             if (DelegationPanes.RunRefusal(pane) is not null) throw new InvalidOperationException(Locale.Get("run.blocked.worktreeMissing"));
             // A resumed conversation continues its checklist (task tools keep their ids).
-            request = request with { PhaseModels = PhaseModelPreferences.Normalize(snapshot.PhaseModels), TodoProgress = request.ResumeId is null ? null : pane.TodoProgress, WorkingFolder = pane.WorkingFolder, DelegationWorktreeRoot = DelegationWorktreeRoot(pane) };
+            request = request with { PhaseModels = PhaseModelPreferences.Normalize(snapshot.PhaseModels), TodoProgress = request.ResumeId is null ? null : pane.TodoProgress, WorkingFolder = pane.Kind == "claude" ? pane.WorkingFolder : null, DelegationWorktreeRoot = DelegationWorktreeRoot(pane),
+                PaneEnvironment = pane.Kind == "claude" && !remote ? pane.PaneWorktree?.Environment(workspace.Path) : null };
             route = new();
             if (!routes.TryAdd(request.SessionId, route)) throw new InvalidOperationException(Locale.Get("run.error.alreadyRunning"));
             runId = DelegationRunBegan(pane);
             snapshot = snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == request.SessionId ? PaneTitle.Requested(s, request.AntigravityGrant is not null ? "" : titleFrom ?? request.Input) with { SessionUsage = request.ResumeId is null || s.Provider != request.Provider ? null : s.SessionUsage, Provider = request.Provider, CurrentActivity = null, RunTiming = request.Kind == "shell" ? null : AgentRunTiming.Begin() } : s).ToList() };
             var history = request.Input + (request.Attachments is { Count: > 0 } ? "\n\n" + AttachmentSupport.Summary(request.Attachments) : "");
             var asked = RunEvent.Log(request.SessionId, "user", history, request.Kind == "claude" ? request.Provider : null);
+            // A pane worktree's agent is told once, with its first request that is no slash command, where it works and that it
+            // commits its work (PaneWorktreeNote). The transcript keeps the request as sent; only the CLI gets the note.
+            if (!remote && request.Kind == "claude" && pane.PaneWorktree is { } worktreePane && PaneWorktreeNote.Applies(worktreePane, request.Input))
+            {
+                request = request with { Input = PaneWorktreeNote.Attach(worktreePane, request.Input) };
+                snapshot = snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == request.SessionId && s.PaneWorktree is { } held ? s with { PaneWorktree = held with { NoteGiven = true } } : s).ToList() };
+            }
             // The run's diagram block is named here, so the send can answer with it before the runner's first event (natural submit B5);
             // a remote pane's block is its host's, under the host's own id.
             request = request with { GraphRunId = !remote && request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider) ? Wire.Id() : null };

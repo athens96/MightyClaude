@@ -249,7 +249,10 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
     {
         if (value.Version != 1) return new();
         value = value with { PhaseModels = PhaseModelPreferences.Normalize(value.PhaseModels) };
-        var workspaces = (value.Workspaces ?? []).Where(ValidWorkspace).DistinctBy(w => w.Id).Take(64).Select(w => w with { Name = Wire.Clean(w.Name, 120), Remote = w.Remote is { } r ? r with { HostName = Wire.Clean(r.HostName, 120) } : null }).ToList();
+        var workspaces = (value.Workspaces ?? []).Where(ValidWorkspace).DistinctBy(w => w.Id).Take(64).Select(w => w with { Name = Wire.Clean(w.Name, 120), Remote = w.Remote is { } r ? r with { HostName = Wire.Clean(r.HostName, 120) } : null })
+            // The pane worktree settings are a local folder's (PaneWorktree.cs): a remote workspace drops them all.
+            .Select(w => w.Remote is not null ? w with { PaneWorktreeMode = null, WorktreeSetupCommand = null, WorktreeCopyPaths = null, KeptPaneWorktrees = null }
+                : w with { PaneWorktreeMode = MightyCode.Core.PaneWorktreeMode.Saved(w.PaneWorktreeMode), WorktreeSetupCommand = PaneWorktreeSetup.NormalizedCommand(w.WorktreeSetupCommand), WorktreeCopyPaths = PaneWorktreeCopy.NormalizedPaths(w.WorktreeCopyPaths), KeptPaneWorktrees = KeptPaneWorktree.Normalized(w.KeptPaneWorktrees, restoring) }).ToList();
         var ids = workspaces.Select(w => w.Id).ToHashSet();
         // A remote workspace's panes run on another computer, whose CLIs this PC cannot see: they never ask another CLI.
         var remoteIds = workspaces.Where(w => w.Remote is not null).Select(w => w.Id).ToHashSet();
@@ -302,7 +305,10 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
                 BackgroundWork = planMode ? BackgroundWork.Normalized(s.BackgroundWork, restoring || s.Status != "running") : null,
                 // A child's links stay even when its parent pane is gone: a closed parent keeps its children. Only agent panes can be children; a malformed value is dropped.
                 ParentSessionId = s.Kind == "claude" && Wire.Identifier(s.ParentSessionId) && s.ParentSessionId != s.Id ? s.ParentSessionId : null,
-                WorkingFolder = s.Kind == "claude" && DelegationPanes.IsWorkingFolder(s.WorkingFolder) ? s.WorkingFolder : null,
+                // A terminal pane keeps its folder too: "open a terminal in this worktree" (PaneWorktree.cs).
+                WorkingFolder = s.Kind is "claude" or "shell" && DelegationPanes.IsWorkingFolder(s.WorkingFolder) ? s.WorkingFolder : null,
+                // A pane worktree belongs to a top-level agent pane that works in its folder; never a child's, never a remote workspace's.
+                PaneWorktree = s.Kind == "claude" && !remoteIds.Contains(s.WorkspaceId) && s.ParentSessionId is null && DelegationPanes.IsWorkingFolder(s.WorkingFolder) ? s.PaneWorktree?.Normalized(s.Id, restoring) : null,
                 // Only a Claude agent pane asks other CLIs; a saved id that is no longer offered is kept and reads as Claude (macOS StateRepository.normalize).
                 AskTarget = planMode && !remoteIds.Contains(s.WorkspaceId) ? s.AskTarget : null,
                 // Only an agent pane's replies have shell blocks to run; restoring, a run cut off by the quit reads interrupted.
