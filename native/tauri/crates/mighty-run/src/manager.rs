@@ -4,10 +4,11 @@
 //! (`Stop`, 10 s). Its timers are C#'s: the graph published every second, a Claude run's input closed after 120 s of silence once
 //! the request answered and no background task runs (`BackgroundIdleClose`), the permission handshake given 15 s.
 //!
-//! Until their stages: Codex's approval channel (`onRequest`), the ACP agents (opencode, Hermes) and pi's dialogs are W5 — a run
-//! of opencode or Hermes, or a Codex run in `onRequest`, is refused with the reason; pi and Antigravity launch and are read through
-//! the parser's `ProviderStream` once W5 plugs it in. A sharing host's PowerShell commands are W8. The Agent IO / delegation
-//! binding (W7) plugs in through [`RunBinding`]; the file originals (W4) through [`FileOriginals`].
+//! Until their stages: Codex's approval channel (`onRequest`), the ACP agents (opencode, Hermes), pi's RPC and dialogs and
+//! Antigravity's stream are W5 — a run of opencode, Hermes, pi or Antigravity, or a Codex run in `onRequest`, is refused with the
+//! reason (pi and Antigravity are read through the parser's `ProviderStream` once W5 plugs it in). A sharing host's PowerShell
+//! commands are W8. The Agent IO / delegation binding (W7) plugs in through [`RunBinding`]; the file originals (W4) through
+//! [`FileOriginals`].
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -223,6 +224,22 @@ pub struct RunManager {
     inner: Arc<Inner>,
 }
 
+/// A run [`RunManager::admit`] registered: what is left of its start (C# `run.Accepted`), awaited when the request waits for its
+/// process.
+#[must_use]
+pub struct Admitted(Option<oneshot::Receiver<std::result::Result<(), RunError>>>);
+
+impl Admitted {
+    /// Returns once the run's process is up with its input open, or why it never got that far; at once when the request does not
+    /// wait. A run whose task ended without saying (it panicked, or the runtime went away) did not start.
+    pub async fn reached(self) -> Result<()> {
+        match self.0 {
+            Some(accepted) => accepted.await.unwrap_or_else(|_| Err(RunError::State("The run ended before it started.".into()))),
+            None => Ok(()),
+        }
+    }
+}
+
 /// UTF-16 chunks of at most `units`, a pair cut in two read as two U+FFFD as C#'s `Substring` and `Clean` make it.
 fn utf16_chunks(text: &str, units: usize) -> Vec<String> {
     let mut chunks = Vec::new();
@@ -282,6 +299,12 @@ impl RunManager {
     }
 
     async fn begin(&self, value: StartRunRequest, awaited: bool) -> Result<()> {
+        self.admit(value, awaited)?.reached().await
+    }
+
+    /// `Begin`'s synchronous part, as C#'s `StartAsync` runs it before its first await: the request checked, the run registered
+    /// (a stop finds it from now on) and its task started. The [`Admitted`] waits for the process when the request asks for that.
+    pub fn admit(&self, value: StartRunRequest, awaited: bool) -> Result<Admitted> {
         let request = value.validate()?;
         if request.provider == "codex" && request.settings().permission_mode == "onRequest" {
             // CodexApprovalChannel is W5: until then a run that needs it has no surface to answer it, as C# says without one.
@@ -338,10 +361,7 @@ impl RunManager {
                 Exec::run(inner, run).await;
             });
         }
-        match receiver {
-            Some(accepted) => accepted.await.unwrap_or(Ok(())),
-            None => Ok(()),
-        }
+        Ok(Admitted(receiver))
     }
 
     fn run(&self, id: &str) -> Option<Arc<Run>> {
@@ -368,7 +388,13 @@ impl RunManager {
             return false;
         }
         let Some(channel) = run.channel() else { return false };
-        let accepted = channel.try_steer(text);
+        // The steer opens a new turn: the last turn's result no longer lets the input close, and what the CLI last said of its
+        // session is not what it does now. Reset under the channel's lock, right after the write: the steered turn's own result
+        // can only be read after it, so it is never lost behind the reset. (C# RunManager.cs TrySteer resets neither.)
+        let accepted = channel.try_steer_with(text, || {
+            run.turn_result_seen.store(false, Ordering::SeqCst);
+            *lock(&run.cli_state) = None;
+        });
         if accepted {
             run.touch();
             let reopened = lock(&run.turn_reopened).clone();
@@ -466,6 +492,37 @@ impl RunManager {
     }
 }
 
+/// What a run's end owes whatever happened to its task (the last steps of C#'s `finally`): a child the task never closed ended, the
+/// run off the list, its start answered (Ok unless it failed), and a stop waiting for it told. Dropped when the run's task ends, or
+/// while it unwinds.
+struct RunEnd {
+    inner: Arc<Inner>,
+    run: Arc<Run>,
+    start_failure: Option<RunError>,
+}
+
+impl Drop for RunEnd {
+    fn drop(&mut self) {
+        let run = &self.run;
+        if let Some(child) = lock(&run.child).take() {
+            child.kill();
+        }
+        {
+            let mut runs = lock(&self.inner.runs);
+            if runs.get(&run.request.session_id).is_some_and(|current| Arc::ptr_eq(current, run)) {
+                runs.remove(&run.request.session_id);
+            }
+        }
+        if let Some(sender) = lock(&run.accepted).take() {
+            let _ = sender.send(match self.start_failure.take() {
+                Some(error) => Err(error),
+                None => Ok(()),
+            });
+        }
+        run.done.send_replace(true);
+    }
+}
+
 /// What one run's task works with (the closures of C#'s `ExecuteAsync`).
 struct Exec {
     inner: Arc<Inner>,
@@ -548,6 +605,17 @@ impl Exec {
         emit(RunEvent { activity: Some(value), ..RunEvent::new(&run.request.session_id, "activity") });
     }
 
+    /// The channel failed closed, or a write to the CLI failed: the run ends in an error, said once, and its process is ended.
+    fn fail_protocol(run: &Run, emit: &Emit, message: &str) {
+        if !run.protocol_failed.swap(true, Ordering::SeqCst) {
+            Self::log(run, emit, "error", message);
+        }
+        run.cancel.cancel();
+        if let Some(child) = lock(&run.child).clone() {
+            child.kill();
+        }
+    }
+
     /// `HandOver`: one graph node to the host, unless the run's last status is already out.
     fn hand_over(inner: &Inner, run: &Run, node: Value) {
         let _gate = lock(&run.node_gate);
@@ -559,7 +627,58 @@ impl Exec {
         }
     }
 
+    /// The run's task: its body in a task of its own, so a panic in it is caught there; whatever happened, [`RunEnd`] then takes the
+    /// run off the list, answers its start and tells a waiting stop.
     async fn run(inner: Arc<Inner>, run: Arc<Run>) {
+        let mut end = RunEnd { inner: inner.clone(), run: run.clone(), start_failure: None };
+        match tokio::spawn(Self::run_body(inner.clone(), run.clone())).await {
+            Ok(start_failure) => end.start_failure = start_failure,
+            Err(failed) => {
+                let text = match failed.try_into_panic() {
+                    Ok(payload) => payload
+                        .downcast_ref::<&str>()
+                        .map(|text| text.to_string())
+                        .or_else(|| payload.downcast_ref::<String>().cloned())
+                        .unwrap_or_else(|| "The run failed.".into()),
+                    Err(_) => "The run was cancelled.".into(),
+                };
+                Self::panicked(&inner, &run, &text).await;
+                end.start_failure = Some(RunError::State(text));
+            }
+        }
+    }
+
+    /// The run's body panicked (C#'s catch of an unexpected exception): the pane is told why and that the run ended in an error, its
+    /// waiting requests settle, its closures let go of it, and its child is closed.
+    async fn panicked(inner: &Inner, run: &Run, text: &str) {
+        let emit = inner.options.emit.clone();
+        run.finalizing.store(true, Ordering::SeqCst);
+        run.cancel.cancel();
+        if !run.finished.load(Ordering::SeqCst) {
+            Self::log(run, &emit, "error", text);
+            if run.request.kind != "shell" {
+                let summary = strings::get("run.activity.error");
+                Self::activity(run, &emit, &activity::make(&run.activity_id, &run.request.provider, "turn", "error", &summary));
+            }
+            let _node = lock(&run.node_gate);
+            run.finished.store(true, Ordering::SeqCst);
+            emit(RunEvent::state(&run.request.session_id, "error", None));
+        }
+        *lock(&run.tracker) = None;
+        *lock(&run.turn_reopened) = None;
+        *lock(&run.parser) = None;
+        let channel = lock(&run.permissions).take();
+        if let Some(channel) = channel {
+            channel.cancel_all();
+        }
+        let child = lock(&run.child).take();
+        if let Some(child) = child {
+            let _ = child.close().await;
+        }
+    }
+
+    /// C# `ExecuteAsync`: the run's work and its `finally` but the last steps (those are [`RunEnd`]'s). The start's failure, if any.
+    async fn run_body(inner: Arc<Inner>, run: Arc<Run>) -> Option<RunError> {
         let emit = inner.options.emit.clone();
         let request = run.request.clone();
         let provider = request.provider.clone();
@@ -660,19 +779,7 @@ impl Exec {
             };
             Self::log(&run, &emit, "error", &strings::get(key));
         }
-        {
-            let mut runs = lock(&inner.runs);
-            if runs.get(&request.session_id).is_some_and(|current| Arc::ptr_eq(current, &run)) {
-                runs.remove(&request.session_id);
-            }
-        }
-        if let Some(sender) = lock(&run.accepted).take() {
-            let _ = sender.send(match start_failure {
-                Some(error) => Err(error),
-                None => Ok(()),
-            });
-        }
-        run.done.send_replace(true);
+        start_failure
     }
 
     fn parser_hooks(inner: &Arc<Inner>, run: &Arc<Run>, tracker: Option<SharedSink>) -> ParserHooks {
@@ -990,6 +1097,14 @@ impl Exec {
                     providers::name(&provider)
                 )));
             }
+            if matches!(provider.as_str(), "pi" | "gemini") {
+                // pi's RPC and Antigravity's stream are read by the parser's ProviderStream (W5): without it the run's answer would
+                // never reach the pane, so it is refused as the ACP agents are.
+                return Err(Failure::Error(format!(
+                    "{} runs through its own stream, which this build does not read yet.",
+                    providers::name(&provider)
+                )));
+            }
             let command = tokio::select! {
                 command = providers.find(&provider) => command,
                 _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
@@ -1056,9 +1171,10 @@ impl Exec {
                 let attachments = tokio::task::spawn_blocking(move || StagedAttachments::create(&files))
                     .await
                     .map_err(|e| Failure::Error(e.to_string()))??;
-                self.cancelled()?;
+                // Kept before the stop is looked at, so a stop right after the staging still removes the copies.
                 input = attachments.input_for(&request);
                 *staged = Some(attachments);
+                self.cancelled()?;
             }
             if provider == "pi" && staged.is_none() {
                 input = ProviderInput::pi_startup(&input, &[]);
@@ -1123,14 +1239,7 @@ impl Exec {
                 }),
                 activity: Arc::new(move |value, state| parser.permission_activity(value, state)),
                 warning: Arc::new(move |message| Exec::log(&warning_run, &warning_emit, "system", message)),
-                fail: Arc::new(move |message| {
-                    fail_run.protocol_failed.store(true, Ordering::SeqCst);
-                    Exec::log(&fail_run, &fail_emit, "error", message);
-                    fail_run.cancel.cancel();
-                    if let Some(child) = lock(&fail_run.child).clone() {
-                        child.kill();
-                    }
-                }),
+                fail: Arc::new(move |message| Exec::fail_protocol(&fail_run, &fail_emit, message)),
                 plan: Arc::new(move |record| {
                     if plan_run.finished.load(Ordering::SeqCst) {
                         return;
@@ -1144,12 +1253,10 @@ impl Exec {
                 }),
                 clock: Arc::new(mighty_core::time::DateTimeOffset::now),
             };
-            let channel = ClaudePermissionChannel::new(
-                &request.session_id,
-                &ProviderInput::prompt_frame(&input),
-                hooks,
-                &request.settings().permission_mode,
-            );
+            // Files staged for Claude made the input a whole stream-json user frame already (`StagedAttachments.InputFor`, the Mac's
+            // Attachments.swift `prepare`): it goes as it is; plain text is wrapped in one.
+            let prompt = if staged.is_some() { input.clone() } else { ProviderInput::prompt_frame(&input) };
+            let channel = ClaudePermissionChannel::new(&request.session_id, &prompt, hooks, &request.settings().permission_mode);
             *lock(&run.permissions) = Some(Arc::new(channel));
         }
         (self.emit)(RunEvent::state(&request.session_id, "running", None));
@@ -1167,7 +1274,9 @@ impl Exec {
             if let Some(channel) = run.channel() {
                 channel.start()?;
             }
-            // Closes input once the CLI is silent for BackgroundIdleClose after the request's result with no background task running.
+            // Closes input once the CLI is silent for BackgroundIdleClose after the request's result with no background task running
+            // and the CLI idle (or never saying): a turn it still says runs keeps its input. (C# RunManager.cs's watchdog closes
+            // whatever the CLI last said of its session.)
             let idle = inner.options.background_idle_close;
             let exec = self.clone();
             tokio::spawn(async move {
@@ -1178,7 +1287,14 @@ impl Exec {
                         _ = exec.run.cancel.cancelled() => return,
                     }
                     let quiet = lock(&exec.run.last_output).elapsed() >= idle;
-                    if exec.run.turn_result_seen.load(Ordering::SeqCst) && !exec.background_running() && quiet {
+                    let state = lock(&exec.run.cli_state).clone();
+                    if quiet
+                        && stream::closes_input(
+                            exec.run.turn_result_seen.load(Ordering::SeqCst),
+                            exec.background_running(),
+                            state.as_deref(),
+                        )
+                    {
                         exec.close_channel();
                         return;
                     }
@@ -1264,9 +1380,11 @@ impl Exec {
                         continue;
                     }
                     if let Some(channel) = exec.run.channel()
-                        && channel.receive(&line).is_err()
+                        && let Err(error) = channel.receive(&line)
                     {
-                        // A failed write to the CLI ends this pump, as the exception ends C#'s.
+                        // A failed write to the CLI (the prompt, or an answer) ends this pump and the run in an error, as the exception
+                        // that ends C#'s pump ends its run.
+                        Self::fail_protocol(&exec.run, &exec.emit, error.message());
                         break;
                     }
                     if request.provider == "gemini" {

@@ -31,6 +31,7 @@ function fakeTauri() {
     register: () => registered(),
     refuse: (error: Error) => refused(error),
     fail: () => (failing = true),
+    recover: () => (failing = false),
     emit: (payload: unknown) => handler?.({ payload }),
   };
 }
@@ -90,6 +91,28 @@ describe('tauriPort', () => {
     await settle();
     tauri.fail();
     await expect(bridge.call('getLocale')).rejects.toThrow(/host unreachable: Error: ipc down/);
+  });
+
+  it('keeps posting after a listener throws on a failed result', async () => {
+    const tauri = fakeTauri();
+    const port = tauriPort(tauri.api);
+    const seen: unknown[] = [];
+    let throwing = true;
+    port.addEventListener('message', (event) => {
+      seen.push(event.data);
+      if (throwing) throw new Error('listener failed');
+    });
+    tauri.register();
+    await settle();
+    tauri.fail();
+    port.postMessage({ kind: 'call', id: 1, method: 'getLocale' });
+    await settle();
+    expect(seen).toEqual([{ kind: 'result', id: 1, ok: false, error: 'host unreachable: Error: ipc down' }]);
+    throwing = false;
+    tauri.recover();
+    port.postMessage({ kind: 'call', id: 2, method: 'ready' });
+    await settle();
+    expect(tauri.invoked).toEqual([{ kind: 'call', id: 2, method: 'ready' }]);
   });
 
   it('fails every call when the listener cannot be registered', async () => {

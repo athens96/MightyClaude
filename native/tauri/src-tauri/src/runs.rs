@@ -92,6 +92,10 @@ impl Runs {
         image_dir: PathBuf,
     ) -> Arc<Runs> {
         mighty_run::strings::set_language(host.locale.language());
+        // `{value:N0}` (the attachments' sizes) in the user's regional format, as C#'s current culture writes it.
+        if let Some((separator, sizes)) = crate::platform::number_grouping() {
+            mighty_run::strings::set_number_grouping(&separator, &sizes);
+        }
         let finder: Option<Finder> = fake.map(|fake| {
             let command = CliCommand::new(
                 fake.binary.to_string_lossy().into_owned(),
@@ -115,7 +119,13 @@ impl Runs {
         let (service, mut events) = RunService::new(
             snapshot,
             catalog.clone(),
-            RunServiceOptions { plugin_directory: plugin_directory(), permission_card: true, remote: None, configure: Some(configure) },
+            RunServiceOptions {
+                plugin_directory: plugin_directory(),
+                permission_card: true,
+                remote: None,
+                configure: Some(configure),
+                admitting: None,
+            },
         );
         let runs = Arc::new(Runs { service: Arc::new(service), catalog, images, runtime: Mutex::new(HashMap::new()) });
         host.attach(runs.clone());

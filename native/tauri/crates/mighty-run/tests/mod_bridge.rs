@@ -545,3 +545,17 @@ async fn mod_bridge_authenticates_metadata_and_rejects_browser_secret_stale_even
     assert_eq!(received.load(Ordering::SeqCst), 1);
     bridge.dispose().await;
 }
+
+/// A bridge closed before its accept loop first waits (registered and closed in one breath, on one thread) still stops its server:
+/// the stop is a value the loop reads when it starts, not a notification only a waiting loop hears.
+#[tokio::test(flavor = "current_thread")]
+async fn a_bridge_closed_at_once_stops_its_server() {
+    let bridge = ModBridge::new();
+    let (_received, sink) = counting();
+    let connection = bridge.register(sink, false).await.unwrap();
+    let address = connection.url.trim_start_matches("http://").split('/').next().unwrap().to_string();
+    bridge.dispose().await;
+    // The accept loop runs now, for the first time, and must end with its listener.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(TcpStream::connect(&address).await.is_err(), "the server still listens after the bridge closed");
+}

@@ -425,11 +425,21 @@ impl ClaudePermissionChannel {
 
     /// `TrySteer`: a follow-up joins only an initialized, still-open Claude stream.
     pub fn try_steer(&self, text: &str) -> bool {
+        self.try_steer_with(text, || {})
+    }
+
+    /// [`try_steer`](Self::try_steer), with `accepted` run once the follow-up was written, still under the channel's lock (so before
+    /// any line the CLI says after it is received).
+    pub fn try_steer_with(&self, text: &str, accepted: impl FnOnce()) -> bool {
         let state = lock(&self.state);
         if state.closed || !state.initialized || text.trim().is_empty() || text.encode_utf16().count() > 100_000 || text.contains('\0') {
             return false;
         }
-        (self.hooks.write)(&ProviderInput::prompt_frame(text)).is_ok()
+        let written = (self.hooks.write)(&ProviderInput::prompt_frame(text)).is_ok();
+        if written {
+            accepted();
+        }
+        written
     }
 
     /// `CancelAll`: the run ended; every waiting request settles as cancelled.

@@ -13,7 +13,6 @@ use base64::engine::general_purpose::STANDARD;
 use mighty_core::wire;
 use serde_json::{Value, json};
 
-use crate::compaction::grouped;
 use crate::model::StartRunRequest;
 use crate::permissions::ProviderInput;
 use crate::providers;
@@ -151,14 +150,15 @@ pub fn decoded_length(attachment: &RunAttachment) -> usize {
     (data.len() / 4 * 3).saturating_sub(padding)
 }
 
-/// `AttachmentSupport.Summary`: the transcript's "첨부: name (1,234 bytes), …" line.
+/// `AttachmentSupport.Summary`: the transcript's "첨부: name (1,234 bytes), …" line, the size as `{:N0}` writes it in the current
+/// culture (the user's regional format: 1.234 in German, 1 234 in French).
 pub fn summary(attachments: Option<&[RunAttachment]>) -> String {
     match attachments.filter(|a| !a.is_empty()) {
         None => String::new(),
         Some(list) => format!(
             "{ATTACHMENT_MARKER}{}",
             list.iter()
-                .map(|a| format!("{} ({} bytes)", wire::clean(&a.name, 180), grouped(decoded_length(a) as i64)))
+                .map(|a| format!("{} ({} bytes)", wire::clean(&a.name, 180), strings::n0(decoded_length(a) as i64)))
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
@@ -308,5 +308,13 @@ impl StagedAttachments {
 
     pub fn path(&self) -> &Path {
         &self.directory
+    }
+}
+
+/// The copies never outlive their value: a run that ends before it disposes of them (stopped right after the staging, or its task
+/// unwinding) still removes them, silently; [`StagedAttachments::dispose`] is the run's own end, which says when it cannot.
+impl Drop for StagedAttachments {
+    fn drop(&mut self) {
+        let _ = self.dispose();
     }
 }

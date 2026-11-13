@@ -68,6 +68,11 @@ mod imp {
         Err("opening addresses is not available on this platform yet".into())
     }
 
+    /// The user's number format (`NSLocale.current`'s grouping): not yet on the Mac, which keeps a comma every three digits.
+    pub fn number_grouping() -> Option<(String, Vec<usize>)> {
+        None
+    }
+
     pub fn surfaces(_window: tauri::Window) -> Arc<dyn SurfaceFactory> {
         Arc::new(MacSurfaces)
     }

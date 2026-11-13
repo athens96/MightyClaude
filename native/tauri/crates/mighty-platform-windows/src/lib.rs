@@ -80,6 +80,30 @@ mod imp {
         if done as isize > 32 { Ok(()) } else { Err(std::io::Error::last_os_error().to_string()) }
     }
 
+    /// The number format C#'s `CultureInfo.CurrentCulture` gives `{value:N0}`: the user's regional format with their own changes
+    /// (`GetLocaleInfoEx` of the user's default locale): its group separator, and `LOCALE_SGROUPING` as .NET's `NumberGroupSizes`
+    /// ("3;0" is `[3]`, India's "3;2;0" `[3, 2]`, "3" alone `[3, 0]`). None when Windows does not say.
+    pub fn number_grouping() -> Option<(String, Vec<usize>)> {
+        use windows_sys::Win32::Globalization::{GetLocaleInfoEx, LOCALE_SGROUPING, LOCALE_STHOUSAND};
+        let read = |kind: u32| -> Option<String> {
+            let mut buffer = [0u16; 32];
+            // SAFETY: a null name is LOCALE_NAME_USER_DEFAULT; the buffer and its length in UTF-16 units, NUL included.
+            let written = unsafe { GetLocaleInfoEx(std::ptr::null(), kind, buffer.as_mut_ptr(), buffer.len() as i32) };
+            (written > 0).then(|| String::from_utf16_lossy(&buffer[..written as usize - 1]))
+        };
+        let separator = read(LOCALE_STHOUSAND)?;
+        let mut sizes: Vec<usize> = read(LOCALE_SGROUPING)?.split(';').map(|size| size.trim().parse().ok()).collect::<Option<_>>()?;
+        match sizes.last() {
+            // A trailing 0 repeats the size before it, as .NET reads it; without one the grouping stops after the sizes given.
+            Some(0) if sizes.len() > 1 => {
+                sizes.pop();
+            }
+            Some(_) => sizes.push(0),
+            None => return None,
+        }
+        Some((separator, sizes))
+    }
+
     /// Every port for this run.
     pub fn platform(profile: Option<PathBuf>, identifier: &str) -> Result<Platform> {
         let paths = paths(profile, identifier)?;
@@ -107,6 +131,14 @@ mod imp {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        /// The user's number format reads as .NET's `NumberGroupSizes`: a list whose sizes are its groups from the right.
+        #[test]
+        fn the_user_number_format_reads() {
+            let (separator, sizes) = number_grouping().expect("Windows names the user's number format");
+            assert!(separator.encode_utf16().count() <= 4, "a separator, not a sentence: {separator:?}");
+            assert!(!sizes.is_empty() && sizes.iter().all(|size| *size <= 9), "group sizes {sizes:?}");
+        }
 
         #[test]
         fn the_default_profile_is_appdata_mightycode() {

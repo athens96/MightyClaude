@@ -271,16 +271,25 @@ pub fn registry() -> Registry {
     crate::cards::register(&mut methods);
     crate::mighty::register(&mut methods);
     methods.add("openUrl", |_host: Arc<Host>, args| async move {
-        // C# `openUrl`: an http, https or mailto address, to the user's default handler.
-        let Some(url) =
-            text(&args, "url").filter(|u| ["http://", "https://", "mailto:"].iter().any(|s| u.to_ascii_lowercase().starts_with(s)))
-        else {
-            return Ok(Value::Null);
-        };
-        crate::platform::open_url(url)?;
+        // C# `openUrl`: an http, https or mailto address, to the user's default handler; anything else does nothing.
+        if let Some(url) = text(&args, "url").and_then(openable_url) {
+            crate::platform::open_url(&url)?;
+        }
         Ok(Value::Null)
     });
     methods
+}
+
+/// C# `Uri.TryCreate(url, UriKind.Absolute, out var parsed) && parsed.Scheme is "http" or "https" or "mailto"`, handed on as
+/// `parsed.AbsoluteUri`: the address parsed, of one of those schemes, as its normalized text (what the shell is given is what was
+/// checked). An address holding a control character is refused whole: the parser would drop a tab or a line break inside it, and
+/// trim them around it, so the text checked would not be the text written.
+fn openable_url(url: &str) -> Option<String> {
+    if url.chars().any(char::is_control) {
+        return None;
+    }
+    let parsed = tauri::Url::parse(url).ok()?;
+    matches!(parsed.scheme(), "http" | "https" | "mailto").then(|| parsed.as_str().to_string())
 }
 
 /// The language "system" reads on this computer: the user's Windows display languages, most preferred first.
@@ -296,6 +305,28 @@ pub fn chosen_language(preference: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// C# `openUrl`: http, https and mailto addresses only, handed on normalized; nothing with a control character in it.
+    #[test]
+    fn only_web_and_mail_addresses_open() {
+        assert_eq!(openable_url("https://example.com/a b").as_deref(), Some("https://example.com/a%20b"));
+        assert_eq!(openable_url("HTTP://Example.COM").as_deref(), Some("http://example.com/"));
+        assert_eq!(openable_url("mailto:someone@example.com").as_deref(), Some("mailto:someone@example.com"));
+        for refused in [
+            "file:///C:/Windows/System32/calc.exe",
+            "javascript:alert(1)",
+            "ms-settings:privacy",
+            "C:\\Windows\\notepad.exe",
+            "\\\\server\\share",
+            "example.com",
+            "https://example.com/\nfile:///C:/x",
+            "\thttps://example.com",
+            "https://example.com/\u{7}",
+            "",
+        ] {
+            assert_eq!(openable_url(refused), None, "{refused:?}");
+        }
+    }
 
     /// RenameSupport.cs:23 `Messages` and :14 `IsValid`.
     #[test]

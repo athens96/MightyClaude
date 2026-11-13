@@ -591,6 +591,21 @@ fn pane_id(args: &Value) -> Option<&str> {
     text(args, "paneId")
 }
 
+/// A pane's stop under way: its composer's `stopping` is cleared when this goes, whichever way the stop ended.
+struct Stopping {
+    host: Arc<Host>,
+    id: String,
+}
+
+impl Drop for Stopping {
+    fn drop(&mut self) {
+        if let Some(ui) = self.host.view().panes.get_mut(&self.id) {
+            ui.view.stopping = false;
+            ui.dirty = true;
+        }
+    }
+}
+
 pub fn register(methods: &mut Registry) {
     methods.add("composerState", |host: Arc<Host>, args| async move {
         let mut view = host.view();
@@ -631,11 +646,12 @@ pub fn register(methods: &mut Registry) {
         let receipt = submit(&host, &id).await?;
         let mut view = host.view();
         let draft = view.panes.get(&id).map(|u| u.view.draft.clone()).unwrap_or_default();
-        let state = panes::composer_state(&host, &mut view, &id);
-        Ok(serde_json::to_value(receipt.send_answer(text(&args, "clientId"), &draft, state)).unwrap_or(Value::Null))
+        // C# `view.WebComposerState()`: the answer always carries the composer, else the pane is gone.
+        let state = panes::composer_state(&host, &mut view, &id).ok_or_else(|| "Session not found.".to_string())?;
+        Ok(serde_json::to_value(receipt.send_answer(text(&args, "clientId"), &draft, Some(state))).unwrap_or(Value::Null))
     });
     methods.add("stop", |host: Arc<Host>, args| async move {
-        let id = {
+        let (id, noted) = {
             let mut view = host.view();
             let id = ensure(&mut view, pane_id(&args))?;
             let work = session(&view, &id)?.background_work.clone();
@@ -652,19 +668,16 @@ pub fn register(methods: &mut Registry) {
             }
             ui.view.stopping = true;
             ui.dirty = true;
-            if let Some(count) = cancelled
-                && let Some(notice) = queue::settle_notice("stopped", count, false, &host.locale)
-            {
-                slash_note(&mut view, &id, &notice)?;
-            }
-            id
+            let noted = match cancelled.and_then(|count| queue::settle_notice("stopped", count, false, &host.locale)) {
+                Some(notice) => slash_note(&mut view, &id, &notice),
+                None => Ok(()),
+            };
+            (id, noted)
         };
-        let stopped = host.engine()?.service.stop(&id).await;
-        if let Some(ui) = host.view().panes.get_mut(&id) {
-            ui.view.stopping = false;
-            ui.dirty = true;
-        }
-        stopped.map(|_| Value::Null).map_err(|e| e.message().to_string())
+        // From here `stopping` is cleared however the stop ends: done, refused, or a panic on the way.
+        let _stopping = Stopping { host: host.clone(), id: id.clone() };
+        noted?;
+        host.engine()?.service.stop(&id).await.map(|_| Value::Null).map_err(|e| e.message().to_string())
     });
     methods.add("queueRemove", |host: Arc<Host>, args| async move {
         let mut view = host.view();
@@ -721,7 +734,12 @@ pub fn register(methods: &mut Registry) {
         let read = async move {
             use tauri_plugin_dialog::DialogExt;
             let (sender, receiver) = tokio::sync::oneshot::channel();
-            picker.app.dialog().file().pick_files(move |files| {
+            let mut dialog = picker.app.dialog().file();
+            // Owned by the app's window (C#'s FileOpenPicker is initialized with it): modal to it, in front of it.
+            if let Some(window) = tauri::Manager::get_window(&picker.app, crate::host::WINDOW) {
+                dialog = dialog.set_parent(&window);
+            }
+            dialog.pick_files(move |files| {
                 let _ = sender.send(files);
             });
             let picked = receiver.await.ok().flatten().unwrap_or_default();

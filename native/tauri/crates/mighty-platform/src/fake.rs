@@ -147,7 +147,8 @@ impl ProcessHost for FakeProcessHost {
             if !request.cwd.is_absolute() || !request.program.is_absolute() {
                 return Err(PlatformError::Invalid("the program and the working folder need absolute paths".into()));
             }
-            if request.env_remove.iter().any(|name| name.is_empty() || name.contains(['=', '\0'])) {
+            // As the Windows host checks it: a name may begin with `=` (the hidden `=C:` drive folders `env::vars` lists).
+            if request.env_remove.iter().any(|name| name.is_empty() || name.chars().skip(1).any(|c| c == '=') || name.contains('\0')) {
                 return Err(PlatformError::Invalid("invalid child environment".into()));
             }
             let script = lock(&self.scripts).pop_front().unwrap_or_default();

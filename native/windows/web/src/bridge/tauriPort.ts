@@ -36,7 +36,14 @@ export function tauriPort(api: TauriApi = tauri): HostPort {
   );
   const fail = (message: unknown, error: unknown) => {
     const call = message as { kind?: unknown; id?: unknown };
-    if (call?.kind === 'call' && typeof call.id === 'number') deliver({ kind: 'result', id: call.id, ok: false, error: 'host unreachable: ' + String(error) });
+    if (call?.kind !== 'call' || typeof call.id !== 'number') return;
+    // A listener that throws on the failed result must not leave the tail rejected: every later post would then fail unsent. What
+    // it threw is its own (the result reached it); the posts go on.
+    try {
+      deliver({ kind: 'result', id: call.id, ok: false, error: 'host unreachable: ' + String(error) });
+    } catch {
+      // Nothing more to do here.
+    }
   };
   return {
     postMessage(message) {

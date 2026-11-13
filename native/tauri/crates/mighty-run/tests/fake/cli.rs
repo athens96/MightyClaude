@@ -74,6 +74,10 @@ fn fake_cli(provider: &str, record: &str, args: &[String]) {
         say("2.1.271");
         return;
     }
+    if has("--close-input") {
+        claude_closing_input(record);
+        return;
+    }
     if has("--permission-prompt-tool") {
         claude_with_prompts(record);
         return;
@@ -159,6 +163,54 @@ fn base64(bytes: &[u8]) -> String {
     out
 }
 
+/// Closes this process's stdin, so the host's next write to it fails.
+fn close_stdin() {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::{AsRawHandle, FromRawHandle};
+        // SAFETY: the process's own stdin handle, closed once; nothing reads it afterwards.
+        drop(unsafe { std::fs::File::from_raw_handle(std::io::stdin().as_raw_handle()) });
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::FromRawFd;
+        // SAFETY: descriptor 0, closed once; nothing reads it afterwards.
+        drop(unsafe { std::fs::File::from_raw_fd(0) });
+    }
+}
+
+/// A Claude with host prompts whose stdin breaks before its handshake is answered: it reads the `initialize` request, closes its
+/// input, asks a control request the host must answer (that write breaks the pipe), then answers the handshake, so the host's
+/// prompt write fails; then ends as if it had succeeded.
+fn claude_closing_input(record: &str) {
+    let Some(line) = read_line() else { return };
+    append(&format!("{record}.input"), &format!("{line}\n"));
+    let initialize = serde_json::from_str::<Value>(&line).ok().and_then(|root| text(&root, "request_id").map(str::to_string));
+    close_stdin();
+    say("{\"type\":\"control_request\",\"request_id\":\"probe-1\",\"request\":{\"subtype\":\"fixture_probe\"}}");
+    std::thread::sleep(Duration::from_millis(500));
+    say(&json!({"type": "control_response", "response": {"subtype": "success", "request_id": initialize, "response": {}}}).to_string());
+    std::thread::sleep(Duration::from_millis(500));
+    say("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"never asked\"}");
+}
+
+/// The watchdog checks' end: after the silence the host's next line (its input still open) is kept in `<record>.second` and the
+/// turn ends idle; an input closed meanwhile leaves `<record>.closed`.
+fn after_silence(record: &str) {
+    std::thread::sleep(Duration::from_millis(1500));
+    match read_line() {
+        None => {
+            let _ = std::fs::write(format!("{record}.closed"), "");
+        }
+        Some(next) => {
+            let _ = std::fs::write(format!("{record}.second"), next);
+            say("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"done\"}");
+            say("{\"type\":\"system\",\"subtype\":\"session_state_changed\",\"state\":\"idle\"}");
+            while read_line().is_some() {}
+        }
+    }
+}
+
 /// A Claude launched with host permission prompts (Verification.cs:56-167).
 fn claude_with_prompts(record: &str) {
     let mut plan_fixture = false;
@@ -214,6 +266,9 @@ fn claude_with_prompts(record: &str) {
                 }
                 let Some(follow) = read_line() else { std::process::exit(24) };
                 let _ = std::fs::write(format!("{record}.follow"), follow);
+                // The steer is a turn of its own, which the CLI ends with its own result (C#'s fake leaves it out: its runner never
+                // waits for it).
+                say("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"steered\"}");
                 for frame in [
                     "{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"agent1\",\"run_id\":\"run-2\",\"patch\":{\"status\":\"completed\"}}",
                     "{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"agent1\",\"run_id\":\"run-2\",\"tool_use_id\":\"toolu_2\",\"status\":\"completed\",\"summary\":\"two\"}",
@@ -225,6 +280,32 @@ fn claude_with_prompts(record: &str) {
                 while let Some(extra) = read_line() {
                     append(&format!("{record}.extra"), &format!("{extra}\n"));
                 }
+                return;
+            }
+            // The request's turn ends idle with a background agent running; a steer opens a new turn, the agent ends, and the new
+            // turn stays silent past the idle close: its input must stay open (the last turn's result does not close it).
+            Some("user") if line.contains("steered watchdog fixture") => {
+                for frame in [
+                    "{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"bg1\",\"tool_use_id\":\"toolu_bg\",\"description\":\"Review\",\"is_backgrounded\":true,\"task_type\":\"local_agent\"}",
+                    "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"first\"}",
+                    "{\"type\":\"system\",\"subtype\":\"session_state_changed\",\"state\":\"idle\"}",
+                ] {
+                    say(frame);
+                }
+                let Some(follow) = read_line() else { std::process::exit(24) };
+                let _ = std::fs::write(format!("{record}.follow"), follow);
+                say(
+                    "{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"bg1\",\"tool_use_id\":\"toolu_bg\",\"status\":\"completed\",\"summary\":\"done\"}",
+                );
+                after_silence(record);
+                return;
+            }
+            // The request's result comes while the CLI says it still runs (a resumed agent no task names) and stays silent past the
+            // idle close: its input must stay open until it says idle.
+            Some("user") if line.contains("busy watchdog fixture") => {
+                say("{\"type\":\"system\",\"subtype\":\"session_state_changed\",\"state\":\"running\"}");
+                say("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"first\"}");
+                after_silence(record);
                 return;
             }
             Some("user") if line.contains("background stop fixture") => {
@@ -286,6 +367,8 @@ fn claude_with_prompts(record: &str) {
                 }
                 let Some(follow) = read_line() else { std::process::exit(24) };
                 let _ = std::fs::write(format!("{record}.follow"), follow);
+                // The steered turn's own result (see the resumed agent fixture).
+                say("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"steered\"}");
                 say(
                     "{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"bg1\",\"tool_use_id\":\"toolu_bg\",\"status\":\"completed\",\"summary\":\"All good\"}",
                 );

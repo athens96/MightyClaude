@@ -30,3 +30,8 @@ pub fn surfaces(window: tauri::Window) -> Arc<dyn SurfaceFactory> {
 pub fn open_url(url: &str) -> std::result::Result<(), String> {
     os::open_url(url)
 }
+
+/// The user's number format (C# `CultureInfo.CurrentCulture`'s group separator and sizes), when the OS says.
+pub fn number_grouping() -> Option<(String, Vec<usize>)> {
+    os::number_grouping()
+}

@@ -94,6 +94,13 @@ fn run() {
     );
     staged.dispose().unwrap();
     assert!(!directory.exists(), "Staging directory was not removed.");
+
+    // Copies a run never disposed of (it was stopped right after the staging) go with their value.
+    let dropped = StagedAttachments::create(request.attachments.as_deref().unwrap()).unwrap();
+    let directory = dropped.directory.clone();
+    assert!(directory.exists());
+    drop(dropped);
+    assert!(!directory.exists(), "Staged copies outlived their value.");
 }
 
 // ── BackgroundOutputVerification ────────────────────────────────────────────────────────────────────────────────────────

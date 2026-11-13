@@ -21,16 +21,30 @@ fn tokens(fields: Option<&Value>, key: &str) -> Option<i64> {
     value.as_f64().filter(|d| value.is_number() && d.is_finite() && *d >= 0.0 && *d <= i32::MAX as f64).map(|d| d as i64)
 }
 
-/// `value.ToString("N0")` with a comma every three digits.
+/// `Format`: `value.ToString("N0")` with a comma every three digits whatever the culture (ContextCompaction.cs gives `N0` its own
+/// `NumberFormatInfo`, `NumberGroupSeparator = ","`, `NumberGroupSizes = [3]`).
 pub fn grouped(value: i64) -> String {
-    let digits = value.unsigned_abs().to_string();
-    let mut out = String::new();
-    for (index, digit) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index).is_multiple_of(3) {
-            out.push(',');
+    grouped_with(value, ",", &[3])
+}
+
+/// `value.ToString("N0", format)` for a format's group separator and `NumberGroupSizes`: the groups counted from the right, the last
+/// size repeated, a size of 0 leaving the digits left of it ungrouped (Windows' "3;2;0" is `[3, 2]`, India's 12,34,567).
+pub fn grouped_with(value: i64, separator: &str, sizes: &[usize]) -> String {
+    let digits: Vec<char> = value.unsigned_abs().to_string().chars().collect();
+    let mut groups: Vec<String> = Vec::new();
+    let mut end = digits.len();
+    let mut size_at = 0;
+    while end > 0 {
+        let size = sizes.get(size_at).or(sizes.last()).copied().unwrap_or(0);
+        if size_at + 1 < sizes.len() {
+            size_at += 1;
         }
-        out.push(digit);
+        let start = if size == 0 { 0 } else { end.saturating_sub(size) };
+        groups.push(digits[start..end].iter().collect());
+        end = start;
     }
+    groups.reverse();
+    let out = groups.join(separator);
     if value < 0 { format!("-{out}") } else { out }
 }
 
@@ -90,6 +104,13 @@ mod tests {
     fn numbers_read_as_dotnet_writes_them() {
         assert_eq!(grouped(1234567), "1,234,567");
         assert_eq!(grouped(12), "12");
+        assert_eq!(grouped(0), "0");
+        assert_eq!(grouped_with(1234567, ".", &[3]), "1.234.567");
+        assert_eq!(grouped_with(1234567, "\u{a0}", &[3]), "1\u{a0}234\u{a0}567");
+        assert_eq!(grouped_with(1234567, ",", &[3, 2]), "12,34,567", "India's 3;2;0");
+        assert_eq!(grouped_with(1234567, ",", &[3, 0]), "1234,567", "Windows' 3 alone: one group, then none");
+        assert_eq!(grouped_with(-1234, ",", &[3]), "-1,234");
+        assert_eq!(grouped_with(1234, ",", &[]), "1234");
         assert_eq!(one_decimal(1.25), "1.3");
         assert_eq!(one_decimal(1.45), "1.4", "1.45 is a little below 1.45 as a double");
         assert_eq!(one_decimal(2.0), "2.0");

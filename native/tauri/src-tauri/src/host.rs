@@ -4,7 +4,10 @@
 //! call is handled arrives before its result).
 //!
 //! - A call `{kind:"call", id, method, args?}` is answered `{kind:"result", id, ok, value?, error?}` (a null value or error left
-//!   out). Calls are handled one at a time, in order. A method this host does not have yet answers
+//!   out). Calls run as C#'s `async void Receive` runs them on its UI thread: each starts in the order the page posted it and runs
+//!   up to its first wait before the next starts (so what a call does at once, an `updateDraft` before a `send`, is in order), and
+//!   from there each goes on its own (a stop waiting for its run, a send waiting for its process, the file picker never hold up the
+//!   others). A handler that panics answers `ok:false` and the next call is handled. A method this host does not have yet answers
 //!   `ok:false, error:"unimplemented: <method>"`; its name is logged once and kept for `tauri-logs/unimplemented.json`.
 //! - Pushes are dropped until the page has called `ready`, which pushes the whole snapshot before its result; a page that loads
 //!   again starts over. A change is sent as a `delta` (`delta.rs`, C# `WebDelta`) at most 16 ms after it, coalesced with the
@@ -13,12 +16,15 @@
 //! - Every change goes through [`View::update`] (C# `DesktopService.UpdateAsync`): normalized as C# normalizes it, then queued
 //!   for saving (`store::Saver`). The store writes only when the app was started with `--allow-state-write`.
 
+use std::any::Any;
 use std::collections::{BTreeSet, HashMap};
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, mpsc};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use mighty_core::AppSnapshot;
@@ -135,12 +141,70 @@ impl View {
             self.revision += 1;
         }
     }
+
+    /// The state as it is now, what a save writes: the run service's once it is attached (it owns the state; the page's copy may not
+    /// have taken its latest events yet), else the page's copy.
+    pub fn current(&self) -> AppSnapshot {
+        match &self.service {
+            Some(service) => service.snapshot(),
+            None => self.snapshot.clone(),
+        }
+    }
 }
 
 /// One message for the page: its text, and its kind for the smoke's record.
 struct Outgoing {
     kind: String,
     json: String,
+}
+
+/// What a panic said, when it said it in words.
+pub fn panic_text(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|text| text.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "a panic without a message".into())
+}
+
+/// A call's future as the dispatcher runs it: a panic in it caught into an `Err` with what it said, and `first` told once its first
+/// poll returned (the call ran up to its first wait, or to its end, or panicked).
+pub struct Call<F: Future> {
+    future: Pin<Box<F>>,
+    first: Option<tokio::sync::oneshot::Sender<()>>,
+}
+
+impl<F: Future> Call<F> {
+    pub fn new(future: F, first: tokio::sync::oneshot::Sender<()>) -> Call<F> {
+        Call { future: Box::pin(future), first: Some(first) }
+    }
+}
+
+impl<F: Future> Future for Call<F> {
+    type Output = Result<F::Output, String>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        let polled = std::panic::catch_unwind(AssertUnwindSafe(|| this.future.as_mut().poll(cx)));
+        if let Some(first) = this.first.take() {
+            let _ = first.send(());
+        }
+        match polled {
+            Ok(Poll::Pending) => Poll::Pending,
+            Ok(Poll::Ready(value)) => Poll::Ready(Ok(value)),
+            Err(panic) => Poll::Ready(Err(panic_text(panic.as_ref()))),
+        }
+    }
+}
+
+/// One pass of a clock's loop: a panic in it is logged (once for each clock and message) and the loop goes on with its next pass.
+fn guarded_pass(log: &LogFile, logged: &Mutex<BTreeSet<String>>, clock: &str, work: impl FnOnce()) {
+    if let Err(panic) = std::panic::catch_unwind(AssertUnwindSafe(work)) {
+        let line = format!("{clock}: a pass panicked: {}", panic_text(panic.as_ref()));
+        if lock(logged).insert(line.clone()) {
+            log.line(&line);
+        }
+    }
 }
 
 pub struct Host {
@@ -159,6 +223,8 @@ pub struct Host {
     registry: Registry,
     outbox: Mutex<mpsc::Sender<Outgoing>>,
     unimplemented: Mutex<BTreeSet<String>>,
+    /// The clocks' panics already logged.
+    panics: Mutex<BTreeSet<String>>,
     /// A flush is waiting on its 16 ms timer.
     flush_pending: AtomicBool,
     closed: AtomicBool,
@@ -220,7 +286,7 @@ impl Host {
         let (current, writer, failed_view, failed_log) = (view.clone(), store.clone(), view.clone(), LogFile::new(log.dir().to_path_buf()));
         let failed_locale = locale;
         let saver = Arc::new(Saver::new(
-            move || lock(&current).snapshot.clone(),
+            move || lock(&current).current(),
             move |snapshot| lock(&writer).save(snapshot),
             move |error| {
                 if matches!(error, mighty_core::store::StateError::WritesOff) {
@@ -247,6 +313,7 @@ impl Host {
             registry,
             outbox: Mutex::new(outbox),
             unimplemented: Mutex::new(BTreeSet::new()),
+            panics: Mutex::new(BTreeSet::new()),
             flush_pending: AtomicBool::new(false),
             closed: AtomicBool::new(false),
         })
@@ -316,10 +383,9 @@ impl Host {
                 }
                 view.mighty.dirty(&request.run_id);
             }
-            ServiceEvent::SaveNow => {
-                let snapshot = self.view().snapshot.clone();
-                self.saver.queue(snapshot);
-            }
+            // The service's own state: the page's copy may not have taken the event this save is for yet (a run's end is saved
+            // before its status event comes through).
+            ServiceEvent::SaveNow => self.saver.queue(self.current()),
             ServiceEvent::SaveSoon => self.saver.schedule(),
             // The resume list's known sessions are W4's; a request starting needs nothing more here.
             ServiceEvent::RequestStarting(_) | ServiceEvent::RememberSession(_) => {}
@@ -431,8 +497,13 @@ impl Host {
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(16));
             host.flush_pending.store(false, Ordering::SeqCst);
-            host.flush();
+            host.pass("flush", || host.flush());
         });
+    }
+
+    /// One pass of a clock: a panic in it is logged and the clock goes on.
+    fn pass(&self, clock: &str, work: impl FnOnce()) {
+        guarded_pass(&self.log, &self.panics, clock, work);
     }
 
     /// The bridge's 100 ms poll (a change made outside a call), the frame's 250 ms clock and the active workspace's git.
@@ -445,16 +516,18 @@ impl Host {
                 while !host.closed.load(Ordering::SeqCst) {
                     std::thread::sleep(Duration::from_millis(100));
                     ticks += 1;
-                    let (ready, changed) = {
-                        let view = host.view();
-                        (view.ready, view.bridge.sent_revision() != Some(view.revision))
-                    };
-                    if ready && changed {
-                        host.schedule();
-                    }
-                    if ticks.is_multiple_of(5) {
-                        host.refresh_git(ticks.is_multiple_of(100));
-                    }
+                    host.pass("bridge-poll", || {
+                        let (ready, changed) = {
+                            let view = host.view();
+                            (view.ready, view.bridge.sent_revision() != Some(view.revision))
+                        };
+                        if ready && changed {
+                            host.schedule();
+                        }
+                        if ticks.is_multiple_of(5) {
+                            host.refresh_git(ticks.is_multiple_of(100));
+                        }
+                    });
                 }
             })
             .expect("the bridge poll");
@@ -467,9 +540,9 @@ impl Host {
                 while !host.closed.load(Ordering::SeqCst) {
                     std::thread::sleep(Duration::from_millis(30));
                     ticks += 1;
-                    crate::panes::flush(&host);
+                    host.pass("pane-clock", || crate::panes::flush(&host));
                     if ticks.is_multiple_of(4) {
-                        crate::mighty::flush(&host);
+                        host.pass("mighty-clock", || crate::mighty::flush(&host));
                     }
                 }
             })
@@ -480,8 +553,10 @@ impl Host {
             .spawn(move || {
                 while !host.closed.load(Ordering::SeqCst) {
                     std::thread::sleep(Duration::from_millis(250));
-                    let mut view = host.view();
-                    host.push_shell(&mut view);
+                    host.pass("shell-clock", || {
+                        let mut view = host.view();
+                        host.push_shell(&mut view);
+                    });
                 }
             })
             .expect("the shell clock");
@@ -524,8 +599,13 @@ impl Host {
         if let Some(runs) = self.runs.get() {
             tauri::async_runtime::block_on(runs.service.dispose());
         }
-        let last = self.view().snapshot.clone();
-        self.saver.close(last);
+        // The service's state after every run ended, not the page's copy, which the runs' last events may not have reached.
+        self.saver.close(self.current());
+    }
+
+    /// The state as it is now, for a save ([`View::current`]).
+    pub fn current(&self) -> AppSnapshot {
+        self.view().current()
     }
 
     fn unimplemented(&self, method: &str) {
@@ -560,8 +640,10 @@ impl Host {
         }
     }
 
-    /// One page → host message, handled to the end before the next (see the module comment).
-    pub async fn dispatch(self: Arc<Self>, message: Value) {
+    /// One page → host message (C#'s `async void Receive`, see the module comment): `first` is told once the handler first returned
+    /// (it ran up to its first wait, or to its end), and the dispatcher starts the next call only then. A handler's panic answers
+    /// `ok:false` with what it said, and is logged with the method's name.
+    pub async fn dispatch(self: Arc<Self>, message: Value, first: tokio::sync::oneshot::Sender<()>) {
         if message.get("kind").and_then(Value::as_str) != Some("call") {
             return;
         }
@@ -576,7 +658,13 @@ impl Host {
             smoke.called(method);
         }
         let reply = match self.registry.handlers.get(method) {
-            Some(handler) => handler(self.clone(), args).await,
+            Some(handler) => match Call::new(handler(self.clone(), args), first).await {
+                Ok(reply) => reply,
+                Err(panic) => {
+                    self.log.line(&format!("{method} panicked: {panic}"));
+                    Err(panic)
+                }
+            },
             None => {
                 self.unimplemented(method);
                 Err(format!("unimplemented: {method}"))
@@ -716,4 +804,118 @@ pub fn replace_file(source: &std::path::Path, destination: &std::path::Path, bac
         )
     };
     if done != 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn failing_handler() -> Reply {
+        panic!("a handler failed")
+    }
+
+    /// Runs `calls` as the dispatcher does: each its own task, the next started once the one before first returned.
+    async fn dispatch_all(calls: Vec<Pending>) -> Vec<tokio::task::JoinHandle<Result<Reply, String>>> {
+        let mut running = Vec::new();
+        for call in calls {
+            let (first, returned) = tokio::sync::oneshot::channel();
+            running.push(tokio::spawn(Call::new(call, first)));
+            let _ = returned.await;
+        }
+        running
+    }
+
+    /// C#'s `async void Receive`: every call's synchronous part runs in the order the page posted them, a call waiting (a stop, a
+    /// start, the file picker) holds up no other, and a handler's panic is an answer, not the dispatcher's end.
+    #[tokio::test]
+    async fn calls_start_in_order_wait_apart_and_survive_a_panic() {
+        let seen: Arc<Mutex<Vec<&'static str>>> = Arc::default();
+        let (release, gate) = tokio::sync::oneshot::channel::<()>();
+        let (waiting, quick, after) = (seen.clone(), seen.clone(), seen.clone());
+        let calls: Vec<Pending> = vec![
+            Box::pin(async move {
+                lock(&waiting).push("stop asked");
+                let _ = gate.await;
+                lock(&waiting).push("stop done");
+                Ok(json!("stopped"))
+            }),
+            Box::pin(async move {
+                lock(&quick).push("draft");
+                Ok(Value::Null)
+            }),
+            Box::pin(async move { failing_handler() }),
+            Box::pin(async move {
+                lock(&after).push("send");
+                Ok(Value::Null)
+            }),
+        ];
+        let mut running = dispatch_all(calls).await.into_iter();
+        let (stop, draft, panicked, send) =
+            (running.next().unwrap(), running.next().unwrap(), running.next().unwrap(), running.next().unwrap());
+        assert_eq!(draft.await.unwrap(), Ok(Ok(Value::Null)), "the call behind the waiting one is answered");
+        assert_eq!(panicked.await.unwrap(), Err("a handler failed".to_string()), "the panic is the call's answer");
+        assert_eq!(send.await.unwrap(), Ok(Ok(Value::Null)), "the calls after the panic still run");
+        assert_eq!(*lock(&seen), ["stop asked", "draft", "send"], "each began in the order posted, none waited for the stop");
+        release.send(()).unwrap();
+        assert_eq!(stop.await.unwrap(), Ok(Ok(json!("stopped"))));
+        assert_eq!(*lock(&seen), ["stop asked", "draft", "send", "stop done"]);
+    }
+
+    /// A clock's pass that panics is logged once and the clock goes on.
+    #[test]
+    fn a_panicking_pass_is_logged_once_and_the_clock_goes_on() {
+        let directory = std::env::temp_dir().join(format!("mighty-host-pass-{}", std::process::id()));
+        let log = LogFile::new(directory.clone());
+        let logged = Mutex::new(BTreeSet::new());
+        let mut passes = 0;
+        for _ in 0..3 {
+            guarded_pass(&log, &logged, "shell-clock", || panic!("the flush failed"));
+            guarded_pass(&log, &logged, "shell-clock", || passes += 1);
+        }
+        assert_eq!(passes, 3, "every pass after a panic still ran");
+        let text = std::fs::read_to_string(directory.join("host.log")).unwrap();
+        assert_eq!(text.matches("shell-clock: a pass panicked: the flush failed").count(), 1, "{text}");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A save writes the run service's state, which owns it: the page's copy may lag behind the event the save is for.
+    #[test]
+    fn a_save_writes_the_service_state_not_the_page_copy() {
+        let environment = Arc::new(mighty_platform::fake::FakeShellEnvironment::new(Default::default()));
+        let catalog = Arc::new(mighty_run::providers::ProviderCatalog::new(
+            Arc::new(mighty_platform::fake::FakeProcessHost::default()),
+            environment,
+            None,
+        ));
+        let options = mighty_run::service::RunServiceOptions {
+            plugin_directory: String::new(),
+            permission_card: false,
+            remote: None,
+            configure: None,
+            admitting: None,
+        };
+        let (service, _events) = RunService::new(AppSnapshot::default(), catalog, options);
+        let service = Arc::new(service);
+        let mut view = View {
+            snapshot: AppSnapshot::default(),
+            revision: 0,
+            ready: false,
+            bridge: Bridge::default(),
+            sent_shell: None,
+            layout_defaults: HashMap::new(),
+            shows_dashboard: false,
+            dialog_open: false,
+            error: None,
+            git: None,
+            saver: None,
+            service: None,
+            panes: HashMap::new(),
+            mighty: MightyPushes::default(),
+        };
+        assert_eq!(view.current().theme(), AppSnapshot::default().theme(), "without the service, the page's copy");
+        view.service = Some(service.clone());
+        service.update(|state| AppSnapshot { theme: Some("light".into()), ..state.clone() }).unwrap();
+        assert_ne!(view.snapshot.theme(), "light", "the page's copy has not taken the change yet");
+        assert_eq!(view.current().theme(), "light", "the save takes the service's state");
+    }
 }
