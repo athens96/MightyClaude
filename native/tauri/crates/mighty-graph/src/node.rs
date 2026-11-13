@@ -5,6 +5,7 @@
 use std::collections::HashSet;
 
 use mighty_core::graph::{GraphAdvisor, GraphAgentFigures, GraphAgentIdentity, GraphResponseRecord, GraphTokenUsage};
+use mighty_core::json::{self, JsonOut, Obj, R, Wire};
 use mighty_core::locale::Locale;
 use mighty_core::model::{AgentActivity, LogEntry};
 use mighty_core::normalize::{self, activity_clean};
@@ -389,6 +390,62 @@ pub fn entry(id: String, kind: &str, text: String, timestamp: String, provider: 
         provider: provider.map(str::to_string),
         activity,
         images: None,
+    }
+}
+
+/// The node on the wire as C# `Wire.Json` writes and reads `ExecutionGraphNode` (ExecutionGraph.cs:263-293): camelCase in declaration
+/// order, nulls left out; an absent field takes its initializer's value (`kind` "main", `state` "running", `updatedAt` now).
+impl Wire for ExecutionGraphNode {
+    fn read(value: &Value) -> R<Self> {
+        let o = Obj::of(value, "a graph node")?;
+        let text = |name: &str, default: &str| -> R<String> { Ok(json::string(o.get(name), || Some(default.into()))?.unwrap_or_default()) };
+        Ok(ExecutionGraphNode {
+            id: text("id", "")?,
+            run_id: text("runId", "")?,
+            parent_id: json::opt_string(o.get("parentId"))?,
+            kind: text("kind", "main")?,
+            state: text("state", "running")?,
+            title: text("title", "")?,
+            input: json::opt_string(o.get("input"))?,
+            output: json::opt_string(o.get("output"))?,
+            entries: json::skipping_list(o.get("entries"))?.unwrap_or_default(),
+            updated_at: json::string(o.get("updatedAt"), || Some(time::now_o()))?.unwrap_or_default(),
+            usage: json::record(o.get("usage"))?,
+            activity_generation: json::opt_int32(o.get("activityGeneration"))?,
+            response_records: json::list(o.get("responseRecords"), GraphResponseRecord::read)?.map(|r| r.into_iter().flatten().collect()),
+            background: json::opt_boolean(o.get("background"))?,
+            output_file: json::opt_string(o.get("outputFile"))?,
+            notice_reply: json::opt_string(o.get("noticeReply"))?,
+            source_block_id: json::opt_string(o.get("sourceBlockId"))?,
+            identity: json::record(o.get("identity"))?,
+            figures: json::record(o.get("figures"))?,
+            advisor: json::record(o.get("advisor"))?,
+        })
+    }
+
+    fn write(&self, out: &mut JsonOut) {
+        out.begin_object();
+        out.prop_str("id", Some(&self.id));
+        out.prop_str("runId", Some(&self.run_id));
+        out.prop_str("parentId", self.parent_id.as_deref());
+        out.prop_str("kind", Some(&self.kind));
+        out.prop_str("state", Some(&self.state));
+        out.prop_str("title", Some(&self.title));
+        out.prop_str("input", self.input.as_deref());
+        out.prop_str("output", self.output.as_deref());
+        out.prop_list("entries", Some(&self.entries));
+        out.prop_str("updatedAt", Some(&self.updated_at));
+        out.prop("usage", self.usage.as_ref());
+        out.prop_opt_int("activityGeneration", self.activity_generation.map(i64::from));
+        out.prop_list("responseRecords", self.response_records.as_ref());
+        out.prop_opt_bool("background", self.background);
+        out.prop_str("outputFile", self.output_file.as_deref());
+        out.prop_str("noticeReply", self.notice_reply.as_deref());
+        out.prop_str("sourceBlockId", self.source_block_id.as_deref());
+        out.prop("identity", self.identity.as_ref());
+        out.prop("figures", self.figures.as_ref());
+        out.prop("advisor", self.advisor.as_ref());
+        out.end_object();
     }
 }
 

@@ -4,16 +4,14 @@
 
 mod common;
 
-use std::sync::{Arc, Mutex};
-
 use common::*;
 use mighty_core::graph::GraphTokenUsage;
 use mighty_core::model::AgentActivity;
 use mighty_core::model_label::ModelOption;
 use mighty_graph::result_files::{self, StdFiles};
-use mighty_graph::tracker::{ExecutionGraphTracker, ModGraphMetadata, ModMetadata};
+use mighty_graph::tracker::{ModGraphMetadata, ModMetadata};
 use mighty_graph::usage_format::{self, GraphChildBlock};
-use mighty_graph::{ExecutionGraphNode, labels, node, support};
+use mighty_graph::{labels, node, support};
 use serde_json::{Value, json};
 
 fn document() -> Value {
@@ -56,50 +54,8 @@ fn mod_in(value: &Value) -> ModMetadata {
     }
 }
 
-/// `MightyGraphBlockModel.ResultTitle(status, waiting)` as the vectors read it.
 fn result_title(status: &str, waiting: i32) -> String {
-    let ko = ko();
-    match status {
-        "error" | "failed" => ko.get("graph.block.resultError"),
-        "stopped" | "cancelled" | "interrupted" => ko.get("graph.block.resultStopped"),
-        _ if waiting > 0 => ko.get_with("graph.block.resultSoFar", &[("count", &waiting.to_string())]),
-        _ => ko.get("graph.block.result"),
-    }
-}
-
-/// A tracker that records every node it emits.
-pub fn recording_tracker(
-    run_id: &str,
-    input: Option<&str>,
-    provider: &str,
-    model: Option<&str>,
-) -> (ExecutionGraphTracker, Arc<Mutex<Vec<ExecutionGraphNode>>>) {
-    let emitted = Arc::new(Mutex::new(vec![]));
-    let sink = emitted.clone();
-    let tracker = ExecutionGraphTracker::new(
-        run_id,
-        input,
-        provider,
-        model,
-        Box::new(move |n: &ExecutionGraphNode| sink.lock().expect("sink").push(n.clone())),
-        None,
-        None,
-        ko(),
-    );
-    (tracker, emitted)
-}
-
-/// The latest snapshot of every node, in first-emission order.
-pub fn latest(emitted: &[ExecutionGraphNode]) -> Vec<ExecutionGraphNode> {
-    let mut order: Vec<String> = vec![];
-    let mut latest = std::collections::HashMap::new();
-    for node in emitted {
-        if !latest.contains_key(&node.id) {
-            order.push(node.id.clone());
-        }
-        latest.insert(node.id.clone(), node.clone());
-    }
-    order.iter().map(|id| latest[id].clone()).collect()
+    common::result_title(status, waiting, false, &ko())
 }
 
 /// claudeStream, codexStream and mods all drive the tracker: a run identity plus an ordered list of steps.
