@@ -3,7 +3,8 @@
 //! opted-in graph event), and the records the graph reads of them (`ModMetadata`, `ModGraphMetadata`).
 //!
 //! The server is hyper's HTTP/1.1 on `127.0.0.1:0` (C#: Kestrel with 64 connections, 8 KiB of headers, 5 s to send them).
-//! Deviation: each connection closes after its response (Kestrel keeps one open for a second), which every client handles.
+//! Deviation: each connection closes after its response (Kestrel keeps one open for a second), which every client handles. As
+//! Kestrel does, a body an early answer left unread is read and dropped first (up to 1 MiB, 5 s), so the client gets the answer.
 
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
@@ -348,13 +349,38 @@ fn status(code: StatusCode) -> Response<Empty<Bytes>> {
     response
 }
 
-/// C# `ModBridge.HandleAsync`.
+/// What is left of a request body Kestrel reads and discards after an early answer before it closes the connection (at most this
+/// much, for at most 5 s), so the client reads the answer instead of a reset: a close with unread bytes resets the connection.
+const DRAIN_LIMIT: usize = 1_048_576;
+
+async fn drain(body: &mut Incoming) {
+    let mut left = DRAIN_LIMIT;
+    let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(Ok(frame)) = body.frame().await {
+            let length = frame.data_ref().map_or(0, Bytes::len);
+            if length >= left {
+                return;
+            }
+            left -= length;
+        }
+    })
+    .await;
+}
+
+/// C# `ModBridge.HandleAsync`, the body drained after any answer that did not read it.
 async fn handle(inner: &Inner, remote: SocketAddr, request: Request<Incoming>) -> Response<Empty<Bytes>> {
-    let headers = request.headers();
+    let (parts, mut body) = request.into_parts();
+    let response = answer(inner, remote, &parts, &mut body).await;
+    drain(&mut body).await;
+    response
+}
+
+async fn answer(inner: &Inner, remote: SocketAddr, request: &hyper::http::request::Parts, body: &mut Incoming) -> Response<Empty<Bytes>> {
+    let headers = &request.headers;
     if !remote.ip().is_loopback()
-        || request.method() != Method::POST
-        || request.uri().path() != "/events"
-        || request.uri().query().is_some()
+        || request.method != Method::POST
+        || request.uri.path() != "/events"
+        || request.uri.query().is_some()
         || headers.contains_key("origin")
         || headers.contains_key("sec-fetch-site")
     {
@@ -373,7 +399,7 @@ async fn handle(inner: &Inner, remote: SocketAddr, request: Request<Incoming>) -
         return status(StatusCode::TOO_MANY_REQUESTS);
     }
     let maximum = if graph_request { GRAPH_BODY_LIMIT } else { METADATA_BODY_LIMIT };
-    let (value, length) = match read_json(request, maximum).await {
+    let (value, length) = match read_json(headers, body, maximum).await {
         Ok(read) => read,
         Err(code) => return status(code),
     };
@@ -394,8 +420,7 @@ async fn handle(inner: &Inner, remote: SocketAddr, request: Request<Incoming>) -
 }
 
 /// `HttpHost.ReadJsonWithLengthAsync`: `application/json` within `maximum` bytes (read within 10 s), at most 32 levels deep.
-async fn read_json(request: Request<Incoming>, maximum: usize) -> Result<(Value, usize), StatusCode> {
-    let headers = request.headers();
+async fn read_json(headers: &hyper::HeaderMap, body: &mut Incoming, maximum: usize) -> Result<(Value, usize), StatusCode> {
     let content_type = headers.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("");
     if content_type.split(';').next().unwrap_or("").trim() != "application/json" {
         return Err(StatusCode::BAD_REQUEST);
@@ -405,7 +430,6 @@ async fn read_json(request: Request<Incoming>, maximum: usize) -> Result<(Value,
     {
         return Err(StatusCode::BAD_REQUEST);
     }
-    let mut body = request.into_body();
     let mut data: Vec<u8> = Vec::new();
     let read = tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(frame) = body.frame().await {
