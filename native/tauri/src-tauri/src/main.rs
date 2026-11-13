@@ -34,11 +34,35 @@ use crate::smoke::Smoke;
 use crate::surface::SurfaceManager;
 
 /// Page → host: one message (`{kind:"call", ...}`), queued for the dispatcher; the answer comes back on `host-message`. Only the
-/// page's own webview is heard: a browser pane's child webview never reaches the host.
+/// page's own webview showing the app's own page is heard (C# `WebShell.Trusted(args.Source)`): a browser pane's child webview, or
+/// the page's webview somewhere else, never reaches the host.
 #[tauri::command]
-fn host_post(message: Value, webview: tauri::Webview, inbound: tauri::State<'_, Inbound>) {
-    if webview.label() == WINDOW {
+fn host_post(message: Value, webview: tauri::Webview, inbound: tauri::State<'_, Inbound>, origin: tauri::State<'_, AppOrigin>) {
+    if webview.label() == WINDOW && webview.url().is_ok_and(|url| origin.trusts(&url)) {
         let _ = inbound.0.send(message);
+    }
+}
+
+/// Where the app's own page is served (tauri's `get_app_url`): the dev server in a dev build, else the `tauri` protocol
+/// (`http://tauri.localhost` on Windows, `tauri://localhost` on the Mac).
+struct AppOrigin(tauri::Url);
+
+impl AppOrigin {
+    fn new(config: &tauri::Config) -> AppOrigin {
+        #[cfg(dev)]
+        if let Some(url) = config.build.dev_url.clone() {
+            return AppOrigin(url);
+        }
+        let _ = config;
+        let base = if cfg!(windows) { "http://tauri.localhost" } else { "tauri://localhost" };
+        AppOrigin(tauri::Url::parse(base).expect("the tauri protocol's address"))
+    }
+
+    /// C# `WebShell.Trusted`: an address on the app's own origin (scheme, host and port; `tauri://` has no web origin to compare).
+    fn trusts(&self, url: &tauri::Url) -> bool {
+        url.scheme() == self.0.scheme()
+            && url.host_str() == self.0.host_str()
+            && url.port_or_known_default() == self.0.port_or_known_default()
     }
 }
 
@@ -229,12 +253,22 @@ fn main() {
             host.log.line(&format!("webview data {}", webview_data.display()));
             let (r, g, b) = if theme == "light" { (0xEC, 0xEE, 0xF3) } else { (0x0B, 0x0F, 0x19) };
             let page = host.clone();
+            let origin = AppOrigin::new(app.config());
+            let navigation = AppOrigin(origin.0.clone());
+            app.manage(origin);
             let mut window = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("index.html".into()))
                 .title("Mighty Code")
                 .inner_size(1440.0, 920.0)
                 .min_inner_size(940.0, 650.0)
                 .background_color(tauri::window::Color(r, g, b, 255))
                 .data_directory(webview_data)
+                // The page takes dropped files itself (HTML5 drop → addAttachments), as C#'s WebView2 does; Tauri's own handler
+                // would swallow the drop on Windows.
+                .disable_drag_drop_handler()
+                // C# WebShell: the page never leaves the app's own origin (a stray drop or link would navigate it away), and it
+                // opens no window of its own.
+                .on_navigation(move |url| navigation.trusts(url))
+                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
                 .on_page_load(move |_, payload| {
                     if payload.event() == PageLoadEvent::Started {
                         page.page_started();
@@ -280,4 +314,38 @@ fn main() {
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn url(text: &str) -> tauri::Url {
+        tauri::Url::parse(text).unwrap()
+    }
+
+    /// C# `WebShell.Trusted`: the app's own origin only, however a page elsewhere names itself.
+    #[test]
+    fn only_the_apps_own_page_is_trusted() {
+        let windows = AppOrigin(url("http://tauri.localhost"));
+        assert!(windows.trusts(&url("http://tauri.localhost/index.html")));
+        assert!(windows.trusts(&url("http://TAURI.localhost:80/a?b#c")));
+        for elsewhere in [
+            "https://tauri.localhost/",
+            "http://tauri.localhost:8080/",
+            "http://tauri.localhost.example.com/",
+            "http://localhost/",
+            "file:///C:/Users/me/Downloads/page.html",
+            "https://example.com/",
+            "about:blank",
+        ] {
+            assert!(!windows.trusts(&url(elsewhere)), "{elsewhere}");
+        }
+        let mac = AppOrigin(url("tauri://localhost"));
+        assert!(mac.trusts(&url("tauri://localhost/index.html")));
+        assert!(!mac.trusts(&url("tauri://elsewhere/index.html")));
+        let dev = AppOrigin(url("http://localhost:5173"));
+        assert!(dev.trusts(&url("http://localhost:5173/src/main.tsx")));
+        assert!(!dev.trusts(&url("http://localhost:5174/")));
+    }
 }
