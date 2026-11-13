@@ -503,23 +503,8 @@ pub fn commands(provider: &str, workspace: Option<&Path>, home: &Path, files: &d
     list
 }
 
-/// `StringComparer.OrdinalIgnoreCase`: UTF-16 units compared upper-cased.
-pub(crate) fn ordinal_ignore_case(a: &str, b: &str) -> std::cmp::Ordering {
-    let upper = |s: &str| -> Vec<u16> {
-        s.chars()
-            .flat_map(|c| {
-                let u = if c.is_ascii() {
-                    c.to_ascii_uppercase()
-                } else {
-                    c.to_uppercase().next().filter(|_| c.to_uppercase().count() == 1).unwrap_or(c)
-                };
-                let mut buf = [0u16; 2];
-                u.encode_utf16(&mut buf).to_vec()
-            })
-            .collect()
-    };
-    upper(a).cmp(&upper(b))
-}
+// `StringComparer.OrdinalIgnoreCase`: UTF-16 units compared upper-cased.
+pub(crate) use mighty_core::normalize::ordinal_ignore_case;
 
 fn file_name(name: &str) -> &str {
     name

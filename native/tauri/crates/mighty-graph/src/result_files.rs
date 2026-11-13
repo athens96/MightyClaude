@@ -3,10 +3,11 @@
 //! so a model-written path cannot reach other files.
 
 use std::collections::HashSet;
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 use std::sync::LazyLock;
 
 use mighty_core::normalize::prefix_utf8;
+use mighty_core::workspace_files;
 use regex::Regex;
 
 pub const MAXIMUM_RESULT_FILES: usize = 100;
@@ -235,75 +236,32 @@ impl Collector<'_> {
     }
 }
 
-/// The disk as `std::fs` reads it: the real root canonicalized, a reference made absolute against it lexically, refused when it leaves
-/// the root, then canonicalized again (every link resolved, the file must exist) and refused when its real path leaves the real root or is
-/// no regular file. (C# walks the links one component at a time and refuses a link to another machine's share; canonicalizing resolves the
-/// same links and reaches no share a local workspace does not already name.)
+/// The disk as C# reads it (`ResultFiles.Resolve` through `WorkspaceFiles`): a reference made absolute against the real root on paper and
+/// refused when it leaves it (another drive, a share, `..` out of it) or names a Windows stream (`a.txt:hidden`), then its links walked one
+/// component at a time ([`workspace_files::real_path`]: never one that leads off this machine) and refused when its real path leaves the
+/// real root or is no regular file. A drive letter stays as written, so `Z:\proj\…` on a mapped or `subst` drive resolves as `Z:\proj\…`.
 #[derive(Debug, Clone, Copy)]
 pub struct StdFiles {
-    /// Paths compare ignoring case (Windows' file systems).
+    /// Paths compare ignoring case (Windows' file systems): two references to one file are one.
     pub ignores_case: bool,
-}
-
-/// A canonical path without Windows' verbatim prefix for a drive path (`\\?\C:\…` → `C:\…`), as .NET writes it.
-fn plain_path(path: PathBuf) -> String {
-    let text = path.to_string_lossy().into_owned();
-    match text.strip_prefix(r"\\?\") {
-        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => rest.to_string(),
-        _ => text,
-    }
-}
-
-/// `Path.GetFullPath`: `.` and `..` collapsed, lexically.
-fn lexical(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out
-}
-
-impl StdFiles {
-    fn contains(&self, path: &str, root: &str) -> bool {
-        let separator = std::path::MAIN_SEPARATOR;
-        let trim = |p: &str| -> String {
-            let t = p.trim_end_matches(['/', '\\']);
-            if t.is_empty() { p.to_string() } else { t.to_string() }
-        };
-        let (mut path, mut root) = (trim(path), trim(root));
-        if self.ignores_case {
-            path = path.to_lowercase();
-            root = root.to_lowercase();
-        }
-        path == root || path.starts_with(&format!("{root}{separator}"))
-    }
 }
 
 impl ResultFileLookup for StdFiles {
     fn real_root(&self, root: &str) -> Option<String> {
-        std::fs::canonicalize(root).ok().map(plain_path)
+        workspace_files::real_path(Path::new(root)).map(|real| real.to_string_lossy().into_owned())
     }
 
     fn resolve(&self, path: &str, root: &str) -> Option<String> {
         if path.is_empty() || path.contains('\0') || path.len() > MAXIMUM_PATH_BYTES {
             return None;
         }
-        let base = lexical(Path::new(root));
-        let reference = Path::new(path);
-        let candidate = lexical(&if reference.has_root() { reference.to_path_buf() } else { base.join(reference) });
-        // Lexical escapes are refused before the target is touched.
-        if !self.contains(&candidate.to_string_lossy(), &base.to_string_lossy()) {
-            return None;
-        }
-        let real = plain_path(std::fs::canonicalize(&candidate).ok()?);
-        let real_root = self.real_root(root)?;
-        (self.contains(&real, &real_root) && Path::new(&real).is_file()).then_some(real)
+        // `Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(base, path))`: a rooted reference replaces the base.
+        let base = workspace_files::full_path(Path::new(root))?;
+        let candidate = workspace_files::full_path(&base.join(path))?;
+        // Lexical escapes, other drives, shares and stream names are refused before the target is touched.
+        let relative = workspace_files::relative(&candidate, &base)?.replace('\\', "/");
+        let resolved = workspace_files::resolve(&relative, &base)?;
+        resolved.is_file().then(|| resolved.to_string_lossy().into_owned())
     }
 
     fn separator(&self) -> char {
@@ -326,6 +284,80 @@ mod tests {
         assert_eq!(paths, vec![("src/a.ts", Some(12)), ("x/y.json", None), ("a/b.c.d", None)]);
         assert!(matches("foo/src/a.ts").iter().any(|m| m.path == "foo/src/a.ts"));
         assert!(matches("~src/a.ts").is_empty());
+    }
+
+    /// A folder of its own under the temporary folder, removed when dropped.
+    struct Temp(std::path::PathBuf);
+
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn the_disk_gives_files_inside_the_real_root_only() {
+        let temp = Temp(std::env::temp_dir().join(format!("mighty-result-files-{}", mighty_core::wire::new_id())));
+        let (root, outside) = (temp.0.join("작업"), temp.0.join("outside"));
+        for folder in [root.join("src"), outside.clone()] {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        for file in [root.join("src").join("화면.ts"), root.join("a.txt"), outside.join("secret.txt")] {
+            std::fs::write(file, "x").unwrap();
+        }
+        let files = StdFiles { ignores_case: cfg!(windows) };
+        let base = files.real_root(&root.to_string_lossy()).unwrap();
+        assert!(!base.starts_with(r"\\?\"), "the root as .NET writes it, its drive as written: {base}");
+        let found = |p: &str| files.resolve(p, &base);
+        assert!(found("src/화면.ts").is_some_and(|r| r.ends_with("화면.ts")));
+        assert!(found(&root.join("a.txt").to_string_lossy()).is_some(), "an absolute path inside");
+        assert_eq!(found(&outside.join("secret.txt").to_string_lossy()), None, "an absolute path outside");
+        assert_eq!(found("../outside/secret.txt"), None, "out of the root on paper");
+        assert_eq!(found("src"), None, "a folder is no file");
+        // A Windows stream name is refused before anything is opened, the stream there or not.
+        let stream = std::fs::write(root.join("a.txt:hidden"), "secret").is_ok();
+        assert_eq!(found("a.txt:hidden"), None, "a stream (written: {stream})");
+        assert_eq!(found("src/화면.ts:hidden"), None);
+        assert_eq!(
+            files_in(&["see src/화면.ts:3 and [a](a.txt:hidden)"], Some(&base), &files),
+            vec![ResultFile { path: "src/화면.ts".into(), line: Some(3) }]
+        );
+    }
+
+    /// A junction is a link anyone may make on Windows: one inside the workspace to a folder outside it gives nothing, one to a folder
+    /// inside gives that folder's file.
+    #[cfg(windows)]
+    #[test]
+    #[allow(clippy::disallowed_methods, reason = "the test's own mklink, no child of the app")]
+    fn a_junction_is_followed_and_its_target_checked() {
+        let temp = Temp(std::env::temp_dir().join(format!("mighty-result-junction-{}", mighty_core::wire::new_id())));
+        let (root, outside) = (temp.0.join("root"), temp.0.join("outside"));
+        for folder in [root.join("src"), outside.clone()] {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        std::fs::write(root.join("src").join("a.ts"), "x").unwrap();
+        std::fs::write(outside.join("secret.txt"), "x").unwrap();
+        let junction = |link: &std::path::Path, target: &std::path::Path| {
+            std::process::Command::new("cmd")
+                .arg("/c")
+                .arg("mklink")
+                .arg("/J")
+                .arg(link)
+                .arg(target)
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        if !(junction(&root.join("out"), &outside) && junction(&root.join("inner"), &root.join("src"))) {
+            eprintln!("skipped: no junction could be made here");
+            return;
+        }
+        let files = StdFiles { ignores_case: true };
+        let base = files.real_root(&root.to_string_lossy()).unwrap();
+        assert_eq!(files.resolve("out/secret.txt", &base), None, "through a junction to outside the root");
+        assert_eq!(files.resolve("inner/a.ts", &base), Some(root.join("src").join("a.ts").to_string_lossy().into_owned()));
+        // Seen from the junction itself as the root, the files are the target folder's, by its real path.
+        let real = files.real_root(&root.join("inner").to_string_lossy()).unwrap();
+        assert_eq!(real, root.join("src").to_string_lossy());
     }
 
     #[test]
