@@ -18,6 +18,7 @@ mod panes;
 mod platform;
 mod runs;
 mod smoke;
+mod smoke_files;
 mod smoke_runs;
 mod surface;
 

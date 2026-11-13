@@ -50,6 +50,8 @@ enum Stage {
     #[default]
     Main,
     Browser,
+    /// The files pane, an HTML frame, the reference bubble and the picture viewer (smoke_files.rs).
+    Files,
     Runs,
 }
 
@@ -150,6 +152,7 @@ struct Progress {
     /// The host's active pane when the first probe reported (its click must have reached the state).
     main_active: Option<String>,
     browser: Option<Value>,
+    files: Option<Value>,
     finished: bool,
 }
 
@@ -240,6 +243,7 @@ impl Smoke {
             match progress.stage {
                 Stage::Main => progress.main = Some(probe.clone()),
                 Stage::Browser => progress.browser = Some(probe.clone()),
+                Stage::Files => progress.files = Some(probe.clone()),
                 Stage::Runs => {}
             }
             progress.stage
@@ -251,7 +255,8 @@ impl Smoke {
         let next = match stage {
             Stage::Main if probe.get("error").is_some() => None,
             Stage::Main if self.mode != Mode::RealClaude && self.start_browser(host) => Some(Stage::Browser),
-            Stage::Main | Stage::Browser if self.start_runs(host) => Some(Stage::Runs),
+            Stage::Main | Stage::Browser if self.mode != Mode::RealClaude && self.start_files(host) => Some(Stage::Files),
+            Stage::Main | Stage::Browser | Stage::Files if self.start_runs(host) => Some(Stage::Runs),
             _ => None,
         };
         match next {
@@ -285,6 +290,23 @@ impl Smoke {
         true
     }
 
+    /// Adds the files steps' workspace and panes and runs their probe (smoke_files.rs).
+    fn start_files(&self, host: &Host) -> bool {
+        let Some(host) = host.app.try_state::<Arc<Host>>().map(|h| h.inner().clone()) else { return false };
+        match crate::smoke_files::start(&host) {
+            Ok(script) => {
+                host.flush();
+                host.log.line("smoke: files steps");
+                self.eval(&host, &script);
+                true
+            }
+            Err(error) => {
+                host.log.line(&format!("smoke: the files steps were not set up: {error}"));
+                false
+            }
+        }
+    }
+
     /// Adds the browser pane and runs the second probe; false where the platform has no native browser surface.
     fn start_browser(&self, host: &Host) -> bool {
         let Some(surfaces) = host.app.try_state::<Arc<SurfaceManager>>() else { return false };
@@ -310,14 +332,14 @@ impl Smoke {
 
     /// Writes the result (once) and, with `--smoke-exit`, quits.
     pub fn finish(&self, host: &Host, runs: Option<Value>) {
-        let (calls, probe, browser, main_active) = {
+        let (calls, probe, browser, main_active, files) = {
             let mut progress = self.progress();
             if progress.finished {
                 return;
             }
             progress.finished = true;
             let probe = progress.main.clone().unwrap_or_else(|| json!({"error": "no probe report"}));
-            (progress.calls.clone(), probe, progress.browser.clone(), progress.main_active.clone())
+            (progress.calls.clone(), probe, progress.browser.clone(), progress.main_active.clone(), progress.files.clone())
         };
         let (snapshot_sent, shell_sent) = {
             let progress = self.progress();
@@ -354,6 +376,12 @@ impl Smoke {
                     && yes("hiddenUnderDialog")
                     && yes("shownAfterDialog")
             );
+        }
+        if self.mode != Mode::RealClaude {
+            let empty = json!({"error": "the files steps did not report"});
+            for (name, passed) in crate::smoke_files::checks(host, files.as_ref().unwrap_or(&empty)) {
+                checks[name] = json!(passed);
+            }
         }
         match self.mode {
             Mode::Page => {}
@@ -400,6 +428,8 @@ impl Smoke {
             "checks": checks,
             "probe": probe,
             "browser": browser,
+            "files": files,
+            "framesServed": crate::smoke_files::served(host),
             "runs": runs,
             "mode": format!("{:?}", self.mode),
             "host": {"workspaces": workspaces, "panes": panes, "theme": theme, "activeSessionId": active, "language": host.locale.language()},
@@ -434,6 +464,7 @@ impl Smoke {
                     match progress.stage {
                         Stage::Main => progress.main = Some(error.clone()),
                         Stage::Browser => progress.browser = Some(error.clone()),
+                        Stage::Files => progress.files = Some(error.clone()),
                         Stage::Runs => {}
                     }
                     progress.stage
