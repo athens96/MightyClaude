@@ -332,4 +332,50 @@ internal static class ToolPermissionVerification
         }
         finally { try { Directory.Delete(directory, true); } catch (IOException) { } }
     }
+
+    /// <summary>
+    /// An interactive Claude run (the approval bar is shown) with attachments hands the CLI the staged user frame as it is: a
+    /// content array of the text, image and document blocks, never that frame's JSON wrapped again as one text.
+    /// </summary>
+    internal static async Task InteractiveRunSendsAttachmentsAsBlocks()
+    {
+        var directory = Verification.Temp();
+        try
+        {
+            var workspace = new Workspace { Path = directory };
+            var plugin = Path.Combine(directory, "plugin"); Directory.CreateDirectory(Path.Combine(plugin, ".claude-plugin"));
+            await File.WriteAllTextAsync(Path.Combine(plugin, ".claude-plugin", "plugin.json"), "{}");
+            var record = Path.Combine(directory, "attached");
+            await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "claude", record)));
+            RunManager? manager = null;
+            manager = new RunManager(_ => Task.FromResult(workspace), catalog, plugin, _ => { }, value =>
+            {
+                if (value.State == "pending") manager!.RespondToToolPermission("attached", value.Id, allow: false);
+            });
+            var image = AttachmentSupport.Make("picture.png", AttachmentVerification.Png);
+            var pdf = AttachmentSupport.Make("file.pdf", "%PDF-1.7\nfixture"u8.ToArray());
+            await using (manager)
+            {
+                await manager.StartAsync(new("attached", workspace.Id, "claude", "describe the attachments", [], Attachments: [image, pdf]));
+                await Verification.Until(() => !manager.IsRunning("attached"), 20000);
+            }
+
+            var launched = JsonSerializer.Deserialize<string[]>(await File.ReadAllTextAsync(record + ".args"), Wire.Json)!;
+            Check(launched.Contains("--permission-prompt-tool"), "the run is interactive: host prompts over stdio");
+            var written = (await File.ReadAllLinesAsync(record + ".input")).Where(l => l.Length > 0).ToArray();
+            Check(JsonDocument.Parse(written[0]).RootElement.GetProperty("request").GetProperty("subtype").GetString() == "initialize", "the handshake is written first");
+            using var frame = JsonDocument.Parse(written[1]);
+            Check(frame.RootElement.GetProperty("type").GetString() == "user" && frame.RootElement.GetProperty("message").GetProperty("role").GetString() == "user", "the prompt follows the handshake as one user message");
+            var content = frame.RootElement.GetProperty("message").GetProperty("content");
+            Check(content.ValueKind == JsonValueKind.Array, "the message content is an array of blocks, not the frame's JSON as one string");
+            var blocks = content.EnumerateArray().ToArray();
+            Check(blocks[0].GetProperty("type").GetString() == "text" && blocks[0].GetProperty("text").GetString() == "describe the attachments", "the prompt stays the first, text block");
+            var picture = blocks.Single(b => b.GetProperty("type").GetString() == "image").GetProperty("source");
+            Check(picture.GetProperty("media_type").GetString() == "image/png" && picture.GetProperty("data").GetString() == image.DataBase64, "the image block carries the picture's bytes");
+            var document = blocks.Single(b => b.GetProperty("type").GetString() == "document").GetProperty("source");
+            Check(document.GetProperty("media_type").GetString() == "application/pdf" && document.GetProperty("data").GetString() == pdf.DataBase64, "the document block carries the PDF's bytes");
+            Check(!written[1].Contains("\\\"base64\\\"", StringComparison.Ordinal), "no JSON is escaped inside a text block");
+        }
+        finally { try { Directory.Delete(directory, true); } catch (IOException) { } }
+    }
 }

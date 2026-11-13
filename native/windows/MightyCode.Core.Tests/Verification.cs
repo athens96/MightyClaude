@@ -1134,6 +1134,7 @@ internal static class Verification
         await Test("tool permission bar shows the title summary reason path and count", ToolPermissionVerification.BarShowsTheTitleSummaryReasonPathAndCount);
         await Test("tool permission host prompts are added only for a Claude launch that can show the bar", ToolPermissionVerification.HostPromptsOnlyWhereTheBarExists);
         await Test("tool permission run launches with host prompts over stdio and answers one request", ToolPermissionVerification.RunLaunchesWithHostPromptsAndAnswersOneRequest);
+        await Test("tool permission interactive Claude run sends its attachments as image and document blocks, not as text", ToolPermissionVerification.InteractiveRunSendsAttachmentsAsBlocks);
         await Test("tool permission strings match macOS", StringsVerification.ToolPermissionsMatchMacOS);
         await Test("completion notification fires once for running then completed", CompletionNotificationVerification.FiresOnceAfterRunning);
         await Test("completion notification title includes workspace name", CompletionNotificationVerification.TitleIncludesWorkspaceName);

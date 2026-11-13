@@ -397,7 +397,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             {
                 // Fail closed: the prompt itself is only written after a
                 // successful handshake, and a failure stops the run.
-                run.Permissions = new ClaudePermissionChannel(request.SessionId, ProviderInput.PromptFrame(input),
+                // With attachments `input` already is the complete user frame (text, image and document blocks): wrapped again, the model would read its JSON as text.
+                run.Permissions = new ClaudePermissionChannel(request.SessionId, attachments is null ? ProviderInput.PromptFrame(input) : input,
                     text => { if (run.Finished || run.Finalizing) throw new IOException("The Claude input channel is closed."); child.Input.Write(text); child.Input.Flush(); },
                     value => { if (!run.Finished) permissionRequested!(value); },
                     (value, state) => parser.PermissionActivity(value, state),
