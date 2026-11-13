@@ -45,7 +45,14 @@ public sealed record SafeSvgDocument(string Xml, double Width, double Height)
             foreach (var name in new[] { "width", "height", "viewBox" })
                 if (root.Attribute(name)?.Value.Length > 512) throw new AgentImageException(AgentImageError.TooManyPixels);
             var canonical = root.ToString(SaveOptions.DisableFormatting);
-            var size = FilePreviewClassifier.SvgSize(Encoding.UTF8.GetBytes(canonical)) ?? (300.0, 150.0);
+            var canonicalBytes = Encoding.UTF8.GetBytes(canonical);
+            // The bytes' check reads the markup as written: `@im<!-- -->port` or `ur<![CDATA[l(…]]>` spell nothing there, but a style
+            // sheet reads the parsed text (CDATA sections opened, references read, comments gone), and the canonical document drops
+            // the comment. Both are checked again, the document's text run together as a style sheet reads it.
+            var parsed = string.Concat(root.DescendantNodes().OfType<XText>().Select(text => text.Value));
+            if (FilePreviewClassifier.SvgLoadsExternalContent(Encoding.UTF8.GetBytes(parsed)) || FilePreviewClassifier.SvgLoadsExternalContent(canonicalBytes))
+                throw new AgentImageException(AgentImageError.ExternalSvg);
+            var size = FilePreviewClassifier.SvgSize(canonicalBytes) ?? (300.0, 150.0);
             if (!FilePreviewClassifier.IsDrawable(size.Item1, size.Item2)) throw new AgentImageException(AgentImageError.TooManyPixels);
             return new(canonical, size.Item1, size.Item2);
         }

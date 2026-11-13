@@ -34,6 +34,8 @@ internal static class NativeImageParityVerification
     {
         var safe = SafeSvgDocument.Parse("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 40'><defs><linearGradient id='g'/></defs><rect fill='url(#g)' width='80' height='40'/></svg>"u8);
         Check(safe.Width == 80 && safe.Height == 40 && safe.Xml.Contains("linearGradient"), "local definitions and intrinsic SVG dimensions survive canonicalization");
+        var styled = SafeSvgDocument.Parse("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 40'><!-- a note --><style><![CDATA[ .a { fill: url(#g); } ]]></style><linearGradient id='g'/><rect class='a' width='80' height='40'/><text>@ 한글 url</text></svg>"u8);
+        Check(styled.Xml.Contains("url(#g)", StringComparison.Ordinal), "a style sheet in CDATA with a local url( and a comment still draws");
         foreach (var svg in new[] {
             "<!DOCTYPE svg><svg/>",
             "<!DOCTYPE svg [<!ENTITY x SYSTEM 'file:///secret'>]><svg>&x;</svg>",
@@ -51,6 +53,17 @@ internal static class NativeImageParityVerification
         {
             try { SafeSvgDocument.Parse(Encoding.UTF8.GetBytes(svg)); Check(false, "unsafe SVG admitted: " + svg[..Math.Min(svg.Length, 80)]); }
             catch (AgentImageException) { }
+        }
+        // A reference split by a comment or a CDATA section spells nothing in the bytes, but the style sheet reads it whole.
+        foreach (var svg in new[] {
+            "<svg><style>@im<!-- -->port 'https://example.com/a.css';</style></svg>",
+            "<svg><style>@im<![CDATA[port 'https://example.com/a.css';]]></style></svg>",
+            "<svg><style>rect { fill: ur<![CDATA[l(https://example.com/a.png); }]]></style><rect width='8' height='8'/></svg>",
+            "<svg><style>rect { fill: ur<!-- -->l(https://example.com/a.png); }</style><rect width='8' height='8'/></svg>",
+        })
+        {
+            try { SafeSvgDocument.Parse(Encoding.UTF8.GetBytes(svg)); Check(false, "split reference admitted: " + svg); }
+            catch (AgentImageException ex) { Check(ex.Error == AgentImageError.ExternalSvg, "a split reference reads as outside content: " + svg); }
         }
         return Task.CompletedTask;
     }
