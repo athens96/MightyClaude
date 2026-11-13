@@ -1704,6 +1704,7 @@ dependencies = [
  "mighty-core",
  "percent-encoding",
  "regex",
+ "serde",
  "serde_json",
  "sha2",
  "unicode-segmentation",
