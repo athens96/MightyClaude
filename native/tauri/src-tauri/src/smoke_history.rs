@@ -8,10 +8,11 @@
 //! - clicks the header's work map button once the folder reads as a repository (`workMapButton`), waits for the overview's cells
 //!   (`workMapOverview`) and one card per version with a summarize button (`workMapVersions`), switches the Mac chip off and on
 //!   (`workMapChips`);
-//! - has the host open the resume list over the folder (the page-drawn `resumeList` sheet, its rows from `resumeRows`): the session is
-//!   listed with its first request and the nested run counted as hidden, a search with no match says so, "모든 세션 보기" lists both
-//!   (`resumeList`); then the host takes the first row as the pick, adds a pane that continues the session and the page shows its record's
-//!   requests above in the Mighty diagram, read back from the record (`resumeLoaded`).
+//! - resumes the folder's session end to end, as a person would: the workspace's add menu, its Claude entry; the folder has an earlier
+//!   session, so the frame's flow asks Start new / Resume… (`resumeChoice`); Resume… opens the list sheet, its rows from `resumeRows`:
+//!   the session is listed with its first request and the nested run counted as hidden, a search with no match says so, "모든 세션 보기"
+//!   lists both (`resumeList`); a click on the session's row closes the sheet and adds a pane that continues it, and the page shows its
+//!   record's requests above in the Mighty diagram, read back from the record (`resumeLoaded`).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -24,20 +25,17 @@ use tauri::Manager;
 
 use crate::host::Host;
 
-/// The workspace and the panes the step adds (UUID-shaped, as the state's ids are).
+/// The workspace the step adds (UUID-shaped, as the state's ids are).
 pub const WORKSPACE: &str = "5a0e0b0b-0000-4000-8000-00000000c4a0";
-const RESUMED_PANE: &str = "5a0e0b0b-0000-4000-8000-00000000c4a1";
 /// The fixture sessions: one the user ran, one nested run the list hides.
 const SESSION: &str = "5a0e0b0b-0000-4000-8000-00000000e501";
 const NESTED: &str = "5a0e0b0b-0000-4000-8000-00000000e502";
-/// The resume list's page dialog.
-const DIALOG: u64 = 990_101;
 
 const PROBE: &str = r#"(async () => {
   const until = async (test, ms) => { const end = performance.now() + ms; while (performance.now() < end) { const v = await test(); if (v) return v; await new Promise((r) => setTimeout(r, 50)); } return test(); };
   const invoke = (command, args) => window.__TAURI_INTERNALS__.invoke(command, args);
   const step = (name, extra) => invoke('smoke_history', { step: name, ...(extra ?? {}) });
-  const mapId = '__MAP__', paneId = '__PANE__';
+  const mapId = '__MAP__', workspaceId = '__WORKSPACE__';
   const slot = (id) => document.querySelector('.pane-slot[data-pane-id="' + id + '"]');
   const map = (s) => slot(mapId)?.querySelector(s);
   const report = {};
@@ -54,8 +52,15 @@ const PROBE: &str = r#"(async () => {
     if (off) map('[data-lane=mac]').click();
     report.mapChips = off && !!(await until(() => map('[data-lane=mac]')?.getAttribute('aria-pressed') === 'true', 5000));
     report.mapButton = report.buttonEnabled && report.mapOverview;
-    // The resume list: the host opens it over the folder; its rows come from resumeRows.
-    await step('resumeList');
+    // Resume, end to end: the workspace's add menu, its Claude entry; the folder has an earlier session, so Start new / Resume… is asked.
+    document.querySelector('[data-testid=sidebar-workspace][data-workspace-id="' + workspaceId + '"] [data-testid=sidebar-add]')?.click();
+    const entry = await until(() => document.querySelector('[data-testid="add-entry-agent:claude"]'), 10000);
+    report.addMenu = !!entry;
+    entry?.click();
+    const resume = await until(() => { const b = document.querySelector('[data-testid=resume-choice-resume]'); return b && !b.disabled ? b : null; }, 20000);
+    report.choiceShown = !!resume;
+    resume?.click();
+    // Resume… opens the list; its rows come from resumeRows.
     const rows = () => [...document.querySelectorAll('[data-testid=resume-rows] .resume-row')];
     report.rowsShown = !!(await until(() => rows().length === 1, 15000));
     report.rowText = rows()[0]?.textContent ?? null;
@@ -68,9 +73,12 @@ const PROBE: &str = r#"(async () => {
     await until(() => rows().length === 1, 10000);
     document.querySelector('.resume-footer input[type=checkbox]')?.click();
     report.allShown = !!(await until(() => rows().length === 2, 15000));
-    // The pick: the host takes the listed session, closes the sheet and adds a pane that continues it.
-    const picked = await step('resume');
+    // The pick: the session's row closes the sheet and adds a pane that continues it.
+    rows().find((row) => (row.textContent ?? '').includes('smoke resume request 1'))?.click();
+    report.listClosed = !!(await until(() => !document.querySelector('[data-testid=resume-rows]'), 10000));
+    const picked = await until(async () => { const p = await step('resumed'); return p && p.paneId ? p : null; }, 10000);
     report.picked = picked;
+    const paneId = picked?.paneId ?? '';
     const blocks = () => [...(slot(paneId)?.querySelectorAll('[data-testid=mighty-diagram] .mighty-block[data-kind=request]') ?? [])];
     const history = () => slot(paneId)?.querySelector('[data-testid=mighty-diagram] .mighty-history');
     report.historyBlock = !!(await until(() => history(), 20000));
@@ -164,7 +172,7 @@ pub fn start(host: &Host) -> bool {
             host.log.line(&format!("smoke: the history workspace was not added: {error}"));
         }
         host.flush();
-        let script = PROBE.replace("__MAP__", &pane::pane_id(WORKSPACE)).replace("__PANE__", RESUMED_PANE);
+        let script = PROBE.replace("__MAP__", &pane::pane_id(WORKSPACE)).replace("__WORKSPACE__", WORKSPACE);
         match host.app.get_webview(crate::host::WINDOW) {
             Some(page) => {
                 if let Err(error) = page.eval(&script) {
@@ -187,6 +195,7 @@ pub fn checks(report: &Value) -> Vec<(&'static str, bool)> {
         ("workMapVersions", yes("mapVersions")),
         ("workMapChips", yes("mapChips")),
         ("workMapButton", yes("mapButton")),
+        ("resumeChoice", yes("addMenu") && yes("choiceShown")),
         (
             "resumeList",
             yes("rowsShown")
@@ -198,15 +207,15 @@ pub fn checks(report: &Value) -> Vec<(&'static str, bool)> {
         (
             "resumeLoaded",
             report.get("picked").and_then(|p| p.get("resumeId")).and_then(Value::as_str) == Some(SESSION)
+                && yes("listClosed")
                 && yes("historyBlock")
                 && report.get("loadedFromRecord").and_then(Value::as_u64).unwrap_or(0) >= 3,
         ),
     ]
 }
 
-/// What the history probe asks the host (smoke only): `openMap` (the work map pane, when the header button never enabled), `resumeList`
-/// (the list sheet over the step's workspace), `resume` (the list's first session picked: the sheet closed, a pane that continues it added
-/// and shown in the Mighty diagram).
+/// What the history probe asks the host (smoke only): `openMap` (the work map pane, when the header button never enabled), `resumed` (the
+/// step's pane that continues the fixture session, once the resume flow added it; null before).
 #[tauri::command]
 pub fn smoke_history(step: String, host: tauri::State<'_, Arc<Host>>) -> Result<Value, String> {
     if host.smoke.is_none() {
@@ -217,43 +226,13 @@ pub fn smoke_history(step: String, host: tauri::State<'_, Arc<Host>>) -> Result<
             let mut view = host.view();
             crate::workmap::open_work_map(&host, &mut view, Some(WORKSPACE)).map(Value::from)
         }
-        "resumeList" => {
-            let workspace = host.view().snapshot.workspace(WORKSPACE).cloned().ok_or("no history workspace")?;
-            crate::history::open_resume_list(&host, "claude", &workspace);
-            let dialog =
-                json!({"type": "resumeList", "provider": "claude", "title": host.locale.get("resume.title"), "path": workspace.path()});
+        "resumed" => {
             let view = host.view();
-            host.push(&view, "dialog", json!({"kind": "dialog", "id": DIALOG, "dialog": dialog}).to_string());
-            Ok(Value::Null)
-        }
-        "resume" => {
-            let listing = crate::history::close_resume_list(&host).ok_or("the list read nothing")?;
-            {
-                let view = host.view();
-                host.push(&view, "dialogClose", json!({"kind": "dialogClose", "id": DIALOG}).to_string());
-            }
-            let first =
-                listing.items.iter().find(|i| i.session_id == SESSION).map(|i| i.session_id.clone()).ok_or("the session was not listed")?;
-            let mut view = host.view();
-            let session = crate::history::pick(&host, &view, &listing, &first).ok_or("no such row")??;
-            // AddPane("claude", provider, shape: Apply): a Claude pane of the workspace shown in the Mighty diagram.
-            let template = mighty_core::model::RunSession {
-                id: Some(RESUMED_PANE.into()),
-                workspace_id: Some(WORKSPACE.into()),
-                title: Some("Claude".into()),
-                agent_view_mode: Some("mighty".into()),
-                graph_view_mode: Some("diagram".into()),
-                ..mighty_core::model::RunSession::default()
-            };
-            let pane = mighty_history::resumable::apply(&session, &template);
-            let mut state = view.snapshot.clone();
-            state.sessions_mut().push(Arc::new(pane.clone()));
-            state.active_workspace_id = Some(WORKSPACE.into());
-            state.active_session_id = Some(RESUMED_PANE.into());
-            view.replace(state);
-            drop(view);
-            host.flush();
-            Ok(json!({"resumeId": pane.resume_id, "title": pane.title, "provider": pane.provider}))
+            let pane = view.snapshot.sessions().iter().find(|p| p.workspace_id() == WORKSPACE && p.resume_id.as_deref() == Some(SESSION));
+            Ok(pane.map_or(Value::Null, |p| {
+                json!({"paneId": p.id(), "resumeId": p.resume_id, "title": p.title, "provider": p.provider,
+                    "active": view.snapshot.active_session_id.as_deref() == Some(p.id())})
+            }))
         }
         other => Err(format!("unknown smoke step {other}")),
     }

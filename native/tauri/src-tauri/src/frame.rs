@@ -4,9 +4,10 @@
 //! page-drawn dialogs' flows (`dialogs.rs`). Every action runs as C#'s `Act`: the error banner cleared first, what it fails with shown
 //! there (the call itself answers null).
 //!
-//! What another W4 module owns comes in through a seam set once at start: the files pane (`OPEN_FILES`, C# `OpenFilePane`) and the
-//! folder's earlier sessions (`RESUME`, C# `ResumableSessions`; the list's rows are `resumeRows`, which reads [`open_resume`]). Until
-//! one is set, the files entry does nothing and an agent pane starts new at once (nothing to continue).
+//! What another W4 module owns comes in through a seam main.rs sets once at start: the files pane (`OPEN_FILES`: files.rs's
+//! `open_files`, C# `OpenFilePane`) and the folder's earlier sessions (`RESUME`: history.rs's `HistoryResume` over mighty-history, C#
+//! `ResumableSessions`; the list's rows are history.rs's `resumeRows`, which reads [`open_resume`]). Until one is set, the files entry
+//! does nothing and an agent pane starts new at once (nothing to continue).
 
 use std::future::Future;
 use std::path::Path;
@@ -17,11 +18,12 @@ use std::sync::{Arc, Mutex, OnceLock};
 use mighty_core::add_pane::{self, inherit, save_layout, save_mode, save_selection};
 use mighty_core::layout;
 use mighty_core::model::{RunSession, Workspace};
-use mighty_core::normalize::{provider_name, shortened};
+use mighty_core::normalize::provider_name;
 use mighty_core::rename::{self, strings};
 use mighty_core::shell::{effective_layout, layout_mode, open_disclosure};
 use mighty_core::text_appearance::{self, Stored, TextAppearance};
 use mighty_core::{AppSnapshot, model_label};
+use mighty_history::{ResumableSession, resumable};
 use mighty_platform::{PrefValue, PrefsStore};
 use serde_json::{Value, json};
 use tauri::Manager;
@@ -35,23 +37,17 @@ pub type Pending = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 pub type OpenFiles = fn(Arc<Host>, Option<String>) -> Pending;
 pub static OPEN_FILES: OnceLock<OpenFiles> = OnceLock::new();
 
-/// One session the resume sheets offer (C# `ResumableSession`: the fields the flow reads).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResumableSession {
-    pub session_id: String,
-    pub provider: String,
-    pub title: Option<String>,
-}
-
-/// The folder's earlier sessions (C# `ResumableSessions`, `DesktopService.RememberSession`), from W4's session history module.
+/// The folder's earlier sessions (C# `ResumableSessions`, `DesktopService.RememberSession`): history.rs's `HistoryResume`.
 pub trait ResumeSource: Send + Sync {
     /// `AddAgentPane`'s look-up: the head of the newest record (`HeadOnly`, `MaximumSessions = 1`) of `provider`'s sessions the
     /// workspace's folder recorded, nested runs hidden. Called off the async workers; it may take long.
     fn head(&self, host: &Arc<Host>, provider: &str, workspace: &Workspace) -> Vec<ResumableSession>;
-    /// The session the list showed under `id` (from the listing its `resumeRows` read last), none when it showed none.
-    fn picked(&self, host: &Arc<Host>, id: &str) -> Option<ResumableSession>;
-    /// `RememberSession`: the list never hides a session this app's panes continued as an automated run.
-    fn remember(&self, host: &Arc<Host>, id: &str);
+    /// The list sheet opens ([`open_resume`] names its agent and folder): its rows are read afresh.
+    fn open(&self, host: &Arc<Host>);
+    /// The list sheet closed with the id of the row picked (none when it was cancelled): that session (from the listing its
+    /// `resumeRows` read last), remembered as the app's own (`RememberSession`: never hidden as an automated run), or the words why not
+    /// (another pane took it while the list was open: never two panes on one session); none when the list showed no such session.
+    fn picked(&self, host: &Arc<Host>, id: Option<&str>) -> Option<Result<ResumableSession, String>>;
 }
 
 pub static RESUME: OnceLock<Arc<dyn ResumeSource>> = OnceLock::new();
@@ -84,7 +80,6 @@ fn frame(host: &Host) -> Arc<Frame> {
 }
 
 /// The resume list the page shows now, for `resumeRows` (C# `webResume`).
-#[allow(dead_code, reason = "resumeRows (W4's session history module) reads it")]
 pub fn open_resume(host: &Host) -> Option<OpenResume> {
     lock(&frame(host).resume).clone()
 }
@@ -253,18 +248,6 @@ fn add_browser_pane(host: &Arc<Host>, group: Option<&str>) -> Result<(), String>
     .map(|_| ())
 }
 
-/// C# `ResumableSessions.Apply`: the pane continues the session, titled by it until it sends a request of its own.
-fn resumed(session: &ResumableSession, pane: RunSession) -> RunSession {
-    let title = shortened(session.title.as_deref().unwrap_or("")).or(pane.title.clone());
-    RunSession {
-        provider: Some(session.provider.clone()),
-        resume_id: Some(session.session_id.clone()),
-        title,
-        title_mode: Some(rename::AUTOMATIC.into()),
-        ..pane
-    }
-}
-
 /// C# `WebAddAgentPane` (and `AddAgentPane`): an agent pane from the menu; for an agent whose sessions can be continued, the folder's
 /// newest record is looked up first (off the workers), and with one no other pane continues, Start new / Resume… is asked (in its
 /// checking state when the look-up outlasts `QuietLookUp`, Start new working at once).
@@ -278,7 +261,7 @@ async fn add_agent_pane(host: &Arc<Host>, provider: &str, group: Option<String>)
         add_pane(host, "claude", provider, group.as_deref(), |pane| pane)?;
         return Ok(());
     };
-    if !add_pane::may_ask_resume(provider, true) {
+    if !resumable::may_ask_resume(provider, true) {
         add_pane(host, "claude", provider, group.as_deref(), |pane| pane)?;
         return Ok(());
     }
@@ -303,14 +286,14 @@ async fn ask_resume(host: &Arc<Host>, provider: &str, workspace: &Workspace, sou
     let (reader, owner, wanted, folder) = (source.clone(), host.clone(), provider.to_string(), workspace.clone());
     let mut reading = tauri::async_runtime::spawn_blocking(move || reader.head(&owner, &wanted, &folder));
     let asks = |host: &Arc<Host>, found: &[ResumableSession]| {
-        let in_use = add_pane::in_use(host.view().snapshot.sessions());
-        add_pane::asks_resume(provider, found.iter().map(|s| (s.provider.as_str(), s.session_id.as_str())), &in_use)
+        let in_use = resumable::in_use(host.view().snapshot.sessions().iter().map(|s| s.as_ref()));
+        resumable::asks_resume(provider, found, &in_use)
     };
     // The smoke answers every sheet itself, so it always waits for the look-up.
     let early = if host.smoke.is_some() {
         Some((&mut reading).await)
     } else {
-        tokio::time::timeout(std::time::Duration::from_millis(add_pane::QUIET_LOOK_UP_MS), &mut reading).await.ok()
+        tokio::time::timeout(std::time::Duration::from_millis(resumable::QUIET_LOOK_UP_MS), &mut reading).await.ok()
     };
     if host.view().snapshot.active_workspace_id.as_deref() != Some(workspace.id()) {
         return None;
@@ -347,8 +330,8 @@ async fn ask_resume(host: &Arc<Host>, provider: &str, workspace: &Workspace, sou
     answer_of(answer).await.as_str().map(str::to_string)
 }
 
-/// C# `WebPickResumedSession`: the list (its rows are `resumeRows`'), the pick checked against the panes open now, then a pane that
-/// continues it.
+/// C# `WebPickResumedSession`: the list (its rows are `resumeRows`'), the pick checked against the panes open now and remembered, then
+/// a pane that continues it (`ResumableSessions.Apply`: titled by the session until it sends a request of its own).
 async fn pick_resumed_session(
     host: &Arc<Host>,
     provider: &str,
@@ -361,20 +344,16 @@ async fn pick_resumed_session(
         let Some(_sheet) = Sheet::begin(host) else { return Ok(()) };
         *lock(&frame.resume) =
             Some(OpenResume { provider: provider.into(), workspace_id: workspace.id().into(), path: workspace.path().into() });
+        source.open(host);
         let (_, answer) = dialogs::of(host).open(json!({
             "type": "resumeList", "provider": provider, "title": host.locale.get("resume.title"), "path": workspace.path(),
         }));
         answer_of(answer).await
     };
-    let picked = result.as_str().and_then(|id| source.picked(host, id));
+    let picked = source.picked(host, result.as_str());
     *lock(&frame.resume) = None;
-    let Some(session) = picked else { return Ok(()) };
-    // Taken by another pane while the list was open: never two panes on one session.
-    if add_pane::in_use(host.view().snapshot.sessions()).contains(&session.session_id.to_lowercase()) {
-        return Err(host.locale.get("resume.error.inUse"));
-    }
-    source.remember(host, &session.session_id);
-    add_pane(host, "claude", &session.provider.clone(), group, |pane| resumed(&session, pane))?;
+    let Some(session) = picked.transpose()? else { return Ok(()) };
+    add_pane(host, "claude", &session.provider.clone(), group, |pane| resumable::apply(&session, &pane))?;
     Ok(())
 }
 
@@ -764,20 +743,6 @@ pub fn register(methods: &mut Registry) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_resumed_pane_is_titled_by_its_session_until_its_own_request() {
-        let session = ResumableSession { session_id: "abc".into(), provider: "codex".into(), title: Some("fix the\nbuild".into()) };
-        let pane =
-            resumed(&session, RunSession { title: Some("Claude Code".into()), title_mode: Some("fixed".into()), ..RunSession::default() });
-        assert_eq!(
-            (pane.provider(), pane.resume_id.as_deref(), pane.title(), pane.title_mode.as_deref()),
-            ("codex", Some("abc"), "fix the build", Some("auto"))
-        );
-        let untitled =
-            resumed(&ResumableSession { title: None, ..session }, RunSession { title: Some("Codex CLI".into()), ..RunSession::default() });
-        assert_eq!(untitled.title(), "Codex CLI");
-    }
 
     #[test]
     fn the_text_size_steps_and_resets() {

@@ -4,10 +4,11 @@
 //! - The Mighty view's older requests: each pane keeps a `SessionHistoryState` here (C# `PaneView.graphHistory`, in memory only, never
 //!   saved, dropped when the pane closes). [`older`] is `GraphHistoryRuns` and the history block's words for the projection
 //!   (`mighty.rs`); [`load_older`] is `LoadOlderGraphHistory`: the next chunk read off the page's thread and handed back.
-//! - The resume list's data: `resumeRows{search, all}` answers the page's list sheet from the folder's sessions, read off the page's thread
-//!   (again when "모든 세션 보기" changed). The sheets themselves (`resumeChoice`, `resumeList`) are the page-drawn dialogs' flow; it calls
-//!   [`look_up`] and [`asks_resume`] for the choice, [`open_resume_list`] before it pushes the list, then [`close_resume_list`] and
-//!   [`pick`] with the answered id, and adds the pane shaped by `mighty_history::resumable::apply`.
+//! - The resume sheets' source ([`HistoryResume`], frame.rs's `RESUME`): the frame's flow (`AddAgentPane`, `WebPickResumedSession`) asks
+//!   [`look_up`] for the choice sheet, calls [`open_resume_list`] when the list sheet opens, and [`close_resume_list`] and [`pick`] with
+//!   the answered id; it adds the pane shaped by `mighty_history::resumable::apply`. `resumeRows{search, all}` answers the list sheet
+//!   frame.rs says is open (`frame::open_resume`, C# `webResume`) from its folder's sessions, read off the page's thread (again when
+//!   "모든 세션 보기" changed).
 //! - The known sessions (`known-sessions.json`, C# `DesktopService.KnownSessions` / `RememberSession`): read once, added to when a pane
 //!   resumes or is picked; written only when the app may write its profile (`--allow-state-write`).
 
@@ -37,11 +38,10 @@ struct PaneHistory {
     load: Option<Arc<AtomicBool>>,
 }
 
-/// The resume list the page shows (C# `webResume`): its agent and workspace, what was read for it and whether every session was asked for.
+/// What was read for the resume list the page shows (C# `webResume.Listing`; its agent and folder are frame.rs's `open_resume`) and
+/// whether every session was asked for.
 struct ResumeList {
     serial: u64,
-    provider: String,
-    workspace: Workspace,
     listing: Option<ResumableSessionListing>,
     all: bool,
 }
@@ -235,7 +235,7 @@ pub fn remember_session(host: &Host, id: &str) {
 }
 
 /// `ResumeQuery(workspace)`: the folder's records under the CLI homes, open panes' sessions left out, the app's own never hidden.
-fn query(host: &Host, view: &View, workspace: &Workspace) -> ResumableSessionQuery {
+fn query(host: &Host, view: &View, folder: &str) -> ResumableSessionQuery {
     let history = of(host);
     let mut environment = history.environment();
     // opencode's and Hermes's databases move with these as the CLIs' own do; the smoke's own home stands alone.
@@ -248,7 +248,7 @@ fn query(host: &Host, view: &View, workspace: &Workspace) -> ResumableSessionQue
             }
         }
     }
-    let mut query = ResumableSessionQuery::new(workspace.path());
+    let mut query = ResumableSessionQuery::new(folder);
     query.environment = environment;
     query.home = history.home();
     query.excluding = resumable::in_use(view.snapshot.sessions().iter().map(|s| s.as_ref()));
@@ -257,36 +257,27 @@ fn query(host: &Host, view: &View, workspace: &Workspace) -> ResumableSessionQue
 }
 
 /// `AddAgentPane`'s look-up: whether the folder has a session of this agent to continue (the head of one record only, nested runs
-/// hidden, open panes' sessions left out), read off the page's thread. Any failure reading the records means nothing to offer.
-#[allow(dead_code, reason = "the add-pane flow (the page-drawn resumeChoice sheet) calls it; that flow is the workspace dialogs' stage")]
-pub async fn look_up(host: &Arc<Host>, provider: &str, workspace: &Workspace) -> ResumableSessionListing {
+/// hidden, open panes' sessions left out). It reads files: call it off the page's thread. Any failure reading the records means nothing
+/// to offer (`AddPaneMenu.AsksResume` then decides with the panes open when it ends).
+pub fn look_up(host: &Host, provider: &str, workspace: &Workspace) -> ResumableSessionListing {
     let mut query = {
         let view = host.view();
-        query(host, &view, workspace)
+        query(host, &view, workspace.path())
     };
     query.head_only = true;
     query.maximum_sessions = 1;
-    let provider = provider.to_string();
-    tauri::async_runtime::spawn_blocking(move || resumable::listing_of(&query, &provider, &mighty_history::Never)).await.unwrap_or_default()
+    resumable::listing_of(&query, provider, &mighty_history::Never)
 }
 
-/// `AddPaneMenu.AsksResume` with the open panes read now (a pane may have taken one while the look-up ran).
-#[allow(dead_code, reason = "the add-pane flow (the page-drawn resumeChoice sheet) calls it; that flow is the workspace dialogs' stage")]
-pub fn asks_resume(view: &View, provider: &str, listing: &ResumableSessionListing) -> bool {
-    let in_use = resumable::in_use(view.snapshot.sessions().iter().map(|s| s.as_ref()));
-    resumable::asks_resume(provider, &listing.items, &in_use)
-}
-
-/// `WebPickResumedSession`'s start: the list the page is about to show is this agent's for this workspace.
-pub fn open_resume_list(host: &Host, provider: &str, workspace: &Workspace) {
+/// `WebPickResumedSession`'s start: the list the page is about to show (frame.rs's `open_resume`) is read afresh.
+pub fn open_resume_list(host: &Host) {
     let history = of(host);
     let serial = {
         let mut serial = lock(&history.serial);
         *serial += 1;
         *serial
     };
-    *lock(&history.resume) =
-        Some(ResumeList { serial, provider: provider.into(), workspace: workspace.clone(), listing: None, all: false });
+    *lock(&history.resume) = Some(ResumeList { serial, listing: None, all: false });
 }
 
 /// The list was answered or closed: what it showed last (`listing = webResume?.Listing; webResume = null`).
@@ -305,31 +296,34 @@ pub fn pick(host: &Host, view: &View, listing: &ResumableSessionListing, session
     Some(Ok(session))
 }
 
-/// `WebResumeRows`: the resume list's rows for the page's search, read again when "모든 세션 보기" changed.
+/// `WebResumeRows`: the rows of the resume list frame.rs says is open (C# `webResume`) for the page's search, read again when "모든
+/// 세션 보기" changed; null when no list is open.
 async fn resume_rows(host: Arc<Host>, search: String, all: bool) -> Result<Value, String> {
+    let Some(crate::frame::OpenResume { provider, path, .. }) = crate::frame::open_resume(&host) else { return Ok(Value::Null) };
     let history = of(&host);
-    let (serial, provider, workspace, cached, cached_all) = {
-        let open = lock(&history.resume);
-        let Some(open) = open.as_ref() else { return Ok(Value::Null) };
-        (open.serial, open.provider.clone(), open.workspace.clone(), open.listing.clone(), open.all)
+    let (serial, cached, cached_all) = {
+        let list = lock(&history.resume);
+        let Some(list) = list.as_ref() else { return Ok(Value::Null) };
+        (list.serial, list.listing.clone(), list.all)
     };
     let listing = match cached {
         Some(listing) if cached_all == all => listing,
         _ => {
             let mut query = {
                 let view = host.view();
-                query(&host, &view, &workspace)
+                query(&host, &view, &path)
             };
             query.include_automated = all;
             let reading = provider.clone();
             let listing = tauri::async_runtime::spawn_blocking(move || resumable::listing_of(&query, &reading, &mighty_history::Never))
                 .await
                 .unwrap_or_default();
-            let mut open = lock(&history.resume);
-            match open.as_mut().filter(|o| o.serial == serial) {
-                Some(open) => {
-                    open.listing = Some(listing.clone());
-                    open.all = all;
+            // A list closed (or opened again) while this read is no longer the one shown.
+            let mut list = lock(&history.resume);
+            match list.as_mut().filter(|l| l.serial == serial) {
+                Some(list) => {
+                    list.listing = Some(listing.clone());
+                    list.all = all;
                 }
                 None => return Ok(Value::Null),
             }
@@ -378,6 +372,25 @@ async fn resume_rows(host: Arc<Host>, search: String, all: bool) -> Result<Value
         result.insert("empty".into(), json!(locale.get("resume.noMatch")));
     }
     Ok(Value::Object(result))
+}
+
+/// The resume sheets' source for frame.rs's flow (`frame::RESUME`): the look-up, a list read afresh each time it opens, the pick.
+pub struct HistoryResume;
+
+impl crate::frame::ResumeSource for HistoryResume {
+    fn head(&self, host: &Arc<Host>, provider: &str, workspace: &Workspace) -> Vec<ResumableSession> {
+        look_up(host, provider, workspace).items
+    }
+
+    fn open(&self, host: &Arc<Host>) {
+        open_resume_list(host);
+    }
+
+    fn picked(&self, host: &Arc<Host>, id: Option<&str>) -> Option<Result<ResumableSession, String>> {
+        let listing = close_resume_list(host)?;
+        let view = host.view();
+        pick(host, &view, &listing, id?)
+    }
 }
 
 pub fn register(methods: &mut Registry) {

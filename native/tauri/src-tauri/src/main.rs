@@ -236,6 +236,8 @@ fn main() {
             );
             // The files pane's state and the file originals, which the run engine keeps through it (files.rs).
             files::start(&host, originals_dir.clone());
+            // The frame's seam (frame.rs): an agent pane added from the menu offers the folder's earlier sessions through history.rs.
+            let _ = frame::RESUME.set(Arc::new(history::HistoryResume));
             // The run engine: the run service owns the state from here on (runs.rs).
             if let Some(fake) = &fake_claude
                 && let Some(folder) = fake.record.parent()

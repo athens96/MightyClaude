@@ -3,7 +3,7 @@
 //! `AddToLayout`, MainWindow.Layout.cs:172): the agents, a terminal, a browser tab and the files pane, then the three ways to add a
 //! workspace (open a folder, make a new one, create one from a Git address).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::layout::{self, MAXIMUM_SESSIONS};
@@ -30,12 +30,9 @@ pub const FROM_GIT_KEY: &str = "workspace.add.fromGit";
 pub const OPEN_FOLDER_SHORTCUT: &str = "Ctrl+O";
 /// `FilePaneKind.Shortcut`.
 pub const FILES_SHORTCUT: &str = "Ctrl+Shift+E";
-/// Ctrl+N adds a Claude pane at once.
+/// Ctrl+N adds a Claude pane at once (the resume rules, `MayAskResume`, `AsksResume` and `QuietLookUp`, are mighty-history's
+/// `resumable`).
 pub const NEW_PANE_SHORTCUT_PROVIDER: &str = "claude";
-/// `AddPaneMenu.QuietLookUp`: how long the look-up for earlier sessions runs before the choice sheet shows in its checking state.
-pub const QUIET_LOOK_UP_MS: u64 = 300;
-/// `ResumableSessions.Providers`: the agents whose earlier sessions can be continued.
-pub const RESUME_PROVIDERS: [&str; 6] = ["claude", "codex", "gemini", "pi", "opencode", "hermes"];
 
 /// `AddPaneMenu.Entries`: `agent:<provider>` for each agent, then the others.
 pub fn entries() -> Vec<String> {
@@ -77,27 +74,6 @@ pub fn filtered<'a>(workspaces: &'a [Workspace], search: Option<&str>) -> Vec<&'
 /// `AddPaneMenu.ShowsOpenFolderButton`: only when the list the sidebar shows is empty.
 pub fn shows_open_folder_button(workspaces: &[Workspace], search: Option<&str>) -> bool {
     filtered(workspaces, search).is_empty()
-}
-
-/// `ResumableSessions.OffersResume`.
-pub fn offers_resume(kind: &str, provider: &str) -> bool {
-    kind == "claude" && RESUME_PROVIDERS.contains(&provider)
-}
-
-/// `AddPaneMenu.MayAskResume`: only a pick from the menu, and only for an agent whose sessions can be continued.
-pub fn may_ask_resume(provider: &str, from_menu: bool) -> bool {
-    from_menu && offers_resume("claude", provider)
-}
-
-/// `ResumableSessions.InUse`: the sessions open panes continue, in lower case.
-pub fn in_use<'a>(sessions: impl IntoIterator<Item = &'a Arc<RunSession>>) -> HashSet<String> {
-    sessions.into_iter().filter(|s| s.kind() == "claude").filter_map(|s| s.resume_id.as_deref()).map(str::to_lowercase).collect()
-}
-
-/// `AddPaneMenu.AsksResume`: whether the look-up found a session of this agent (`(provider, session id)`) that no open pane
-/// continues.
-pub fn asks_resume<'a>(provider: &str, sessions: impl IntoIterator<Item = (&'a str, &'a str)>, in_use: &HashSet<String>) -> bool {
-    offers_resume("claude", provider) && sessions.into_iter().any(|(owner, id)| owner == provider && !in_use.contains(&id.to_lowercase()))
 }
 
 /// `ProviderCatalog.BetaLabel`: the badge rides in the text of a menu row.
@@ -304,24 +280,11 @@ mod tests {
         assert_eq!(filtered(&workspaces, Some("code")).iter().map(|w| w.name()).collect::<Vec<_>>(), ["MightyCode"]);
     }
 
-    /// `AddPaneMenuVerification.OnlyClaudeAndCodexFromTheMenuMayAskToResume`.
+    /// `AddPaneMenuVerification.OnlyClaudeAndCodexFromTheMenuMayAskToResume`'s Ctrl+N part (the rest is mighty-history's
+    /// resumable_sessions.rs).
     #[test]
-    fn only_resumable_agents_from_the_menu_may_ask_to_resume() {
-        assert!(may_ask_resume("claude", true) && may_ask_resume("codex", true));
-        assert!(may_ask_resume("gemini", true), "Antigravity may ask, as its conversations can be continued");
-        for provider in wire::PROVIDERS {
-            assert!(!may_ask_resume(provider, false), "{provider}: Ctrl+N starts at once");
-        }
+    fn ctrl_n_adds_a_claude_pane() {
         assert_eq!(NEW_PANE_SHORTCUT_PROVIDER, "claude");
-        assert!(!may_ask_resume("unknown", true));
-    }
-
-    #[test]
-    fn a_session_another_pane_continues_is_not_asked_about() {
-        let used: HashSet<String> = ["abc".to_string()].into();
-        assert!(!asks_resume("claude", [("claude", "ABC")], &used), "the ids compare without regard to case");
-        assert!(asks_resume("claude", [("claude", "ABC"), ("claude", "def")], &used));
-        assert!(!asks_resume("claude", [("codex", "def")], &used), "another agent's session is not this one's");
     }
 
     #[test]
