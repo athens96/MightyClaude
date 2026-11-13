@@ -4,6 +4,8 @@ import { useServices } from '../../app/context';
 import { PaneShownContext } from '../../pane/shown';
 import { listenPane } from '../channel';
 import { overlapsAny, overlayBoxes } from '../../shell/overlay';
+import { hostCapabilities } from '../../slot/host';
+import { useNativeSlot } from '../../slot/NativeSlot';
 import { sameBounds, slotBounds, type BrowserState, type SlotBounds } from './types';
 
 /**
@@ -21,6 +23,9 @@ export function BrowserView({ session }: { session: RunSession }) {
   const [state, setState] = useState<BrowserState>({ status: 'starting', canGoBack: false, canGoForward: false });
   const [address, setAddress] = useState('');
   const editing = useRef(false);
+  // The Rust host's build reports the slot over the NativeSlot protocol once its `host` push came (src/slot); the C# build has
+  // neither the call nor the module, and keeps browserBounds below.
+  if (import.meta.env.MODE === 'tauri') useNativeSlot(slot, paneId, 'browser');
 
   useEffect(() => {
     const stop = listenPane('browser', paneId, (message) => setState(message.state));
@@ -36,6 +41,7 @@ export function BrowserView({ session }: { session: RunSession }) {
   useEffect(() => {
     const element = slot.current;
     if (!element) return;
+    if (import.meta.env.MODE === 'tauri' && hostCapabilities()) return;
     let last: SlotBounds | undefined;
     let frame = 0;
     const measure = () => {

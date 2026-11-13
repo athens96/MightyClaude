@@ -3,6 +3,8 @@ import type { RunSession } from '../../store/models';
 import { useServices } from '../../app/context';
 import { PaneShownContext } from '../../pane/shown';
 import { MiddlePath } from '../../shell/parts';
+import { nativeTerminal, useHostCapabilities } from '../../slot/host';
+import { NativeSlot } from '../../slot/NativeSlot';
 import { fitShown, terminalEntry } from './entries';
 import type { TerminalFooter } from './types';
 
@@ -18,6 +20,8 @@ export function TerminalView({ session, fallback }: { session: RunSession; fallb
   const host = useRef<HTMLDivElement>(null);
   const paneId = session.id;
   const [footer, setFooter] = useState<TerminalFooter | undefined>(() => terminalEntry(paneId)?.footer);
+  // In the Rust host's build, a platform that draws terminals itself (the Mac's Ghostty) gets a NativeSlot instead of xterm.js.
+  if (import.meta.env.MODE === 'tauri') useHostCapabilities();
 
   useEffect(() => {
     let live = true;
@@ -25,6 +29,7 @@ export function TerminalView({ session, fallback }: { session: RunSession; fallb
       if (!live || !value) return;
       setFooter(value);
       if (!value.available) return;
+      if (import.meta.env.MODE === 'tauri' && nativeTerminal()) return;
       // xterm loads with the first terminal shown (its own chunk); the host appears with the first answer, so mount after both.
       void import('./registry').then(({ ensureTerminal, mountTerminal }) => requestAnimationFrame(() => {
         if (!live || !host.current) return;
@@ -66,7 +71,9 @@ export function TerminalView({ session, fallback }: { session: RunSession; fallb
   if (footer && !footer.available) return <>{fallback ?? null}</>;
   return (
     <div className="terminal-pane" data-testid="terminal-pane" data-pane-terminal={paneId}>
-      <div className="terminal-host" ref={host} aria-label={t('terminal.accessibility')} />
+      {import.meta.env.MODE === 'tauri' && nativeTerminal()
+        ? <NativeSlot paneId={paneId} surface="terminal" className="terminal-host" label={t('terminal.accessibility')} />
+        : <div className="terminal-host" ref={host} aria-label={t('terminal.accessibility')} />}
       {footer?.notice && (
         <div className="terminal-notice" data-testid="terminal-notice">
           <span className="terminal-notice-text">{footer.notice}</span>
