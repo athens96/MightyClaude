@@ -27,6 +27,7 @@ use mighty_core::model::PaneLayoutNode;
 use mighty_core::normalize;
 use mighty_core::shell::{Attention, RemoteConnection, Runtime, ShellContext, ShellModel, WorkspaceGitInfo, shell_model};
 use mighty_core::store::{Saver, Store};
+use mighty_platform::{ProcessHost, SpawnRequest};
 use serde_json::value::RawValue;
 use serde_json::{Map, Value, json};
 use tauri::{AppHandle, Emitter};
@@ -112,6 +113,8 @@ struct Outgoing {
 pub struct Host {
     pub app: AppHandle,
     pub data_dir: PathBuf,
+    /// Every child the host starts (`Platform::processes`; README: Child processes).
+    pub processes: Arc<dyn ProcessHost>,
     pub locale: Locale,
     pub version: String,
     pub log: LogFile,
@@ -135,6 +138,7 @@ impl Host {
     pub fn new(
         app: AppHandle,
         data_dir: PathBuf,
+        processes: Arc<dyn ProcessHost>,
         store: Store,
         locale: Locale,
         version: String,
@@ -194,6 +198,7 @@ impl Host {
         Arc::new(Host {
             app,
             data_dir,
+            processes,
             locale,
             version,
             log,
@@ -371,8 +376,8 @@ impl Host {
             (key, folder)
         };
         let host = self.clone();
-        std::thread::spawn(move || {
-            let info = read_git(&folder);
+        tauri::async_runtime::spawn(async move {
+            let info = read_git(host.processes.as_ref(), &folder).await;
             let mut view = host.view();
             if active_git_key(&view.snapshot).as_deref() == Some(key.as_str()) {
                 view.git = Some((key, info));
@@ -473,76 +478,74 @@ fn active_git_key(state: &AppSnapshot) -> Option<String> {
     (workspace.remote.is_none() && !workspace.path().is_empty()).then(|| format!("{}|{}", workspace.id(), workspace.path()))
 }
 
-/// C# `WorkspaceGitInfo.ReadAsync`: `git status --porcelain=v2 --branch` in the folder, locks, hooks and fsmonitor off, the
-/// `GIT_*` environment cleared, at most 2 s and 256 KB; None when git is not on PATH, the folder is gone or git fails.
-///
-/// The one spawn of the app that does not go through `Platform::processes` yet (README: Child processes): C# starts git with
-/// `ChildProcess.Start`, but the port cannot remove the app's `GIT_*` variables (its environment is laid over the app's) and the
-/// Mac's `ProcessHost` is still `Unsupported`. Until it moves, a git read that coincides with a Windows launch can hold that
-/// child's pipe ends open for as long as git runs (2 s at most).
-#[allow(clippy::disallowed_methods, reason = "the one named exception to the ProcessHost rule, until git reads move onto the port")]
-pub fn read_git(folder: &str) -> Option<WorkspaceGitInfo> {
-    use std::io::Read;
-    use std::process::{Command, Stdio};
+/// C# `WorkspaceGitInfo.ReadAsync` (WorkspaceGitInfo.cs:32-73): `git status --porcelain=v2 --branch` in the folder through the
+/// platform's `ProcessHost`, locks, hooks and fsmonitor off, every `GIT_*` variable of the app taken out of git's environment and
+/// three set (`Command`), stdin closed, at most 2 s and the first 256 KB of its output; None when git is not on PATH, the folder is
+/// gone, git cannot start (the Mac's `ProcessHost` is still `Unsupported`), runs too long or fails.
+pub async fn read_git(processes: &dyn ProcessHost, folder: &str) -> Option<WorkspaceGitInfo> {
+    use tokio::io::AsyncReadExt;
     if !normalize::fully_qualified(folder) || !std::path::Path::new(folder).is_dir() {
         return None;
     }
     let name = if cfg!(windows) { "git.exe" } else { "git" };
     let path = std::env::var_os("PATH")?;
     let binary = std::env::split_paths(&path).map(|p| p.join(name)).find(|p| p.is_file())?;
-    let mut command = Command::new(binary);
-    command
-        .args(["--no-optional-locks", "-c", "core.fsmonitor=false", "-c"])
-        .arg(if cfg!(windows) { "core.hooksPath=NUL" } else { "core.hooksPath=/dev/null" })
-        .args([
-            "-c",
-            "core.untrackedCache=false",
-            "-c",
-            "gc.auto=0",
-            "-C",
-            folder,
-            "status",
-            "--porcelain=v2",
-            "--branch",
-            "--untracked-files=normal",
-        ])
-        .current_dir(folder)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+    let hooks = if cfg!(windows) { "core.hooksPath=NUL" } else { "core.hooksPath=/dev/null" };
+    let arguments = [
+        "--no-optional-locks",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        hooks,
+        "-c",
+        "core.untrackedCache=false",
+        "-c",
+        "gc.auto=0",
+        "-C",
+        folder,
+        "status",
+        "--porcelain=v2",
+        "--branch",
+        "--untracked-files=normal",
+    ];
+    let mut request = SpawnRequest::new(binary, arguments, folder);
     for (key, _) in std::env::vars_os() {
-        if key.to_string_lossy().to_ascii_uppercase().starts_with("GIT_") {
-            command.env_remove(key);
+        let key = key.to_string_lossy().into_owned();
+        if key.to_ascii_uppercase().starts_with("GIT_") {
+            request = request.without(key);
         }
     }
-    command.env("GIT_OPTIONAL_LOCKS", "0").env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // CREATE_NO_WINDOW: no console flashes up for git.
-        command.creation_flags(0x0800_0000);
-    }
-    let mut child = command.spawn().ok()?;
-    let mut stdout = child.stdout.take()?;
-    let reader = std::thread::spawn(move || {
-        let mut output = Vec::new();
-        let _ = stdout.by_ref().take(262_144).read_to_end(&mut output);
-        output
-    });
-    let deadline = std::time::Instant::now() + Duration::from_secs(2);
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) if std::time::Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break None;
+    let request = request.env("GIT_OPTIONAL_LOCKS", "0").env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C");
+    let mut child = processes.spawn(request).await.ok()?;
+    drop(child.stdin.take());
+    let control = child.control();
+    let (stdout, stderr) = (child.stdout.take(), child.stderr.take());
+    // ReadBounded: the first 256 KB kept, the rest drained so git never blocks on a full pipe.
+    async fn bounded(reader: Option<mighty_platform::process::ChildReader>, keep: usize) -> Vec<u8> {
+        let mut kept = Vec::new();
+        let Some(mut reader) = reader else { return kept };
+        let mut buffer = [0u8; 4096];
+        while let Ok(read) = reader.read(&mut buffer).await {
+            if read == 0 {
+                break;
             }
+            let room = keep.saturating_sub(kept.len());
+            kept.extend_from_slice(&buffer[..read.min(room)]);
         }
-    };
-    let output = reader.join().ok()?;
-    if !status?.success() {
+        kept
+    }
+    let waiting = control.clone();
+    // Both pipes are read while git runs, as C# starts its readers before it waits.
+    let outcome = tokio::time::timeout(Duration::from_secs(2), async move {
+        let (exit, output, _) = tokio::join!(waiting.wait(), bounded(stdout, 262_144), bounded(stderr, 0));
+        (exit, output)
+    })
+    .await;
+    // `finally { process.Kill(); }`, then `await using` disposes it.
+    control.kill();
+    let _ = control.close().await;
+    let (exit, output) = outcome.ok()?;
+    if exit.ok()? != 0 {
         return None;
     }
     WorkspaceGitInfo::parse(&String::from_utf8_lossy(&output))

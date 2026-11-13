@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,6 +23,10 @@ pub struct SpawnRequest {
     /// Laid over this process's environment, name by name (Windows compares names ignoring case). An empty value stays set and
     /// empty: that is how a credential a fresh shell profile dropped is kept from being inherited (C# `WindowsShellEnvironment.Merge`).
     pub env: BTreeMap<String, String>,
+    /// Names taken out of this process's environment before `env` is laid over it (Windows compares names ignoring case): the
+    /// child's environment holds none of them unless `env` sets one again (C# `ProcessStartInfo.Environment.Remove`, as
+    /// `WorkspaceGitInfo.Command` clears the app's `GIT_*` variables).
+    pub env_remove: Vec<String>,
     /// Windows only: run `program` (cmd.exe) as `cmd.exe /d /s /c "<command>"` — how a `.cmd`/`.bat` shim starts. Elsewhere the
     /// spawn answers `Invalid`.
     pub shell_command: Option<String>,
@@ -38,12 +42,19 @@ impl SpawnRequest {
             args: args.into_iter().map(Into::into).collect(),
             cwd: cwd.into(),
             env,
+            env_remove: Vec::new(),
             shell_command: None,
         }
     }
 
     pub fn env(mut self, name: impl Into<String>, value: impl Into<String>) -> SpawnRequest {
         self.env.insert(name.into(), value.into());
+        self
+    }
+
+    /// Takes `name` out of the environment the child inherits ([`SpawnRequest::env_remove`]).
+    pub fn without(mut self, name: impl Into<String>) -> SpawnRequest {
+        self.env_remove.push(name.into());
         self
     }
 }
@@ -56,6 +67,7 @@ impl fmt::Debug for SpawnRequest {
             .field("args", &self.args.len())
             .field("cwd", &self.cwd)
             .field("env", &self.env.keys().collect::<Vec<_>>())
+            .field("env_remove", &self.env_remove)
             .field("shell_command", &self.shell_command.is_some())
             .finish()
     }
@@ -125,8 +137,33 @@ pub trait ChildControl: Send + Sync {
 ///   dies when the app's job handle closes — at [`ChildControl::close`], or when the app exits or crashes. On the Mac the child leads
 ///   a new process group that `kill` signals whole.
 /// - Only the given pipes are inherited (no other handle of the app leaks into the child).
+/// - `env_remove` names are gone from the child's environment before `env` is laid over it.
 pub trait ProcessHost: Send + Sync {
     fn spawn(&self, request: SpawnRequest) -> BoxFuture<'_, Result<Child>>;
+
+    /// How a CLI found at `program` starts with `args` (C# `ProviderCatalog.StartCli`): `env` laid over this process's environment,
+    /// then `NO_COLOR=1`. Here the program runs directly; Windows runs a `.cmd`/`.bat` shim (npm's `pi.cmd`) through
+    /// `cmd.exe /d /s /c` with every argument quoted, and stops cmd.exe looking in the working folder (C# `WindowsCommand.Launch`).
+    fn cli_request(&self, program: &Path, args: &[String], cwd: &Path, env: &BTreeMap<String, String>) -> Result<SpawnRequest> {
+        let mut request = SpawnRequest::new(program, args.iter().cloned(), cwd);
+        for (name, value) in env {
+            request.env.insert(name.clone(), value.clone());
+        }
+        request.env.insert("NO_COLOR".to_string(), "1".to_string());
+        Ok(request)
+    }
+
+    /// A shell pane's one-shot command (C# `RunManager.ExecuteAsync`, the `shell` kind): `/bin/sh -c <command>` here; on Windows
+    /// `%ComSpec% /d /s /c "<command>"`, the command handed to cmd.exe as it was typed. `env` is laid over this process's
+    /// environment, then `NO_COLOR=1`.
+    fn shell_request(&self, command: &str, cwd: &Path, env: &BTreeMap<String, String>) -> SpawnRequest {
+        let mut request = SpawnRequest::new("/bin/sh", ["-c", command], cwd);
+        for (name, value) in env {
+            request.env.insert(name.clone(), value.clone());
+        }
+        request.env.insert("NO_COLOR".to_string(), "1".to_string());
+        request
+    }
 }
 
 /// What [`capture`] collected.

@@ -199,6 +199,7 @@ pub fn launch(
         args: if batch { vec![] } else { arguments.to_vec() },
         cwd: working_directory.to_path_buf(),
         env,
+        env_remove: Vec::new(),
         shell_command: if batch { Some(batch_command_line(resolved, arguments)?) } else { None },
     })
 }

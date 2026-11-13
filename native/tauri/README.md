@@ -112,10 +112,12 @@ suspended, put in a kill-on-close job, only its three pipe ends inherited). A `s
 spawn passes `bInheritHandles = TRUE` with no handle list, so one that runs while `WindowsProcessHost` launches a child inherits
 that child's pipe ends and keeps its stdin, stdout and stderr open after the child has closed them. `clippy.toml` therefore
 disallows `std::process::Command::new` and `tokio::process::Command::new`, and `cargo clippy -- -D warnings` fails on either. Only
-tests, the fakes and the tests' stand-in child (`mighty-fake-child`) start processes directly, each with an
-`#[allow(clippy::disallowed_methods, reason = "…")]`. One exception is left in the app, named the same way: `host.rs`'s
-`read_git` (the header's git status), until the port can remove the app's `GIT_*` variables as C# does and the Mac has a
-`ProcessHost`.
+tests, the fakes and the tests' stand-in children (`mighty-fake-child`, `mighty-fake-cli`) start processes directly, each with an
+`#[allow(clippy::disallowed_methods, reason = "…")]`; the app has no exception. A `SpawnRequest` names the variables the child
+must not inherit (`env_remove`, `without`): `host.rs`'s `read_git` (the header's git status) takes the app's `GIT_*` variables out
+of git's environment that way, as C# `WorkspaceGitInfo.Command` does (on the Mac it reads nothing until its `ProcessHost` exists).
+`ProcessHost::cli_request` and `shell_request` say how an agent CLI and a shell pane's command start on each OS (Windows: a
+`.cmd` shim and the command through `cmd.exe /d /s /c`).
 
 The frame model (`shell.rs`) ports C# `WebShellModel` whole, field for field: the panes (status word, tone, agent mark, the
 "· 20 days ago" / clock / context meta, the waiting words, the dashboard meta with the model's label), the counts, the sidebar with

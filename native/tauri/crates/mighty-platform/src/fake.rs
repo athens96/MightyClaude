@@ -147,6 +147,9 @@ impl ProcessHost for FakeProcessHost {
             if !request.cwd.is_absolute() || !request.program.is_absolute() {
                 return Err(PlatformError::Invalid("the program and the working folder need absolute paths".into()));
             }
+            if request.env_remove.iter().any(|name| name.is_empty() || name.contains(['=', '\0'])) {
+                return Err(PlatformError::Invalid("invalid child environment".into()));
+            }
             let script = lock(&self.scripts).pop_front().unwrap_or_default();
             lock(&self.spawned).push(request);
             let input = Arc::new(Mutex::new(Vec::new()));

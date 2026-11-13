@@ -141,7 +141,18 @@ fn main() {
         .setup(move |app| {
             let (state, banner, log, smoke) = parts.take().expect("setup runs once");
             let version = app.package_info().version.to_string();
-            let host = Host::new(app.handle().clone(), data_dir.clone(), state, locale, version, banner, log, smoke, methods::registry());
+            let host = Host::new(
+                app.handle().clone(),
+                data_dir.clone(),
+                platform.processes.clone(),
+                state,
+                locale,
+                version,
+                banner,
+                log,
+                smoke,
+                methods::registry(),
+            );
             host.start_clocks();
             let (inbound, mut calls) = tokio::sync::mpsc::unbounded_channel::<Value>();
             app.manage(Inbound(inbound));

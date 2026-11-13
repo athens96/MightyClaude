@@ -50,6 +50,47 @@ async fn windows_job_object_handles_unicode_and_kills_descendants_after_parent_e
     remove_when_free(&directory).await;
 }
 
+/// `env_remove` takes names out of the app's environment before `env` is laid over it, ignoring case as Windows does
+/// (`WorkspaceGitInfo.Command`'s `info.Environment.Remove` of every `GIT_*` name, then its own three): a removed name the request
+/// sets again has the request's value; `cli_request` and `shell_request` start a program and cmd.exe as C# does.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_removed_variable_is_not_inherited_and_one_set_again_has_its_new_value() {
+    let host = WindowsProcessHost::new();
+    let directory = temp("env-remove");
+    assert!(std::env::var_os("PATH").is_some() && std::env::var_os("ComSpec").is_some(), "the test reads two inherited names");
+    let file = directory.join("env.txt");
+    let request =
+        fake_request(&["--print-env", &file.to_string_lossy()], &directory).without("path").without("COMSPEC").env("ComSpec", "again");
+    let child = host.spawn(request).await.unwrap();
+    assert_eq!(tokio::time::timeout(Duration::from_secs(10), child.wait()).await.unwrap().unwrap(), 0);
+    child.close().await.unwrap();
+    let text = std::fs::read_to_string(&file).unwrap();
+    let entries: Vec<&str> = text.split('\0').collect();
+    assert!(!entries.iter().any(|entry| entry.to_ascii_uppercase().starts_with("PATH=")), "a removed name is gone, whatever its case");
+    assert!(entries.iter().any(|entry| entry.eq_ignore_ascii_case("COMSPEC=again")), "a name set again has its new value");
+    assert!(entries.contains(&"NO_COLOR=1"));
+    assert!(host.spawn(fake_request(&["--echo"], &directory).without("")).await.is_err(), "an empty name is refused");
+
+    let cli = host.cli_request(&fake(), &["--echo".to_string()], &directory, &Default::default()).unwrap();
+    assert!(cli.shell_command.is_none() && cli.program == fake() && cli.env.get("NO_COLOR").map(String::as_str) == Some("1"));
+    let shim = host
+        .cli_request(std::path::Path::new(r"C:\npm\pi.cmd"), &["--mode".to_string(), "rpc".to_string()], &directory, &Default::default())
+        .unwrap();
+    assert_eq!(
+        shim.shell_command.as_deref(),
+        Some("\"C:\\npm\\pi.cmd\" \"--mode\" \"rpc\""),
+        "a shim runs through cmd.exe, each argument quoted"
+    );
+    assert_eq!(shim.env.get("NoDefaultCurrentDirectoryInExePath").map(String::as_str), Some("1"));
+    let shell = host.shell_request("echo 안녕", &directory, &Default::default());
+    let mut shell_child = host.spawn(shell).await.unwrap();
+    drop(shell_child.stdin.take());
+    let output = tokio::time::timeout(Duration::from_secs(5), read_all(shell_child.stdout.take())).await.expect("output in time");
+    assert!(String::from_utf8_lossy(&output).contains("안녕"));
+    shell_child.close().await.unwrap();
+    remove_when_free(&directory).await;
+}
+
 /// The grandchild dies with the job: a `--group-child` whose own child was started with no job of its own (std's spawn) is
 /// killed, grandchild and all, by `kill`, and a close after it finds the job empty.
 #[tokio::test(flavor = "multi_thread")]
