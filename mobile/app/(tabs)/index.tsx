@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,15 +6,15 @@ import { describeRepairNeeded } from '@/api/relay/transport';
 import { LiveDot, reachabilityKeys } from '@/components/host-status';
 import { HostWorkspaces } from '@/components/host-workspaces';
 import { Icon } from '@/components/icons';
-import { PickerSheet } from '@/components/sheets';
 import { EmptyState, ErrorBanner, ScreenTitle } from '@/components/ui';
-import { countStats, resolveSelectedHost } from '@/lib/dashboard';
+import { countStats, sumStats } from '@/lib/dashboard';
 import { t } from '@/lib/i18n';
 import { refreshHostPoll, useDashboardStore } from '@/store/dashboard';
-import { useHostsStore } from '@/store/hosts';
-import { useHostState } from '@/store/live';
+import { useHostsStore, type PairedHost } from '@/store/hosts';
+import { useHostState, useLiveStore } from '@/store/live';
 import {
   cardShadow,
+  headingFontFamily,
   layout,
   radius,
   spacing,
@@ -66,26 +66,70 @@ function StatTile({
   );
 }
 
-/** "현황": status first — which host, how many panes run, wait and are done, then every pane. */
+/**
+ * One paired computer in "현황": its name with the live dot (the row opens the host), its repair or poll banner, and
+ * its workspaces with their panes, as the Mac and Windows sidebars list each computer.
+ */
+function HostSection({ host }: { host: PairedHost }) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  const state = useHostState(host.id);
+  const poll = useDashboardStore((store) => store.polls[host.id]);
+  const reachability = useHostsStore((store) => store.status[host.id]?.reachability ?? 'unknown');
+  const name = state?.hostName || host.name;
+  const needsRepair = poll?.needsRepair || reachability === 'unauthorized';
+  return (
+    <View
+      accessibilityLabel={t('phone.dashboard.hostChip', { name, status: t(reachabilityKeys[reachability]) })}
+      style={styles.section}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t('phone.sessions.openHost', { name })}
+        accessibilityHint={t(reachabilityKeys[reachability])}
+        hitSlop={{ bottom: 8, top: 8 }}
+        onPress={() => router.push(`/host/${host.id}`)}
+        style={({ pressed }) => [styles.hostRow, pressed && styles.pressed]}
+      >
+        <LiveDot palette={palette} reachability={reachability} />
+        <Text numberOfLines={1} style={styles.hostName}>
+          {name}
+        </Text>
+        <View style={styles.chevron}>
+          <Icon name="arrow" color={palette.textFaint} size={16} strokeWidth={2.4} />
+        </View>
+      </Pressable>
+      {needsRepair ? (
+        <ErrorBanner message={describeRepairNeeded(poll?.error)} />
+      ) : poll?.error ? (
+        <ErrorBanner message={poll.error} />
+      ) : null}
+      <HostWorkspaces
+        hostId={host.id}
+        state={state}
+        loading={poll?.loading ?? true}
+        glance
+        onCreated={() => refreshHostPoll(host.id)}
+      />
+    </View>
+  );
+}
+
+/**
+ * "현황": every paired computer at once — the counts of running, waiting and finished panes summed over all of them,
+ * then one section per computer with its workspaces and panes.
+ */
 export default function DashboardTab() {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const hosts = useHostsStore((store) => store.hosts);
   const loaded = useHostsStore((store) => store.loaded);
-  const selectedId = useDashboardStore((store) => store.selectedHostId);
-  const selectHost = useDashboardStore((store) => store.selectHost);
-  const hostId = resolveSelectedHost(hosts, selectedId);
-  const host = hosts.find((entry) => entry.id === hostId);
-  const state = useHostState(hostId);
-  const poll = useDashboardStore((store) => (hostId ? store.polls[hostId] : undefined));
-  const reachability = useHostsStore((store) =>
-    hostId ? (store.status[hostId]?.reachability ?? 'unknown') : 'unknown',
+  const states = useLiveStore((store) => store.states);
+  const refreshing = useDashboardStore((store) =>
+    hosts.some((host) => store.polls[host.id]?.loading === true),
   );
-  const [picking, setPicking] = useState(false);
-  const stats = useMemo(() => countStats(state), [state]);
-  const hostName = state?.hostName || host?.name || '';
-  const needsRepair = poll?.needsRepair || reachability === 'unauthorized';
+  const stats = useMemo(() => sumStats(hosts.map((host) => countStats(states[host.id]))), [hosts, states]);
 
   return (
     <View style={styles.screen}>
@@ -96,35 +140,16 @@ export default function DashboardTab() {
         ]}
         refreshControl={
           <RefreshControl
-            refreshing={poll?.loading ?? false}
-            onRefresh={() => refreshHostPoll(hostId)}
+            refreshing={refreshing}
+            onRefresh={() => hosts.forEach((host) => refreshHostPoll(host.id))}
             tintColor={palette.accent}
           />
         }
       >
         <View style={styles.topRow}>
-          {host ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('phone.dashboard.hostChip', {
-                name: hostName,
-                status: t(reachabilityKeys[reachability]),
-              })}
-              accessibilityHint={hosts.length > 1 ? t('phone.dashboard.pickHost') : undefined}
-              disabled={hosts.length < 2}
-              hitSlop={{ bottom: 8, top: 8 }}
-              onPress={() => setPicking(true)}
-              style={({ pressed }) => [styles.hostChip, pressed && styles.pressed]}
-            >
-              <LiveDot palette={palette} reachability={reachability} />
-              <Text numberOfLines={1} style={styles.hostName}>
-                {hostName}
-              </Text>
-              {hosts.length > 1 ? <Icon name="chevronDown" color={palette.textFaint} size={14} strokeWidth={2.6} /> : null}
-            </Pressable>
-          ) : (
-            <View />
-          )}
+          <View style={styles.titleWrap}>
+            <ScreenTitle title={t('phone.dashboard.title')} />
+          </View>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t('phone.hosts.addHost')}
@@ -136,28 +161,16 @@ export default function DashboardTab() {
           </Pressable>
         </View>
 
-        <ScreenTitle title={t('phone.dashboard.title')} />
-
-        <View style={styles.stats}>
-          <StatTile count={stats.running} label={t('phone.dashboard.stat.running')} tone="run" wide />
-          <StatTile count={stats.waiting} label={t('phone.dashboard.stat.waiting')} tone="wait" />
-          <StatTile count={stats.done} label={t('phone.dashboard.stat.done')} tone="done" quiet />
-        </View>
-
-        {needsRepair ? (
-          <ErrorBanner message={describeRepairNeeded(poll?.error)} />
-        ) : poll?.error ? (
-          <ErrorBanner message={poll.error} />
+        {hosts.length > 0 ? (
+          <View style={styles.stats}>
+            <StatTile count={stats.running} label={t('phone.dashboard.stat.running')} tone="run" wide />
+            <StatTile count={stats.waiting} label={t('phone.dashboard.stat.waiting')} tone="wait" />
+            <StatTile count={stats.done} label={t('phone.dashboard.stat.done')} tone="done" quiet />
+          </View>
         ) : null}
 
-        {hostId ? (
-          <HostWorkspaces
-            hostId={hostId}
-            state={state}
-            loading={poll?.loading ?? true}
-            glance
-            onCreated={() => refreshHostPoll(hostId)}
-          />
+        {hosts.length > 0 ? (
+          hosts.map((host) => <HostSection key={host.id} host={host} />)
         ) : loaded ? (
           <EmptyState
             title={t('phone.hosts.empty.title')}
@@ -167,20 +180,6 @@ export default function DashboardTab() {
           />
         ) : null}
       </ScrollView>
-
-      <PickerSheet
-        visible={picking}
-        title={t('phone.dashboard.pickHost')}
-        options={hosts.map((entry) => ({ id: entry.id, label: entry.name }))}
-        selectedId={hostId}
-        busy={false}
-        locked={false}
-        onSelect={(id) => {
-          selectHost(id);
-          setPicking(false);
-        }}
-        onClose={() => setPicking(false)}
-      />
     </View>
   );
 }
@@ -188,21 +187,9 @@ export default function DashboardTab() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    content: { gap: spacing.md, paddingHorizontal: layout.gutter },
-    topRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-    hostChip: {
-      ...cardShadow,
-      alignItems: 'center',
-      backgroundColor: palette.surface,
-      borderRadius: radius.round,
-      flexDirection: 'row',
-      flexShrink: 1,
-      gap: spacing.md,
-      paddingLeft: spacing.md,
-      paddingRight: spacing.lg,
-      paddingVertical: spacing.sm,
-    },
-    hostName: { color: palette.text, flexShrink: 1, fontSize: 13, fontWeight: '700' },
+    content: { gap: spacing.lg, paddingHorizontal: layout.gutter },
+    topRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md, justifyContent: 'space-between' },
+    titleWrap: { flex: 1, flexShrink: 1 },
     circle: {
       ...cardShadow,
       alignItems: 'center',
@@ -223,4 +210,21 @@ const makeStyles = (palette: Palette) =>
     tileWide: { flex: 1.25 },
     tileCount: { ...typeScale.number },
     tileLabel: { fontSize: 12, fontWeight: '700' },
+    section: { gap: spacing.sm, marginTop: spacing.sm },
+    hostRow: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.xs,
+      paddingVertical: spacing.xs,
+    },
+    hostName: {
+      color: palette.text,
+      flex: 1,
+      fontFamily: headingFontFamily,
+      fontSize: 20,
+      fontWeight: '700',
+      letterSpacing: -0.3,
+    },
+    chevron: { opacity: 0.9 },
   });

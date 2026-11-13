@@ -44,8 +44,7 @@ Windows PC에서도 같습니다. 다만 Windows 방화벽이 연결을 막지 �
 
 | 탭 | 내용 |
 |---|---|
-| {{ui:phone.tabs.dashboard}} | {{ui:phone.dashboard.title}}: 실행 중, 응답 대기, 완료 개수와 세션 카드 |
-| {{ui:phone.tabs.sessions}} | 모든 워크스페이스와 세션. 세션을 열어 대화를 보고 요청을 보냅니다. |
+| {{ui:phone.tabs.dashboard}} | {{ui:phone.dashboard.title}}: 연결한 모든 컴퓨터의 실행 중, 응답 대기, 완료 개수를 합쳐 보이고, 그 아래 컴퓨터마다 워크스페이스와 세션을 차례로 보입니다. 세션을 열어 대화를 보고 요청을 보냅니다. |
 | {{ui:phone.tabs.alerts}} | 답이 필요한 승인·질문과 끝난 작업 |
 | {{ui:phone.tabs.hosts}} | 연결한 Mac과 연결 상태 |
 

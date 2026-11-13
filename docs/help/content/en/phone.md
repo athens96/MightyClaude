@@ -44,8 +44,7 @@ The phone app has four tabs.
 
 | Tab | What it shows |
 |---|---|
-| {{ui:phone.tabs.dashboard}} | {{ui:phone.dashboard.title}}: counts of running, waiting and finished work, and session cards |
-| {{ui:phone.tabs.sessions}} | Every workspace and session. Open one to read the conversation and send requests. |
+| {{ui:phone.tabs.dashboard}} | {{ui:phone.dashboard.title}}: the counts of running, waiting and finished work across every paired computer, then each computer's workspaces and sessions in turn. Open a session to read the conversation and send requests. |
 | {{ui:phone.tabs.alerts}} | Approvals and questions waiting for you, and finished work |
 | {{ui:phone.tabs.hosts}} | Your paired Macs and whether they are connected |
 

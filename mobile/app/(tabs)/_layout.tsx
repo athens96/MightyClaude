@@ -88,13 +88,6 @@ export default function TabsLayout() {
           }}
         />
         <Tabs.Screen
-          name="sessions"
-          options={{
-            title: t('phone.tabs.sessions'),
-            tabBarIcon: ({ color }) => <Icon name="sessions" color={color} />,
-          }}
-        />
-        <Tabs.Screen
           name="alerts"
           options={{
             title: t('phone.tabs.alerts'),

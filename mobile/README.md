@@ -268,7 +268,7 @@ Mac·Windows의 결과 옆 패널과 같은 함수로 호스트가 찾은 워크
 
 ### 워크스페이스 파일 (`files`)
 
-작업 공간 머리(현황·세션 탭과 호스트 화면)의 `파일`을 누르면 Mac 파일 창과 같은 규칙으로 그 워크스페이스를
+작업 공간 머리(현황 탭과 호스트 화면)의 `파일`을 누르면 Mac 파일 창과 같은 규칙으로 그 워크스페이스를
 **읽기만** 합니다(`app/host/[hostId]/workspace/[workspaceId]/files.tsx`·`file.tsx`). 계약과 한도는
 `docs/mobile-remote.md`의 "파일", 화면 규칙은 `docs/file-pane.md`의 "휴대폰"에 있습니다.
 
@@ -368,8 +368,7 @@ index.js                 JS 진입점: 기본 오류 처리기, 백그라운드 
 app/                     expo-router 화면
   _layout.tsx            루트 스택 + 시스템 테마 연동 + crypto 폴리필
   (tabs)/_layout.tsx     하단 탭 바 + 호스트별 세션 목록 롱폴(HostPoller) + 첫 실행 안내로 보내기
-  (tabs)/index.tsx       현황 ("/": 호스트 칩, 작업 현황 타일, 세션 카드)
-  (tabs)/sessions.tsx    세션 (모든 호스트의 작업 공간과 세션 카드)
+  (tabs)/index.tsx       현황 ("/": 모든 호스트를 더한 작업 현황 타일, 호스트마다 작업 공간과 세션 카드)
   (tabs)/alerts.tsx      알림 (질문·권한·오류·끝난 실행)
   (tabs)/hosts.tsx       호스트 목록 (예전 "/")
   pair.tsx               QR/수동 페어링 (v2)

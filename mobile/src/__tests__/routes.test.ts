@@ -71,9 +71,9 @@ it('keeps every link the app and the Mac hand out', () => {
   );
 });
 
-it('puts the four tabs under one group at the root, with 현황 on "/"', () => {
+it('puts the three tabs under one group at the root, with 현황 on "/" (the 세션 tab is part of 현황 now)', () => {
   const tabs = (root as RouteNode).children.find((child) => child.route === '(tabs)');
-  expect(tabs?.children.map((child) => child.route).sort()).toEqual(['alerts', 'hosts', 'index', 'sessions']);
+  expect(tabs?.children.map((child) => child.route).sort()).toEqual(['alerts', 'hosts', 'index']);
   expect(urls(tabs as RouteNode)).toContain('/');
 });
 

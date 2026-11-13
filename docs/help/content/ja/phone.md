@@ -44,8 +44,7 @@ Windows PC でも同じです。ただし接続が遮断されないよう、Win
 
 | タブ | 内容 |
 |---|---|
-| {{ui:phone.tabs.dashboard}} | {{ui:phone.dashboard.title}}: 実行中、対応待ち、完了の件数とセッションのカード |
-| {{ui:phone.tabs.sessions}} | すべてのワークスペースとセッション。セッションを開いて会話を確認し、リクエストを送信します。 |
+| {{ui:phone.tabs.dashboard}} | {{ui:phone.dashboard.title}}: ペアリングしたすべてのコンピューターの実行中、対応待ち、完了の件数を合計して表示し、その下にコンピューターごとのワークスペースとセッションを順に表示します。セッションを開いて会話を確認し、リクエストを送信します。 |
 | {{ui:phone.tabs.alerts}} | 回答が必要な許可・質問と、終わったタスク |
 | {{ui:phone.tabs.hosts}} | 接続したMacと接続状態 |
 

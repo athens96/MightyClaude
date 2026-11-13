@@ -44,8 +44,7 @@ Windows 电脑也一样，只是需要一条 Windows 防火墙规则，以免连
 
 | 标签页 | 内容 |
 |---|---|
-| {{ui:phone.tabs.dashboard}} | {{ui:phone.dashboard.title}}：运行中、待你处理和已完成的数量，以及会话卡片 |
-| {{ui:phone.tabs.sessions}} | 所有工作区和会话。打开会话可以查看对话并发送请求。 |
+| {{ui:phone.tabs.dashboard}} | {{ui:phone.dashboard.title}}：所有已配对电脑的运行中、待你处理和已完成数量合计，下面依次列出每台电脑的工作区和会话。打开会话可以查看对话并发送请求。 |
 | {{ui:phone.tabs.alerts}} | 需要你回复的批准和提问，以及已完成的任务 |
 | {{ui:phone.tabs.hosts}} | 已连接的 Mac 及其连接状态 |
 

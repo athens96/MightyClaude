@@ -230,11 +230,10 @@ export function relativeAge(updatedAt: string, now: number): { unit: AgeUnit; co
   return { unit: 'days', count: Math.floor(hours / 24) };
 }
 
-/** The host the "현황" tab shows: the one picked, or the first paired one. */
-export function resolveSelectedHost(
-  hosts: readonly { id: string }[],
-  selectedId: string | undefined,
-): string | undefined {
-  if (selectedId && hosts.some((host) => host.id === selectedId)) return selectedId;
-  return hosts[0]?.id;
+/** The counts of several hosts' panes added together: "현황" shows every paired computer at once. */
+export function sumStats(list: readonly DashboardStats[]): DashboardStats {
+  return list.reduce(
+    (total, stats) => ({ running: total.running + stats.running, waiting: total.waiting + stats.waiting, done: total.done + stats.done }),
+    { running: 0, waiting: 0, done: 0 },
+  );
 }

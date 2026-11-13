@@ -14,7 +14,7 @@ import {
   freshGlance,
   liveElapsed,
   relativeAge,
-  resolveSelectedHost,
+  sumStats,
   sessionTone,
 } from '@/lib/dashboard';
 import { countAttention } from '@/lib/merge';
@@ -275,13 +275,9 @@ describe('relativeAge', () => {
   });
 });
 
-describe('resolveSelectedHost', () => {
-  const hosts = [{ id: 'a' }, { id: 'b' }];
-
-  it('keeps the picked host while it is paired and falls back to the first otherwise', () => {
-    expect(resolveSelectedHost(hosts, 'b')).toBe('b');
-    expect(resolveSelectedHost(hosts, 'gone')).toBe('a');
-    expect(resolveSelectedHost(hosts, undefined)).toBe('a');
-    expect(resolveSelectedHost([], 'a')).toBeUndefined();
+describe('sumStats', () => {
+  it('adds every host\'s counts together, and is all zero for no host', () => {
+    expect(sumStats([{ running: 2, waiting: 1, done: 3 }, { running: 1, waiting: 0, done: 4 }])).toEqual({ running: 3, waiting: 1, done: 7 });
+    expect(sumStats([])).toEqual({ running: 0, waiting: 0, done: 0 });
   });
 });

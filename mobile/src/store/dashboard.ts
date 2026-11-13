@@ -7,22 +7,14 @@ export interface HostPollStatus {
   needsRepair: boolean;
 }
 
-/**
- * Which paired host the "현황" tab shows, and how each host's background poll is doing.
- * Kept for as long as the app runs; a host that is no longer paired falls back to the
- * first one (`resolveSelectedHost`).
- */
+/** How each paired host's background poll is doing ("현황" shows every host at once). */
 interface DashboardStore {
-  selectedHostId?: string;
   polls: Record<string, HostPollStatus>;
-  selectHost: (hostId: string) => void;
   setPoll: (hostId: string, status: HostPollStatus | undefined) => void;
 }
 
 export const useDashboardStore = create<DashboardStore>((set) => ({
-  selectedHostId: undefined,
   polls: {},
-  selectHost: (hostId) => set({ selectedHostId: hostId }),
   setPoll: (hostId, status) =>
     set((prev) => {
       const current = prev.polls[hostId];
