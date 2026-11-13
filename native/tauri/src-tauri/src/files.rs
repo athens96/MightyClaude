@@ -291,18 +291,24 @@ fn select_session(view: &mut View, id: &str) -> Result<(), String> {
     })
 }
 
-/// C# `OpenFilePane` (`OpenSlimPane`): the workspace's one files pane shown: focused when open, otherwise put left of the current
-/// pane (or as a tab when there is no room for a split). A refusal is the error banner's words (C# `Act`).
+/// C# `OpenFilePane`: the workspace's one files pane shown: focused when open, otherwise put left of the current pane (or as a tab
+/// when there is no room for a split). A refusal is the error banner's words (C# `Act`).
 pub fn open_files_pane(view: &mut View, locale: &Locale, workspace_id: Option<&str>) -> Result<(), String> {
+    open_slim_pane(view, locale, workspace_id, pane::KIND, "files.pane.title")
+}
+
+/// C# `OpenSlimPane`: a workspace's one-per-workspace pane of `kind` (`files`, and the work map's `workmap`), its id `<kind>:<workspace>`
+/// and its title the locale's `title_key`: focused when open, otherwise placed as `FilePaneKind.Place` places it.
+pub fn open_slim_pane(view: &mut View, locale: &Locale, workspace_id: Option<&str>, kind: &str, title_key: &str) -> Result<(), String> {
     let state = view.snapshot.clone();
     let id = workspace_id.map(str::to_string).or_else(|| state.active_workspace_id.clone()).unwrap_or_default();
     let workspace = state.workspace(&id).ok_or_else(|| locale.get("window.error.addWorkspaceFirst"))?;
-    // A remote workspace's folder is on its host: no files pane reads it here.
+    // A remote workspace's folder is on its host: no such pane reads it here.
     if workspace.remote.is_some() {
         return Err(locale.get("remote.windows.workspace.paneUnavailable"));
     }
     let workspace = workspace.id().to_string();
-    let pane_id = pane::pane_id(&workspace);
+    let pane_id = format!("{kind}:{workspace}");
     if state.session(&pane_id).is_some() {
         return select_session(view, &pane_id);
     }
@@ -317,8 +323,8 @@ pub fn open_files_pane(view: &mut View, locale: &Locale, workspace_id: Option<&s
     let pane = RunSession {
         id: Some(pane_id.clone()),
         workspace_id: Some(workspace.clone()),
-        kind: Some(pane::KIND.into()),
-        title: Some(locale.get("files.pane.title")),
+        kind: Some(kind.into()),
+        title: Some(locale.get(title_key)),
         ..RunSession::default()
     };
     // The pane joins the tree before it becomes the active one, as a new pane does (AddToLayout).
@@ -776,6 +782,42 @@ pub fn register(methods: &mut Registry) {
             Err(error) => Ok(json!(error)),
         }
     });
+}
+
+/// C# `workMapOpenFile`'s files part (MainWindow.WorkMap.cs:45-56), for the work map's page method: a changed file opened in the
+/// workspace's files pane, revealed and selected there and previewed (the page hears `{kind:'files', paneId, path}` and reads the
+/// tree again). False when a dialog is open, the path is empty or does not resolve inside the local workspace.
+#[allow(dead_code, reason = "the work map's workMapOpenFile (W4, its own module) calls it; this module keeps the files pane's trees")]
+pub async fn open_file_in_pane(host: &Arc<Host>, workspace_id: &str, path: &str) -> Result<bool, String> {
+    let path = path.replace('\\', "/");
+    let root = {
+        let view = host.view();
+        if view.dialog_open || path.is_empty() {
+            return Ok(false);
+        }
+        local_path(&view.snapshot, workspace_id)
+    };
+    let Some(root) = root else { return Ok(false) };
+    if resolve(path.clone(), root.clone()).await.is_none() {
+        return Ok(false);
+    }
+    let files = state(host)?;
+    let mut folders = with_tree(&files, workspace_id, |tree| {
+        tree.reveal(&path);
+        tree.selected_path = Some(path.clone());
+        tree.preview_path = Some(path.clone());
+        tree.expanded.iter().filter(|p| path.starts_with(&format!("{p}/"))).cloned().collect::<Vec<_>>()
+    });
+    if let Err(message) = open_files_pane(&mut host.view(), &host.locale, Some(workspace_id)) {
+        banner(host, message);
+    }
+    folders.sort_by_key(|p| p.len());
+    for folder in folders {
+        load_folder(&files, host.locale, workspace_id, &root, &folder).await;
+    }
+    let message = json!({"kind": "files", "paneId": pane::pane_id(workspace_id), "path": path});
+    host.push(&host.view(), "files", message.to_string());
+    Ok(true)
 }
 
 /// C# `WebGalleryImage`: a diagram tile's picture, its item named by run, step and id.
