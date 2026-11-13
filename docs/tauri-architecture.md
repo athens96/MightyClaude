@@ -72,7 +72,7 @@
 | `ChildControl` | `kill`(자식과 그 아래 전부), `wait` → 종료 코드, `close`(kill + 3초 대기 + Job이 빌 때까지 3초) |
 | `capture()` | `ProcessHost` 위의 공통 함수: stdin을 쓰고 닫고, 두 출력을 한도까지 읽고, 시간 넘으면 죽임(Swift `ProcessCapture.run`) |
 | `PtyHost` | `default_shell`, `shell_arguments(shell, command, no_profile)`, `open(PtyRequest{program, args, cwd, env(전체), size})` → `PtySession{output 채널, control}` |
-| `PtyControl` | `write`(64 KiB 이하), `resize`(2–1000 × 1–1000), `process_ids`, `wait`, `close`(Job·콘솔 닫고 마지막 출력까지 읽음) |
+| `PtyControl` | `write`(UTF-16 65,536단위 이하 — C# `text.Length`처럼 세므로 한글 30,000자(90,000바이트)도 받음), `resize`(2–1000 × 1–1000), `process_ids`, `wait`, `close`(Job·콘솔 닫고 마지막 출력까지 읽음; 아무도 출력을 읽지 않아도 돌아옴) |
 | `ShellEnvironment` | CLI가 시작할 환경: `resolve(workspace, force)`(실패 없음, 4초 한도, 10초 재사용), `current`, `invalidate`. 값은 로그·`Debug`에 안 나옴 |
 | `SecretVault` | `load(id)` → 없거나 못 읽으면 None, `save(id, secret)`, `delete(id)`. Windows는 C# `DpapiRemoteKeyVault`와 같은 파일·엔트로피(바이트 단위로 서로 읽힘), Mac은 Keychain `dev.mightycode.native.remote` |
 | `PrefsStore` | `get/set/remove(key)` → `PrefValue{Int, Text, Bool, Other}`; Windows `HKCU\Software\MightyCode`, Mac UserDefaults `dev.mightycode.native`, 이름은 같음(`delegation.enabled`, `setup.neverShow`, `textScale` …) |
@@ -88,6 +88,17 @@
 | `PlatformProfile` | 값: `os`, `path_style`, `plugin_list_while_reading`(Busy/Join), `cli_updater`(Homebrew/Winget), `settings_store`, `pairing_layout`, `agent_sign_in`, `mcp_transport`, `m1_platform`("win32"/"darwin"), `remote_decodes_request_paths`, `direct_connection_firewall`, `update_needs_public_key`, `build_update_url_wins`, `update_rechecks_sha256`, `auto_update_keys`, `saves_files_pane` |
 
 W1 현재 실제 구현: 양쪽 `Paths`; Windows `PrefsStore` 읽기, `SecretVault`(DPAPI), `SurfaceFactory`의 브라우저(Tauri 자식 웹뷰), `ProcessHost`·`PtyHost`·`ShellEnvironment`(W1-C, C# `ChildProcess`·`PseudoTerminal`·`WindowsShellEnvironment` 이전). 나머지는 `Unsupported`. 어떤 구현을 쓸지는 `src-tauri/src/platform.rs` 한 곳에서 `cfg`로 정한다.
+
+### 2.2 Windows 프로세스 층이 C#과 일부러 다른 점 (W1-C, `mighty-platform-windows`)
+
+C#이 기준이다. 아래만 일부러 다르게 했고, 각각 코드 주석에 같은 이유가 있다.
+
+| 곳 | C# | 여기 | 이유 |
+|---|---|---|---|
+| 셸 환경 캡처가 1 MiB(stdout 바이트)·1 Mi 문자(stderr)를 넘음 (`environment.rs` `read_bounded`·`discard_bounded`) | `InvalidDataException`을 던지고, `ResolveAsync`가 잡지 않아 `RefreshAsync`가 실패한다(WindowsShellEnvironment.cs:146, 155) | 실패한 캡처로 본다: 기준 환경(레지스트리로 새로 읽은 프로세스 환경)으로 돌아가고, 전에 저장한 캡처도 버린다. `resolve`는 실패하지 않는다 | 프로필이 많이 출력한다고 CLI가 환경 없이 남으면 안 된다. 포트 계약(`ShellEnvironment::resolve`는 실패 없음)과도 맞는다 |
+| `ProcessHost`가 자식에게 넘기는 핸들 (`process.rs`) | `bInheritHandles = TRUE`와 launch gate뿐(ChildProcess.cs:152) | `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`로 세 파이프 끝만 넘긴다 | 다른 스레드의 상속 가능한 핸들이 자식에게 새지 않게(포트 계약). 반대 방향(앱의 다른 spawn이 이 파이프 끝을 물려받음)은 `clippy.toml`이 막는다(README "Child processes") |
+| `ChildControl::close` (`process.rs`) | Job의 활성 프로세스 수가 0이 될 때까지 3초 | 그와 함께, kill 때 Job에 있던 프로세스 각각이 실제로 끝날 때까지(같은 3초 안) | 활성 수는 종료가 끝나기 전에 0이 된다. C#의 "자손이 살아 있는데 Job 닫기가 돌아옴" 검사가 묻는 것을 지킨다 |
+| PTY 출력 (`pty.rs`) | 읽는 스레드가 조각마다 `receive`를 바로 부르고 기다리지 않는다(PseudoTerminal.cs:31) | 출력은 64조각짜리 채널이다. 평소에는 채널이 차면 기다리고(메모리가 묶임), close가 시작된 뒤에는 자리가 없는 조각을 버린다 | 아무도 출력을 읽지 않아도 close가 돌아오고, 24H2 이전 `ClosePseudoConsole`이 파이프가 비기를 기다리다 멈추지 않게 |
 
 ## 3. NativeSlot: 페이지 위에 네이티브 뷰 올리기
 

@@ -463,6 +463,11 @@ pub async fn run_capture(request: SpawnRequest) -> Option<String> {
 }
 
 /// C# `ReadAsync` (WindowsShellEnvironment.cs:140-150): the whole output as text; None past `limit` bytes of UTF-8.
+///
+/// A deliberate difference (docs/tauri-architecture.md §2.2): C# throws `InvalidDataException` past the limit, which none of
+/// `ResolveAsync`'s catches takes, so `RefreshAsync` itself fails. Here the capture is only a failed one (as [`discard_bounded`]
+/// past its limit is): the resolve falls back to the baseline, never fails, and drops the capture it had kept, as after any
+/// other failed capture. A profile that prints a megabyte must not leave the CLIs without an environment.
 pub(crate) async fn read_bounded(reader: Option<ChildReader>, limit: usize) -> Option<String> {
     let mut reader = reader?;
     let mut decoder = TextDecoder::new();
@@ -481,7 +486,8 @@ pub(crate) async fn read_bounded(reader: Option<ChildReader>, limit: usize) -> O
     }
 }
 
-/// C# `DiscardAsync` (WindowsShellEnvironment.cs:151-156): read and drop; false past `limit` characters.
+/// C# `DiscardAsync` (WindowsShellEnvironment.cs:151-156): read and drop; false past `limit` characters (where C# throws, the
+/// same deliberate difference as [`read_bounded`]'s).
 pub(crate) async fn discard_bounded(reader: Option<ChildReader>, limit: usize) -> bool {
     let Some(mut reader) = reader else { return true };
     let mut decoder = TextDecoder::new();

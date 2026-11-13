@@ -216,6 +216,24 @@ async fn the_port_reports_its_source_and_forgets_on_invalidate() {
     assert_eq!(resolver.current().source, EnvironmentSource::ProcessFallback);
 }
 
+/// A deliberate difference from C# (docs/tauri-architecture.md §2.2): a capture that prints more than 1 MiB is a failed capture
+/// here, where C#'s `ReadAsync` throws out of `RefreshAsync`. `run_capture` gives nothing and the resolve falls back to the
+/// baseline. 4,081 lines of 257 bytes are 241 bytes past the limit, few enough for the pipe to take once the read has stopped, so
+/// the child ends by itself.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_capture_past_its_limit_falls_back_instead_of_failing() {
+    let directory = common::temp("capture-limit");
+    let request = common::fake_request(&["--noisy-child", &(4081 * 256).to_string()], &directory);
+    let over = request.clone();
+    let output = tokio::time::timeout(Duration::from_secs(30), environment::run_capture(over)).await.expect("the capture in 30 s");
+    assert!(output.is_none(), "more than 1 MiB of output is no capture");
+    let capture: environment::Capture = Arc::new(move |_baseline, _nonce| Box::pin(environment::run_capture(request.clone())));
+    let resolver = WindowsShellEnvironment::with_capture(capture, Some(Duration::from_secs(30)), None);
+    let resolved = resolver.resolve_with(&variables(&[("PATH", "baseline-path")]), true).await;
+    assert!(!resolved.from_profile && resolved.values.get("PATH") == Some("baseline-path"), "the resolve falls back: {resolved}");
+    common::remove_when_free(&directory).await;
+}
+
 /// The real port (the user's own PowerShell profiles, in the home folder) never fails and never waits past its 4 s bound; either
 /// way the registry-refreshed PATH is there.
 #[tokio::test(flavor = "multi_thread")]
