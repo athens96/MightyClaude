@@ -198,18 +198,25 @@ fn main() {
             let dispatcher = host.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(message) = calls.recv().await {
-                    let surfaces = surfaces(&dispatcher.app);
-                    // NativeSlot: who draws what reaches the page before `ready` pushes the snapshot (surface.rs).
-                    if message.get("method").and_then(Value::as_str) == Some("ready")
-                        && let Some(surfaces) = &surfaces
-                    {
-                        surfaces.announce();
-                    }
-                    dispatcher.clone().dispatch(message).await;
-                    // A pane the call closed takes its native view with it.
-                    if let Some(surfaces) = surfaces {
-                        surfaces.retain(&surface::live_panes(&dispatcher)).await;
-                    }
+                    // Each call is a task of its own (C#'s `async void Receive`); the next starts once this one first returned, so
+                    // what each does at once happens in the order the page posted them (host.rs).
+                    let (first, returned) = tokio::sync::oneshot::channel();
+                    let host = dispatcher.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let surfaces = surfaces(&host.app);
+                        // NativeSlot: who draws what reaches the page before `ready` pushes the snapshot (surface.rs).
+                        if message.get("method").and_then(Value::as_str) == Some("ready")
+                            && let Some(surfaces) = &surfaces
+                        {
+                            surfaces.announce();
+                        }
+                        host.clone().dispatch(message, first).await;
+                        // A pane the call closed takes its native view with it.
+                        if let Some(surfaces) = surfaces {
+                            surfaces.retain(&surface::live_panes(&host)).await;
+                        }
+                    });
+                    let _ = returned.await;
                 }
             });
             if host.smoke.is_some() {
