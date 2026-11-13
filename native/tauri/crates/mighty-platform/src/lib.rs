@@ -40,7 +40,7 @@ pub use process::{Captured, Child, ChildControl, ProcessHost, SpawnRequest, capt
 pub use profile::{
     AgentSignIn, CliUpdater, McpTransport, Os, PairingLayout, PathStyle, PlatformProfile, PluginListWhileReading, SettingsStore,
 };
-pub use pty::{PtyControl, PtyHost, PtyRequest, PtySession, PtySize};
+pub use pty::{PtyControl, PtyHost, PtyRequest, PtySession, PtySize, TerminalInput};
 pub use secrets::SecretVault;
 pub use surface::{
     BrowserOptions, BrowserSurface, DeviceRect, Drawing, LogicalRect, NativeSurface, PetWindow, SurfaceFactory, SurfaceKind, SurfaceState,
