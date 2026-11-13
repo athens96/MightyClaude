@@ -9,6 +9,8 @@ rust-version.workspace = true
 
 [dependencies]
 mighty-core.workspace = true
+# The files ports (`FileHandles`: an open file's final path, W4).
+mighty-platform.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
