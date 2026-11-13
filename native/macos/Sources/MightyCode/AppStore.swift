@@ -531,6 +531,13 @@ final class AppStore: ObservableObject, DelegationHost {
     @Published var remoteConnections: [RemoteConnectionInfo] = []
     @Published var remoteBusy = false
     @Published var remoteError: String?
+    /// The remote mirror (`AppStore+RemoteMirror.swift`): each connection's poll, how it goes, and what it last applied.
+    @Published var remoteMirrorLinks: [String: RemoteMirrorLink] = [:]
+    var remoteMirrorTasks: [String: Task<Void, Never>] = [:]
+    var remoteMirrorWake: Set<String> = []
+    var remoteMirrorSummaryRevisions: [String: String] = [:]
+    var remoteMirrorDetailRevisions: [String: String] = [:]
+    @Published var remoteMirrorCounts: [String: RemoteMirrorCounts] = [:]
     lazy var remoteHost = RemoteHostService(repository: repository, providers: providers, pluginDirectory: pluginDirectory, appVersion: appVersion,
                                             hostName: SCDynamicStoreCopyComputerName(nil, nil).map { $0 as String } ?? "Mac",
                                             admission: { [weak self] request in await self?.remoteHostAdmission(request) },
@@ -609,6 +616,8 @@ final class AppStore: ObservableObject, DelegationHost {
         await antigravityRules.removeLeftovers()
         // Saved remote connections, without their keys: those are read on first use.
         remoteConnections = await remoteClient.list()
+        // A connected client mirrors this Mac's shared panes through these (docs/remote-workspaces.md).
+        await remoteHost.setMirror(RemoteMirrorBridge(store: self))
         // Children whose runs quitting killed come back interrupted, before any pane runs again.
         await delegation?.interruptRunsKilledByQuit()
         guard !ending, !Task.isCancelled else { loading = false; return }
@@ -738,6 +747,8 @@ final class AppStore: ObservableObject, DelegationHost {
 
     func runBlockedReason(_ session: RunSession, checkRuntime: Bool = true) -> String? {
         guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return L("run.blocked.selectWorkspace") }
+        // Another computer's pane runs there, with its own CLIs: only the connection matters here.
+        if let mirror = session.mirror { return mirrorBlockedReason(mirror) }
         // pi's RPC run is local for now.
         if workspace.remote != nil, session.kind != "shell", session.provider == "pi" { return L("run.blocked.piRemote") }
         if workspace.remote != nil, session.kind != "shell", session.provider == "opencode" { return L("run.blocked.opencodeRemote") }
@@ -808,6 +819,7 @@ final class AppStore: ObservableObject, DelegationHost {
         let changed = snapshot.activeWorkspaceId != id || snapshot.activeSessionId != selected
         if next != snapshot { snapshot = next }
         if changed, let selected { refreshModels(for: selected) }
+        wakeMirror(workspaceId: id)
     }
 
     private func expandedWorkspaceSet() -> Set<String> {
@@ -827,6 +839,7 @@ final class AppStore: ObservableObject, DelegationHost {
         let changed = snapshot.activeSessionId != id || snapshot.activeWorkspaceId != session.workspaceId
         if next != snapshot { snapshot = next }
         if changed { refreshModels(for: id) }
+        wakeMirror(workspaceId: session.workspaceId)
     }
 
     @discardableResult
@@ -835,7 +848,9 @@ final class AppStore: ObservableObject, DelegationHost {
         guard !hasBlockingModal, let workspace = workspaceId.flatMap({ id in snapshot.workspaces.first { $0.id == id } }) ?? activeWorkspace else { return nil }
         // A pane started any other way (⌘N, the phone) answers "Add Pane"'s pending look-up.
         cancelAddPaneProbe()
-        guard snapshot.sessions.count < 128 else { error = L("workspace.paneLimit"); return nil }
+        guard ownSessionCount < 128 else { error = L("workspace.paneLimit"); return nil }
+        // A workspace the remote mirror shows: the new pane is made on that computer and shows here at the next read.
+        if let remote = workspace.remote, remote.mirror == true { createMirrorPane(remote, kind: kind, provider: provider); return nil }
         // Files and browser panes read this Mac's disk and network, not the host's.
         if workspace.remote != nil, kind != SessionKind.claude, kind != SessionKind.shell { error = L("remote.workspace.paneUnavailable"); return nil }
         let name = kind == "shell" ? (workspace.remote != nil ? L("remote.pane.commandTitle") : L("agentTerminal.terminalPane.title")) : kind == "browser" ? L("browser.tab.title") : ProviderOptions.label(provider)
@@ -858,6 +873,7 @@ final class AppStore: ObservableObject, DelegationHost {
     }
 
     func closeSession(_ id: String) {
+        if let mirror = snapshot.sessions.first(where: { $0.id == id })?.mirror { closeMirrorPane(id, mirror: mirror); return }
         guard closingSessions.insert(id).inserted else { return }
         liveRuns.signalStop(id: id)
         let closing = snapshot.sessions.first(where: { $0.id == id })
@@ -1033,6 +1049,8 @@ final class AppStore: ObservableObject, DelegationHost {
         guard !ending, !closingSessions.contains(id), !importingAttachments.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
         guard !usesLocalTerminal(session) else { error = L("composer.localTerminalInput"); return }
+        // Another computer's pane: the text is its next request there.
+        if let mirror = session.mirror { submitMirror(id, mirror: mirror); return }
         let originalDraft = drafts[id] ?? ""
         var input = originalDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         var attachments = attachmentDrafts[id] ?? []
@@ -1529,6 +1547,7 @@ final class AppStore: ObservableObject, DelegationHost {
     }
 
     func stop(_ id: String) async {
+        if let mirror = snapshot.sessions.first(where: { $0.id == id })?.mirror { await stopMirror(id, mirror: mirror); return }
         if localTerminals[id] != nil {
             disposeTerminal(id)
             updateSession(id) { $0.status = "stopped" }
@@ -1723,7 +1742,8 @@ final class AppStore: ObservableObject, DelegationHost {
         permissionErrors.removeValue(forKey: sessionId)
         defer { permissionResponses.remove(key) }
         do {
-            if isRemoteSession(sessionId) { try await remoteClient.respondToPermission(sessionId: sessionId, runId: request.runId, requestId: request.id, allow: allow) }
+            if let mirror = mirrorReference(sessionId) { try await remoteClient.mirrorPermission(connectionId: mirror.connectionId, hostSessionId: mirror.hostSessionId, requestId: request.id, runId: request.runId, allow: allow); wakeMirror(connectionId: mirror.connectionId) }
+            else if isRemoteSession(sessionId) { try await remoteClient.respondToPermission(sessionId: sessionId, runId: request.runId, requestId: request.id, allow: allow) }
             else { try await runner.respondToPermission(sessionId: sessionId, runId: request.runId, requestId: request.id, allow: allow) }
             toolPermissions[sessionId]?.removeAll { $0.id == request.id && $0.runId == request.runId }
         } catch {
@@ -1743,7 +1763,8 @@ final class AppStore: ObservableObject, DelegationHost {
         permissionErrors.removeValue(forKey: sessionId)
         defer { permissionResponses.remove(key) }
         do {
-            if isRemoteSession(sessionId) { try await remoteClient.answerUserQuestions(sessionId: sessionId, runId: request.runId, requestId: request.id, answers: answers) }
+            if let mirror = mirrorReference(sessionId) { try await remoteClient.mirrorAnswers(connectionId: mirror.connectionId, hostSessionId: mirror.hostSessionId, requestId: request.id, runId: request.runId, answers: answers); wakeMirror(connectionId: mirror.connectionId) }
+            else if isRemoteSession(sessionId) { try await remoteClient.answerUserQuestions(sessionId: sessionId, runId: request.runId, requestId: request.id, answers: answers) }
             else { try await runner.answerUserQuestions(sessionId: sessionId, runId: request.runId, requestId: request.id, answers: answers) }
             toolPermissions[sessionId]?.removeAll { $0.id == request.id && $0.runId == request.runId }
         } catch {
@@ -1769,6 +1790,7 @@ final class AppStore: ObservableObject, DelegationHost {
         defer { permissionResponses.remove(key) }
         do {
             if let smokePlanAnswerer { try await smokePlanAnswerer(sessionId, request.runId, request.id, decision) }
+            else if let mirror = mirrorReference(sessionId) { try await remoteClient.mirrorPlan(connectionId: mirror.connectionId, hostSessionId: mirror.hostSessionId, requestId: request.id, runId: request.runId, decision: decision); wakeMirror(connectionId: mirror.connectionId) }
             else if isRemoteSession(sessionId) { try await remoteClient.answerPlan(sessionId: sessionId, runId: request.runId, requestId: request.id, decision: decision) }
             else { try await runner.answerPlan(sessionId: sessionId, runId: request.runId, requestId: request.id, decision: decision) }
             toolPermissions[sessionId]?.removeAll { $0.id == request.id && $0.runId == request.runId }

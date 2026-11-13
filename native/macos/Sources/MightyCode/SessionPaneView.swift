@@ -186,6 +186,7 @@ struct SessionPaneView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if let mirror = session.mirror { MirrorPaneBanner(sessionId: session.id, mirror: mirror) }
             if let worktree = session.paneWorktree { PaneWorktreeBar(sessionId: session.id, worktree: worktree, paneStatus: session.status) }
             if localTerminal { LocalTerminalPane(session: session) }
             else {

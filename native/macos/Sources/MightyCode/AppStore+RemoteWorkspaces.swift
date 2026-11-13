@@ -43,6 +43,7 @@ extension AppStore {
         guard let reference = workspace.remote else { return }
         let info = try await remoteClient.ensureConnected(id: reference.connectionId)
         store(info)
+        startMirror(info.id)
         guard info.workspaces.contains(where: { $0.id == reference.workspaceId }) else { throw MightyError(L("remote.workspace.error.notShared")) }
     }
 
@@ -93,10 +94,13 @@ extension AppStore {
     func stopSharing() { remoteAction { [self] in remoteHostState = await remoteHost.stop() } }
     /// "원격에서 전체 권한·명령 실행 허용", for the sharing now going; off whenever sharing starts.
     func setRemoteFullAccess(_ allowed: Bool) { Task { remoteHostState = await remoteHost.setAllowsFullAccess(allowed) } }
-    func connectRemote(name: String, address: String, key: String) { remoteAction { [self] in store(try await remoteClient.connect(name: name, address: address, key: key)) } }
-    func refreshRemote(_ id: String) { remoteAction { [self] in store(try await remoteClient.refresh(id: id)) } }
-    func disconnectRemote(_ id: String) { remoteAction { [self] in await remoteClient.disconnect(id: id) } }
-    func removeRemote(_ id: String) { remoteAction { [self] in await remoteClient.remove(id: id) } }
+    /// Connecting (or reading the host again) starts its mirror: the host's shared workspaces and panes come into the sidebar.
+    func connectRemote(name: String, address: String, key: String) {
+        remoteAction { [self] in let info = try await remoteClient.connect(name: name, address: address, key: key); store(info); startMirror(info.id) }
+    }
+    func refreshRemote(_ id: String) { remoteAction { [self] in store(try await remoteClient.refresh(id: id)); startMirror(id) } }
+    func disconnectRemote(_ id: String) { remoteAction { [self] in stopMirror(id); await remoteClient.disconnect(id: id) } }
+    func removeRemote(_ id: String) { remoteAction { [self] in stopMirror(id, removing: true); await remoteClient.remove(id: id) } }
 
     /// Lists a shared workspace of a connected computer in the sidebar and opens it.
     func openRemoteWorkspace(connectionId: String, hostWorkspaceId: String) {

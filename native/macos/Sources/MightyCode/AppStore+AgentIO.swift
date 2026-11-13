@@ -162,7 +162,7 @@ extension AppStore {
     @discardableResult
     private func openAgentIOPane(_ id: String, kind: String, title: String, agentPaneId: String, select: Bool) -> Bool {
         guard let agent = snapshot.sessions.first(where: { $0.id == agentPaneId }) else { return false }
-        if !snapshot.sessions.contains(where: { $0.id == id }), snapshot.sessions.count < 128 {
+        if !snapshot.sessions.contains(where: { $0.id == id }), ownSessionCount < 128 {
             var session = RunSession(id: id, workspaceId: agent.workspaceId, title: agent.title + " \u{2014} " + title, kind: kind, provider: agent.provider)
             session.ownerSessionId = agentPaneId
             reconcilePaneLayout(agent.workspaceId)

@@ -1,0 +1,11 @@
+{
+  "protocol": 2,
+  "mirror": 1,
+  "hostName": "studio-mac",
+  "revision": "0a1b2c3d4e5f60718293a4b5",
+  "workspaces": [ { "id": "ws-project", "name": "project", "path": "/Users/example/project" } ],
+  "sessions": [
+    { "id": "pane-1", "workspaceId": "ws-project", "title": "Summarize README.md", "kind": "claude", "provider": "claude", "model": "default", "status": "running", "revision": "112233445566778899aabbcc", "pending": 1, "queued": 1, "branch": "mighty/pane-1" },
+    { "id": "pane-2", "workspaceId": "ws-project", "title": "Codex", "kind": "claude", "provider": "codex", "model": "default", "status": "idle", "revision": "ccbbaa998877665544332211", "pending": 0, "queued": 0 }
+  ]
+}

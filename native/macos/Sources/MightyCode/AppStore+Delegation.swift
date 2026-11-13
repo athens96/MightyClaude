@@ -719,7 +719,7 @@ extension AppStore {
     /// it would. A child the human started is selected and focused, unless
     /// the human has moved on or is typing in the parent.
     func createPane(_ pane: DelegationChildPane) async -> Bool {
-        guard !ending, isLoaded, snapshot.sessions.count < 128, !snapshot.sessions.contains(where: { $0.id == pane.sessionId }),
+        guard !ending, isLoaded, ownSessionCount < 128, !snapshot.sessions.contains(where: { $0.id == pane.sessionId }),
               let parent = snapshot.sessions.first(where: { $0.id == pane.parentSessionId }), !closingSessions.contains(parent.id),
               snapshot.workspaces.contains(where: { $0.id == parent.workspaceId }) else { return false }
         let file = await delegation?.file

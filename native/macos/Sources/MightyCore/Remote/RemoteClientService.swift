@@ -191,6 +191,95 @@ public actor RemoteClientService {
         return (target, info)
     }
 
+    // MARK: The remote mirror
+
+    /// The connected host's target and key, or why there is none.
+    private func live(_ connectionId: String) async throws -> (RemoteTarget, String) {
+        loadSaved()
+        guard !closing else { throw MightyError(L("common.appClosing")) }
+        guard let connection = connections[connectionId], connection.info.status == .connected, let target = connection.target, let key = connection.key else {
+            throw MightyError(L("remote.run.error.notConnected"))
+        }
+        try await ensureRoute(connectionId, target)
+        return (target, key)
+    }
+
+    /// A mirror request: a host that no longer takes the key (it restarted sharing) leaves the connection disconnected.
+    private func mirrorRequest(_ connectionId: String, method: String, path: String, body: Data? = nil, timeout: TimeInterval = RemoteProtocol.requestTimeout) async throws -> Data {
+        let (target, key) = try await live(connectionId)
+        do { return try await RemoteTransport.request(target, key: key, method: method, path: path, body: body, timeout: timeout) }
+        catch let failure as RemoteHTTPFailure where failure.status == 401 { await fail(connectionId, message: failure.message); throw failure }
+    }
+
+    /// The host's shared workspaces and their agent panes (`GET /v2/mirror`); `unchanged` when `since` is still current.
+    public func mirrorState(connectionId: String, since: String?) async throws -> RemoteMirrorState {
+        let query = since.map { "?since=" + $0 } ?? ""
+        let data = try await mirrorRequest(connectionId, method: "GET", path: RemoteMirrorRoutes.prefix + query)
+        guard let state = try? JSONDecoder().decode(RemoteWireMirrorState.self, from: data), RemoteMirrorSupport.valid(state) else {
+            throw MightyError(L("remote.mirror.error.badAnswer"))
+        }
+        return RemoteMirrorState(hostName: state.hostName, revision: state.revision, unchanged: state.unchanged == true, workspaces: state.workspaces, sessions: state.sessions)
+    }
+
+    /// One host pane in full (`GET /v2/mirror/sessions/{id}`).
+    public func mirrorDetail(connectionId: String, hostSessionId: String) async throws -> RemoteMirrorPane {
+        guard CoreValidation.identifier(hostSessionId) else { throw MightyError(L("remote.mirror.error.badAnswer")) }
+        let data = try await mirrorRequest(connectionId, method: "GET", path: RemoteMirrorRoutes.prefix + "/sessions/" + hostSessionId)
+        guard let detail = try? JSONDecoder().decode(RemoteWireMirrorDetail.self, from: data), RemoteMirrorSupport.valid(detail, sessionId: hostSessionId) else {
+            throw MightyError(L("remote.mirror.error.badAnswer"))
+        }
+        return RemoteMirrorPane(revision: detail.revision, session: detail.session)
+    }
+
+    /// A request into the host pane: the host's word for what it did (`started`, `queued`, …).
+    public func mirrorSubmit(connectionId: String, hostSessionId: String, text: String, attachments: [RunAttachment]) async throws -> String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.withoutEscapingSlashes]
+        let body = try encoder.encode(RemoteWireMirrorSubmit(text: text, attachments: attachments))
+        guard body.count <= AttachmentSupport.maximumRequestBytes else { throw MightyError(L("remote.run.error.tooLarge")) }
+        let data = try await mirrorRequest(connectionId, method: "POST", path: RemoteMirrorRoutes.prefix + "/sessions/\(hostSessionId)/submit", body: body,
+                                           timeout: attachments.isEmpty ? 30 : RemoteProtocol.uploadTimeout)
+        return (try? JSONDecoder().decode(RemoteWireMirrorOutcome.self, from: data))?.outcome ?? "accepted"
+    }
+
+    public func mirrorStop(connectionId: String, hostSessionId: String) async throws {
+        _ = try await mirrorRequest(connectionId, method: "POST", path: RemoteMirrorRoutes.prefix + "/sessions/\(hostSessionId)/stop", body: Data("{}".utf8))
+    }
+
+    public func mirrorPermission(connectionId: String, hostSessionId: String, requestId: String, runId: String, allow: Bool, always: Bool = false) async throws {
+        let body = try JSONEncoder().encode(RemoteWireMirrorPermission(requestId: requestId, runId: runId, allow: allow, always: always ? true : nil))
+        _ = try await mirrorRequest(connectionId, method: "POST", path: RemoteMirrorRoutes.prefix + "/sessions/\(hostSessionId)/permission", body: body)
+    }
+
+    public func mirrorAnswers(connectionId: String, hostSessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws {
+        let body = try JSONEncoder().encode(RemoteWireMirrorQuestions(requestId: requestId, runId: runId, answers: answers))
+        _ = try await mirrorRequest(connectionId, method: "POST", path: RemoteMirrorRoutes.prefix + "/sessions/\(hostSessionId)/questions", body: body)
+    }
+
+    public func mirrorPlan(connectionId: String, hostSessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws {
+        let body = try JSONEncoder().encode(RemoteWirePlan(runId: runId, requestId: requestId, decision: decision))
+        _ = try await mirrorRequest(connectionId, method: "POST", path: RemoteMirrorRoutes.prefix + "/sessions/\(hostSessionId)/plan", body: body)
+    }
+
+    public func mirrorClose(connectionId: String, hostSessionId: String) async throws {
+        _ = try await mirrorRequest(connectionId, method: "POST", path: RemoteMirrorRoutes.prefix + "/sessions/\(hostSessionId)/close", body: Data("{}".utf8))
+    }
+
+    /// A new agent pane in the host's shared workspace; the host's id for it.
+    public func mirrorCreateSession(connectionId: String, hostWorkspaceId: String, provider: String) async throws -> String {
+        let body = try JSONEncoder().encode(RemoteWireMirrorCreate(provider: provider))
+        let data = try await mirrorRequest(connectionId, method: "POST", path: RemoteMirrorRoutes.prefix + "/workspaces/\(hostWorkspaceId)/sessions", body: body)
+        guard let created = try? JSONDecoder().decode(RemoteWireMirrorCreated.self, from: data), CoreValidation.identifier(created.sessionId) else {
+            throw MightyError(L("remote.mirror.error.badAnswer"))
+        }
+        return created.sessionId
+    }
+
+    /// Marks the connection lost from the mirror's poll (it failed past its retries); its runs end as a failed poll's do.
+    public func mirrorLost(connectionId: String, message: String) async {
+        guard connections[connectionId]?.info.status == .connected else { return }
+        await fail(connectionId, message: message)
+    }
+
     // MARK: Runs
 
     public func isRunning(_ id: String) -> Bool { runs[id] != nil }
@@ -247,7 +336,14 @@ public actor RemoteClientService {
 
     /// A failed poll worth asking again for a while: the host was busy (429,
     /// 503) or the network stumbled. Anything else ends the run at once.
-    static func transient(_ error: Error) -> Bool {
+    /// The HTTP status of a host that answered and refused (not a busy one): the host is there, the request was not taken.
+    /// An older host answers the mirror's routes 404.
+    public static func refusalStatus(_ error: Error) -> Int? {
+        guard let failure = error as? RemoteHTTPFailure, !failure.transient else { return nil }
+        return failure.status
+    }
+
+    public static func transient(_ error: Error) -> Bool {
         if let failure = error as? RemoteHTTPFailure { return failure.transient }
         guard let url = error as? URLError else { return false }
         return [.timedOut, .networkConnectionLost, .notConnectedToInternet, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains(url.code)

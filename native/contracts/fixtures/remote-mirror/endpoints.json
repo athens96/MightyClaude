@@ -1,0 +1,11 @@
+[
+  { "name": "list", "method": "GET", "path": "/v2/mirror?since={revision}", "status": 200, "response": "state.json", "note": "since is optional (hex, at most 64); when it equals the current revision the answer is state-unchanged.json. Only the shared workspaces' agent panes are listed. A client polls every 1 s while one of the host's panes runs, waits for an answer or is looked at, otherwise every 5 s" },
+  { "name": "detail", "method": "GET", "path": "/v2/mirror/sessions/{hostSessionId}", "status": 200, "response": "detail.json", "note": "read only for panes the client shows or that wait for an answer, and only when the list's revision for the pane moved; 404 for a pane outside the shared workspaces" },
+  { "name": "submit", "method": "POST", "path": "/v2/mirror/sessions/{hostSessionId}/submit", "request": "submit.json", "status": 200, "response": "outcome.json", "note": "the phone's send: started, steered or queued; 403 remote.host.error.fullAccessOff for a full-access pane while the host's switch is off; body up to 12 MiB for attachments" },
+  { "name": "stop", "method": "POST", "path": "/v2/mirror/sessions/{hostSessionId}/stop", "request": "empty.json", "status": 200, "response": "answer.json" },
+  { "name": "permission", "method": "POST", "path": "/v2/mirror/sessions/{hostSessionId}/permission", "request": "permission.json", "status": 200, "response": "answer.json", "note": "always: true needs the host's full-access switch (403 remote.host.error.antigravityAlways)" },
+  { "name": "questions", "method": "POST", "path": "/v2/mirror/sessions/{hostSessionId}/questions", "request": "questions.json", "status": 200, "response": "answer.json" },
+  { "name": "plan", "method": "POST", "path": "/v2/mirror/sessions/{hostSessionId}/plan", "request": "plan.json", "status": 200, "response": "answer.json", "note": "the remote run's RemoteWirePlan body" },
+  { "name": "close", "method": "POST", "path": "/v2/mirror/sessions/{hostSessionId}/close", "request": "empty.json", "status": 200, "response": "answer.json" },
+  { "name": "create", "method": "POST", "path": "/v2/mirror/workspaces/{hostWorkspaceId}/sessions", "request": "create.json", "status": 201, "response": "created.json", "note": "agent panes only; the workspace's worktree mode decides without asking; 403 for a workspace not shared" }
+]

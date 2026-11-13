@@ -128,8 +128,11 @@ public struct RemoteWorkspaceReference: Codable, Sendable, Equatable {
     /// The workspace's id on the host.
     public var workspaceId: String
     public var hostName: String
-    public init(connectionId: String, workspaceId: String, hostName: String) {
-        self.version = Self.currentVersion; self.connectionId = connectionId; self.workspaceId = workspaceId; self.hostName = hostName
+    /// A host workspace the remote mirror lists (`RemoteMirrorSupport`): it and its panes live only while connected and are
+    /// never saved. nil (and older saves) is a workspace opened through the connection, with panes of this app's own.
+    public var mirror: Bool?
+    public init(connectionId: String, workspaceId: String, hostName: String, mirror: Bool? = nil) {
+        self.version = Self.currentVersion; self.connectionId = connectionId; self.workspaceId = workspaceId; self.hostName = hostName; self.mirror = mirror
     }
 }
 
@@ -379,6 +382,9 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     /// Present only on a delegated child pane (macOS): its parent pane's session id. It
     /// stays after the parent pane closes. The delegation file is the authority.
     public var parentSessionId: String?
+    /// A pane of another computer the remote mirror shows here (`RemoteMirrorReference`): its requests, stops and answers go to
+    /// that computer's pane. Never encoded: mirrored panes are not saved.
+    public var mirror: RemoteMirrorReference?
     /// Present only on a delegated child pane (macOS): the absolute path of its worktree,
     /// where its runs work instead of the workspace folder.
     public var workingFolder: String?

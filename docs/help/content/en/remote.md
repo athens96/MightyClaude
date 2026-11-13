@@ -29,13 +29,24 @@ Sharing accepts connections on this computer's Tailscale addresses only. It is a
 On the computer that gives the work:
 1. Open {{ui:menu.settings}} → the {{ui:settings.remote.navTitle}} tab. The network button in the sidebar header and {{ui:remote.menu.connect}} in the {{ui:workspace.addPane}} menu open the same place.
 2. Under {{ui:settings.remote.connectTitle}}, enter the host's address (its Tailscale IP or MagicDNS name) and the key, then press {{ui:settings.remote.connectButton}}. Unless the host changed the port, the address alone is enough.
-3. The shared workspaces appear under the connected computer. Press {{ui:settings.remote.openButton}} to add one to the sidebar as a remote workspace.
+3. The shared workspaces appear under the connected computer. Once connected, that computer's shared workspaces appear in the sidebar on their own, with the panes open there; {{ui:remote.mirror.view}} takes you straight to one ([The other computer's panes as they are](#mirror)).
 
 A remote workspace shows a computer icon and its host's name in the sidebar, and its connection state in the workspace header and the status bar. After the app restarts, the connection stays saved and connects again on the first send from a remote pane or when you press {{ui:settings.remote.refreshButton}}.
 
 {{platform:mac}} The key is kept in the macOS Keychain only, never in the workspace state. If macOS asks for Keychain access when it connects again, choose "Always Allow"; the app ships with the same signature, so the choice survives updates.
 
 {{platform:windows}} On Windows the key is never kept in the workspace state either: it is saved encrypted so only this Windows user can read it, in the app's data folder. When sharing, the {{ui:remote.windows.firewall.add}} button adds one firewall rule that opens the app's ports only to Tailscale's ranges; Windows shows its administrator prompt once. If the rule already exists, the button reads {{ui:remote.windows.firewall.update}} instead, and the rule is shared with the phone's direct connection, so the {{ui:settings.nav.mobile}} tab changes the same rule. If the rule does not open every port in use now, the tab says it needs updating. Removing the rule closes both the phone's direct-connection port and the sharing port.
+
+## The other computer's panes as they are {#mirror}
+When you connect to another computer, the workspaces that computer shares appear in the sidebar with the agent panes open there. Conversations, the {{ui:graph.view.mighty}} views, progress and status follow live, and you can send, stop and answer approvals, questions and plans from here. The panes run on that computer with its CLIs and accounts; what you send becomes that pane's next request, queued there if it is busy.
+
+- Under this computer's workspaces, the sidebar gets a "Remote · server name" header for each server, with its address and connection state. A green dot means connected, orange reconnecting, gray disconnected. The header's … menu has {{ui:remote.mirror.connect}} and {{ui:remote.mirror.disconnect}}.
+- A remote pane carries a {{ui:remote.mirror.paneBadge}} strip showing which computer runs it, the connection state and how many requests wait in that computer's queue. The status bar reads like "Remote · Running on that computer · Connected".
+- {{ui:workspace.addPane}} opens a new agent pane on that computer, and closing a pane closes it there too.
+- After you disconnect, the panes stay as they last were and can't send. Removing the connection removes that server's workspaces. These panes aren't saved on this computer, so after reopening the app they come back once you connect.
+- Conversations show up to the last 80 entries, without pictures. Rename panes and change models or permission modes on that computer. Command panes aren't shown, and [what remote panes can't do](#use) applies here too.
+- Sending to a pane running with full access, and "Always allow", work only when that computer has {{ui:settings.remote.allowFullAccess}} on. When that computer runs Windows, sending to its Codex and Antigravity panes needs the switch too (Windows cannot confine them to the shared folder).
+- If that computer's Mighty Code is an older version without this feature, its panes don't appear and the header says why. Use {{ui:settings.remote.openButton}} in Settings to work in its workspaces as this computer's remote panes.
 
 ## Using remote panes {#use}
 - Use agent panes as you would local ones. Model, permission mode, effort and Fast mode travel to the host; a setting the host's CLI does not support is reported before the run.

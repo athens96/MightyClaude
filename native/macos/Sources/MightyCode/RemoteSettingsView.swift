@@ -170,7 +170,6 @@ struct RemoteSettingsSection: View {
             if connection.status == .connected {
                 if connection.workspaces.isEmpty { Text(L("settings.remote.noShared")).font(.ui(size: 11)).foregroundStyle(.secondary) }
                 ForEach(connection.workspaces) { shared in
-                    let opened = store.snapshot.workspaces.contains { $0.remote?.connectionId == connection.id && $0.remote?.workspaceId == shared.id }
                     HStack(spacing: DesignMetrics.Spacing.sm) {
                         Image(systemName: "desktopcomputer").foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
@@ -178,7 +177,7 @@ struct RemoteSettingsSection: View {
                             Text(shared.path).font(.ui(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         }
                         Spacer()
-                        Button(opened ? L("settings.remote.openedButton") : L("settings.remote.openButton")) { store.openRemoteWorkspace(connectionId: connection.id, hostWorkspaceId: shared.id) }
+                        sharedButton(connection, shared)
                             .disabled(store.remoteBusy)
                             .accessibilityIdentifier("settings-remote-open-\(shared.id)")
                     }
@@ -188,6 +187,17 @@ struct RemoteSettingsSection: View {
         }
         .settingsRowFrame()
         .accessibilityIdentifier("settings-remote-connection-\(connection.id)")
+    }
+
+    /// The mirror lists the shared workspace with the host's own panes; "보기" shows it. A host without the mirror (an older
+    /// app) answers its list 404, and its workspace opens as this Mac's own remote workspace, as before.
+    @ViewBuilder private func sharedButton(_ connection: RemoteConnectionInfo, _ shared: RemoteSharedWorkspace) -> some View {
+        if store.remoteMirrorLinks[connection.id]?.unsupported == true {
+            let opened = store.snapshot.workspaces.contains { $0.remote?.connectionId == connection.id && $0.remote?.workspaceId == shared.id && $0.remote?.mirror != true }
+            Button(opened ? L("settings.remote.openedButton") : L("settings.remote.openButton")) { store.openRemoteWorkspace(connectionId: connection.id, hostWorkspaceId: shared.id) }
+        } else {
+            Button(L("remote.mirror.view")) { store.showMirrorWorkspace(connectionId: connection.id, hostWorkspaceId: shared.id) }
+        }
     }
 
     /// A `secret` (the key) is marked concealed and transient, so clipboard

@@ -29,13 +29,24 @@ section: remote
 在要下达任务的电脑上：
 1. 打开 {{ui:menu.settings}} → {{ui:settings.remote.navTitle}} 标签。侧边栏标题中的网络按钮，以及 {{ui:workspace.addPane}} 菜单中的 {{ui:remote.menu.connect}} 也会打开同一处。
 2. 在 {{ui:settings.remote.connectTitle}} 中输入主机的地址（Tailscale IP 或 MagicDNS 名称）和连接密钥，然后点按 {{ui:settings.remote.connectButton}}。如果主机没有更改端口，只输入地址即可。
-3. 已连接电脑下方会列出共享的工作区。点按 {{ui:settings.remote.openButton}} 即可把它作为远程工作区加入侧边栏。
+3. 已连接电脑下方会列出共享的工作区。连接后，那台电脑共享的工作区会连同其中打开的窗格自动出现在侧边栏；点按 {{ui:remote.mirror.view}} 可直接前往（[原样显示那台电脑的窗格](#mirror)）。
 
 远程工作区在侧边栏中以电脑图标和主机名称区分，工作区标题和底部状态栏会显示连接状态。重新打开应用后，连接仍保持已保存状态，在远程窗格中第一次发送或点按 {{ui:settings.remote.refreshButton}} 时会重新连接。
 
 {{platform:mac}} 连接密钥只保存在 macOS 钥匙串中，不会写入工作区记录。重新连接时如果 macOS 询问钥匙串访问权限，请选择“始终允许”；应用以相同的签名发布，因此这个选择在更新后仍然有效。
 
 {{platform:windows}} 在 Windows 上，连接密钥同样不会写入工作区记录，而是加密保存在应用的数据文件夹中，只有当前 Windows 用户可以读取。共享时，{{ui:remote.windows.firewall.add}} 按钮会添加一条防火墙规则，只向 Tailscale 地址段打开应用的端口；Windows 会弹出一次管理员确认。如果规则已存在，该按钮会显示为 {{ui:remote.windows.firewall.update}}，并且这条规则与手机直连共用，所以在 {{ui:settings.nav.mobile}} 标签页中改的是同一条规则。 如果规则没有打开当前使用的全部端口，标签页会提示需要更新。删除规则会同时关闭手机直连端口和共享端口。
+
+## 原样显示那台电脑的窗格 {#mirror}
+连接到其他电脑后，那台电脑共享的工作区会连同其中打开的代理窗格一起出现在侧边栏。对话、{{ui:graph.view.mighty}} 视图、进度和状态实时同步，你可以在这里发送、停止，并回答批准、提问和计划。窗格在那台电脑上用它的 CLI 和账号运行；你发送的内容成为该窗格的下一个请求，正在运行时会排进那台电脑的队列。
+
+- 侧边栏在本机工作区下方为每台服务器显示“远程 · 服务器名”标题，以及地址和连接状态。绿点表示已连接，橙点表示正在重新连接，灰点表示已断开。标题的 … 菜单中有 {{ui:remote.mirror.connect}} 和 {{ui:remote.mirror.disconnect}}。
+- 远程窗格上方有 {{ui:remote.mirror.paneBadge}} 条，显示在哪台电脑上运行、连接状态以及那台电脑队列中的请求数。底部状态栏显示类似“远程 · 在那台电脑上运行 · 已连接”。
+- 用 {{ui:workspace.addPane}} 菜单可在那台电脑上打开新的代理窗格；关闭窗格也会关闭那台电脑上的窗格。
+- 断开连接后，窗格保持最后的样子，无法发送。删除连接会移除该服务器的工作区。这些窗格不会保存在本机，重新打开应用后需要连接才会再次出现。
+- 对话最多显示最近 80 条，不显示图片。重命名窗格以及更改模型、权限模式请在那台电脑上进行。命令窗格不显示，[远程窗格不能使用的功能](#use)同样不可用。
+- 向以完全权限运行的窗格发送内容以及“始终允许”，仅在那台电脑打开了 {{ui:settings.remote.allowFullAccess}} 时可用。 如果那台电脑是 Windows，向它的 Codex 和 Antigravity 窗格发送内容也需要打开这个开关（Windows 无法把它们限制在共享文件夹内）。
+- 如果那台电脑的 Mighty Code 是不支持此功能的旧版本，窗格不会出现，标题会说明原因。此时请用设置中的 {{ui:settings.remote.openButton}} 把其工作区作为本机的远程窗格使用。
 
 ## 使用远程窗格 {#use}
 - 代理窗格的用法与本地窗格相同。模型、权限模式、思考强度和 Fast 模式会原样传给主机；主机 CLI 不支持的设置会在运行前提示。

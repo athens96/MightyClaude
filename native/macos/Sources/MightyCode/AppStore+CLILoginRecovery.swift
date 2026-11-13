@@ -269,7 +269,7 @@ extension AppStore {
     /// terminal pane opens, but leaves the selection, the workspace and the
     /// layout mode as they were. Nil when the layout has no place for it.
     private func insertLoginTerminal(beside failed: RunSession, title: String) -> String? {
-        guard snapshot.sessions.count < 128 else { return nil }
+        guard ownSessionCount < 128 else { return nil }
         let session = RunSession(workspaceId: failed.workspaceId, title: title, kind: "shell")
         reconcilePaneLayout(failed.workspaceId)
         let root = layoutForWorkspace(failed.workspaceId)

@@ -131,7 +131,7 @@ struct WorkspaceView: View {
 
             HStack {
                 Text(L("sidebar.workspacesHeader")).font(.ui(size: 10, weight: .semibold)).foregroundStyle(Palette.sidebarInk2)
-                Text("\(store.snapshot.workspaces.count)").font(.ui(size: 10, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
+                Text("\(store.snapshot.workspaces.count { $0.remote == nil })").font(.ui(size: 10, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
                 Spacer()
                 // Adds a workspace from the sidebar too, the three ways the File menu offers.
                 Menu { WorkspaceAddChoices(store: store) } label: {
@@ -156,7 +156,9 @@ struct WorkspaceView: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: DesignMetrics.Inset.listGap) {
-                    ForEach(store.filteredWorkspaces) { workspace in workspaceRow(workspace) }
+                    ForEach(store.filteredWorkspaces.filter { $0.remote == nil }) { workspace in workspaceRow(workspace) }
+                    // Each connected (or saved) computer under its own header, its shared workspaces beneath.
+                    ForEach(store.remoteServerGroups) { group in remoteServerSection(group) }
                     if store.filteredWorkspaces.isEmpty {
                         Text(store.search.isEmpty ? L("dashboard.empty") : L("sidebar.noSearchResults"))
                             .font(.ui(size: 12)).foregroundStyle(Palette.sidebarInk2).padding(DesignMetrics.Spacing.lg)
@@ -224,6 +226,13 @@ struct WorkspaceView: View {
         .accessibilityIdentifier("sidebar-dashboard")
     }
 
+    private func remoteServerSection(_ group: RemoteServerGroup) -> some View {
+        VStack(alignment: .leading, spacing: DesignMetrics.Inset.listGap) {
+            RemoteServerHeader(store: store, group: group)
+            ForEach(group.workspaces) { workspace in workspaceRow(workspace) }
+        }
+    }
+
     private func workspaceRow(_ workspace: Workspace) -> some View {
         let selected = !store.showsDashboard && workspace.id == store.snapshot.activeWorkspaceId
         let expanded = store.isWorkspaceExpanded(workspace.id)
@@ -236,7 +245,7 @@ struct WorkspaceView: View {
                     Image(systemName: workspace.remote == nil ? "folder" : "desktopcomputer").font(.ui(size: 14)).foregroundStyle(selected ? Palette.sidebarAccent : Palette.sidebarInk2)
                     VStack(alignment: .leading, spacing: DesignMetrics.Spacing.xxs) {
                         Text(workspace.name).font(.ui(size: 12, weight: .medium)).lineLimit(1)
-                        if let remote = workspace.remote {
+                        if let remote = workspace.remote, remote.mirror != true {
                             Text(remote.hostName).font(.ui(size: 10)).foregroundStyle(Palette.sidebarInk2).lineLimit(1)
                                 .accessibilityLabel(L("remote.workspace.badgeAccessibility", ["host": remote.hostName]))
                         }
@@ -262,8 +271,11 @@ struct WorkspaceView: View {
             .background(selected ? Palette.sidebarAccent.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
             .help(workspace.path)
             .contextMenu {
-                Button(L("menu.rename")) { store.beginRenameWorkspace(workspace.id) }
-                Button(L("workspace.menu.remove"), role: .destructive) { store.pendingRemoval = workspace }
+                // A mirrored workspace is the host's: it is named and shared there.
+                if workspace.remote?.mirror != true {
+                    Button(L("menu.rename")) { store.beginRenameWorkspace(workspace.id) }
+                    Button(L("workspace.menu.remove"), role: .destructive) { store.pendingRemoval = workspace }
+                }
                 if workspace.remote == nil {
                     Button(L("menu.showInFinder")) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path) }
                     Divider()
@@ -352,7 +364,7 @@ struct WorkspaceView: View {
         .accessibilityAddTraits(active ? .isSelected : [])
         .accessibilityIdentifier(card.isRunning ? "sidebar-running-\(session.id)" : "sidebar-status-\(session.id)")
         .contextMenu {
-            Button(L("menu.rename")) { store.beginRenameSession(session.id) }
+            if session.mirror == nil { Button(L("menu.rename")) { store.beginRenameSession(session.id) } }
             Button(L("menu.closePane"), role: .destructive) { store.requestCloseSession(session.id) }
             if let child {
                 Divider()
@@ -698,7 +710,11 @@ struct WorkspaceView: View {
 
     private var statusBar: some View {
         HStack(spacing: DesignMetrics.Spacing.sm) {
-            if let workspace = store.activeWorkspace, let remote = workspace.remote {
+            if let workspace = store.activeWorkspace, let remote = workspace.remote, remote.mirror == true {
+                let state = RemoteMirrorText.runningOn(remote.hostName, store: store, connectionId: remote.connectionId)
+                Circle().fill(state.color).frame(width: 5, height: 5)
+                Text(verbatim: L("remote.mirror.server", ["name": state.text])).accessibilityIdentifier("status-remote-host")
+            } else if let workspace = store.activeWorkspace, let remote = workspace.remote {
                 let connected = store.remoteConnection(for: workspace)?.status == .connected
                 Circle().fill(Palette.mark(connected ? "completed" : "idle")).frame(width: 5, height: 5)
                 Text(L(connected ? "remote.status.connected" : "remote.status.notConnected", ["host": RemoteHostOS.hostWithOS(remote.hostName, platform: store.remoteConnection(for: workspace)?.runtime?.platform)]))

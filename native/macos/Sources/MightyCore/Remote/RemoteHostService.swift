@@ -42,6 +42,8 @@ public actor RemoteHostService {
     /// "원격에서 전체 권한·명령 실행 허용": off unless the user turns it on while sharing.
     private var allowsFullAccess = false
     private var jobs: [String: Job] = [:]
+    /// The app's own panes for the remote mirror (`/v2/mirror…`); nil answers those routes 404.
+    private var mirror: (any RemoteMirrorHosting)?
     private var rateWindow = Date.distantPast
     private var rateCount = 0
     private var peerRates: [String: (start: Date, count: Int)] = [:]
@@ -70,6 +72,9 @@ public actor RemoteHostService {
     }
 
     private func announceRuns() { runsChanged(jobs.values.filter { !$0.done }.count) }
+
+    /// The app's panes a connected client mirrors (docs/remote-workspaces.md "그 컴퓨터의 창 그대로").
+    public func setMirror(_ value: (any RemoteMirrorHosting)?) { mirror = value }
 
     public func current() -> RemoteHostState {
         var value = state
@@ -197,7 +202,8 @@ public actor RemoteHostService {
         guard head.headers["origin"] == nil, RemotePeerPolicy.allowed(head.remoteAddress, allowLoopback: allowLoopback),
               head.headers[RemoteProtocol.header] == "\(RemoteProtocol.version)", authorization.hasPrefix("Bearer "), authorization.count <= 256,
               RemoteWorkspaceValidation.keysMatch(String(authorization.dropFirst(7)), key) else { return 0 }
-        return head.method == "POST" && head.target == RemoteProtocol.pathPrefix + "runs" ? AttachmentSupport.maximumRequestBytes : RemoteProtocol.maximumRequestBytes
+        let attachments = head.method == "POST" && (head.target == RemoteProtocol.pathPrefix + "runs" || RemoteMirrorRoutes.isSubmit(head.target))
+        return attachments ? AttachmentSupport.maximumRequestBytes : RemoteProtocol.maximumRequestBytes
     }
 
     /// Every request: sharing on, no browser origin, a Tailscale peer, within
@@ -242,6 +248,7 @@ public actor RemoteHostService {
             let route = url.path.dropFirst(RemoteProtocol.pathPrefix.count).split(separator: "/", omittingEmptySubsequences: false).map(String.init)
             if request.method == "GET", route == ["info"], url.query == nil { return try await info(generation: revision) }
             if request.method == "POST", route == ["runs"], url.query == nil { return try await startRun(request, generation: revision) }
+            if route.first == "mirror" { return try await serveMirror(request, route: Array(route.dropFirst()), query: url.queryItems, generation: revision) }
             guard route.count == 3, route[0] == "runs", CoreValidation.identifier(route[1]), jobs[route[1]] != nil else { throw Failure(404, L("remote.host.error.runGone")) }
             let id = route[1]
             if request.method == "GET", route[2] == "events" { return try events(id, query: url.queryItems) }
@@ -275,6 +282,85 @@ public actor RemoteHostService {
             return reply(200, RemoteWireAnswer(accepted: true))
         } catch let failure as Failure { return self.failure(failure.status, failure.message) }
         catch { return failure(500, error.localizedDescription) }
+    }
+
+    // MARK: The remote mirror
+
+    /// `GET /v2/mirror[?since=<revision>]`, `GET /v2/mirror/sessions/{id}`, `POST /v2/mirror/sessions/{id}/submit|stop|permission|
+    /// questions|plan|close` and `POST /v2/mirror/workspaces/{id}/sessions`: the shared workspaces' own agent panes, read and driven
+    /// as the phone does. A pane of a workspace not shared is unknown here (404), whatever its id.
+    private func serveMirror(_ request: HTTPRequest, route: [String], query: [URLQueryItem]?, generation revision: UUID) async throws -> HTTPResponse {
+        guard let mirror else { throw Failure(404, L("remote.mirror.error.unavailable")) }
+        let workspaces = try await sharedWorkspaces()
+        let shared = Set(workspaces.map(\.id))
+        guard revision == generation else { throw Failure(503, L("remote.host.error.stopped")) }
+        if request.method == "GET", route.isEmpty {
+            var since: String?
+            if let query {
+                guard query.count == 1, query[0].name == "since", let raw = query[0].value, raw.count <= 64, raw.range(of: "^[0-9a-f]*$", options: .regularExpression) != nil else {
+                    throw Failure(400, L("remote.host.error.badRequest"))
+                }
+                since = raw
+            }
+            let sessions = Array(await mirror.mirrorSummaries(workspaceIds: shared).filter { shared.contains($0.workspaceId) }.prefix(RemoteMirrorProtocol.maximumSessions))
+            let listed = workspaces.map { RemoteSharedWorkspace(id: $0.id, name: $0.name, path: $0.path) }
+            let current = RemoteMirrorSupport.stateRevision(workspaces: listed, sessions: sessions)
+            let name = hostName.isEmpty ? "Mac" : hostName
+            if since == current { return reply(200, RemoteWireMirrorState(hostName: name, revision: current, unchanged: true, workspaces: [], sessions: [])) }
+            return reply(200, RemoteWireMirrorState(hostName: name, revision: current, workspaces: listed, sessions: sessions))
+        }
+        guard url(query) else { throw Failure(400, L("remote.host.error.badPath")) }
+        if request.method == "POST", route.count == 3, route[0] == "workspaces", route[2] == "sessions" {
+            guard shared.contains(route[1]) else { throw Failure(403, L("remote.host.error.notShared")) }
+            let body: RemoteWireMirrorCreate = try decode(request)
+            guard ProviderOptions.ids.contains(body.provider) else { throw Failure(400, L("remote.host.error.badRequest")) }
+            do { return reply(201, RemoteWireMirrorCreated(sessionId: try await mirror.mirrorCreateSession(workspaceId: route[1], provider: body.provider))) }
+            catch { throw Failure(409, error.localizedDescription) }
+        }
+        guard route.count >= 2, route[0] == "sessions", CoreValidation.identifier(route[1]), let info = await mirror.mirrorPaneInfo(sessionId: route[1]),
+              shared.contains(info.workspaceId) else { throw Failure(404, L("remote.error.paneNotFound")) }
+        let id = route[1]
+        if request.method == "GET", route.count == 2 {
+            guard let pane = await mirror.mirrorDetail(sessionId: id, workspaceIds: shared) else { throw Failure(404, L("remote.error.paneNotFound")) }
+            return reply(200, RemoteWireMirrorDetail(revision: pane.revision, session: pane.session))
+        }
+        guard request.method == "POST", route.count == 3 else { throw Failure(404, L("remote.host.error.badPath")) }
+        do {
+            switch route[2] {
+            case "submit":
+                let body: RemoteWireMirrorSubmit = try decode(request)
+                guard body.text.utf8.count <= 400_000, !body.text.contains("\0"), body.attachments.count <= AttachmentSupport.maximumCount,
+                      !body.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !body.attachments.isEmpty else { throw Failure(400, L("validation.run.badInput")) }
+                // A pane in full access runs only when this computer lets others run with it.
+                if info.permissionMode == "fullAccess", !allowsFullAccess { throw Failure(403, L("remote.host.error.fullAccessOff")) }
+                return reply(200, RemoteWireMirrorOutcome(outcome: try await mirror.mirrorSubmit(sessionId: id, text: body.text, attachments: body.attachments)))
+            case "stop": try await mirror.mirrorStop(sessionId: id)
+            case "permission":
+                let body: RemoteWireMirrorPermission = try decode(request)
+                // "항상 허용" keeps rules on this computer for good: only with its switch on, as a remote run's grant.
+                guard body.always != true || allowsFullAccess else { throw Failure(403, L("remote.host.error.antigravityAlways")) }
+                try await mirror.mirrorPermission(sessionId: id, requestId: body.requestId, runId: body.runId, allow: body.allow, always: body.always == true)
+            case "questions":
+                let body: RemoteWireMirrorQuestions = try decode(request)
+                try await mirror.mirrorAnswers(sessionId: id, requestId: body.requestId, runId: body.runId, answers: body.answers)
+            case "plan":
+                let body: RemoteWirePlan = try decode(request)
+                guard let decision = body.decision else { throw Failure(400, L("remote.host.error.badRequest")) }
+                try await mirror.mirrorPlan(sessionId: id, requestId: body.requestId, runId: body.runId, decision: decision)
+            case "close": try await mirror.mirrorClose(sessionId: id)
+            default: throw Failure(404, L("remote.host.error.badPath"))
+            }
+        } catch let failure as Failure { throw failure }
+        catch { throw Failure(409, error.localizedDescription) }
+        return reply(200, RemoteWireAnswer(accepted: true))
+    }
+
+    /// No query on any mirror route but the list's.
+    private func url(_ query: [URLQueryItem]?) -> Bool { query == nil || query?.isEmpty == true }
+
+    private func decode<T: Decodable>(_ request: HTTPRequest) throws -> T {
+        guard request.headers["content-type"]?.split(separator: ";").first?.trimmingCharacters(in: .whitespaces) == "application/json" else { throw Failure(415, L("remote.host.error.jsonOnly")) }
+        do { return try JSONDecoder().decode(T.self, from: request.body) } catch { throw Failure(400, L("remote.host.error.badRequest")) }
     }
 
     private func sharedWorkspaces() async throws -> [Workspace] {

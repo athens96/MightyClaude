@@ -71,7 +71,7 @@ extension AppStore {
         // The sign-in terminal runs on this Mac, so it opens in a local workspace.
         let workspace = (activeWorkspace?.remote == nil ? activeWorkspace : nil) ?? snapshot.workspaces.first { $0.remote == nil }
         guard let workspace else { cliAccountMessages[provider] = L("settings.cliAccounts.noWorkspace"); return }
-        guard snapshot.sessions.count < 128 else { cliAccountMessages[provider] = L("settings.cliAccounts.tooManyPanes"); return }
+        guard ownSessionCount < 128 else { cliAccountMessages[provider] = L("settings.cliAccounts.tooManyPanes"); return }
         // addSession refuses while a sheet is up, so Settings closes first and
         // comes back if the pane could not be added.
         let settingsWasOpen = showSettings

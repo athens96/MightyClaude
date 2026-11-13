@@ -87,6 +87,8 @@ public actor StateRepository {
 
     public func save(_ value: AppSnapshot, at date: Date = Date()) throws {
         try ensureLoaded()
+        // The remote mirror's workspaces and panes are another computer's, shown while connected: never saved here.
+        let value = value.withoutMirrors()
         guard value.version == 1, value.workspaces.count <= 64, value.sessions.count <= 128 else { throw MightyError(L("state.error.badSnapshot")) }
         for workspace in value.workspaces {
             guard let known = approved[workspace.id], workspace.path == known.path, workspace.remote == known.remote else { throw MightyError(L("state.error.notApproved")) }

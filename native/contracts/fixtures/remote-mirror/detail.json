@@ -1,0 +1,30 @@
+{
+  "protocol": 2,
+  "mirror": 1,
+  "revision": "112233445566778899aabbcc",
+  "session": {
+    "id": "pane-1",
+    "workspaceId": "ws-project",
+    "title": "Summarize README.md",
+    "kind": "claude",
+    "provider": "claude",
+    "model": "default",
+    "status": "running",
+    "createdAt": "2026-11-13T01:00:00Z",
+    "settings": { "effort": "high", "permissionMode": "acceptEdits", "maxTurns": null, "maxBudgetUsd": null },
+    "logs": [
+      { "id": "log-1", "kind": "user", "text": "Summarize README.md", "timestamp": "2026-11-13T01:00:01Z" },
+      { "id": "log-2", "kind": "assistant", "text": "Reading the file.", "timestamp": "2026-11-13T01:00:03Z" }
+    ],
+    "hasOlder": false,
+    "graphRuns": [ { "id": "gr-1", "input": "Summarize README.md", "status": "running", "rootEntries": [], "agents": [], "resultEntries": [], "sourceRunID": "gr-1", "provider": "claude" } ],
+    "todoProgress": { "items": [ { "id": "1", "content": "Read the file", "activeForm": "Reading the file", "status": "in_progress" } ] },
+    "startedAt": "2026-11-13T01:00:01Z",
+    "permissions": [
+      { "id": "perm-4", "runId": "job-1", "toolUseId": "toolu_4", "toolName": "Write", "inputJSON": "{\"content\":\"hi\",\"file_path\":\"/Users/example/project/notes.txt\"}", "summary": "/Users/example/project/notes.txt", "state": "pending", "canAllow": true, "canAnswerQuestions": false, "canAnswerPlan": false, "receivedAt": "2026-11-13T01:00:05.000Z" }
+    ],
+    "queued": [ { "id": "queued-1", "text": "Then update CHANGELOG.md" } ],
+    "branch": "mighty/pane-1",
+    "base": "main"
+  }
+}
