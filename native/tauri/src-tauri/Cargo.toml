@@ -18,9 +18,21 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 mighty-core.workspace = true
+mighty-platform.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 sys-locale.workspace = true
-tauri = { version = "2", features = [] }
-tokio = { version = "1", features = ["sync"] }
+# unstable: child webviews of the main window (the browser panes' native views, src/surface.rs).
+tauri = { workspace = true, features = ["unstable"] }
+tokio = { workspace = true, features = ["sync"] }
+
+# The OS's implementation of the ports: chosen here and in src/platform.rs, nowhere else.
+[target.'cfg(windows)'.dependencies]
+mighty-platform-windows.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+mighty-platform-macos.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["sync", "rt", "macros"] }

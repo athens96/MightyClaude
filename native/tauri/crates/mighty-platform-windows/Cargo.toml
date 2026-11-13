@@ -1,0 +1,26 @@
+[package]
+name = "mighty-platform-windows"
+version = "0.1.0"
+description = "Mighty Code's Windows implementation of the mighty-platform ports (empty on other OSes)."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+# Everything is behind cfg(windows), its dependencies too: elsewhere the crate is empty.
+[target.'cfg(windows)'.dependencies]
+mighty-platform.workspace = true
+dirs.workspace = true
+sha2 = "0.10"
+tauri = { workspace = true, features = ["unstable"] }
+tokio = { workspace = true, features = ["sync"] }
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Security_Cryptography",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+] }

@@ -1,0 +1,14 @@
+[package]
+name = "mighty-platform-macos"
+version = "0.1.0"
+description = "Mighty Code's macOS implementation of the mighty-platform ports, in Rust (objc2, libghostty, CEF/WKWebView later); empty on other OSes."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+# Everything is behind cfg(target_os = "macos"), its dependencies too: elsewhere the crate is empty.
+[target.'cfg(target_os = "macos")'.dependencies]
+mighty-platform.workspace = true
+dirs.workspace = true
+tauri.workspace = true

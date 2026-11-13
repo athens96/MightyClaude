@@ -1695,11 +1695,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "mighty-platform"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
+name = "mighty-platform-macos"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "mighty-platform",
+ "tauri",
+]
+
+[[package]]
+name = "mighty-platform-windows"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "mighty-platform",
+ "sha2",
+ "tauri",
+ "tokio",
+ "webview2-com",
+ "windows",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "mightycode"
 version = "0.4.59"
 dependencies = [
  "chrono",
  "mighty-core",
+ "mighty-platform",
+ "mighty-platform-macos",
+ "mighty-platform-windows",
  "serde",
  "serde_json",
  "sys-locale",
@@ -3283,7 +3316,19 @@ dependencies = [
  "mio",
  "pin-project-lite",
  "socket2",
+ "tokio-macros",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "2.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
 ]
 
 [[package]]
