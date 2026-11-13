@@ -13,6 +13,7 @@ pub mod locale;
 pub mod model;
 pub mod model_label;
 pub mod normalize;
+pub mod permission;
 pub mod shell;
 pub mod store;
 pub mod time;

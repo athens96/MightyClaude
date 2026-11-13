@@ -30,30 +30,13 @@ const MEDIA_TYPES: [&str; 7] =
 /// `PaneTitle.AttachmentMarker`: "첨부: ", stored log data in every language.
 pub const ATTACHMENT_MARKER: &str = "\u{CCA8}\u{BD80}: ";
 
-/// One file a request carries (C# `RunAttachment(Id, Name, MediaType, DataBase64)`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RunAttachment {
-    pub id: String,
-    pub name: String,
-    pub media_type: String,
-    pub data_base64: String,
-}
+/// One file a request carries (C# `RunAttachment(Id, Name, MediaType, DataBase64)`): one definition in mighty-core, which the composer
+/// (mighty-composer) reads and checks and the run engine stages.
+pub use mighty_core::attachment::RunAttachment;
 
-impl RunAttachment {
-    /// As `Wire.Json` writes it, the base64 with the relaxed encoder (`AttachmentBase64Converter`: `+` stays one byte).
-    pub fn write(&self, out: &mut mighty_core::json::JsonOut) {
-        out.begin_object();
-        out.prop_str("id", Some(&self.id));
-        out.prop_str("name", Some(&self.name));
-        out.prop_str("mediaType", Some(&self.media_type));
-        out.name("dataBase64");
-        out.raw(&text_json::escape_relaxed(&self.data_base64));
-        out.end_object();
-    }
-
-    pub fn is_image(&self) -> bool {
-        self.media_type.starts_with("image/")
-    }
+/// A picture (`RunAttachment.IsImage`).
+fn is_image(attachment: &RunAttachment) -> bool {
+    attachment.media_type.starts_with("image/")
 }
 
 fn is_control_char(c: char) -> bool {
@@ -258,13 +241,13 @@ impl StagedAttachments {
     pub fn input_for(&self, request: &StartRunRequest) -> String {
         let mut prompt = if request.input.trim().is_empty() { strings::get("attachments.prompt.default") } else { request.input.clone() };
         let provider = request.provider.as_str();
-        let generic: Vec<&(RunAttachment, PathBuf)> = self
-            .files
-            .iter()
-            .filter(|(a, _)| {
-                if provider == "pi" { !a.is_image() } else { provider != "claude" || !a.is_image() && a.media_type != "application/pdf" }
-            })
-            .collect();
+        let generic: Vec<&(RunAttachment, PathBuf)> =
+            self.files
+                .iter()
+                .filter(|(a, _)| {
+                    if provider == "pi" { !is_image(a) } else { provider != "claude" || !is_image(a) && a.media_type != "application/pdf" }
+                })
+                .collect();
         if !generic.is_empty() {
             let references: Vec<String> = generic
                 .iter()
@@ -279,14 +262,14 @@ impl StagedAttachments {
         }
         if provider == "pi" {
             let pictures: Vec<(String, String)> =
-                self.files.iter().filter(|(a, _)| a.is_image()).map(|(a, _)| (a.media_type.clone(), a.data_base64.clone())).collect();
+                self.files.iter().filter(|(a, _)| is_image(a)).map(|(a, _)| (a.media_type.clone(), a.data_base64.clone())).collect();
             return ProviderInput::pi_startup(&prompt, &pictures);
         }
         if provider != "claude" {
             return prompt;
         }
         let mut content = vec![json!({"type": "text", "text": prompt})];
-        for (attachment, _) in self.files.iter().filter(|(a, _)| a.is_image() || a.media_type == "application/pdf") {
+        for (attachment, _) in self.files.iter().filter(|(a, _)| is_image(a) || a.media_type == "application/pdf") {
             let kind = if attachment.media_type == "application/pdf" { "document" } else { "image" };
             content.push(
                 json!({"type": kind, "source": {"type": "base64", "media_type": attachment.media_type, "data": attachment.data_base64}}),
@@ -302,12 +285,12 @@ impl StagedAttachments {
         match request.provider.as_str() {
             "claude" => {
                 args.extend(["--input-format".to_string(), "stream-json".to_string()]);
-                if self.files.iter().any(|(a, _)| !a.is_image() && a.media_type != "application/pdf") {
+                if self.files.iter().any(|(a, _)| !is_image(a) && a.media_type != "application/pdf") {
                     args.extend(["--add-dir".to_string(), self.directory_text()]);
                 }
             }
             "codex" => {
-                for (_, path) in self.files.iter().filter(|(a, _)| a.is_image()) {
+                for (_, path) in self.files.iter().filter(|(a, _)| is_image(a)) {
                     let at = args.len().saturating_sub(1);
                     args.splice(at..at, ["--image".to_string(), path.to_string_lossy().into_owned()]);
                 }

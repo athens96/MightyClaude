@@ -13,7 +13,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use indexmap::IndexMap;
-use mighty_core::json::JsonOut;
 use mighty_core::model::PlanRecord;
 use mighty_core::time::DateTimeOffset;
 use mighty_core::wire;
@@ -30,74 +29,8 @@ use crate::strings;
 use crate::text_json;
 use crate::{Result, RunError, lock};
 
-/// C# `ToolPermissionRequest`: one waiting (or settled) request as the pane shows it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ToolPermissionRequest {
-    pub id: String,
-    pub run_id: String,
-    pub tool_use_id: String,
-    pub tool_name: String,
-    pub input_json: String,
-    pub summary: String,
-    pub reason: Option<String>,
-    pub blocked_path: Option<String>,
-    pub state: String,
-    pub can_allow: bool,
-    pub can_answer_questions: bool,
-    pub can_answer_plan: bool,
-    pub received_at: Option<String>,
-}
-
-impl ToolPermissionRequest {
-    /// `new ToolPermissionRequest(id, runId, toolUseId, toolName, inputJson, summary)` with C#'s defaults.
-    pub fn new(id: &str, run_id: &str, tool_use_id: &str, tool_name: &str, input_json: &str, summary: &str) -> ToolPermissionRequest {
-        ToolPermissionRequest {
-            id: id.into(),
-            run_id: run_id.into(),
-            tool_use_id: tool_use_id.into(),
-            tool_name: tool_name.into(),
-            input_json: input_json.into(),
-            summary: summary.into(),
-            reason: None,
-            blocked_path: None,
-            state: "pending".into(),
-            can_allow: true,
-            can_answer_questions: false,
-            can_answer_plan: false,
-            received_at: None,
-        }
-    }
-
-    /// `ToolPermissionRequest.Plan`: the Markdown plan of an ExitPlanMode request.
-    pub fn plan(&self) -> Option<String> {
-        if self.tool_name == plan_mode::TOOL_NAME { plan_mode::plan_text(&self.input_json) } else { None }
-    }
-
-    /// As `Wire.Json` writes the record.
-    pub fn write(&self, out: &mut JsonOut) {
-        out.begin_object();
-        out.prop_str("id", Some(&self.id));
-        out.prop_str("runId", Some(&self.run_id));
-        out.prop_str("toolUseId", Some(&self.tool_use_id));
-        out.prop_str("toolName", Some(&self.tool_name));
-        out.prop_str("inputJson", Some(&self.input_json));
-        out.prop_str("summary", Some(&self.summary));
-        out.prop_str("reason", self.reason.as_deref());
-        out.prop_str("blockedPath", self.blocked_path.as_deref());
-        out.prop_str("state", Some(&self.state));
-        out.prop_bool("canAllow", self.can_allow);
-        out.prop_bool("canAnswerQuestions", self.can_answer_questions);
-        out.prop_bool("canAnswerPlan", self.can_answer_plan);
-        out.prop_str("receivedAt", self.received_at.as_deref());
-        out.end_object();
-    }
-
-    pub fn to_json(&self) -> String {
-        let mut out = JsonOut::new();
-        self.write(&mut out);
-        out.finish()
-    }
-}
+/// C# `ToolPermissionRequest`: one waiting (or settled) request as the pane shows it (one definition, in mighty-core).
+pub use mighty_core::permission::ToolPermissionRequest;
 
 pub type Write = Arc<dyn Fn(&str) -> std::io::Result<()> + Send + Sync>;
 pub type Emit = Arc<dyn Fn(ToolPermissionRequest) + Send + Sync>;

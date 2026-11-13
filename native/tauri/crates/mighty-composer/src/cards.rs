@@ -45,52 +45,12 @@ pub const PENDING: [Pending; 8] = [
     Pending::Style,
 ];
 
-/// C# `ToolPermissionRequest(Id, RunId, ToolUseId, ToolName, InputJson, Summary, Reason?, BlockedPath?, State, CanAllow,
-/// CanAnswerQuestions, CanAnswerPlan, ReceivedAt?)` (ToolPermissions.cs:12).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PermissionRequest {
-    pub id: String,
-    pub run_id: String,
-    pub tool_use_id: String,
-    pub tool_name: String,
-    pub input_json: String,
-    pub summary: String,
-    pub reason: Option<String>,
-    pub blocked_path: Option<String>,
-    pub state: String,
-    pub can_allow: bool,
-    pub can_answer_questions: bool,
-    pub can_answer_plan: bool,
-    pub received_at: Option<String>,
-}
+/// C# `ToolPermissionRequest` (ToolPermissions.cs:12): the run engine's request, one definition in mighty-core.
+pub use mighty_core::permission::ToolPermissionRequest as PermissionRequest;
 
-impl PermissionRequest {
-    pub fn new(id: &str, run_id: &str, tool_use_id: &str, tool_name: &str, input_json: &str, summary: &str) -> Self {
-        PermissionRequest {
-            id: id.into(),
-            run_id: run_id.into(),
-            tool_use_id: tool_use_id.into(),
-            tool_name: tool_name.into(),
-            input_json: input_json.into(),
-            summary: summary.into(),
-            reason: None,
-            blocked_path: None,
-            state: "pending".into(),
-            can_allow: true,
-            can_answer_questions: false,
-            can_answer_plan: false,
-            received_at: None,
-        }
-    }
-
-    /// C# `ToolPermissionRequest.Plan`.
-    pub fn plan(&self) -> Option<String> {
-        presentation::plan_of(&self.tool_name, &self.input_json)
-    }
-
-    fn answerable_question(&self) -> bool {
-        presentation::is_answerable_question(&self.state, self.can_answer_questions, &self.tool_name, &self.input_json)
-    }
+/// `ToolPermissionRequest.IsAnswerableQuestion`.
+fn answerable_question(request: &PermissionRequest) -> bool {
+    presentation::is_answerable_question(&request.state, request.can_answer_questions, &request.tool_name, &request.input_json)
 }
 
 /// The plan card's draft (`planDraft`): its answer being sent, or why it failed.
@@ -573,7 +533,7 @@ pub fn card_requests(requests: &[PermissionRequest], styled: bool) -> Vec<&Permi
     }
     // CardRequests under a style: every waiting request but the question the panel answers (GuidedQuestions.Visible); the page
     // draws that question first itself.
-    match requests.iter().find(|r| r.answerable_question()) {
+    match requests.iter().find(|r| answerable_question(r)) {
         Some(asked) => std::iter::once(asked).chain(pending.into_iter().filter(|r| r.id != asked.id)).collect(),
         None => pending,
     }
