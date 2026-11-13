@@ -259,7 +259,21 @@ impl ResultFileLookup for StdFiles {
         let base = workspace_files::full_path(Path::new(root))?;
         let candidate = workspace_files::full_path(&base.join(path))?;
         // Lexical escapes, other drives, shares and stream names are refused before the target is touched.
-        let relative = workspace_files::relative(&candidate, &base)?.replace('\\', "/");
+        let relative = match workspace_files::relative(&candidate, &base) {
+            Some(relative) => relative,
+            None => {
+                // An absolute path written through a link above the root (the Mac's `/var` → `/private/var`, `/tmp` → `/private/tmp`)
+                // names a file inside it all the same: a local path's links are walked (never one off this machine) and the real path
+                // is held to the root. A share or device path is refused before anything is touched.
+                let text = candidate.to_string_lossy();
+                if text.starts_with(r"\\") || text.starts_with("//") {
+                    return None;
+                }
+                let real = workspace_files::real_path(&candidate)?;
+                workspace_files::relative(&real, &base)?
+            }
+        }
+        .replace('\\', "/");
         let resolved = workspace_files::resolve(&relative, &base)?;
         resolved.is_file().then(|| resolved.to_string_lossy().into_owned())
     }
