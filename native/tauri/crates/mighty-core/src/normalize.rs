@@ -435,7 +435,7 @@ fn null(what: &str) -> ReadError {
 }
 
 /// `MightyGraphSupport.ValidEffort`.
-fn valid_effort(value: &str) -> bool {
+pub fn valid_effort(value: &str) -> bool {
     value == "default" || EFFORTS.contains(&value) || wire::PI_THINKING_LEVELS.contains(&value)
 }
 
@@ -462,12 +462,12 @@ fn bounded(text: Option<&str>, max: i64, budget: &mut i64, what: &str) -> R<Stri
 }
 
 /// `GraphTime.Kept`.
-fn graph_time(value: Option<&str>) -> Option<String> {
+pub fn graph_time(value: Option<&str>) -> Option<String> {
     value.filter(|v| v.len() <= 80 && time::parse(Some(v)).is_some()).map(str::to_string)
 }
 
 /// `GraphAgentIdentity.Normalized`.
-fn identity(value: &GraphAgentIdentity) -> Option<GraphAgentIdentity> {
+pub fn identity(value: &GraphAgentIdentity) -> Option<GraphAgentIdentity> {
     let kind = value.kind.as_deref().map(|t| activity_clean(Some(t), 160, true)).filter(|c| !c.is_empty());
     let model = |m: &Option<String>| m.clone().filter(|m| wire::model(m));
     let result = GraphAgentIdentity {
@@ -479,7 +479,7 @@ fn identity(value: &GraphAgentIdentity) -> Option<GraphAgentIdentity> {
     (result != GraphAgentIdentity::default()).then_some(result)
 }
 
-fn identity_bytes(value: &GraphAgentIdentity) -> i64 {
+pub fn identity_bytes(value: &GraphAgentIdentity) -> i64 {
     bytes(value.kind.as_deref())
         + bytes(value.requested_model.as_deref())
         + bytes(value.resolved_model.as_deref())
@@ -487,7 +487,7 @@ fn identity_bytes(value: &GraphAgentIdentity) -> i64 {
 }
 
 /// `GraphAgentFigures.Normalized`.
-fn figures(value: &GraphAgentFigures) -> Option<GraphAgentFigures> {
+pub fn figures(value: &GraphAgentFigures) -> Option<GraphAgentFigures> {
     let result = GraphAgentFigures {
         started_at: graph_time(value.started_at.as_deref()),
         ended_at: graph_time(value.ended_at.as_deref()),
@@ -501,12 +501,12 @@ fn advisor_call_bytes(c: &GraphAdvisorCall) -> i64 {
     [&c.id, &c.caller, &c.started_at, &c.ended_at, &c.state, &c.text, &c.error_code].iter().map(|v| bytes(v.as_deref())).sum()
 }
 
-fn advisor_bytes(a: &GraphAdvisor) -> i64 {
+pub fn advisor_bytes(a: &GraphAdvisor) -> i64 {
     bytes(a.model.as_deref()) + a.calls.iter().flatten().flatten().map(advisor_call_bytes).sum::<i64>()
 }
 
 /// `GraphAdvisor.Normalized(restoring)`.
-fn advisor(value: &GraphAdvisor, restoring: bool) -> Option<GraphAdvisor> {
+pub fn advisor(value: &GraphAdvisor, restoring: bool) -> Option<GraphAdvisor> {
     let calls: &[Option<GraphAdvisorCall>] = value.calls.as_deref().unwrap_or(&[]);
     let mut seen = HashSet::new();
     let mut kept = vec![];
@@ -550,7 +550,7 @@ fn advisor(value: &GraphAdvisor, restoring: bool) -> Option<GraphAdvisor> {
 }
 
 /// `MightyGraphSupport.IsHeartbeatBlock`.
-fn is_heartbeat_block(agent: &MightyGraphAgent) -> R<bool> {
+pub fn is_heartbeat_block(agent: &MightyGraphAgent) -> R<bool> {
     if agent.kind.is_some() {
         return Ok(false);
     }
@@ -647,7 +647,7 @@ fn break_cycles(agents: &mut [MightyGraphAgent]) {
 }
 
 /// `MightyGraphSupport.ApplyProvider`.
-fn apply_provider(run: &mut MightyGraphRun, provider: &str) {
+pub fn apply_provider(run: &mut MightyGraphRun, provider: &str) {
     let p = if PROVIDERS.contains(&provider) { provider } else { "claude" };
     run.provider = Some(p.into());
     let label = |e: &LogEntry| LogEntry {
