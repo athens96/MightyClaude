@@ -37,3 +37,4 @@ tokio = { workspace = true, features = ["sync", "time", "rt", "rt-multi-thread",
 
 [target.'cfg(windows)'.dev-dependencies]
 mighty-platform-windows.workspace = true
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }

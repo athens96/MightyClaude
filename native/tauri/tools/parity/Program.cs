@@ -13,6 +13,10 @@
 //   delta <in> <out>     one AppSnapshot a line (Wire.Json) -> the bridge's snapshot push for the first, then the delta push the
 //                        bridge's Flush (WebBridge.cs) sends for each next one ("" when it sends none)
 //   schema <out>         each saved record's JSON property names in the order Wire.Json writes them
+//   run-replay <fake cli> <recording> <work folder> <out>
+//                        DesktopService runs a Claude pane's request through the Rust fake CLI (`mighty-fake-cli --replay-cli`):
+//                        it asks one Bash permission (allowed) and one plan (approved, auto-edit), then replays the recording.
+//                        Writes the pane as Wire.Json saves it, and the answers the CLI received (mighty-run tests/service.rs).
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -48,8 +52,42 @@ internal static class Program
             case "times": return Lines(args[1], args[2], Time);
             case "delta": return Delta(args[1], args[2]);
             case "schema": return Schema(args[1]);
+            case "run-replay": return await RunReplay(args[1], args[2], args[3], args[4]);
             default: Console.Error.WriteLine("unknown command " + args[0]); return 2;
         }
+    }
+
+    private static async Task<int> RunReplay(string fake, string recording, string work, string output)
+    {
+        Locale.LanguagePreference = "ko"; Locale.ResetCache();
+        var folder = Path.Combine(work, "workspace"); var plugin = Path.Combine(work, "plugin"); var data = Path.Combine(work, "data");
+        Directory.CreateDirectory(folder); Directory.CreateDirectory(Path.Combine(plugin, ".claude-plugin")); Directory.CreateDirectory(data);
+        await File.WriteAllTextAsync(Path.Combine(plugin, ".claude-plugin", "plugin.json"), "{}");
+        var record = Path.Combine(work, "replay");
+        await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(new CliCommand(fake, ["--replay-cli", recording, record], "2.1.322")));
+        await using var service = new DesktopService(data, null, plugin, catalog, delegationEnabled: () => false, antigravitySettings: Path.Combine(work, "agy-settings.json"));
+        await service.InitializeAsync();
+        var workspace = await service.AddWorkspaceAsync(folder);
+        var pane = new RunSession { Id = "replay-pane", WorkspaceId = workspace.Id, Title = "Replay" };
+        await service.UpdateAsync(s => s with { Sessions = [pane] });
+        service.ToolPermissionChanged += value =>
+        {
+            if (value.State != "pending") return;
+            if (PlanApprovalRequest.From(value.RunId, value) is { } approval) service.AnswerPlan(value.RunId, approval.RequestId, PlanDecision.ApproveAutoEdit);
+            else service.RespondToToolPermission(value.RunId, value.Id, true);
+        };
+        await service.StartAsync(new StartRunRequest("replay-pane", workspace.Id, "claude", "replay the recording", []));
+        var end = DateTime.UtcNow.AddSeconds(60);
+        while (service.IsSessionRunning("replay-pane") || service.Snapshot.Sessions.Single(s => s.Id == "replay-pane").Status == "running")
+        {
+            if (DateTime.UtcNow > end) { Console.Error.WriteLine("the replay did not end"); return 1; }
+            await Task.Delay(20);
+        }
+        var session = service.Snapshot.Sessions.Single(s => s.Id == "replay-pane");
+        Directory.CreateDirectory(output);
+        await File.WriteAllTextAsync(Path.Combine(output, "session.json"), JsonSerializer.Serialize(session, Wire.Json), Utf8);
+        File.Copy(record + ".answers", Path.Combine(output, "answers.jsonl"), true);
+        return 0;
     }
 
     private static string? Option(string[] args, string name)

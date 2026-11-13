@@ -1755,6 +1755,7 @@ dependencies = [
  "sha2",
  "sys-locale",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

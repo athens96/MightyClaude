@@ -55,6 +55,11 @@ fn main() {
         Some("--fake-cli") if args.len() >= 3 => fake_cli(&args[1], &args[2], &args[3..]),
         Some("--model-list-cli") if args.len() >= 3 => model_list_cli(&args[1], &args[2], &args[3..]),
         Some("--replay-cli") if args.len() >= 3 => replay_cli(&args[1], &args[2], &args[3..]),
+        // C# `--long-child <pid file>`: a shell pane's command that writes its id and runs until it is stopped.
+        Some("--long-child") if args.len() >= 2 => {
+            let _ = std::fs::write(&args[1], std::process::id().to_string());
+            std::thread::sleep(Duration::from_secs(60));
+        }
         _ => {
             eprintln!("mighty-fake-cli: unknown mode {args:?}");
             std::process::exit(64);
