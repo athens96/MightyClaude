@@ -30,6 +30,26 @@ internal static class DesktopParityVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Open with the default app refuses every type that can run code: Windows' launcher refuses none for a desktop app (it ran a .js
+    /// and a .jar), so a type PATHEXT or AssocIsDangerous names, one whose handler loads what it is given, and one whose handler is an
+    /// interpreter, a launcher or a DLL never opens.
+    /// </summary>
+    internal static Task OpenWithTheDefaultAppRefusesTypesThatRunCode()
+    {
+        if (!OperatingSystem.IsWindows()) return Task.CompletedTask;
+        static string Named(string name) => Path.Combine(Path.GetTempPath(), name);
+        foreach (var name in new[] { "a.exe", "a.BAT", "a.cmd", "a.js", "a.vbs", "a.ps1", "a.jar", "a.application", "a.xbap", "a.xll", "a.diagcab", "a.rdp", "a.themepack", "a.search-ms", "a.searchConnector-ms", "a.py", "a.pyw" })
+            Check(WindowsDefaultApp.RunsCode(Named(name)), name + " can run code, so it never opens");
+        foreach (var name in new[] { "a.txt", "a.png", "a.pdf", "README", "a." })
+            Check(!WindowsDefaultApp.RunsCode(Named(name)), name + " opens with its default app");
+        foreach (var handler in new[] { @"C:\Program Files\Eclipse Adoptium\jdk-21\bin\javaw.exe", "\"C:\\Windows\\System32\\dfshim.dll\"", @"C:\Windows\System32\mshta.exe", @"C:\Users\a\AppData\Local\Microsoft\WindowsApps\python3.12.exe", @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", @"C:\Program Files\nodejs\node.exe" })
+            Check(WindowsDefaultApp.LaunchesCode(handler), handler + " runs what it opens");
+        foreach (var handler in new[] { @"C:\Windows\System32\notepad.exe", @"C:\Program Files\Microsoft Office\Root\Office16\EXCEL.EXE", @"C:\Windows\Explorer.exe" })
+            Check(!WindowsDefaultApp.LaunchesCode(handler), handler + " is an app, not a launcher");
+        return Task.CompletedTask;
+    }
+
     internal static Task TranscriptAndResultFilesResolveTheSameSafePreview()
     {
         var parent = Verification.Temp(); var root = Path.Combine(parent, "workspace"); Directory.CreateDirectory(root);

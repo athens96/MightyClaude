@@ -739,6 +739,7 @@ internal static class Verification
         await Test("claude plan style: queue, phone sends, stop and the stored mode", ClaudePlanStyleVerification.QueueAndStoredMode);
         await Test("desktop parity NewPanesInheritChoicesWithoutConversationIdentity", DesktopParityVerification.NewPanesInheritChoicesWithoutConversationIdentity);
         await Test("desktop parity GitStatusParsesOnlyLocalRepositoryMetadata", DesktopParityVerification.GitStatusParsesOnlyLocalRepositoryMetadata);
+        await Test("desktop parity OpenWithTheDefaultAppRefusesTypesThatRunCode", DesktopParityVerification.OpenWithTheDefaultAppRefusesTypesThatRunCode);
         await Test("desktop parity TranscriptAndResultFilesResolveTheSameSafePreview", DesktopParityVerification.TranscriptAndResultFilesResolveTheSameSafePreview);
         await Test("desktop parity ReferencePreviewsRefuseEscapesAndFinalSymlinks", DesktopParityVerification.ReferencePreviewsRefuseEscapesAndFinalSymlinks);
         await Test("Codex approval SettingsAndHandshake", CodexApprovalVerification.SettingsAndHandshake);

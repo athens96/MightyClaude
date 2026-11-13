@@ -99,10 +99,10 @@ public sealed partial class MainWindow
             var runId = args.Text("runId") is { } run && Wire.Identifier(run) ? service.OriginalsRun(paneId, run) : null;
             return await service.FileChangesAsync(root, target.RelativePath, paneId, runId);
         });
-        // Resolved again at the click: the workspace or the file may have changed while the bubble was open.
+        // Resolved again at the click: the workspace or the file may have changed while the bubble was open. A type that can run code is never opened.
         bridge.Register("referenceOpen", async args =>
         {
-            if (WebReferenceRoot(args) is not { } root || WorkspaceFiles.Resolve(args.Text("path") ?? "", root) is not { } file || Directory.Exists(file)) return false;
+            if (WebReferenceRoot(args) is not { } root || WorkspaceFiles.Resolve(args.Text("path") ?? "", root) is not { } file || Directory.Exists(file) || WindowsDefaultApp.RunsCode(file)) return false;
             return await Windows.System.Launcher.LaunchFileAsync(await Windows.Storage.StorageFile.GetFileFromPathAsync(file));
         });
         bridge.Register("referenceReveal", args =>

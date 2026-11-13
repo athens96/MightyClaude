@@ -99,10 +99,11 @@ public sealed partial class MainWindow
             }
             return Task.FromResult<object?>(null);
         });
-        // Its default app, by Windows' launcher (which refuses programs), only for a file that still resolves inside the workspace.
+        // Its default app, only for a file that still resolves inside the workspace and whose type cannot run code (Windows' launcher
+        // refuses nothing for a desktop app: WindowsDefaultApp.RunsCode).
         bridge.Register("filesOpen", async args =>
         {
-            if (WorkspaceFiles.Resolve(args.Text("path") ?? "", RequireWebFiles(args).Root) is not { } path || Directory.Exists(path)) return false;
+            if (WorkspaceFiles.Resolve(args.Text("path") ?? "", RequireWebFiles(args).Root) is not { } path || Directory.Exists(path) || WindowsDefaultApp.RunsCode(path)) return false;
             return await Windows.System.Launcher.LaunchFileAsync(await Windows.Storage.StorageFile.GetFileFromPathAsync(path));
         });
 

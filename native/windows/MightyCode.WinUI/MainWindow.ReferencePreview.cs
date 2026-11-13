@@ -168,8 +168,8 @@ public sealed partial class MainWindow
             referenceOpen = ReferenceButton("arrow.up.forward.app", Locale.Get("reference.openExternal"), "mighty-reference-open-" + id, async () =>
             {
                 // Resolve again at the click: the workspace or file may have changed
-                // while the preview was open. Nothing launches while content loads.
-                if (referenceTarget is not { } target || !FilesAlive || LocalPath(Workspace) is not { } folder || WorkspaceFiles.Resolve(target.RelativePath, folder) is not { } resolved) return;
+                // while the preview was open. Nothing launches while content loads, and a type that can run code never does.
+                if (referenceTarget is not { } target || !FilesAlive || LocalPath(Workspace) is not { } folder || WorkspaceFiles.Resolve(target.RelativePath, folder) is not { } resolved || WindowsDefaultApp.RunsCode(resolved)) return;
                 var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(resolved);
                 await Windows.System.Launcher.LaunchFileAsync(file);
             });

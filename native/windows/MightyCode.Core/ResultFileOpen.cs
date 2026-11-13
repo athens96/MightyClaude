@@ -12,12 +12,13 @@ public static class ResultFileOpen
     /// Opens a file named in a final result with the user's default app. The
     /// path is resolved against the workspace root by ResultFiles.Resolve, so a
     /// path outside the workspace — or one that is not an existing regular file
-    /// — is never opened. Returns false when nothing was opened.
+    /// — is never opened, nor one whose type can run code (<see cref="WindowsDefaultApp.RunsCode"/>). Returns false when
+    /// nothing was opened.
     /// </summary>
     public static bool OpenResultFile(this DesktopService service, string path, string? workspaceRoot)
     {
         ArgumentNullException.ThrowIfNull(service);
-        if (ResultFiles.Resolve(path, workspaceRoot) is not { } resolved) return false;
+        if (ResultFiles.Resolve(path, workspaceRoot) is not { } resolved || WindowsDefaultApp.RunsCode(resolved)) return false;
         using var opened = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(resolved) { UseShellExecute = true });
         return true;
     }
