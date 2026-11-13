@@ -387,8 +387,10 @@ impl Host {
             // before its status event comes through).
             ServiceEvent::SaveNow => self.saver.queue(self.current()),
             ServiceEvent::SaveSoon => self.saver.schedule(),
-            // The resume list's known sessions are W4's; a request starting needs nothing more here.
-            ServiceEvent::RequestStarting(_) | ServiceEvent::RememberSession(_) => {}
+            // A request starting needs nothing more here.
+            ServiceEvent::RequestStarting(_) => {}
+            // The resume list never hides a session the app's own pane started or resumed (history.rs).
+            ServiceEvent::RememberSession(id) => crate::history::remember_session(self, &id),
         }
     }
 

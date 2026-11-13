@@ -50,6 +50,8 @@ enum Stage {
     #[default]
     Main,
     Browser,
+    /// The work map and the resume list (smoke_history.rs).
+    History,
     Runs,
 }
 
@@ -150,6 +152,7 @@ struct Progress {
     /// The host's active pane when the first probe reported (its click must have reached the state).
     main_active: Option<String>,
     browser: Option<Value>,
+    history: Option<Value>,
     finished: bool,
 }
 
@@ -176,8 +179,9 @@ impl Smoke {
 
     fn timeout(&self) -> Duration {
         Duration::from_secs(match self.mode {
-            Mode::Page => 90,
-            Mode::FakeClaude => 240,
+            // The history step (smoke_history.rs) adds up to a minute.
+            Mode::Page => 150,
+            Mode::FakeClaude => 300,
             Mode::RealClaude => 420,
         })
     }
@@ -240,6 +244,7 @@ impl Smoke {
             match progress.stage {
                 Stage::Main => progress.main = Some(probe.clone()),
                 Stage::Browser => progress.browser = Some(probe.clone()),
+                Stage::History => progress.history = Some(probe.clone()),
                 Stage::Runs => {}
             }
             progress.stage
@@ -251,7 +256,8 @@ impl Smoke {
         let next = match stage {
             Stage::Main if probe.get("error").is_some() => None,
             Stage::Main if self.mode != Mode::RealClaude && self.start_browser(host) => Some(Stage::Browser),
-            Stage::Main | Stage::Browser if self.start_runs(host) => Some(Stage::Runs),
+            Stage::Main | Stage::Browser if self.mode != Mode::RealClaude && crate::smoke_history::start(host) => Some(Stage::History),
+            Stage::Main | Stage::Browser | Stage::History if self.start_runs(host) => Some(Stage::Runs),
             _ => None,
         };
         match next {
@@ -310,14 +316,14 @@ impl Smoke {
 
     /// Writes the result (once) and, with `--smoke-exit`, quits.
     pub fn finish(&self, host: &Host, runs: Option<Value>) {
-        let (calls, probe, browser, main_active) = {
+        let (calls, probe, browser, main_active, history) = {
             let mut progress = self.progress();
             if progress.finished {
                 return;
             }
             progress.finished = true;
             let probe = progress.main.clone().unwrap_or_else(|| json!({"error": "no probe report"}));
-            (progress.calls.clone(), probe, progress.browser.clone(), progress.main_active.clone())
+            (progress.calls.clone(), probe, progress.browser.clone(), progress.main_active.clone(), progress.history.clone())
         };
         let (snapshot_sent, shell_sent) = {
             let progress = self.progress();
@@ -354,6 +360,12 @@ impl Smoke {
                     && yes("hiddenUnderDialog")
                     && yes("shownAfterDialog")
             );
+        }
+        if self.mode != Mode::RealClaude {
+            let missing = json!({"error": "the history step did not report"});
+            for (name, passed) in crate::smoke_history::checks(history.as_ref().unwrap_or(&missing)) {
+                checks[name] = json!(passed);
+            }
         }
         match self.mode {
             Mode::Page => {}
@@ -400,6 +412,7 @@ impl Smoke {
             "checks": checks,
             "probe": probe,
             "browser": browser,
+            "history": history,
             "runs": runs,
             "mode": format!("{:?}", self.mode),
             "host": {"workspaces": workspaces, "panes": panes, "theme": theme, "activeSessionId": active, "language": host.locale.language()},
@@ -434,6 +447,7 @@ impl Smoke {
                     match progress.stage {
                         Stage::Main => progress.main = Some(error.clone()),
                         Stage::Browser => progress.browser = Some(error.clone()),
+                        Stage::History => progress.history = Some(error.clone()),
                         Stage::Runs => {}
                     }
                     progress.stage

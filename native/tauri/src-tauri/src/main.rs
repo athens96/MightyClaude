@@ -9,6 +9,7 @@ mod args;
 mod cards;
 mod composer;
 mod delta;
+mod history;
 mod host;
 mod logfile;
 mod methods;
@@ -17,8 +18,10 @@ mod panes;
 mod platform;
 mod runs;
 mod smoke;
+mod smoke_history;
 mod smoke_runs;
 mod surface;
+mod workmap;
 
 use std::sync::Arc;
 
@@ -192,7 +195,13 @@ fn main() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![host_post, smoke_probe, smoke::smoke_surface, smoke_runs::smoke_step])
+        .invoke_handler(tauri::generate_handler![
+            host_post,
+            smoke_probe,
+            smoke::smoke_surface,
+            smoke_runs::smoke_step,
+            smoke_history::smoke_history
+        ])
         .setup(move |app| {
             let (state, banner, log, smoke) = parts.take().expect("setup runs once");
             let version = app.package_info().version.to_string();

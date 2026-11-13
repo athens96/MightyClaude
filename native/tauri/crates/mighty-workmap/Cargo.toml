@@ -1,0 +1,33 @@
+[package]
+name = "mighty-workmap"
+version = "0.1.0"
+description = "Mighty Code's work map (C# WorkMap, WorkMapSummary, WorkMapService, WorkDashboard): a workspace's git history by version tag, platform and release state, the user's requests beside it, topic summaries by a headless Claude run. Reads the repository only; children start through the platform's ProcessHost. No Tauri."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+# The checks' scripted Claude (C# `--workmap-fake ok|hold|silent`): std and serde_json only.
+[[bin]]
+name = "mighty-workmap-fake"
+path = "tests/fake/claude.rs"
+test = false
+doc = false
+
+[dependencies]
+mighty-core.workspace = true
+mighty-graph.workspace = true
+mighty-platform.workspace = true
+mighty-run.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+indexmap = { workspace = true, features = ["serde"] }
+regex.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt", "macros", "io-util"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["sync", "time", "rt", "rt-multi-thread", "macros", "io-util"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+mighty-platform-windows.workspace = true

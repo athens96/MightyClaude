@@ -1,0 +1,25 @@
+[package]
+name = "mighty-history"
+version = "0.1.0"
+description = "Mighty Code's session history and resume (C# SessionHistory, ResumableSessions, KnownSessionIDs and the records they read: Claude's and Codex's JSONL, Antigravity's transcripts and conversation_summaries.db, pi's sessions, opencode's opencode.db and Hermes's state.db). Read-only; no Tauri, no OS code."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mighty-core.workspace = true
+mighty-graph.workspace = true
+# `ActivitySupport.Kind` and `Clean` (mighty-graph reads mighty-run already, so this adds no cycle).
+mighty-run.workspace = true
+serde_json.workspace = true
+regex.workspace = true
+chrono.workspace = true
+unicode-segmentation.workspace = true
+percent-encoding.workspace = true
+memchr = "2"
+# The CLIs' SQLite databases (opencode.db, Hermes's state.db, Antigravity's conversation_summaries.db), opened read-only. C# loads the
+# system's SQLite (winsqlite3.dll); here SQLite is built in, so the Mac and Windows read the same way.
+rusqlite = { version = "0.37", features = ["bundled"] }
+# `CompareOptions.IgnoreWidth | IgnoreNonSpace` of the resume list's search.
+unicode-normalization = "0.1"
