@@ -75,6 +75,8 @@ python scripts/release.py verify
 
 빌드 번호(`Mac build`, `latest.json`의 `build`)는 빌드한 커밋의 `git rev-list --count`이다. CI(`fetch-depth: 0`)와 `scripts/build-macos.sh`가 같은 값을 `CFBundleVersion`에 넣는다. 릴리스 커밋 뒤에 CI만 고친 커밋으로 패키지를 만들 때는(`0.4.47`은 릴리스 커밋 `e2899123`(1346)이 아니라 그 뒤 `73879aeb`(1348)로 나갔다) `ci --commit <sha>`로 그 커밋을 고른다. 그 커밋은 릴리스 커밋 뒤에 있어야 하고 `VERSION`이 같아야 한다. 이후 build 번호, GitHub 태그 대상이 모두 이 커밋을 따른다.
 
+CI는 커밋마다 다 돌지 않는다(`scripts/ci-changes.sh`, 2026-11-13). 도움말 스크린샷은 릴리스 커밋(`(release) …`)과 손으로 시작한 전체 실행에서만 찍고, 다른 플랫폼 파일만 바뀐 푸시는 그 플랫폼의 빌드를 건너뛴다(맥: `native/windows/`만, Windows: `native/macos/`·`relay/`만). 빌드할 커밋의 푸시 실행이 빌드를 건너뛰었으면 `ci`가 그 워크플로의 전체 실행(`workflow_dispatch`, `full=true`)을 main에서 시작해 그 결과를 쓴다. 이 실행은 main의 마지막 커밋을 빌드하므로, 고른 커밋이 main의 마지막 커밋이 아니면 멈추고 그렇게 하라고 알린다. 맥은 테스트(`macos-tests`)와 빌드(`macos`)가 서로 다른 러너에서 동시에 돈다.
+
 `ci`는 먼저 `git fetch origin main`을 하고, 고른 커밋이 origin/main에 없으면 바로 멈춘다("먼저 main에 push하세요") — 기능 브랜치 커밋을 태그하거나 오지 않을 CI를 180분 기다리지 않는다. `ci`가 다른 커밋이나 다른 실행을 고르면 `download` 이후 단계가 모두 다시 해야 하는 것으로 돌아간다.
 
 ### download

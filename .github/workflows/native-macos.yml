@@ -3,22 +3,54 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      full:
+        description: Build, test and capture the help screenshots (release.py dispatches this when a build commit's push run skipped the Mac)
+        type: boolean
+        default: true
 permissions:
   contents: read
 jobs:
-  macos:
+  changes:
+    # Whether this run builds and tests the Mac app, and whether it captures the help screenshots
+    # (release commits and full dispatches only): scripts/ci-changes.sh.
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      help: ${{ steps.decide.outputs.help }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+          FULL: ${{ inputs.full }}
+        run: bash scripts/ci-changes.sh macos
+
+  macos-tests:
+    # The Swift core tests and the mod's checks, on their own runner beside the build job.
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          # The build number is the commit count, so the whole history is fetched.
           fetch-depth: 0
       - name: Report the selected Apple toolchain
         run: |
           xcode-select -p
           xcrun --find swift
           xcrun swift --version
-          xcrun --sdk macosx --show-sdk-path
+      - name: Restore SwiftPM downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            native/macos/.build/repositories
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/macos/Package.resolved', 'native/macos/Vendor/libghostty-spm/Package.swift') }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -56,6 +88,29 @@ jobs:
             echo "::endgroup::"
           done
           exit $status
+
+  macos:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The build number is the commit count, so the whole history is fetched.
+          fetch-depth: 0
+      - name: Report the selected Apple toolchain
+        run: |
+          xcode-select -p
+          xcrun --find swift
+          xcrun swift --version
+          xcrun --sdk macosx --show-sdk-path
+      - name: Restore SwiftPM downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            native/macos/.build/repositories
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/macos/Package.resolved', 'native/macos/Vendor/libghostty-spm/Package.swift') }}
       # A push to main builds the package a release ships, so it carries the pinned browser engine
       # (CEF and Node, BrowserEngine.lock) as the Mac release zips always have; other runs build without it.
       - name: Restore the pinned browser engine (main)
@@ -368,8 +423,10 @@ jobs:
       - name: Capture help screenshots in four languages
         # The help site's pictures (docs/help/shots.json) from the bundled demo profile,
         # one launch per language in a fresh profile, light and dark. Never run on a
-        # developer's Mac: a second app instance breaks Korean input there.
-        if: success() || failure()
+        # developer's Mac: a second app instance breaks Korean input there. Only release
+        # commits and full dispatches take them (ten minutes; the help site is uploaded
+        # from a release's pictures).
+        if: (success() || failure()) && needs.changes.outputs.help == 'true'
         timeout-minutes: 30
         run: |
           set -u
@@ -420,7 +477,7 @@ jobs:
           PY
           exit $status
       - name: Upload help screenshots
-        if: always()
+        if: always() && needs.changes.outputs.help == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: MightyCode-macos-help-shots
@@ -435,7 +492,7 @@ jobs:
       # the zip goes to the notarize-macos job, which signs, notarizes and adds the dmg.
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ (vars.MIGHTY_MAC_NOTARIZE == '1' && github.ref == 'refs/heads/main' && github.event_name == 'push') && 'MightyCode-native-macos-unsigned' || 'MightyCode-native-macos' }}
+          name: ${{ (vars.MIGHTY_MAC_NOTARIZE == '1' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) && 'MightyCode-native-macos-unsigned' || 'MightyCode-native-macos' }}
           path: release/MightyCode-macos.zip
           if-no-files-found: error
 
@@ -444,8 +501,9 @@ jobs:
     # opens without Gatekeeper's warning. The certificate and the notary key are
     # secrets of the `release` environment (main only); the build job above never
     # sees them. Actions are pinned to commit SHAs, as in release-manifest.yml.
-    needs: macos
-    if: vars.MIGHTY_MAC_NOTARIZE == '1' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # A full dispatch on main (a release build from a commit whose push run skipped the Mac) is signed too.
+    needs: [macos, macos-tests]
+    if: vars.MIGHTY_MAC_NOTARIZE == '1' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     environment: release
     runs-on: macos-latest
     steps:

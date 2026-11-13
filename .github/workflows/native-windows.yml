@@ -3,10 +3,34 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      full:
+        description: Build and test (release.py dispatches this when a build commit's push run skipped Windows)
+        type: boolean
+        default: true
 permissions:
   contents: read
 jobs:
+  changes:
+    # Whether this run builds and tests Windows: scripts/ci-changes.sh (skipped when only Mac or relay files changed).
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+          FULL: ${{ inputs.full }}
+        run: bash scripts/ci-changes.sh windows
+
   windows:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     name: Windows ${{ matrix.architecture }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30

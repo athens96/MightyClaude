@@ -587,6 +587,14 @@ def find_run(workflow, commit):
     return runs[0] if runs else None
 
 
+def build_skipped(run_id):
+    """Whether a completed run skipped every build job: its `changes` job found only the other platform's files changed
+    (scripts/ci-changes.sh), so it made no package."""
+    jobs = json.loads(sh(["gh", "run", "view", str(run_id), "--json", "jobs"]) or "{}").get("jobs", [])
+    builds = [j for j in jobs if j.get("name") != "changes"]
+    return bool(builds) and all(j.get("conclusion") == "skipped" for j in builds)
+
+
 def step_ci(state, a):
     version, commit = state["version"], a.commit or state["data"].get("buildCommit") or state["data"]["commit"]
     commit = sh(["git", "rev-parse", commit])
@@ -603,15 +611,33 @@ def step_ci(state, a):
     say(f"빌드 커밋 {commit[:8]} (Mac build {build})의 CI를 기다립니다")
     deadline = time.time() + a.timeout_min * 60
     seen = {}
+    dispatched = {}  # workflow name -> when release.py asked for its full run (runs made before it do not count)
     while True:
         runs = {name: find_run(workflow, commit) for name, workflow in WORKFLOWS.items()}
+        for name, since in dispatched.items():
+            if runs[name] and runs[name].get("createdAt", "") < since:
+                runs[name] = None
         for name, run in runs.items():
             status = (run or {}).get("status", "아직 없음")
             if seen.get(name) != status:
                 say(f"  {name}: {status}" + (f"  {run['url']}" if run else ""))
                 seen[name] = status
         if all(r and r["status"] == "completed" for r in runs.values()):
-            break
+            # A push run that skipped this platform (only the other one's files changed) made no package: a full run
+            # started by hand on main builds it, when the build commit is main's head (a dispatch builds main's head).
+            skipped = [name for name, r in runs.items() if r["conclusion"] == "success" and name not in dispatched and build_skipped(r["databaseId"])]
+            if not skipped:
+                break
+            if sh(["git", "rev-parse", "origin/main"]) != commit:
+                raise ReleaseError(f"{', '.join(skipped)} CI가 {commit[:8]}의 빌드를 건너뛰었습니다(다른 플랫폼 파일만 바뀜). "
+                                   "main의 마지막 커밋으로 `release.py ci --commit <sha>`를 하면 그 커밋의 전체 실행을 시작합니다")
+            for name in skipped:
+                since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 5))
+                sh(["gh", "workflow", "run", WORKFLOWS[name], "--ref", "main", "-f", "full=true"])
+                dispatched[name] = since
+                seen.pop(name, None)
+                say(f"  {name}: 이 커밋의 푸시 실행이 빌드를 건너뛰어 전체 실행을 시작했습니다")
+            continue
         if time.time() > deadline:
             raise ReleaseError("CI가 시간 안에 끝나지 않았습니다. 나중에 다시 `release.py ci`")
         time.sleep(a.poll_sec)
