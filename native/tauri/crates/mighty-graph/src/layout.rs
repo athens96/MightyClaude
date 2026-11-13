@@ -997,7 +997,11 @@ pub mod resize {
 
     /// `At`: the sides whose band holds the point; near a corner both.
     pub fn at(point: Point, frame: GraphRect, outside: f64, inside: f64) -> Edges {
-        if point.x < frame.x - outside || point.x >= frame.max_x() + outside || point.y < frame.y - outside || point.y >= frame.max_y() + outside {
+        if point.x < frame.x - outside
+            || point.x >= frame.max_x() + outside
+            || point.y < frame.y - outside
+            || point.y >= frame.max_y() + outside
+        {
             return Edges::NONE;
         }
         let band = |distance: f64| distance >= -outside && distance <= inside;

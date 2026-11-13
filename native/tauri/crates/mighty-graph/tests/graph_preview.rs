@@ -28,7 +28,8 @@ fn remembered_graph_sizes_drive_layout_and_normalize() {
     pane.write(&mut out);
     let restored = RunSession::read(&serde_json::from_str(&out.finish()).unwrap()).unwrap();
     check(
-        restored.graph_block_sizes.as_ref().and_then(|s| s.get(&request).copied().flatten()) == Some(GraphBlockSize { width: 777.0, height: 333.0 }),
+        restored.graph_block_sizes.as_ref().and_then(|s| s.get(&request).copied().flatten())
+            == Some(GraphBlockSize { width: 777.0, height: 333.0 }),
         "custom sizes survive state serialization",
     );
     let pane = block_prefs::set(&pane, &request, None);
@@ -39,7 +40,9 @@ fn remembered_graph_sizes_drive_layout_and_normalize() {
     ]);
     let normalized = block_prefs::normalize(Some(&corrupt));
     check(
-        normalized.as_ref().is_some_and(|n| n.len() == 1 && n.get("other").copied().flatten() == Some(GraphBlockSize { width: 300.0, height: 1200.0 })),
+        normalized
+            .as_ref()
+            .is_some_and(|n| n.len() == 1 && n.get("other").copied().flatten() == Some(GraphBlockSize { width: 300.0, height: 1200.0 })),
         "corrupt saved preferences never reach layout",
     );
 }

@@ -143,7 +143,8 @@ fn run_group(group: &str, minimum: usize, produce: impl Fn(&Value) -> Value) {
 
 fn run_layout(value: &Value) -> Value {
     let runs: Vec<MightyGraphRun> = items(value.get("runs")).iter().map(run_in).collect();
-    let viewport = value.get("viewport").filter(|v| v.is_object()).map(|v| Size::new(double(v, "w").unwrap_or(0.0), double(v, "h").unwrap_or(0.0)));
+    let viewport =
+        value.get("viewport").filter(|v| v.is_object()).map(|v| Size::new(double(v, "w").unwrap_or(0.0), double(v, "h").unwrap_or(0.0)));
     let options = Options {
         result_files_run_id: text(value, "resultFilesRunID").map(str::to_string),
         viewport,
@@ -170,11 +171,18 @@ fn point(args: &Value, key: &str) -> Option<Point> {
 }
 
 fn size_of(args: &Value, key: &str) -> Size {
-    args.get(key).filter(|v| v.is_object()).map_or(Size::default(), |v| Size::new(double(v, "w").unwrap_or(0.0), double(v, "h").unwrap_or(0.0)))
+    args.get(key)
+        .filter(|v| v.is_object())
+        .map_or(Size::default(), |v| Size::new(double(v, "w").unwrap_or(0.0), double(v, "h").unwrap_or(0.0)))
 }
 
 fn rect_of(value: &Value) -> GraphRect {
-    GraphRect::new(double(value, "x").unwrap_or(0.0), double(value, "y").unwrap_or(0.0), double(value, "w").unwrap_or(0.0), double(value, "h").unwrap_or(0.0))
+    GraphRect::new(
+        double(value, "x").unwrap_or(0.0),
+        double(value, "y").unwrap_or(0.0),
+        double(value, "w").unwrap_or(0.0),
+        double(value, "h").unwrap_or(0.0),
+    )
 }
 
 fn run_camera(value: &Value) -> Value {
@@ -187,18 +195,26 @@ fn run_camera(value: &Value) -> Value {
             text(&args, "selectedNodeID"),
             &ids("layoutNodeIDs"),
         )),
-        Some("reaimAnchor") => anchor_json(&camera::reaim_anchor(text(&args, "newestRunID"), text(&args, "selectedNodeID"), &ids("layoutNodeIDs"))),
+        Some("reaimAnchor") => {
+            anchor_json(&camera::reaim_anchor(text(&args, "newestRunID"), text(&args, "selectedNodeID"), &ids("layoutNodeIDs")))
+        }
         Some("resizeAnchor") => {
             let frames: HashMap<String, GraphRect> = args
                 .get("frames")
                 .and_then(Value::as_object)
                 .map(|o| o.iter().filter(|(_, v)| v.is_object()).map(|(k, v)| (k.clone(), rect_of(v))).collect())
                 .unwrap_or_default();
-            anchor_json(&camera::resize_anchor(text(&args, "fittedResultID"), text(&args, "targetID"), flag(&args, "targetAlignTop"), &frames))
+            anchor_json(&camera::resize_anchor(
+                text(&args, "fittedResultID"),
+                text(&args, "targetID"),
+                flag(&args, "targetAlignTop"),
+                &frames,
+            ))
         }
         Some("cameraOffset") => {
             let frame = rect_of(args.get("frame").unwrap_or(&Value::Null));
-            let offset = camera::camera_offset(frame, size_of(&args, "viewport"), double(&args, "zoom").unwrap_or(1.0), flag(&args, "alignTop"));
+            let offset =
+                camera::camera_offset(frame, size_of(&args, "viewport"), double(&args, "zoom").unwrap_or(1.0), flag(&args, "alignTop"));
             json!({ "x": offset.x, "y": offset.y })
         }
         Some("lostFrameIndex") => {

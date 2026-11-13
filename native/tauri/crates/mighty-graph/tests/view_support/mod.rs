@@ -90,12 +90,7 @@ pub fn identity(kind: Option<&str>, requested: Option<&str>, resolved: Option<&s
 }
 
 pub fn figures(started: Option<&str>, ended: Option<&str>, tools: Option<i32>, exit: Option<i32>) -> GraphAgentFigures {
-    GraphAgentFigures {
-        started_at: started.map(str::to_string),
-        ended_at: ended.map(str::to_string),
-        tool_calls: tools,
-        exit_code: exit,
-    }
+    GraphAgentFigures { started_at: started.map(str::to_string), ended_at: ended.map(str::to_string), tool_calls: tools, exit_code: exit }
 }
 
 /// C# `new LogEntry(id, kind, text, timestamp, provider, activity)`.
@@ -126,7 +121,9 @@ pub fn activity(id: &str, provider: &str, kind: &str, state: &str, summary: &str
 pub mod flow {
     use std::collections::HashSet;
 
-    use mighty_core::graph::{GraphAdvisor, GraphAgentFigures, GraphAgentIdentity, GraphResponseRecord, GraphTokenUsage, MightyGraphAgent, MightyGraphRun};
+    use mighty_core::graph::{
+        GraphAdvisor, GraphAgentFigures, GraphAgentIdentity, GraphResponseRecord, GraphTokenUsage, MightyGraphAgent, MightyGraphRun,
+    };
     use mighty_core::model::LogEntry;
     use mighty_core::time::{self, DateTimeOffset};
     use mighty_graph::layout::{self, FanOut, Layout, Node, Options};
@@ -357,7 +354,10 @@ pub mod flow {
         pub fn build(self) -> MightyGraphRun {
             let mut run = MightyGraphRun {
                 input: Some(format!("요청 {}", self.id)),
-                response_records: self.model.as_ref().map(|m| vec![Some(node::response_record(&format!("{}-m", self.id), Some(m), usage(1, 1), &[], false))]),
+                response_records: self
+                    .model
+                    .as_ref()
+                    .map(|m| vec![Some(node::response_record(&format!("{}-m", self.id), Some(m), usage(1, 1), &[], false))]),
                 id: Some(self.id),
                 status: Some(self.status),
                 agents: Some(self.agents),

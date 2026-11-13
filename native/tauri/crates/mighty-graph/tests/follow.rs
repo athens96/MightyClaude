@@ -47,12 +47,14 @@ fn typing_a_draft_never_changes_what_the_camera_follows() {
     let (idle, typing) = (make(&runs, "", true), make(&runs, "다음 요청", true));
     check(typing.nodes.iter().any(|n| n.kind == "draft"), "a typed draft has its block");
     check(
-        follow::target_id(&typing, &runs) == Some(id("a", layout::WORK_SUFFIX)) && follow::target_id(&idle, &runs) == follow::target_id(&typing, &runs),
+        follow::target_id(&typing, &runs) == Some(id("a", layout::WORK_SUFFIX))
+            && follow::target_id(&idle, &runs) == follow::target_id(&typing, &runs),
         "the 실행 block is followed with or without a draft",
     );
     let done = vec![run_of("a", "completed", vec![])];
     check(
-        follow::target_id(&make(&done, "", false), &done) == Some(id("a", "result")) && follow::target_id(&make(&done, "x", false), &done) == Some(id("a", "result")),
+        follow::target_id(&make(&done, "", false), &done) == Some(id("a", "result"))
+            && follow::target_id(&make(&done, "x", false), &done) == Some(id("a", "result")),
         "the result is followed, never the draft under it",
     );
 }
@@ -153,7 +155,8 @@ fn a_reader_who_moved_away_is_never_pulled_back() {
     check(!watch.following(), "a move away stops following");
     let next = GraphRect::new(24.0, 1_212.0, 500.0, 200.0);
     check(
-        watch.observe(Some("c"), Some(next), up, VIEWPORT, 1.0).is_none() && watch.observe(Some("c"), Some(next), up, Size::new(900.0, 500.0), 1.0).is_none(),
+        watch.observe(Some("c"), Some(next), up, VIEWPORT, 1.0).is_none()
+            && watch.observe(Some("c"), Some(next), up, Size::new(900.0, 500.0), 1.0).is_none(),
         "neither a new block nor a new viewport moves the reader",
     );
     check(!follow::is_at_newest(block, Point::new(0.0, -block.max_y() - 50.0), VIEWPORT, 1.0), "past the newest block is not at it");
@@ -181,7 +184,8 @@ fn a_reader_who_scrolled_up_before_a_layout_landed_is_not_followed_through_it() 
     let trimmed = block.offset_by(0.0, -10_112.0);
     check(watch.observe(Some("b"), Some(trimmed), up, viewport, 1.0).is_none(), "a trim does not pull the reader back");
     check(
-        watch.observe(Some("late"), Some(GraphRect::new(640.0, trimmed.y, 360.0, 240.0)), up, viewport, 1.0).is_none() && !watch.following(),
+        watch.observe(Some("late"), Some(GraphRect::new(640.0, trimmed.y, 360.0, 240.0)), up, viewport, 1.0).is_none()
+            && !watch.following(),
         "nor does a new block",
     );
 }
@@ -256,7 +260,10 @@ fn opening_or_resizing_a_block_never_moves_the_camera_and_keeps_follow_only_at_t
         "opened past the composer: nothing moves, following stops",
     );
     watch.user_changed_layout();
-    check(watch.observe(Some("b"), Some(block), camera, VIEWPORT, 1.0).is_none() && !watch.following(), "a layout change never starts following");
+    check(
+        watch.observe(Some("b"), Some(block), camera, VIEWPORT, 1.0).is_none() && !watch.following(),
+        "a layout change never starts following",
+    );
 }
 
 /// "mighty follow: a block taller than the viewport shows its bottom" (ABlockTallerThanTheViewportShowsItsBottom).
@@ -264,7 +271,10 @@ fn opening_or_resizing_a_block_never_moves_the_camera_and_keeps_follow_only_at_t
 fn a_block_taller_than_the_viewport_shows_its_bottom() {
     let tall = GraphRect::new(24.0, 100.0, 500.0, 2_000.0);
     let camera = follow::camera(tall, VIEWPORT, 1.0, 0.0, follow::MARGIN);
-    check(bottom(tall, camera, 1.0) == VIEWPORT.h - follow::MARGIN && follow::is_at_newest(tall, camera, VIEWPORT, 1.0), "a tall block shows its bottom");
+    check(
+        bottom(tall, camera, 1.0) == VIEWPORT.h - follow::MARGIN && follow::is_at_newest(tall, camera, VIEWPORT, 1.0),
+        "a tall block shows its bottom",
+    );
     check(!follow::is_at_newest(tall, Point::new(0.0, camera.y + 400.0), VIEWPORT, 1.0), "scrolled up inside it the reader is reading");
 }
 
@@ -294,9 +304,13 @@ fn the_run_id_rules_follow_a_send_and_reaim_a_trim_in_every_view() {
     let changed = |previous: Option<&[&str]>, current: &[&str], following: bool| {
         follow::runs_changed(previous.map(ids).as_deref(), &ids(current), following)
     };
-    check(changed(None, &["a"], false) == RunChange::First && changed(None, &[], true) == RunChange::First, "the first observation follows");
     check(
-        changed(Some(&["a", "b"]), &["a", "b"], false) == RunChange::None && changed(Some(&["a", "b"]), &["a", "b"], true) == RunChange::None,
+        changed(None, &["a"], false) == RunChange::First && changed(None, &[], true) == RunChange::First,
+        "the first observation follows",
+    );
+    check(
+        changed(Some(&["a", "b"]), &["a", "b"], false) == RunChange::None
+            && changed(Some(&["a", "b"]), &["a", "b"], true) == RunChange::None,
         "the same list asks nothing, so a block revealed after it keeps the camera",
     );
     check(
@@ -321,12 +335,18 @@ fn the_run_id_rules_follow_a_send_and_reaim_a_trim_in_every_view() {
 #[test]
 fn older_requests_loaded_above_and_a_zoom_keep_the_readers_place() {
     let nodes: HashSet<String> = HashSet::from([id("b", "request"), id("c", "request")]);
-    check(camera::trim_anchor(&ids(&["b", "c"]), &ids(&["z", "a", "b", "c"]), None, &nodes) == Anchor::Hold, "loading older requests holds");
+    check(
+        camera::trim_anchor(&ids(&["b", "c"]), &ids(&["z", "a", "b", "c"]), None, &nodes) == Anchor::Hold,
+        "loading older requests holds",
+    );
     check(
         camera::trim_anchor(&ids(&["a", "b", "c"]), &ids(&["b", "c"]), None, &nodes) == Anchor::reaim(&id("c", "request"), true),
         "a trim re-aims at the newest request",
     );
-    check(camera::trim_anchor(&ids(&["a", "c"]), &ids(&["x", "b", "c"]), None, &nodes) == Anchor::reaim(&id("c", "request"), true), "a different list re-aims");
+    check(
+        camera::trim_anchor(&ids(&["a", "c"]), &ids(&["x", "b", "c"]), None, &nodes) == Anchor::reaim(&id("c", "request"), true),
+        "a different list re-aims",
+    );
     let pan = Point::new(-120.0, -900.0);
     for (from, to) in [(1.0, 1.5), (1.5, 0.5), (0.7, 0.8)] {
         let zoomed = view_model::zoom_anchored(pan, VIEWPORT, from, to);

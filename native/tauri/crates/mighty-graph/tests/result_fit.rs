@@ -54,8 +54,14 @@ fn size(w: f64, h: f64) -> GraphBlockSize {
 /// "mighty result box: a saved size larger than the pane is kept within it" (ASavedSizeLargerThanThePaneIsKeptWithinIt).
 #[test]
 fn a_saved_size_larger_than_the_pane_is_kept_within_it() {
-    check(latest(&canvas(NARROW, Some(1.0), Some(BIG_SAVED), false)) == Size::new(552.0, 352.0), "a saved size larger than the pane is the pane less its margins");
-    check(latest(&canvas(Size::new(1_200.0, 400.0), Some(1.0), Some(BIG_SAVED), false)) == Size::new(900.0, 352.0), "only the side the pane bounds shrinks");
+    check(
+        latest(&canvas(NARROW, Some(1.0), Some(BIG_SAVED), false)) == Size::new(552.0, 352.0),
+        "a saved size larger than the pane is the pane less its margins",
+    );
+    check(
+        latest(&canvas(Size::new(1_200.0, 400.0), Some(1.0), Some(BIG_SAVED), false)) == Size::new(900.0, 352.0),
+        "only the side the pane bounds shrinks",
+    );
     check(latest(&canvas(NARROW, None, Some(BIG_SAVED), false)) == Size::new(900.0, 700.0), "without a zoom the saved size stays whole");
 }
 
@@ -65,10 +71,19 @@ fn the_card_shrinks_with_the_pane_and_grows_back_to_the_saved_size() {
     let saved = size(900.0, 600.0);
     let wide = Size::new(1_200.0, 800.0);
     check(latest(&canvas(wide, Some(1.0), Some(saved), false)) == Size::new(900.0, 600.0), "a roomy pane shows the saved size");
-    check(latest(&canvas(Size::new(500.0, 300.0), Some(1.0), Some(saved), false)) == Size::new(452.0, 252.0), "a small pane shrinks the card");
-    check(latest(&canvas(Size::new(800.0, 500.0), Some(1.0), Some(saved), false)) == Size::new(752.0, 452.0), "a medium pane shrinks it less");
+    check(
+        latest(&canvas(Size::new(500.0, 300.0), Some(1.0), Some(saved), false)) == Size::new(452.0, 252.0),
+        "a small pane shrinks the card",
+    );
+    check(
+        latest(&canvas(Size::new(800.0, 500.0), Some(1.0), Some(saved), false)) == Size::new(752.0, 452.0),
+        "a medium pane shrinks it less",
+    );
     check(latest(&canvas(wide, Some(1.0), Some(saved), false)) == Size::new(900.0, 600.0), "the card grows back to its saved size");
-    check(latest(&canvas(Size::new(420.0, 230.0), Some(1.0), None, false)) == Size::new(372.0, 182.0), "the window fit shrinks with a narrow pane");
+    check(
+        latest(&canvas(Size::new(420.0, 230.0), Some(1.0), None, false)) == Size::new(372.0, 182.0),
+        "the window fit shrinks with a narrow pane",
+    );
     check(latest(&canvas(wide, Some(1.0), None, false)) == Size::new(1_152.0, 752.0), "the window fit fills a wide pane");
 }
 
@@ -85,7 +100,10 @@ fn the_limit_is_in_diagram_coordinates_at_the_zoom() {
     for zoom in [0.5, 1.0, 1.5] {
         for s in [Some(saved), None] {
             let card = latest(&canvas(pane, Some(zoom), s, false));
-            check(card.w * zoom <= pane.w - 48.0 + 0.001 && card.h * zoom <= pane.h - 48.0 + 0.001, format!("the card stays inside the pane at {zoom}"));
+            check(
+                card.w * zoom <= pane.w - 48.0 + 0.001 && card.h * zoom <= pane.h - 48.0 + 0.001,
+                format!("the card stays inside the pane at {zoom}"),
+            );
         }
     }
 }
@@ -97,14 +115,30 @@ fn a_tiny_pane_keeps_the_block_minimum() {
     check(layout::result_viewport_limit(Size::new(200.0, 100.0), 1.0, false) == minimum, "a tiny pane keeps the block minimum");
     check(layout::result_viewport_limit(Size::new(400.0, 220.0), 1.5, false) == minimum, "a tiny zoomed pane keeps the block minimum");
     check(latest(&canvas(Size::new(200.0, 100.0), Some(1.0), Some(BIG_SAVED), false)) == minimum, "the card keeps the block minimum");
-    check(latest(&canvas(Size::new(1_000.0, 600.0), Some(1.0), Some(BIG_SAVED), true)).w == 1_000.0 - 48.0 - 336.0, "the files panel takes its width");
-    check(latest(&canvas(Size::new(600.0, 600.0), Some(1.0), Some(BIG_SAVED), true)).w == mighty_core::graph::MINIMUM_WIDTH, "down to the minimum");
+    check(
+        latest(&canvas(Size::new(1_000.0, 600.0), Some(1.0), Some(BIG_SAVED), true)).w == 1_000.0 - 48.0 - 336.0,
+        "the files panel takes its width",
+    );
+    check(
+        latest(&canvas(Size::new(600.0, 600.0), Some(1.0), Some(BIG_SAVED), true)).w == mighty_core::graph::MINIMUM_WIDTH,
+        "down to the minimum",
+    );
     for zoom in [0.0, -1.0, f64::NAN, f64::INFINITY] {
-        check(layout::result_viewport_limit(Size::new(600.0, 400.0), zoom, false) == Size::new(552.0, 352.0), "a broken zoom counts as 100%");
+        check(
+            layout::result_viewport_limit(Size::new(600.0, 400.0), zoom, false) == Size::new(552.0, 352.0),
+            "a broken zoom counts as 100%",
+        );
     }
 }
 
-fn drag(dragged: Size, horizontal: bool, vertical: bool, phase: ResizePhase, on: &Layout, saved: Option<GraphBlockSize>) -> (Option<GraphBlockSize>, Option<GraphBlockSize>) {
+fn drag(
+    dragged: Size,
+    horizontal: bool,
+    vertical: bool,
+    phase: ResizePhase,
+    on: &Layout,
+    saved: Option<GraphBlockSize>,
+) -> (Option<GraphBlockSize>, Option<GraphBlockSize>) {
     layout::result_drag(dragged, horizontal, vertical, phase, saved.as_ref(), on.result_limit, on.result_window_fit)
 }
 
@@ -112,9 +146,15 @@ fn drag(dragged: Size, horizontal: bool, vertical: bool, phase: ResizePhase, on:
 #[test]
 fn the_layout_carries_the_limits_a_drag_uses() {
     let graph = canvas(NARROW, Some(1.0), Some(BIG_SAVED), false);
-    check(graph.result_limit == Some(Size::new(552.0, 352.0)) && graph.result_window_fit == Some(Size::new(552.0, 352.0)), "the layout carries the limit and the fit");
+    check(
+        graph.result_limit == Some(Size::new(552.0, 352.0)) && graph.result_window_fit == Some(Size::new(552.0, 352.0)),
+        "the layout carries the limit and the fit",
+    );
     let wide = canvas(Size::new(1_200.0, 800.0), Some(1.5), Some(BIG_SAVED), true);
-    check(wide.result_limit == Some(layout::result_viewport_limit(Size::new(1_200.0, 800.0), 1.5, true)), "the limit counts the files panel and zoom");
+    check(
+        wide.result_limit == Some(layout::result_viewport_limit(Size::new(1_200.0, 800.0), 1.5, true)),
+        "the limit counts the files panel and zoom",
+    );
     check(wide.result_window_fit == Some(layout::result_fit_size(Size::new(1_200.0, 800.0), true)), "the fit counts the files panel");
     check(canvas(NARROW, None, Some(BIG_SAVED), false).result_limit.is_none(), "no zoom, no limit");
 }
@@ -124,8 +164,14 @@ fn the_layout_carries_the_limits_a_drag_uses() {
 fn a_live_drag_follows_the_cursor_within_the_pane_only() {
     let graph = canvas(NARROW, Some(1.0), Some(BIG_SAVED), false);
     let live = ResizePhase::Live;
-    check(drag(Size::new(480.0, 300.0), true, true, live, &graph, Some(BIG_SAVED)).0 == Some(size(480.0, 300.0)), "inside the pane: the dragged size");
-    check(drag(Size::new(1_000.0, 300.0), true, true, live, &graph, Some(BIG_SAVED)).0 == Some(size(552.0, 300.0)), "past it: stops at the pane");
+    check(
+        drag(Size::new(480.0, 300.0), true, true, live, &graph, Some(BIG_SAVED)).0 == Some(size(480.0, 300.0)),
+        "inside the pane: the dragged size",
+    );
+    check(
+        drag(Size::new(1_000.0, 300.0), true, true, live, &graph, Some(BIG_SAVED)).0 == Some(size(552.0, 300.0)),
+        "past it: stops at the pane",
+    );
     let pushed = drag(Size::new(1_000.0, 900.0), true, true, live, &graph, Some(BIG_SAVED));
     check(pushed.0 == Some(size(552.0, 352.0)) && pushed.1.is_none(), "a live drag saves nothing");
     check(latest(&canvas(NARROW, Some(1.0), pushed.0, false)) == Size::new(552.0, 352.0), "the live size laid out is the card shown");
@@ -142,26 +188,53 @@ fn releasing_saves_only_the_sides_moved_inside_the_pane() {
     let graph = canvas(NARROW, Some(1.0), Some(BIG_SAVED), false);
     let released = drag(Size::new(552.0, 300.0), true, true, finished, &graph, Some(BIG_SAVED));
     check(released.0.is_none() && released.1 == Some(size(900.0, 300.0)), "dx = 0 at the pane edge keeps the saved width");
-    check(latest(&canvas(Size::new(1_200.0, 800.0), Some(1.0), released.1, false)).w == 900.0, "grown back, the card is the saved width again");
-    check(drag(Size::new(1_000.0, 900.0), true, true, finished, &graph, Some(BIG_SAVED)).1 == Some(BIG_SAVED), "pushing past the pane keeps the saved size");
+    check(
+        latest(&canvas(Size::new(1_200.0, 800.0), Some(1.0), released.1, false)).w == 900.0,
+        "grown back, the card is the saved width again",
+    );
+    check(
+        drag(Size::new(1_000.0, 900.0), true, true, finished, &graph, Some(BIG_SAVED)).1 == Some(BIG_SAVED),
+        "pushing past the pane keeps the saved size",
+    );
     let small = size(400.0, 250.0);
     check(
-        drag(Size::new(800.0, 600.0), true, true, finished, &canvas(NARROW, Some(1.0), Some(small), false), Some(small)).1 == Some(size(552.0, 352.0)),
+        drag(Size::new(800.0, 600.0), true, true, finished, &canvas(NARROW, Some(1.0), Some(small), false), Some(small)).1
+            == Some(size(552.0, 352.0)),
         "a smaller saved size pushed past the pane saves the pane's size",
     );
     check(
-        drag(Size::new(900.0, 600.0), true, true, finished, &canvas(Size::new(420.0, 230.0), Some(1.0), None, false), None).1 == Some(size(500.0, 200.0)),
+        drag(Size::new(900.0, 600.0), true, true, finished, &canvas(Size::new(420.0, 230.0), Some(1.0), None, false), None).1
+            == Some(size(500.0, 200.0)),
         "nothing saved and a narrow pane: the fit, not the shrunk size",
     );
-    check(drag(Size::new(500.0, 300.0), true, true, finished, &graph, Some(BIG_SAVED)).1 == Some(size(500.0, 300.0)), "released inside the pane");
-    check(drag(Size::new(500.0, 352.0), true, false, finished, &graph, Some(BIG_SAVED)).1 == Some(size(500.0, 700.0)), "a right-side drag keeps the saved height");
-    check(drag(Size::new(552.0, 300.0), false, true, finished, &graph, Some(BIG_SAVED)).1 == Some(size(900.0, 300.0)), "a bottom drag keeps the saved width");
-    let zoomed = canvas(Size::new(900.0, 700.0), Some(1.5), Some(BIG_SAVED), false);
-    check(drag(Size::new(568.0, 300.0), true, true, finished, &zoomed, Some(BIG_SAVED)).1 == Some(size(900.0, 300.0)), "zoomed in, the limit is 568 wide");
-    check(drag(Size::new(520.0, 300.0), true, true, finished, &zoomed, Some(BIG_SAVED)).1 == Some(size(520.0, 300.0)), "zoomed in, inside the limit");
-    check(drag(Size::new(900.0, 180.0), true, true, ResizePhase::Cancelled, &graph, Some(BIG_SAVED)) == (None, None), "a cancelled drag saves nothing");
     check(
-        layout::result_drag(Size::new(100.0, 5_000.0), true, true, finished, None, None, Some(Size::new(1_152.0, 752.0))).1 == Some(size(300.0, 1_200.0)),
+        drag(Size::new(500.0, 300.0), true, true, finished, &graph, Some(BIG_SAVED)).1 == Some(size(500.0, 300.0)),
+        "released inside the pane",
+    );
+    check(
+        drag(Size::new(500.0, 352.0), true, false, finished, &graph, Some(BIG_SAVED)).1 == Some(size(500.0, 700.0)),
+        "a right-side drag keeps the saved height",
+    );
+    check(
+        drag(Size::new(552.0, 300.0), false, true, finished, &graph, Some(BIG_SAVED)).1 == Some(size(900.0, 300.0)),
+        "a bottom drag keeps the saved width",
+    );
+    let zoomed = canvas(Size::new(900.0, 700.0), Some(1.5), Some(BIG_SAVED), false);
+    check(
+        drag(Size::new(568.0, 300.0), true, true, finished, &zoomed, Some(BIG_SAVED)).1 == Some(size(900.0, 300.0)),
+        "zoomed in, the limit is 568 wide",
+    );
+    check(
+        drag(Size::new(520.0, 300.0), true, true, finished, &zoomed, Some(BIG_SAVED)).1 == Some(size(520.0, 300.0)),
+        "zoomed in, inside the limit",
+    );
+    check(
+        drag(Size::new(900.0, 180.0), true, true, ResizePhase::Cancelled, &graph, Some(BIG_SAVED)) == (None, None),
+        "a cancelled drag saves nothing",
+    );
+    check(
+        layout::result_drag(Size::new(100.0, 5_000.0), true, true, finished, None, None, Some(Size::new(1_152.0, 752.0))).1
+            == Some(size(300.0, 1_200.0)),
         "saves are clamped to the block bounds",
     );
 }
@@ -170,7 +243,10 @@ fn releasing_saves_only_the_sides_moved_inside_the_pane() {
 #[test]
 fn a_saved_card_the_pane_bounds_follows_the_pane_on_resize() {
     let bound = canvas(NARROW, Some(1.0), Some(BIG_SAVED), false);
-    check(bound.fitted_result_id.is_none() && bound.viewport_bound_result_id == Some(result_id("one")), "a bounded saved card follows the pane");
+    check(
+        bound.fitted_result_id.is_none() && bound.viewport_bound_result_id == Some(result_id("one")),
+        "a bounded saved card follows the pane",
+    );
     let frames: HashMap<String, GraphRect> = bound.nodes.iter().map(|n| (n.id.clone(), n.frame)).collect();
     let anchor = camera::resize_anchor(
         bound.fitted_result_id.as_deref().or(bound.viewport_bound_result_id.as_deref()),
@@ -179,8 +255,14 @@ fn a_saved_card_the_pane_bounds_follows_the_pane_on_resize() {
         &frames,
     );
     check(anchor == Anchor::reaim(&result_id("one"), true), "resizing keeps a bounded card's top in view");
-    check(canvas(Size::new(1_200.0, 800.0), Some(1.0), Some(BIG_SAVED), false).viewport_bound_result_id.is_none(), "a card within the pane is not bounded");
-    check(canvas(Size::new(1_200.0, 400.0), Some(1.0), Some(BIG_SAVED), false).viewport_bound_result_id == Some(result_id("one")), "bounded in one direction is enough");
+    check(
+        canvas(Size::new(1_200.0, 800.0), Some(1.0), Some(BIG_SAVED), false).viewport_bound_result_id.is_none(),
+        "a card within the pane is not bounded",
+    );
+    check(
+        canvas(Size::new(1_200.0, 400.0), Some(1.0), Some(BIG_SAVED), false).viewport_bound_result_id == Some(result_id("one")),
+        "bounded in one direction is enough",
+    );
     check(canvas(NARROW, None, Some(BIG_SAVED), false).viewport_bound_result_id.is_none(), "no zoom never bounds");
     let fitted = canvas(Size::new(900.0, 700.0), Some(1.5), None, false);
     check(
@@ -194,7 +276,8 @@ fn a_saved_card_the_pane_bounds_follows_the_pane_on_resize() {
 #[test]
 fn the_saved_size_is_kept_under_the_mac_field() {
     check(
-        view_model::LOCALE_KEY_RESULT_FIT_TO_WINDOW == "graph.result.fitToWindow" && ko().get(view_model::LOCALE_KEY_RESULT_FIT_TO_WINDOW) == "창에 맞추기",
+        view_model::LOCALE_KEY_RESULT_FIT_TO_WINDOW == "graph.result.fitToWindow"
+            && ko().get(view_model::LOCALE_KEY_RESULT_FIT_TO_WINDOW) == "창에 맞추기",
         "the fit button is graph.result.fitToWindow",
     );
     let workspace = Workspace { path: Some(std::env::temp_dir().to_string_lossy().into_owned()), ..Workspace::default() };
@@ -205,7 +288,12 @@ fn the_saved_size_is_kept_under_the_mac_field() {
         graph_result_size: Some(size(5_000.0, 700.0)),
         ..RunSession::default()
     };
-    let shell = RunSession { workspace_id: workspace.id.clone(), kind: Some("shell".into()), graph_result_size: Some(size(900.0, 700.0)), ..RunSession::default() };
+    let shell = RunSession {
+        workspace_id: workspace.id.clone(),
+        kind: Some("shell".into()),
+        graph_result_size: Some(size(900.0, 700.0)),
+        ..RunSession::default()
+    };
     let plain = RunSession { workspace_id: workspace.id.clone(), provider: Some("claude".into()), ..RunSession::default() };
     let snapshot = AppSnapshot {
         version: 1,

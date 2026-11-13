@@ -32,7 +32,13 @@ fn size_of(layout: &Layout, id: &str) -> Option<Size> {
     frame(layout, id).map(|f| Size::new(f.w, f.h))
 }
 
-fn canvas(runs: &[MightyGraphRun], viewport: Option<Size>, content: Option<f64>, saved: Option<GraphBlockSize>, zoom: Option<f64>) -> Layout {
+fn canvas(
+    runs: &[MightyGraphRun],
+    viewport: Option<Size>,
+    content: Option<f64>,
+    saved: Option<GraphBlockSize>,
+    zoom: Option<f64>,
+) -> Layout {
     let options = Options { viewport, zoom, shared_result_size: saved, result_content_height: content, ..Options::default() };
     layout::make(runs, "", false, &HashSet::new(), &options, &ko())
 }
@@ -48,14 +54,29 @@ fn size(w: f64, h: f64) -> GraphBlockSize {
 /// "mighty result reveal: the newest result is as tall as its content up to its cap" (TheNewestResultIsAsTallAsItsContentUpToItsCap).
 #[test]
 fn the_newest_result_is_as_tall_as_its_content_up_to_its_cap() {
-    check(layout::result_size(Size::new(1_100.0, 800.0), Some(260.0)) == Size::new(1_100.0, 260.0), "a short answer shrinks below the saved size");
+    check(
+        layout::result_size(Size::new(1_100.0, 800.0), Some(260.0)) == Size::new(1_100.0, 260.0),
+        "a short answer shrinks below the saved size",
+    );
     check(layout::result_size(Size::new(700.0, 350.0), Some(2_000.0)) == Size::new(700.0, 350.0), "a long answer stops at the saved size");
-    check(layout::result_size(Size::new(700.0, 350.0), Some(60.0)).h == layout::MINIMUM_RESULT_HEIGHT, "a tiny answer keeps the minimum height");
-    check(layout::result_size(Size::new(700.0, 350.0), Some(0.0)).h == layout::MINIMUM_RESULT_HEIGHT, "an empty answer keeps the minimum height");
+    check(
+        layout::result_size(Size::new(700.0, 350.0), Some(60.0)).h == layout::MINIMUM_RESULT_HEIGHT,
+        "a tiny answer keeps the minimum height",
+    );
+    check(
+        layout::result_size(Size::new(700.0, 350.0), Some(0.0)).h == layout::MINIMUM_RESULT_HEIGHT,
+        "an empty answer keeps the minimum height",
+    );
     for broken in [None, Some(f64::NAN), Some(f64::INFINITY), Some(-5.0)] {
-        check(layout::result_size(Size::new(700.0, 350.0), broken) == Size::new(700.0, 350.0), format!("unmeasured or broken content takes the cap: {broken:?}"));
+        check(
+            layout::result_size(Size::new(700.0, 350.0), broken) == Size::new(700.0, 350.0),
+            format!("unmeasured or broken content takes the cap: {broken:?}"),
+        );
     }
-    check(layout::result_size(Size::new(700.0, 900.0), Some(300.2)).h == 301.0, "fractional content rounds up so the last line is never clipped");
+    check(
+        layout::result_size(Size::new(700.0, 900.0), Some(300.2)).h == 301.0,
+        "fractional content rounds up so the last line is never clipped",
+    );
     check(layout::MINIMUM_RESULT_HEIGHT == mighty_core::graph::MINIMUM_HEIGHT, "the result minimum is the block minimum");
 }
 
@@ -64,9 +85,13 @@ fn the_newest_result_is_as_tall_as_its_content_up_to_its_cap() {
 fn the_saved_size_is_a_maximum_for_every_new_result() {
     let viewport = Some(Size::new(1_200.0, 800.0));
     let saved = Some(size(900.0, 600.0));
-    check(size_of(&canvas(&[done("one")], viewport, Some(180.0), saved, None), &result_id("one")) == Some(Size::new(900.0, 180.0)), "a short answer is as tall as its content at the saved width");
     check(
-        size_of(&canvas(&[done("one"), done("two")], viewport, Some(1_500.0), saved, None), &result_id("two")) == Some(Size::new(900.0, 600.0)),
+        size_of(&canvas(&[done("one")], viewport, Some(180.0), saved, None), &result_id("one")) == Some(Size::new(900.0, 180.0)),
+        "a short answer is as tall as its content at the saved width",
+    );
+    check(
+        size_of(&canvas(&[done("one"), done("two")], viewport, Some(1_500.0), saved, None), &result_id("two"))
+            == Some(Size::new(900.0, 600.0)),
         "a long answer is the saved size, scrolling inside",
     );
     let fitted = canvas(&[done("one")], viewport, Some(240.0), None, None);
@@ -74,7 +99,10 @@ fn the_saved_size_is_a_maximum_for_every_new_result() {
         size_of(&fitted, &result_id("one")) == Some(Size::new(1_152.0, 240.0)) && fitted.fitted_result_id == Some(result_id("one")),
         "with nothing saved the window fit is the maximum",
     );
-    check(size_of(&canvas(&[done("one")], viewport, Some(5_000.0), None, None), &result_id("one")) == Some(Size::new(1_152.0, 752.0)), "a long answer stops at the window fit");
+    check(
+        size_of(&canvas(&[done("one")], viewport, Some(5_000.0), None, None), &result_id("one")) == Some(Size::new(1_152.0, 752.0)),
+        "a long answer stops at the window fit",
+    );
 }
 
 /// "mighty result reveal: the cap is the visible pane" (TheCapIsTheVisiblePane).
@@ -82,15 +110,20 @@ fn the_saved_size_is_a_maximum_for_every_new_result() {
 fn the_cap_is_the_visible_pane() {
     let saved = Some(size(900.0, 700.0));
     check(
-        size_of(&canvas(&[done("one")], Some(Size::new(600.0, 400.0)), Some(200.0), saved, Some(1.0)), &result_id("one")) == Some(Size::new(552.0, 200.0)),
+        size_of(&canvas(&[done("one")], Some(Size::new(600.0, 400.0)), Some(200.0), saved, Some(1.0)), &result_id("one"))
+            == Some(Size::new(552.0, 200.0)),
         "a short answer fits under the pane-bound cap",
     );
     check(
-        size_of(&canvas(&[done("one")], Some(Size::new(600.0, 400.0)), Some(5_000.0), saved, Some(1.0)), &result_id("one")) == Some(Size::new(552.0, 352.0)),
+        size_of(&canvas(&[done("one")], Some(Size::new(600.0, 400.0)), Some(5_000.0), saved, Some(1.0)), &result_id("one"))
+            == Some(Size::new(552.0, 352.0)),
         "a long answer stops at the visible pane",
     );
     let zoomed = size_of(&canvas(&[done("one")], Some(Size::new(900.0, 700.0)), Some(5_000.0), saved, Some(1.5)), &result_id("one"));
-    check(zoomed.is_some_and(|z| near(z.w, 568.0) && near(z.h, 652.0 / 1.5)), format!("zoomed in the cap is the pane at that zoom: {zoomed:?}"));
+    check(
+        zoomed.is_some_and(|z| near(z.w, 568.0) && near(z.h, 652.0 / 1.5)),
+        format!("zoomed in the cap is the pane at that zoom: {zoomed:?}"),
+    );
 }
 
 /// "mighty result reveal: shrinking to content never writes the saved size" (ShrinkingToContentNeverWritesTheSavedSize).
@@ -110,7 +143,15 @@ fn shrinking_to_content_never_writes_the_saved_size() {
     check(release(Size::new(900.0, 320.0)).1 == Some(size(900.0, 320.0)), "a height drag saves what it was released at");
     check(layout::result_drag_sides(Size::new(900.0, 180.0), Size::new(900.2, 180.3)) == (false, false), "sub-pixel jitter moves no side");
     check(
-        layout::result_drag(Size::new(900.0, 180.0), true, true, ResizePhase::Cancelled, Some(&saved), made.result_limit, made.result_window_fit) == (None, None),
+        layout::result_drag(
+            Size::new(900.0, 180.0),
+            true,
+            true,
+            ResizePhase::Cancelled,
+            Some(&saved),
+            made.result_limit,
+            made.result_window_fit,
+        ) == (None, None),
         "a cancelled drag saves nothing",
     );
     check(saved == size(900.0, 700.0), "laying out a shrunk card leaves the saved size alone");
@@ -129,7 +170,10 @@ fn a_shorter_result_moves_nothing_above_it_and_pulls_the_draft_up() {
     check(near(lift, 752.0 - 200.0), format!("the draft below moves up by what the result gave back: {lift}"));
     let two = canvas(&[done("one"), done("two")], viewport, Some(160.0), None, None);
     check(size_of(&two, &result_id("one")) == Some(Size::new(500.0, 200.0)), "an older result keeps its default size");
-    check(size_of(&canvas(&[done("one")], None, Some(160.0), None, None), &result_id("one")) == Some(Size::new(500.0, 200.0)), "no viewport, no measurement");
+    check(
+        size_of(&canvas(&[done("one")], None, Some(160.0), None, None), &result_id("one")) == Some(Size::new(500.0, 200.0)),
+        "no viewport, no measurement",
+    );
 }
 
 /// "mighty result reveal: a new result sits right above the composer" (ANewResultSitsRightAboveTheComposer).
@@ -139,17 +183,32 @@ fn a_new_result_sits_right_above_the_composer() {
     let card = GraphRect::new(24.0, 1_800.0, 500.0, 300.0);
     for zoom in [0.5, 1.0, 1.5] {
         let offset = camera::reveal_offset(card, viewport, zoom);
-        check(near(offset.y + card.max_y() * zoom, viewport.h - 16.0), format!("the card's bottom lands 16pt above the composer at {zoom}"));
+        check(
+            near(offset.y + card.max_y() * zoom, viewport.h - 16.0),
+            format!("the card's bottom lands 16pt above the composer at {zoom}"),
+        );
         check(offset.x == camera::camera_offset(card, viewport, zoom, true).x, "it is centred as every re-aim centres it");
     }
     let tall = GraphRect::new(24.0, 1_800.0, 500.0, 900.0);
     let top = camera::reveal_offset(tall, viewport, 1.0);
-    check(top == camera::camera_offset(tall, viewport, 1.0, true) && near(top.y + tall.y, 16.0), "a card taller than the viewport shows its top");
+    check(
+        top == camera::camera_offset(tall, viewport, 1.0, true) && near(top.y + tall.y, 16.0),
+        "a card taller than the viewport shows its top",
+    );
     let snug = GraphRect::new(24.0, 400.0, 500.0, 668.0);
-    check(near(camera::reveal_offset(snug, viewport, 1.0).y + snug.y, 16.0), "exactly the viewport less both margins: top and bottom agree");
+    check(
+        near(camera::reveal_offset(snug, viewport, 1.0).y + snug.y, 16.0),
+        "exactly the viewport less both margins: top and bottom agree",
+    );
     let small = GraphRect::new(24.0, 600.0, 500.0, 200.0);
-    check(camera::camera_offset_aligned(small, viewport, 1.0, true, true) == camera::reveal_offset(small, viewport, 1.0), "align-bottom wins");
-    check(camera::camera_offset_aligned(small, viewport, 1.0, true, false) == camera::camera_offset(small, viewport, 1.0, true), "without it align-top holds");
+    check(
+        camera::camera_offset_aligned(small, viewport, 1.0, true, true) == camera::reveal_offset(small, viewport, 1.0),
+        "align-bottom wins",
+    );
+    check(
+        camera::camera_offset_aligned(small, viewport, 1.0, true, false) == camera::camera_offset(small, viewport, 1.0, true),
+        "without it align-top holds",
+    );
 }
 
 fn progress(pairs: &[(&str, bool)]) -> Vec<RunProgress> {
@@ -166,16 +225,23 @@ fn a_request_that_finishes_while_watched_is_revealed_once() {
     let mut reveal = ResultReveal::new();
     reveal.pane_running(false, true);
     check(
-        change(&mut reveal, &[], &[("one", true)], true) == Some(result_id("one")) && reveal.holding_id() == Some(result_id("one").as_str()),
+        change(&mut reveal, &[], &[("one", true)], true) == Some(result_id("one"))
+            && reveal.holding_id() == Some(result_id("one").as_str()),
         "the pane's own finished request is revealed",
     );
     reveal.pane_running(true, false);
     check(change(&mut reveal, &[("one", true)], &[("one", true)], true).is_none(), "redraws with the same runs reveal nothing again");
     reveal.pane_running(false, true);
     check(reveal.holding_id().is_none(), "a new request ends the hold");
-    check(change(&mut reveal, &[("one", true)], &[("one", true), ("two", true)], true) == Some(result_id("two")), "the next result is revealed");
+    check(
+        change(&mut reveal, &[("one", true)], &[("one", true), ("two", true)], true) == Some(result_id("two")),
+        "the next result is revealed",
+    );
     let mut mac = ResultReveal::new();
-    check(change(&mut mac, &[("one", false)], &[("one", true)], true) == Some(result_id("one")), "a run seen unfinished then finished is revealed");
+    check(
+        change(&mut mac, &[("one", false)], &[("one", true)], true) == Some(result_id("one")),
+        "a run seen unfinished then finished is revealed",
+    );
     check(change(&mut mac, &[("one", true)], &[("one", true), ("two", false)], true).is_none(), "a request starting is not a result");
 }
 
@@ -184,13 +250,19 @@ fn a_request_that_finishes_while_watched_is_revealed_once() {
 fn runs_a_pane_opens_or_hydrates_with_are_never_revealed() {
     let mut reveal = ResultReveal::new();
     check(change(&mut reveal, &[], &[("one", true), ("two", true)], true).is_none(), "launch or restore reveals nothing");
-    check(change(&mut reveal, &[("one", true)], &[("one", true), ("two", true)], true).is_none(), "a run that appeared finished with nothing in flight");
+    check(
+        change(&mut reveal, &[("one", true)], &[("one", true), ("two", true)], true).is_none(),
+        "a run that appeared finished with nothing in flight",
+    );
     check(change(&mut reveal, &[], &[], true).is_none() && reveal.holding_id().is_none(), "nothing held");
     reveal.pane_running(false, true);
     check(change(&mut reveal, &[("two", true)], &[("one", true), ("two", true)], true).is_none(), "history loaded above is never revealed");
     let mut back = ResultReveal::new();
     check(change(&mut back, &[("one", true), ("two", true)], &[("one", true), ("two", false)], true).is_none(), "a resumed newest run");
-    check(change(&mut back, &[("one", true), ("two", true)], &[("one", true)], true).is_none() && back.holding_id().is_none(), "a removed newest run");
+    check(
+        change(&mut back, &[("one", true), ("two", true)], &[("one", true)], true).is_none() && back.holding_id().is_none(),
+        "a removed newest run",
+    );
     check(
         ResultReveal::finished_run_id(&progress(&[("a", false)]), &progress(&[("a", true)]), false) == Some("a".into())
             && ResultReveal::finished_run_id(&progress(&[]), &progress(&[("a", true)]), false).is_none()
@@ -232,11 +304,16 @@ fn the_users_own_scroll_zoom_or_draft_ends_the_hold() {
     reveal.cancel();
     check(reveal.holding_id().is_none() && !reveal.awaiting_measure(), "a scroll, drag or zoom ends the hold");
     check(
-        reveal.content_measured(&result_id("one")).is_none() && reveal.measure_timed_out(&result_id("one")).is_none() && reveal.viewport_changed().is_none(),
+        reveal.content_measured(&result_id("one")).is_none()
+            && reveal.measure_timed_out(&result_id("one")).is_none()
+            && reveal.viewport_changed().is_none(),
         "nothing places it after",
     );
     reveal.pane_running(false, true);
-    check(change(&mut reveal, &[("one", true)], &[("one", true), ("two", true)], true) == Some(result_id("two")), "a later result is revealed again");
+    check(
+        change(&mut reveal, &[("one", true)], &[("one", true), ("two", true)], true) == Some(result_id("two")),
+        "a later result is revealed again",
+    );
     reveal.draft_changed(false, true);
     check(reveal.holding_id() == Some(result_id("two").as_str()), "clearing the draft keeps the hold");
     reveal.draft_changed(true, true);

@@ -44,7 +44,11 @@ impl ImageLocator for Files {
             return AgentImageLocation::Remote { url: value.into() };
         }
         let picture = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].iter().any(|e| value.to_lowercase().ends_with(e));
-        if root != Some(self.root.as_str()) || value.split(['/', '\\']).any(|p| p == "..") || !picture || !self.names.lock().unwrap().contains(value) {
+        if root != Some(self.root.as_str())
+            || value.split(['/', '\\']).any(|p| p == "..")
+            || !picture
+            || !self.names.lock().unwrap().contains(value)
+        {
             return AgentImageLocation::Refused;
         }
         AgentImageLocation::File { path: format!("{}/{value}", self.root), root: self.root.clone() }
@@ -129,7 +133,10 @@ fn the_graph_preview_attaches_to_the_step_that_produced_the_pictures() {
     let step = made.node(&step_id).unwrap().clone();
     let preview = made.node(&gallery_id).unwrap().clone();
     check(
-        preview.kind == layout::IMAGES_KIND && layout::is_auxiliary(&preview.kind) && camera::is_auxiliary(&gallery_id) && !layout::is_resizable_kind(&preview.kind),
+        preview.kind == layout::IMAGES_KIND
+            && layout::is_auxiliary(&preview.kind)
+            && camera::is_auxiliary(&gallery_id)
+            && !layout::is_resizable_kind(&preview.kind),
         "an attachment, not a place for the camera",
     );
     check(
@@ -137,13 +144,15 @@ fn the_graph_preview_attaches_to_the_step_that_produced_the_pictures() {
         "beside the step that produced it",
     );
     check(
-        !made.edges.iter().any(|e| e.source == gallery_id || e.target == gallery_id) && made.size.w >= preview.frame.max_x() - made.origin_x,
+        !made.edges.iter().any(|e| e.source == gallery_id || e.target == gallery_id)
+            && made.size.w >= preview.frame.max_x() - made.origin_x,
         "no edge, and the canvas reaches it",
     );
     let plain = layout::make(&runs, "", false, &HashSet::new(), &Options::default(), &ko());
     check(plain.nodes.iter().all(|node| made.node(&node.id).unwrap().frame == node.frame), "no other card moves");
     check(
-        layout::images_height(1, true) == layout::images_height(1, false) && layout::images_height(9, true) > layout::images_height(9, false),
+        layout::images_height(1, true) == layout::images_height(1, false)
+            && layout::images_height(9, true) > layout::images_height(9, false),
         "unfolding grows it only with more to show",
     );
     check(
@@ -200,7 +209,10 @@ fn a_steps_pictures_are_worked_out_once_until_it_changes() {
         r.root_entries = Some(vec![markdown(text)]);
         r
     };
-    check(images::items(&streaming("running", "![first](first.png)"), "request", root, &files).len() == 1, "the first picture as it streams in");
+    check(
+        images::items(&streaming("running", "![first](first.png)"), "request", root, &files).len() == 1,
+        "the first picture as it streams in",
+    );
     files.delete("first.png");
     files.write("second.png");
     let grown = images::items(&streaming("running", "![first](first.png) and ![second](second.png)"), "request", root, &files);
@@ -223,8 +235,10 @@ fn the_attachments_hang_off_the_execution_block_and_stack() {
         gallery("one", "agent:nobody", 1),
         gallery("one", images::REQUEST_STEP, 0),
     ];
-    let executions: Vec<(String, String)> =
-        [("one", "job-1"), ("one", "job-2"), ("gone", "job-3"), ("one", "job-1")].iter().map(|(a, b)| (a.to_string(), b.to_string())).collect();
+    let executions: Vec<(String, String)> = [("one", "job-1"), ("one", "job-2"), ("gone", "job-3"), ("one", "job-1")]
+        .iter()
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect();
     let expanded: HashSet<String> = HashSet::from([node_id("one", &format!("{}job-2", layout::EXECUTION_SUFFIX))]);
     let options = Options {
         plan_records: vec![("one".into(), "answered".into())],
@@ -252,11 +266,15 @@ fn the_attachments_hang_off_the_execution_block_and_stack() {
         "the pictures, then the first execution, beside the 실행 block",
     );
     check(
-        second.y == first.max_y() + 8.0 && second.h == layout::execution_height(true) && layout::execution_height(true) == 470.0 && record.y == second.max_y() + 8.0,
+        second.y == first.max_y() + 8.0
+            && second.h == layout::execution_height(true)
+            && layout::execution_height(true) == 470.0
+            && record.y == second.max_y() + 8.0,
         "executions stack and the answered plan follows",
     );
     check(
-        made.nodes.iter().filter(|n| n.kind == layout::EXECUTION_KIND).count() == 2 && made.nodes.iter().filter(|n| n.kind == layout::IMAGES_KIND).count() == 1,
+        made.nodes.iter().filter(|n| n.kind == layout::EXECUTION_KIND).count() == 2
+            && made.nodes.iter().filter(|n| n.kind == layout::IMAGES_KIND).count() == 1,
         "a request that is gone, a step that is not there, an empty gallery and a repeated execution add nothing",
     );
     check(
@@ -269,7 +287,8 @@ fn the_attachments_hang_off_the_execution_block_and_stack() {
         "nothing in the flow moves and no edge is added",
     );
     let execution_id = node_id("one", &format!("{}job-2", layout::EXECUTION_SUFFIX));
-    let execution = view_model::blocks(&made, &runs, "", "Claude", true, None, None, &ko()).into_iter().find(|b| b.id == execution_id).unwrap();
+    let execution =
+        view_model::blocks(&made, &runs, "", "Claude", true, None, None, &ko()).into_iter().find(|b| b.id == execution_id).unwrap();
     check(
         execution.kind == layout::EXECUTION_KIND
             && execution.record_id.as_deref() == Some("job-2")

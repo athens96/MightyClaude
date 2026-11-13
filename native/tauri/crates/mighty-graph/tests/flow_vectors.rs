@@ -25,8 +25,12 @@ fn the_shared_cases_lay_out_as_the_page_does() {
     check(cases.len() >= 7, format!("the fixture has its cases; got {}", cases.len()));
     for case in cases {
         let name = case["name"].as_str().unwrap_or("");
-        let runs: Vec<MightyGraphRun> =
-            case["runs"].as_array().expect("runs").iter().map(|r| MightyGraphRun::read(r).unwrap_or_else(|e| panic!("{name}: {e:?}"))).collect();
+        let runs: Vec<MightyGraphRun> = case["runs"]
+            .as_array()
+            .expect("runs")
+            .iter()
+            .map(|r| MightyGraphRun::read(r).unwrap_or_else(|e| panic!("{name}: {e:?}")))
+            .collect();
         let opened: HashSet<String> = case["opened"]
             .as_array()
             .expect("opened")
@@ -50,7 +54,10 @@ fn the_shared_cases_lay_out_as_the_page_does() {
         for (index, (node, want)) in made.nodes.iter().zip(nodes).enumerate() {
             let label = format!("{name}: node {index}");
             check(node.id == want["id"].as_str().unwrap_or(""), format!("{label}: id {} expected, {} laid out", want["id"], node.id));
-            check(node.kind == want["kind"].as_str().unwrap_or(""), format!("{label}: kind {} expected, {} laid out", want["kind"], node.kind));
+            check(
+                node.kind == want["kind"].as_str().unwrap_or(""),
+                format!("{label}: kind {} expected, {} laid out", want["kind"], node.kind),
+            );
             check(node.is_compact == want.get("compact").and_then(Value::as_bool).unwrap_or(false), format!("{label}: card"));
             near(node.frame.x, want["x"].as_f64().unwrap(), &format!("{label} x"));
             near(node.frame.y, want["y"].as_f64().unwrap(), &format!("{label} y"));
@@ -70,7 +77,8 @@ fn the_shared_cases_lay_out_as_the_page_does() {
                 )
             })
             .collect();
-        let laid: Vec<(String, String, bool, bool)> = made.edges.iter().map(|e| (e.source.clone(), e.target.clone(), e.joins, e.side)).collect();
+        let laid: Vec<(String, String, bool, bool)> =
+            made.edges.iter().map(|e| (e.source.clone(), e.target.clone(), e.joins, e.side)).collect();
         check(laid == edges, format!("{name}: edges expected {edges:?}, laid out {laid:?}"));
         near(made.size.w, expect["size"]["w"].as_f64().unwrap(), &format!("{name}: width"));
         near(made.size.h, expect["size"]["h"].as_f64().unwrap(), &format!("{name}: height"));

@@ -33,7 +33,13 @@ fn run_of(id: &str, status: &str, agents: Vec<MightyGraphAgent>) -> MightyGraphR
     r
 }
 
-fn split(runs: &[MightyGraphRun], running: bool, expanded: &[String], block_sizes: Option<HashMap<String, GraphBlockSize>>, plan_records: Vec<(String, String)>) -> Layout {
+fn split(
+    runs: &[MightyGraphRun],
+    running: bool,
+    expanded: &[String],
+    block_sizes: Option<HashMap<String, GraphBlockSize>>,
+    plan_records: Vec<(String, String)>,
+) -> Layout {
     let options = Options { block_sizes, plan_records, splits_execution: true, ..Options::default() };
     layout::make(runs, "", running, &expanded.iter().cloned().collect(), &options, &ko())
 }
@@ -100,8 +106,12 @@ fn the_request_sits_over_its_execution_block_in_one_column() {
     let made = split_plain(&[run_of("one", "completed", vec![])], false);
     let kinds: Vec<&str> = made.nodes.iter().map(|n| n.kind.as_str()).collect();
     check(kinds == ["request", layout::WORK_KIND, "result", "draft"], format!("request, 실행, result, draft: {kinds:?}"));
-    let (request, work, result) = (frame(&made, &id("one", "request")), frame(&made, &id("one", "execution")), frame(&made, &id("one", "result")));
-    check(request.h == layout::request_height(false) && layout::request_height(false) == 140.0 && work.h == 280.0, "the request is short and its 실행 block tall");
+    let (request, work, result) =
+        (frame(&made, &id("one", "request")), frame(&made, &id("one", "execution")), frame(&made, &id("one", "result")));
+    check(
+        request.h == layout::request_height(false) && layout::request_height(false) == 140.0 && work.h == 280.0,
+        "the request is short and its 실행 block tall",
+    );
     check(
         work.y == request.max_y() + ROW_GAP
             && request.mid_x() == work.mid_x()
@@ -122,7 +132,10 @@ fn the_request_sits_over_its_execution_block_in_one_column() {
         "request → 실행 → result → draft",
     );
     let least = layout::minimum_block_size(layout::WORK_KIND);
-    check(least.w == mighty_core::graph::MINIMUM_WIDTH && least.h == mighty_core::graph::MINIMUM_HEIGHT, "the 실행 block's least is any block's");
+    check(
+        least.w == mighty_core::graph::MINIMUM_WIDTH && least.h == mighty_core::graph::MINIMUM_HEIGHT,
+        "the 실행 block's least is any block's",
+    );
     let opened = split(&[run_of("one", "completed", vec![])], false, &[id("one", "request"), id("one", "execution")], None, vec![]);
     check(
         frame(&opened, &id("one", "request")).h == layout::request_height(true)
@@ -130,9 +143,13 @@ fn the_request_sits_over_its_execution_block_in_one_column() {
             && frame(&opened, &id("one", "execution")).h == 540.0,
         "opened heights",
     );
-    let sized = split(&[run_of("one", "completed", vec![])], false, &[], Some(HashMap::from([(id("one", "request"), size(640.0, 300.0))])), vec![]);
+    let sized =
+        split(&[run_of("one", "completed", vec![])], false, &[], Some(HashMap::from([(id("one", "request"), size(640.0, 300.0))])), vec![]);
     let request = frame(&sized, &id("one", "request"));
-    check(request.w == 640.0 && request.h == 300.0 && frame(&sized, &id("one", "execution")).y == 24.0 + 300.0 + ROW_GAP, "a saved request size");
+    check(
+        request.w == 640.0 && request.h == 300.0 && frame(&sized, &id("one", "execution")).y == 24.0 + 300.0 + ROW_GAP,
+        "a saved request size",
+    );
 }
 
 /// "mighty execution block: sub-agents branch from it" (SubAgentsBranchFromTheExecutionBlock).
@@ -147,13 +164,21 @@ fn sub_agents_branch_from_the_execution_block() {
     let (work, request) = (id("one", "execution"), id("one", "request"));
     let has = |s: &str, t: &str| made.edges.iter().any(|e| e.source == s && e.target == t);
     check(
-        has(&work, &id("one", "agent:root")) && has(&work, &id("one", "agent:solo")) && has(&id("one", "agent:root"), &id("one", "agent:left")),
+        has(&work, &id("one", "agent:root"))
+            && has(&work, &id("one", "agent:solo"))
+            && has(&id("one", "agent:root"), &id("one", "agent:left")),
         "sub-agents branch from the 실행 block",
     );
-    check(made.edges.iter().filter(|e| e.source == request).map(|e| e.target.clone()).collect::<Vec<_>>() == vec![work.clone()], "the request's only edge");
+    check(
+        made.edges.iter().filter(|e| e.source == request).map(|e| e.target.clone()).collect::<Vec<_>>() == vec![work.clone()],
+        "the request's only edge",
+    );
     let work_frame = frame(&made, &work);
     for a in ["root", "solo"] {
-        check(frame(&made, &id("one", &format!("agent:{a}"))).y == work_frame.max_y() + ROW_GAP, format!("the first row of agents is under the 실행 block: {a}"));
+        check(
+            frame(&made, &id("one", &format!("agent:{a}"))).y == work_frame.max_y() + ROW_GAP,
+            format!("the first row of agents is under the 실행 block: {a}"),
+        );
     }
     let into_result: HashSet<String> = made.edges.iter().filter(|e| e.target == id("one", "result")).map(|e| e.source.clone()).collect();
     check(into_result == HashSet::from([id("one", "agent:left"), id("one", "agent:solo")]), "the result joins the leaves");
@@ -177,7 +202,10 @@ fn an_empty_run_still_shows_its_execution_block() {
     let live: Vec<String> = blocks(&made, &fresh).iter().filter(|b| view_model::tone(b) == Tone::Run).map(|b| b.id.clone()).collect();
     check(live == vec![id("new", "execution")], "only the 실행 block is live");
     let done = vec![run_of("done", "completed", vec![])];
-    check(!blocks(&split_plain(&done, false), &done).iter().any(|b| view_model::tone(b) == Tone::Run), "a settled request has no live block");
+    check(
+        !blocks(&split_plain(&done, false), &done).iter().any(|b| view_model::tone(b) == Tone::Run),
+        "a settled request has no live block",
+    );
 }
 
 /// "mighty execution block: the request block holds its input and it holds the work" (TheRequestBlockHoldsItsInputAndTheExecutionBlockTheWork).
@@ -254,7 +282,10 @@ fn the_camera_stands_on_the_execution_block_while_the_request_runs() {
         "the shared layout and no request",
     );
     let ids: HashSet<String> = split_plain(&running, true).nodes.into_iter().map(|n| n.id).collect();
-    check(camera::reaim_anchor(Some("two"), None, &ids) == Anchor::reaim(&id("two", "request"), true), "a new request aims at its request block");
+    check(
+        camera::reaim_anchor(Some("two"), None, &ids) == Anchor::reaim(&id("two", "request"), true),
+        "a new request aims at its request block",
+    );
 }
 
 /// "mighty execution block: the request's attachments hang off it" (TheRequestsAttachmentsHangOffItsExecutionBlock).
@@ -273,14 +304,23 @@ fn the_requests_attachments_hang_off_its_execution_block() {
     let work = frame(&made, &id("one", "execution"));
     let first = frame(&made, &id("one", &format!("{}p1", layout::PLAN_RECORD_SUFFIX)));
     let second = frame(&made, &id("one", &format!("{}p2", layout::PLAN_RECORD_SUFFIX)));
-    check(first.y == work.y && first.x > work.max_x() && second.y > first.max_y() && second.x > work.max_x(), "answered plans stack beside the 실행 block, from its top");
+    check(
+        first.y == work.y && first.x > work.max_x() && second.y > first.max_y() && second.x > work.max_x(),
+        "answered plans stack beside the 실행 block, from its top",
+    );
     for attachment in [first, second] {
         for node in made.nodes.iter().filter(|n| n.frame != attachment) {
             check(!intersects(&node.frame, &attachment), format!("an attachment overlaps {}", node.id));
         }
     }
-    let shared_layout =
-        layout::make(&runs, "", false, &HashSet::new(), &Options { plan_records: vec![("one".into(), "p1".into())], ..Options::default() }, &ko());
+    let shared_layout = layout::make(
+        &runs,
+        "",
+        false,
+        &HashSet::new(),
+        &Options { plan_records: vec![("one".into(), "p1".into())], ..Options::default() },
+        &ko(),
+    );
     check(
         frame(&shared_layout, &id("one", &format!("{}p1", layout::PLAN_RECORD_SUFFIX))).y == frame(&shared_layout, &id("one", "request")).y,
         "the shared layout hangs them off the request",
@@ -302,7 +342,8 @@ fn without_the_split_the_shared_layout_is_unchanged() {
     let canvas = layout::make(&runs, "", true, &HashSet::new(), &Options::default(), &ko());
     let split_canvas = split_plain(&runs, true);
     check(
-        canvas.nodes.iter().map(|n| (n.id.clone(), n.frame)).collect::<Vec<_>>() == made.nodes.iter().map(|n| (n.id.clone(), n.frame)).collect::<Vec<_>>()
+        canvas.nodes.iter().map(|n| (n.id.clone(), n.frame)).collect::<Vec<_>>()
+            == made.nodes.iter().map(|n| (n.id.clone(), n.frame)).collect::<Vec<_>>()
             && split_canvas.nodes.iter().any(|n| n.kind == layout::WORK_KIND),
         "the canvas layout splits only when asked",
     );
@@ -331,8 +372,11 @@ fn a_size_saved_before_the_split_moves_to_the_execution_block_once() {
         ..Workspace::default()
     };
     let saved = |session: &RunSession| -> RunSession {
-        let snapshot =
-            AppSnapshot { workspaces: Some(vec![workspace.clone()]), sessions: Some(vec![Arc::new(session.clone())]), ..AppSnapshot::default() };
+        let snapshot = AppSnapshot {
+            workspaces: Some(vec![workspace.clone()]),
+            sessions: Some(vec![Arc::new(session.clone())]),
+            ..AppSnapshot::default()
+        };
         let normalized = mighty_core::normalize::normalize(&snapshot, true).expect("normalize");
         normalized.sessions().first().expect("the pane").as_ref().clone()
     };
@@ -355,7 +399,13 @@ fn a_size_saved_before_the_split_moves_to_the_execution_block_once() {
             && migrated.graph_sizes_layout == Some(block_prefs::SPLIT_LAYOUT),
         format!("a request size from before the split is its 실행 block's: {:?}", migrated.graph_block_sizes),
     );
-    let laid = split(migrated.graph_runs.as_deref().unwrap_or(&[]), false, &[], Some(block_prefs::drawn(migrated.graph_block_sizes.as_ref())), vec![]);
+    let laid = split(
+        migrated.graph_runs.as_deref().unwrap_or(&[]),
+        false,
+        &[],
+        Some(block_prefs::drawn(migrated.graph_block_sizes.as_ref())),
+        vec![],
+    );
     let request = frame(&laid, &id("a", "request"));
     let execution = frame(&laid, &id("a", "execution"));
     check(
@@ -386,7 +436,8 @@ fn a_size_saved_before_the_split_moves_to_the_execution_block_once() {
         "a new pane's request size stays the request's",
     );
     for value in ["\"1\"", "1.5", "true", "{}", "[]", "null"] {
-        let read = RunSession::read(&serde_json::from_str(&format!("{{\"id\":\"s\",\"graphSizesLayout\":{value}}}")).unwrap()).expect("read");
+        let read =
+            RunSession::read(&serde_json::from_str(&format!("{{\"id\":\"s\",\"graphSizesLayout\":{value}}}")).unwrap()).expect("read");
         check(read.graph_sizes_layout.is_none(), format!("a damaged layout marker reads as none: {value}"));
     }
     let read = RunSession::read(&serde_json::from_str("{\"id\":\"s\",\"graphSizesLayout\":1}").unwrap()).expect("read");
@@ -478,7 +529,8 @@ fn an_execution_blocks_saved_size_is_kept() {
     live.status = Some("completed".into());
     live.agents.as_mut().unwrap()[0].status = Some("completed".into());
     check(
-        block_prefs::normalize_owned(Some(&values), std::slice::from_ref(&live)).unwrap().get(&id("live", "result")).copied().flatten() == Some(s),
+        block_prefs::normalize_owned(Some(&values), std::slice::from_ref(&live)).unwrap().get(&id("live", "result")).copied().flatten()
+            == Some(s),
         "a settled run keeps its result's size",
     );
     check(

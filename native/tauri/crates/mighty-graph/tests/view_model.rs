@@ -39,7 +39,12 @@ fn saved_default_loads_as_mighty() {
     let workspace = Workspace { path: Some(std::env::temp_dir().to_string_lossy().into_owned()), ..Workspace::default() };
     let load = |p: RunSession| -> RunSession {
         let p = RunSession { workspace_id: workspace.id.clone(), ..p };
-        let snapshot = AppSnapshot { version: 1, workspaces: Some(vec![workspace.clone()]), sessions: Some(vec![Arc::new(p)]), ..AppSnapshot::default() };
+        let snapshot = AppSnapshot {
+            version: 1,
+            workspaces: Some(vec![workspace.clone()]),
+            sessions: Some(vec![Arc::new(p)]),
+            ..AppSnapshot::default()
+        };
         mighty_core::normalize::normalize(&snapshot, true).unwrap().sessions()[0].as_ref().clone()
     };
     for saved in [Some("default"), Some("mighty"), None] {
@@ -50,11 +55,16 @@ fn saved_default_loads_as_mighty() {
             agent_view_mode: saved.map(str::to_string),
             ..RunSession::default()
         });
-        check(loaded.agent_view_mode.as_deref() == Some("mighty"), format!("an agent pane saved as {} must load as mighty", saved.unwrap_or("nothing")));
+        check(
+            loaded.agent_view_mode.as_deref() == Some("mighty"),
+            format!("an agent pane saved as {} must load as mighty", saved.unwrap_or("nothing")),
+        );
         check(loaded.draft.as_deref() == Some("my composer draft"), "the view mode must not touch the draft");
     }
     check(
-        load(RunSession { kind: Some("shell".into()), agent_view_mode: Some("default".into()), ..RunSession::default() }).agent_view_mode.is_none(),
+        load(RunSession { kind: Some("shell".into()), agent_view_mode: Some("default".into()), ..RunSession::default() })
+            .agent_view_mode
+            .is_none(),
         "a shell has no Mighty view",
     );
 }
@@ -73,7 +83,10 @@ fn canvas_blocks_follow_the_layout() {
     let request_id = layout::node_id(&r, "request");
     check(made.nodes.iter().any(|n| n.id == request_id && n.kind == "request"), "canvas must include a request block");
     check(made.nodes.iter().any(|n| n.kind == "agent"), "canvas must include agent blocks");
-    check(canvas(&runs, "type here", false, Options::default()).nodes.iter().any(|n| n.kind == "draft"), "draft block must appear when draft is non-empty");
+    check(
+        canvas(&runs, "type here", false, Options::default()).nodes.iter().any(|n| n.kind == "draft"),
+        "draft block must appear when draft is non-empty",
+    );
     check(!made.edges.is_empty(), "canvas must have edges connecting blocks");
 }
 
@@ -97,7 +110,10 @@ fn capsule_and_tooltip_match_macos() {
     check(ko.get(view_model::LOCALE_KEY_RESULT_FILES_TITLE) == "결과에 나온 파일", "graph.resultFiles.title must be 결과에 나온 파일");
     check(ko.get(view_model::LOCALE_KEY_RESULT_FILES_CLOSE) == "파일 목록 닫기", "graph.resultFiles.closeButton must be 파일 목록 닫기");
     check(ko.get(view_model::LOCALE_KEY_BLOCK_SCROLLING) == "블록 스크롤", "graph.block.scrolling must be 블록 스크롤");
-    check(ko.get(view_model::LOCALE_KEY_RESULT_FILES_OPEN) == "결과에 나온 파일 보기", "graph.resultFiles.openButton must be 결과에 나온 파일 보기");
+    check(
+        ko.get(view_model::LOCALE_KEY_RESULT_FILES_OPEN) == "결과에 나온 파일 보기",
+        "graph.resultFiles.openButton must be 결과에 나온 파일 보기",
+    );
     check(
         ko.get_with(view_model::LOCALE_KEY_RESULT_FILES_COUNT, &[("count", "3")]) == "결과 파일 3개 · 목록 토글",
         "graph.resultFiles.countLabel must be 결과 파일 3개 · 목록 토글",
@@ -129,13 +145,19 @@ fn zoom_steps_match_macos() {
 #[test]
 fn selection_routes_the_wheel() {
     check(view_model::apply_selection(None, Some("node-1")).as_deref() == Some("node-1"), "clicking a block must select it");
-    check(view_model::apply_selection(Some("node-1"), Some("node-2")).as_deref() == Some("node-2"), "clicking another block must select it");
+    check(
+        view_model::apply_selection(Some("node-1"), Some("node-2")).as_deref() == Some("node-2"),
+        "clicking another block must select it",
+    );
     check(view_model::apply_selection(Some("node-1"), None).is_none(), "clicking empty background must clear selection");
     check(view_model::wheel_scrolls_block(Some("node-1")), "selected block must capture the wheel");
     check(!view_model::wheel_scrolls_block(None), "no selection must let wheel pan canvas");
     check(view_model::wheel_pan(120.0, false, false) == Point::new(0.0, 120.0), "the vertical wheel must pan up and down");
     check(view_model::wheel_pan(120.0, true, false) == Point::new(-120.0, 0.0), "a tilt to the right must pan left and right");
-    check(view_model::wheel_pan(-120.0, false, true) == Point::new(-120.0, 0.0), "Shift with the wheel down must pan like a tilt to the right");
+    check(
+        view_model::wheel_pan(-120.0, false, true) == Point::new(-120.0, 0.0),
+        "Shift with the wheel down must pan like a tilt to the right",
+    );
     check(view_model::wheel_pan(120.0, true, true) == Point::new(-120.0, 0.0), "Shift must not flip a horizontal wheel");
 }
 
@@ -169,9 +191,13 @@ fn result_files_panel_rules_match_macos() {
     check(panel.selected_run_id() == Some("run-1"), "a list with no files left closes, and the newest result that still names files opens");
     panel.publish(&[]);
     check(panel.selected_run_id().is_none(), "no completed run means no panel");
-    check(view_model::wheel_scroll_target(Some("node-1"), Some("node-1"), false).as_deref() == Some("node-1"), "the selected block under the pointer scrolls");
     check(
-        view_model::wheel_scroll_target(Some("node-1"), Some("node-2"), false).is_none() && view_model::wheel_scroll_target(Some("node-1"), None, false).is_none(),
+        view_model::wheel_scroll_target(Some("node-1"), Some("node-1"), false).as_deref() == Some("node-1"),
+        "the selected block under the pointer scrolls",
+    );
+    check(
+        view_model::wheel_scroll_target(Some("node-1"), Some("node-2"), false).is_none()
+            && view_model::wheel_scroll_target(Some("node-1"), None, false).is_none(),
         "with the pointer elsewhere the wheel pans, selection or not",
     );
     check(
@@ -236,7 +262,10 @@ fn exposes_win_ui_surface() {
 fn lays_out_nested_delegation_run() {
     let mut l2 = parent(agent("agent-l2", "L2", "Level 2", "completed"), "agent-l1");
     l2.entries = Some(vec![entry(&mighty_core::wire::new_id(), "assistant", "Deep answer", "2026-01-01T00:00:00Z", Some("claude"))]);
-    let mut r = with_final(with_agents(run("delivered-run", "Nested task", "completed"), vec![agent("agent-l1", "L1", "Level 1", "completed"), l2]), "Root done");
+    let mut r = with_final(
+        with_agents(run("delivered-run", "Nested task", "completed"), vec![agent("agent-l1", "L1", "Level 1", "completed"), l2]),
+        "Root done",
+    );
     r.provider = Some("claude".into());
     let runs = vec![r.clone()];
     let made = canvas(&runs, "", false, Options::default());
@@ -264,30 +293,43 @@ fn lays_out_nested_delegation_run() {
     let mut mixed = with_final(
         with_agents(
             run("delivered-kinds", "Mixed", "completed"),
-            vec![kind(agent("k-task", "", "", "completed"), "task"), kind(agent("k-steer", "", "", "completed"), "steer"), kind(agent("k-compact", "", "", "completed"), "compact")],
+            vec![
+                kind(agent("k-task", "", "", "completed"), "task"),
+                kind(agent("k-steer", "", "", "completed"), "steer"),
+                kind(agent("k-compact", "", "", "completed"), "compact"),
+            ],
         ),
         "done",
     );
     mixed.provider = Some("claude".into());
     let mixed_runs = vec![mixed];
     let mixed_layout = canvas(&mixed_runs, "", false, Options::default());
-    let mixed_kinds: HashSet<String> = view_model::blocks(&mixed_layout, &mixed_runs, "", "Claude", true, None, None, &ko()).into_iter().map(|b| b.kind).collect();
+    let mixed_kinds: HashSet<String> =
+        view_model::blocks(&mixed_layout, &mixed_runs, "", "Claude", true, None, None, &ko()).into_iter().map(|b| b.kind).collect();
     for k in ["request", "task", "steer", "compact", "result"] {
         check(mixed_kinds.contains(k), format!("the canvas must carry a {k} block; got {mixed_kinds:?}"));
     }
     let drafted = canvas(&[], "next", false, Options::default());
-    let draft = view_model::blocks(&drafted, &[], "next", "Claude", true, None, None, &ko()).into_iter().find(|b| b.kind == "draft").unwrap();
-    check(draft.title == "첫 요청" && draft.state == "작성 중", format!("the draft block must read 첫 요청 / 작성 중; got {} / {}", draft.title, draft.state));
+    let draft =
+        view_model::blocks(&drafted, &[], "next", "Claude", true, None, None, &ko()).into_iter().find(|b| b.kind == "draft").unwrap();
+    check(
+        draft.title == "첫 요청" && draft.state == "작성 중",
+        format!("the draft block must read 첫 요청 / 작성 중; got {} / {}", draft.title, draft.state),
+    );
 
     let mut filed = with_final(run("delivered-files", "x", "completed"), "wrote docs/note.md and /etc/passwd.txt");
     filed.provider = Some("claude".into());
     support::refresh_result(&mut filed);
     check(
-        view_model::result_texts(&filed) == vec!["wrote docs/note.md and /etc/passwd.txt".to_string(), "wrote docs/note.md and /etc/passwd.txt".to_string()],
+        view_model::result_texts(&filed)
+            == vec!["wrote docs/note.md and /etc/passwd.txt".to_string(), "wrote docs/note.md and /etc/passwd.txt".to_string()],
         "the result's texts are what its files are read from",
     );
     let filed_runs = vec![filed];
-    check(view_model::latest_completed_run(&filed_runs).map(|r| r.id()) == Some("delivered-files"), "the newest completed run must be found");
+    check(
+        view_model::latest_completed_run(&filed_runs).map(|r| r.id()) == Some("delivered-files"),
+        "the newest completed run must be found",
+    );
     let panel_layout = canvas(
         &filed_runs,
         "",
@@ -296,5 +338,8 @@ fn lays_out_nested_delegation_run() {
     );
     let panel_blocks = view_model::blocks(&panel_layout, &filed_runs, "", "Claude", true, None, None, &ko());
     check(panel_blocks.len() == panel_layout.nodes.len(), "every layout node must become a block, the files panel included");
-    check(panel_blocks.iter().any(|b| b.kind == "resultFiles" && b.title == "결과에 나온 파일"), "the open panel must draw as a 결과에 나온 파일 block");
+    check(
+        panel_blocks.iter().any(|b| b.kind == "resultFiles" && b.title == "결과에 나온 파일"),
+        "the open panel must draw as a 결과에 나온 파일 block",
+    );
 }
