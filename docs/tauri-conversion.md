@@ -84,4 +84,4 @@ native/tauri/
 | W2 Claude 요청 (W2-A 실행 엔진, W2-B 작성창) | 2f6aafa2(W2-B 병합), 8677d8a9(W2-A 병합) | 리뷰 대기 | — |
 | W3 마이티 흐름 *(완료 2026-11-14)* | 1740632b(병합) | 리뷰 대기 | — |
 | W2·W3 호스트 연결 (실행 서비스·작성창·카드·마이티 push와 메서드, 미뤄 둔 검사, smoke 실행 단계, 실제 Claude 요청 1회) | 2b99e71a 이후 이 브랜치의 연결 커밋들 | 리뷰 대기 | — |
-| W2 Claude 요청 + W3 마이티 흐름 | 8677d8a9, 1740632b, b6091c22, 44f33041, f2b57b05 | 리뷰 3건(실행 엔진 1 HIGH·4 MEDIUM, 그래프 1 HIGH·1 MEDIUM, 작성창·호스트 1 HIGH·2 MEDIUM-HIGH·3 MEDIUM) 모두 수정 | (push 후 기록) |
+| W2 Claude 요청 + W3 마이티 흐름 | 8677d8a9, 1740632b, b6091c22, 44f33041, f2b57b05 | 리뷰 3건(실행 엔진 1 HIGH·4 MEDIUM, 그래프 1 HIGH·1 MEDIUM, 작성창·호스트 1 HIGH·2 MEDIUM-HIGH·3 MEDIUM) 모두 수정 | 43491106177 Windows·Mac 통과 |
