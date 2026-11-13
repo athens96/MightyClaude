@@ -6,9 +6,11 @@ use std::ffi::c_void;
 use std::io::{Read, Write};
 use std::os::windows::io::OwnedHandle;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use mighty_platform::{BoxFuture, PlatformError, PtyControl, PtyHost, PtyRequest, PtySession, PtySize, Result};
 use tokio::sync::{mpsc, watch};
@@ -27,8 +29,10 @@ use crate::win::{
     check, environment_block, equal_ignore_case, job_process_ids, kill_on_close_job, last_error, owned, raw, system_directory, wide,
 };
 
-/// Input written at once at most (PseudoTerminal.cs:127).
+/// The most input written at once, in UTF-16 units of its text: C# `text.Length > 65_536` (PseudoTerminal.cs:127).
 const MAXIMUM_WRITE: usize = 65_536;
+/// How long the output drain waits before it offers a chunk again while the output's 64 chunks are all taken up.
+const OUTPUT_RETRY: Duration = Duration::from_millis(10);
 
 /// ConPTY's wire is UTF-8, but Windows PowerShell 5.1 otherwise uses the machine's legacy console code page for Console.Out and
 /// native pipelines. Set only this shell's console; never change the user's profile or system (PseudoTerminal.cs:52-55).
@@ -203,17 +207,33 @@ fn start(request: &PtyRequest) -> Result<PtySession> {
 
     let (output_sender, output) = mpsc::channel(64);
     let (writes, queue) = std::sync::mpsc::sync_channel::<Vec<u8>>(64);
-    // The output drain: ends once the console has closed and its final frame is read; keeps reading (and drops what it reads)
-    // when nobody takes the output any more, so the console never blocks on a full pipe.
+    let closing = Arc::new(AtomicBool::new(false));
+    let draining = closing.clone();
+    // The output drain: ends once the console has closed and its final frame is read. While the output's 64 chunks are all taken
+    // up it waits (so the console waits on its pipe and the memory held stays bounded), but never once the close has begun: from
+    // then a chunk that finds no room is dropped, so the console's pipe always empties and the close never waits on a reader that
+    // waits on a consumer (C#'s reader hands each chunk to `receive` and never waits, PseudoTerminal.cs:31). When nobody takes the
+    // output any more it keeps reading and drops what it reads.
     let reader = std::thread::Builder::new().name("mighty-pty-output".into()).spawn(move || {
         let mut pipe = std::fs::File::from(output_read);
         let mut buffer = vec![0u8; 8192];
         let mut sender = Some(output_sender);
         while let Ok(read @ 1..) = pipe.read(&mut buffer) {
-            if let Some(channel) = &sender
-                && channel.blocking_send(buffer[..read].to_vec()).is_err()
-            {
-                sender = None;
+            let mut chunk = buffer[..read].to_vec();
+            while let Some(channel) = &sender {
+                match channel.try_send(chunk) {
+                    Ok(()) => break,
+                    Err(mpsc::error::TrySendError::Closed(_)) => {
+                        sender = None;
+                        break;
+                    }
+                    Err(mpsc::error::TrySendError::Full(_)) if draining.load(Ordering::SeqCst) => break,
+                    Err(mpsc::error::TrySendError::Full(back)) => {
+                        chunk = back;
+                        // The close unparks this thread, so it stops waiting at once.
+                        std::thread::park_timeout(OUTPUT_RETRY);
+                    }
+                }
             }
         }
     });
@@ -240,13 +260,8 @@ fn start(request: &PtyRequest) -> Result<PtySession> {
     drop(pending);
     let (done, _) = watch::channel(false);
     let terminal = Terminal {
-        lifecycle: Mutex::new(Lifecycle {
-            console,
-            job: Some(job),
-            writes: Some(writes),
-            closing: false,
-            threads: Some([reader, writer, waiter]),
-        }),
+        lifecycle: Mutex::new(Lifecycle { console, job: Some(job), writes: Some(writes), threads: Some([reader, writer, waiter]) }),
+        closing,
         exit,
         done: Arc::new(done),
     };
@@ -258,8 +273,6 @@ struct Lifecycle {
     console: HPCON,
     job: Option<OwnedHandle>,
     writes: Option<SyncSender<Vec<u8>>>,
-    /// The close has begun (C# `disposal`).
-    closing: bool,
     /// The output drain, the input writer and the exit wait, joined by the close.
     threads: Option<[JoinHandle<()>; 3]>,
 }
@@ -267,6 +280,8 @@ struct Lifecycle {
 /// One session's input, size, process list and teardown (C# `PseudoTerminal` past its start).
 struct Terminal {
     lifecycle: Mutex<Lifecycle>,
+    /// The close has begun (C# `disposal`); set under `lifecycle`'s lock, read by the output drain without it.
+    closing: Arc<AtomicBool>,
     exit: ExitWatch,
     done: Arc<watch::Sender<bool>>,
 }
@@ -281,7 +296,7 @@ impl Terminal {
 impl Drop for Terminal {
     fn drop(&mut self) {
         let mut state = lock(&self.lifecycle);
-        if !state.closing
+        if !self.closing.load(Ordering::SeqCst)
             && let Some(job) = state.job.take()
         {
             let _ = std::os::windows::io::IntoRawHandle::into_raw_handle(job);
@@ -290,14 +305,15 @@ impl Drop for Terminal {
 }
 
 impl PtyControl for Terminal {
-    /// C# `TryWrite` (PseudoTerminal.cs:125-129): at most 64 KiB, not once closing or once the shell has exited, and only while the
-    /// 64-write queue has room.
+    /// C# `TryWrite` (PseudoTerminal.cs:125-129): text of at most 65,536 UTF-16 units (C#'s `text.Length`: 30,000 Korean
+    /// characters, 90,000 bytes, are taken), not once closing or once the shell has exited, and only while the 64-write queue has
+    /// room. UTF-8 never has fewer bytes than its text has UTF-16 units, so only a longer write is counted.
     fn write(&self, bytes: &[u8]) -> bool {
-        if bytes.len() > MAXIMUM_WRITE {
+        if bytes.len() > MAXIMUM_WRITE && String::from_utf8_lossy(bytes).encode_utf16().count() > MAXIMUM_WRITE {
             return false;
         }
         let state = lock(&self.lifecycle);
-        if state.closing || self.has_exited() {
+        if self.closing.load(Ordering::SeqCst) || self.has_exited() {
             return false;
         }
         match state.writes.as_ref().map(|writes| writes.try_send(bytes.to_vec())) {
@@ -309,7 +325,7 @@ impl PtyControl for Terminal {
     /// C# `Resize` (PseudoTerminal.cs:149-153): clamped to 2–1000 × 1–1000; nothing once closing.
     fn resize(&self, size: PtySize) -> Result<()> {
         let state = lock(&self.lifecycle);
-        if state.closing || state.console == 0 {
+        if self.closing.load(Ordering::SeqCst) || state.console == 0 {
             return Ok(());
         }
         // SAFETY: an open pseudo console.
@@ -320,7 +336,7 @@ impl PtyControl for Terminal {
     /// for the job fails with ERROR_MORE_DATA and is asked for again, larger (64, 256, 1024, 4096 ids).
     fn process_ids(&self) -> Option<Vec<u32>> {
         let state = lock(&self.lifecycle);
-        if state.closing {
+        if self.closing.load(Ordering::SeqCst) {
             return None;
         }
         job_process_ids(raw(state.job.as_ref()?))
@@ -333,19 +349,23 @@ impl PtyControl for Terminal {
     /// C# `DisposeAsync` / `CloseAsync` (PseudoTerminal.cs:155-172), on a thread of its own so it never blocks the caller: the input
     /// queue is completed, the job terminated, then `ClosePseudoConsole` — while the output drain still runs, so the console's final
     /// frame passes — then the shell's exit, the drain and the writer are awaited, and the job's handle is closed. Every call waits
-    /// for the same close.
+    /// for the same close. From its start the drain drops what finds the output full rather than wait for it to be read, so the
+    /// close returns whether or not anyone reads the output. Should Windows refuse the close its thread, it runs on the caller's.
     fn close(&self) -> BoxFuture<'_, Result<()>> {
         let mut done = self.done.subscribe();
         {
             let mut state = lock(&self.lifecycle);
-            if !state.closing {
-                state.closing = true;
+            if !self.closing.swap(true, Ordering::SeqCst) {
                 let writes = state.writes.take();
                 let job = state.job.take();
                 let console = std::mem::take(&mut state.console);
                 let threads = state.threads.take();
                 let finished = self.done.clone();
                 let teardown = move || {
+                    if let Some([reader, ..]) = &threads {
+                        // A drain waiting for room in the output sees the close now.
+                        reader.thread().unpark();
+                    }
                     drop(writes);
                     if let Some(job) = &job {
                         // SAFETY: the session's job.
@@ -362,8 +382,21 @@ impl PtyControl for Terminal {
                     drop(job);
                     finished.send_replace(true);
                 };
-                if let Err(error) = std::thread::Builder::new().name("mighty-pty-close".into()).spawn(teardown) {
-                    return Box::pin(async move { Err(PlatformError::Io(error)) });
+                // The thread takes the teardown; when it cannot be started the teardown is still here, and runs now.
+                let teardown = Arc::new(Mutex::new(Some(teardown)));
+                let handed = teardown.clone();
+                let started = std::thread::Builder::new().name("mighty-pty-close".into()).spawn(move || {
+                    let teardown = lock(&handed).take();
+                    if let Some(teardown) = teardown {
+                        teardown();
+                    }
+                });
+                if started.is_err() {
+                    let teardown = lock(&teardown).take();
+                    if let Some(teardown) = teardown {
+                        drop(state);
+                        teardown();
+                    }
                 }
             }
         }

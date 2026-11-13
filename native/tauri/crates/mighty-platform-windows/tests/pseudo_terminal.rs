@@ -95,6 +95,49 @@ async fn persistent_shell_and_shutdown() {
     remove_when_free(&path).await;
 }
 
+/// A close never waits on the output's reader: a terminal whose output nobody reads (all 64 chunks taken up, the drain waiting
+/// for room, the console waiting on its full pipe) still closes within seconds, and then its output ends. C#'s reader hands each
+/// chunk to its callback and never waits (PseudoTerminal.cs:31).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_close_returns_while_nobody_reads_the_output() {
+    let path = temp("conpty-unread");
+    let request = PtyRequest {
+        program: fake(),
+        args: vec!["--noisy-child".into(), "1000000000".into()],
+        cwd: path.clone(),
+        env: environment(),
+        size: PtySize::default(),
+    };
+    let mut session = WindowsPtyHost::new().open(request).await.unwrap();
+    let full = session.output.max_capacity();
+    until(|| session.output.len() == full, 15_000, "the output's chunks all taken up").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(alive(session.id), "the noisy child is still writing, held up by the unread output");
+    tokio::time::timeout(Duration::from_secs(10), session.control.close())
+        .await
+        .expect("the close in 10 s with its output unread")
+        .unwrap();
+    assert!(!alive(session.id), "the close ended the child");
+    let ended = tokio::time::timeout(Duration::from_secs(10), async { while session.output.recv().await.is_some() {} }).await;
+    assert!(ended.is_ok(), "the output ends once the terminal has closed");
+    remove_when_free(&path).await;
+}
+
+/// C# `TryWrite` counts the text's UTF-16 units (`text.Length > 65_536`, PseudoTerminal.cs:127), not its UTF-8 bytes: 30,000
+/// Korean characters (90,000 bytes) are taken, 32,769 emoji (65,538 units) are not.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_write_limit_counts_utf16_units() {
+    let path = temp("conpty-limit");
+    let (session, _output) = open(cmd(), vec!["/d".into(), "/q".into()], &path).await;
+    let terminal = session.control.clone();
+    assert!(terminal.write("한".repeat(30_000).as_bytes()), "30,000 Korean characters are 30,000 units");
+    assert!(terminal.write("😀".repeat(32_768).as_bytes()), "32,768 emoji are 65,536 units");
+    assert!(!terminal.write("😀".repeat(32_769).as_bytes()), "32,769 emoji are 65,538 units");
+    assert!(!terminal.write(&vec![b'x'; 65_537]), "65,537 ASCII characters are 65,537 units");
+    tokio::time::timeout(Duration::from_secs(15), terminal.close()).await.expect("the close in 15 s").unwrap();
+    remove_when_free(&path).await;
+}
+
 /// C# "windows parity: a shell pane's status follows its shell" (WindowsParityVerification.cs:23-38), its ShellActivity part (the
 /// DesktopService part belongs to the core's port).
 #[test]

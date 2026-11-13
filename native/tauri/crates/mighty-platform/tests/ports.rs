@@ -63,11 +63,26 @@ async fn a_terminal_takes_input_resizes_and_closes() {
     assert_eq!(host.sizes(), [PtySize { columns: 1000, rows: 1 }], "sizes are clamped as C# clamps them");
     assert!(session.control.write(b"echo"));
     assert_eq!(session.output.recv().await.unwrap(), b"echo");
-    assert!(!session.control.write(&vec![0; 65_537]), "more than 64 KiB at once is refused");
+    assert!(!session.control.write(&vec![0; 65_537]), "more than 65,536 UTF-16 units at once is refused");
+    let korean = "한".repeat(30_000);
+    assert!(session.control.write(korean.as_bytes()), "the limit counts UTF-16 units as C#'s string.Length does, not the 90,000 bytes");
+    assert_eq!(session.output.recv().await.unwrap(), korean.as_bytes());
     session.control.resize(PtySize { columns: 120, rows: 40 }).unwrap();
     assert!(session.control.process_ids().is_some());
-    session.control.close().await.unwrap();
-    assert!(session.output.recv().await.is_none(), "the output ends with the terminal");
+    // A close does not wait for the output to be read: this is still unread when it returns, as a real console's output may be.
+    assert!(session.control.write(b"unread"));
+    tokio::time::timeout(Duration::from_secs(10), session.control.close()).await.expect("a close returns with its output unread").unwrap();
+    // What was queued before the close can still be read, then the output ends (a real console adds its final frame first).
+    let rest = tokio::time::timeout(Duration::from_secs(10), async {
+        let mut rest = Vec::new();
+        while let Some(bytes) = session.output.recv().await {
+            rest.extend(bytes);
+        }
+        rest
+    })
+    .await
+    .expect("the output ends with the terminal");
+    assert_eq!(rest, b"unread");
     assert!(!session.control.write(b"late"));
     assert!(session.control.process_ids().is_none());
 

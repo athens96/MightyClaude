@@ -195,7 +195,8 @@ struct FakeTerminal {
 
 impl PtyControl for FakeTerminal {
     fn write(&self, bytes: &[u8]) -> bool {
-        bytes.len() <= 65_536 && lock(&self.input).as_ref().is_some_and(|sender| sender.try_send(bytes.to_vec()).is_ok())
+        let fits = bytes.len() <= 65_536 || String::from_utf8_lossy(bytes).encode_utf16().count() <= 65_536;
+        fits && lock(&self.input).as_ref().is_some_and(|sender| sender.try_send(bytes.to_vec()).is_ok())
     }
     fn resize(&self, size: PtySize) -> Result<()> {
         if self.exit.ended() {

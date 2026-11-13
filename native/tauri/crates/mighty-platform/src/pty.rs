@@ -70,7 +70,8 @@ impl fmt::Debug for PtySession {
 
 /// Input, size and teardown, each independent of the others: a close never blocks the output drain or the caller's thread.
 pub trait PtyControl: Send + Sync {
-    /// Queues input (at most 64 KiB at once); false when the terminal has closed or its input queue is full.
+    /// Queues input: UTF-8 text of at most 65,536 UTF-16 units at once, as C# `TryWrite` counts a string's `Length` (30,000 Korean
+    /// characters, 90,000 bytes, are taken); false when it is longer, the terminal has closed or its input queue is full.
     fn write(&self, bytes: &[u8]) -> bool;
     fn resize(&self, size: PtySize) -> Result<()>;
     /// The processes running in the terminal now (the shell and everything under it), for "is something still running?"; None once
@@ -78,7 +79,9 @@ pub trait PtyControl: Send + Sync {
     fn process_ids(&self) -> Option<Vec<u32>>;
     fn wait(&self) -> BoxFuture<'_, Result<i32>>;
     /// Ends the shell and its descendants (Windows: the session's kill-on-close job, then `ClosePseudoConsole`), lets the output
-    /// drain read the console's final frame, and releases everything. Calling it again waits for the same close.
+    /// drain read the console's final frame, and releases everything. It returns whether or not anyone reads the output: once it
+    /// has begun, output that finds the channel full is dropped. What was queued before can still be read, then the output ends.
+    /// Calling it again waits for the same close.
     fn close(&self) -> BoxFuture<'_, Result<()>>;
 }
 
