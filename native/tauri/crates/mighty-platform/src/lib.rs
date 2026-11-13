@@ -16,6 +16,7 @@ use std::sync::Arc;
 pub mod environment;
 mod error;
 pub mod fake;
+pub mod files;
 pub mod firewall;
 pub mod notify;
 pub mod pairing;
@@ -31,6 +32,7 @@ pub mod update;
 
 pub use environment::{CliEnvironment, EnvironmentSource, ShellEnvironment};
 pub use error::{PlatformError, Result};
+pub use files::{ClipboardImage, Desktop, FileHandles, FilePorts, PdfPage, PdfRaster, SaveDialog, SaveRequest};
 pub use firewall::{Firewall, FirewallChange, FirewallRule};
 pub use notify::{ActivationHandler, Notification, Notifier};
 pub use pairing::{PairedDevice, PairingIdentity, PairingStore, PushRegistration};

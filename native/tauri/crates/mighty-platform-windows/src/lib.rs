@@ -20,6 +20,8 @@ mod dpapi;
 #[cfg(windows)]
 pub mod environment;
 #[cfg(windows)]
+pub mod files;
+#[cfg(windows)]
 mod prefs;
 #[cfg(windows)]
 mod process;
@@ -51,6 +53,7 @@ mod imp {
     pub use crate::cli::{CliRunResult, CliRunner};
     pub use crate::dpapi::{DpapiVault, FOLDER as REMOTE_KEYS_FOLDER, file_name as remote_key_file_name};
     pub use crate::environment::{CliEnvironmentSnapshot, WindowsShellEnvironment};
+    pub use crate::files::{WindowsDesktop, WindowsFileHandles, WindowsPdf, decimal_separator, file_ports, short_date_time};
     pub use crate::prefs::RegistryPrefs;
     pub use crate::process::{KILLED_EXIT_CODE, WindowsProcessHost};
     pub use crate::pty::WindowsPtyHost;
