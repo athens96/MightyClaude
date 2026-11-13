@@ -87,7 +87,7 @@
 | `PetWindow` | `show_at(LogicalRect)`, `hide`, `set_click_through`, `close` |
 | `PlatformProfile` | 값: `os`, `path_style`, `plugin_list_while_reading`(Busy/Join), `cli_updater`(Homebrew/Winget), `settings_store`, `pairing_layout`, `agent_sign_in`, `mcp_transport`, `m1_platform`("win32"/"darwin"), `remote_decodes_request_paths`, `direct_connection_firewall`, `update_needs_public_key`, `build_update_url_wins`, `update_rechecks_sha256`, `auto_update_keys`, `saves_files_pane` |
 
-W1 현재 실제 구현: 양쪽 `Paths`; Windows `PrefsStore` 읽기, `SecretVault`(DPAPI), `SurfaceFactory`의 브라우저(Tauri 자식 웹뷰). 나머지는 `Unsupported`(Windows 프로세스는 W1-C). 어떤 구현을 쓸지는 `src-tauri/src/platform.rs` 한 곳에서 `cfg`로 정한다.
+W1 현재 실제 구현: 양쪽 `Paths`; Windows `PrefsStore` 읽기, `SecretVault`(DPAPI), `SurfaceFactory`의 브라우저(Tauri 자식 웹뷰), `ProcessHost`·`PtyHost`·`ShellEnvironment`(W1-C, C# `ChildProcess`·`PseudoTerminal`·`WindowsShellEnvironment` 이전). 나머지는 `Unsupported`. 어떤 구현을 쓸지는 `src-tauri/src/platform.rs` 한 곳에서 `cfg`로 정한다.
 
 ## 3. NativeSlot: 페이지 위에 네이티브 뷰 올리기
 
