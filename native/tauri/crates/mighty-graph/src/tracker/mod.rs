@@ -977,6 +977,14 @@ impl ExecutionGraphTracker {
             if self.message_order.len() > 1_024 {
                 let oldest = self.message_order.remove(0);
                 self.message_usage.remove(&oldest);
+                // What else was kept of it goes too (C# keeps it for the run's life): a record names only messages with a usage.
+                self.message_model.remove(&oldest);
+                self.message_activity_ids.remove(&oldest);
+                self.message_configured.remove(&oldest);
+                for responses in self.node_response_order.values_mut() {
+                    responses.retain(|id| *id != oldest);
+                }
+                self.node_response_order.retain(|_, responses| !responses.is_empty());
             }
             if let Some(model) = model {
                 self.message_model.insert(message.into(), model.into());
@@ -1276,4 +1284,42 @@ pub fn question_summary(input: Option<&Value>, locale: &Locale) -> (Option<Strin
         .collect::<Vec<_>>()
         .join("\n\n");
     (title, body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A long run's messages are remembered 1,024 at a time: what each message's record reads (its model, the calls it named, whether
+    /// it ran with the configured settings, its place among its block's responses) is let go with its usage.
+    #[test]
+    fn a_message_forgotten_takes_all_it_kept_with_it() {
+        let mut tracker = ExecutionGraphTracker::new(
+            "run",
+            Some("go"),
+            "claude",
+            None,
+            Box::new(|_: &ExecutionGraphNode| {}),
+            None,
+            None,
+            Locale::new("ko"),
+        );
+        let main = tracker.main_id.clone();
+        let usage = GraphTokenUsage { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0, cache_creation_tokens: 0 };
+        for index in 0..1_100 {
+            tracker.record_usage(usage, &format!("m{index}"), &main, Some("claude-opus-5-5"), &[format!("call{index}")], true);
+        }
+        assert_eq!(tracker.message_order.len(), 1_024);
+        for kept in [
+            tracker.message_usage.len(),
+            tracker.message_model.len(),
+            tracker.message_activity_ids.len(),
+            tracker.message_configured.len(),
+            tracker.node_response_order[&main].len(),
+        ] {
+            assert_eq!(kept, 1_024);
+        }
+        assert!(!tracker.message_model.contains_key("m0") && tracker.message_model.contains_key("m1099"));
+        assert_eq!(tracker.build_response_records(&main).len(), 1_024, "the records name what is kept");
+    }
 }
