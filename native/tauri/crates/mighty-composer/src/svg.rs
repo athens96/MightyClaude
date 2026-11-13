@@ -418,15 +418,98 @@ pub struct SafeSvgDocument {
 const SVG_NAMESPACE: &[u8] = b"http://www.w3.org/2000/svg";
 const ACTIVE: [&str; 9] = ["script", "foreignobject", "iframe", "object", "embed", "set", "animate", "animatetransform", "animatemotion"];
 
+/// Text as `XmlWriter` writes it: `&`, `<`, `>` escaped, and each line end as `Environment.NewLine` (NewLineHandling.Replace).
 fn escape_text(out: &mut String, value: &str) {
+    let newline = if std::path::MAIN_SEPARATOR == '\\' { "\r\n" } else { "\n" };
     for c in value.chars() {
         match c {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
+            '\n' => out.push_str(newline),
             _ => out.push(c),
         }
     }
+}
+
+/// XML 1.0's `Char`: what a document may hold at all.
+fn xml_char(c: char) -> bool {
+    matches!(c as u32, 0x9 | 0xA | 0xD | 0x20..=0xD7FF | 0xE000..=0xFFFD | 0x10000..=0x10FFFF)
+}
+
+/// The document's characters as `XmlReader` reads the bytes: the byte order mark's encoding, else the declaration's (one
+/// `SvgReferences.ReadableDeclaration` let through: UTF-8, ASCII or Latin-1), else UTF-8. A byte its encoding cannot read is the
+/// reader's error only once the reader gets there: what comes before it is read (and may be refused for itself) first. So is a
+/// character XML does not allow. The second value is where the first such one is, in the text.
+fn xml_source(data: &[u8]) -> Result<(String, Option<usize>), AgentImageError> {
+    let text = xml_text(data)?;
+    let (text, bad) = match text {
+        Ok(text) => (text, None),
+        Err((text, bad)) => (text, Some(bad)),
+    };
+    let invalid = text.char_indices().find(|(_, c)| !xml_char(*c)).map(|(at, _)| at);
+    let first = match (bad, invalid) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    };
+    Ok((text, first))
+}
+
+/// The decoded text, or a lossy one with where its first unreadable byte was.
+fn xml_text(data: &[u8]) -> Result<Result<String, (String, usize)>, AgentImageError> {
+    if text::from_byte_order_mark(data).is_some() {
+        return text::decode_text(data, false).map(|d| Ok(d.text)).ok_or(AgentImageError::Undecodable);
+    }
+    let head = &data[..data.len().min(512)];
+    let declared = head
+        .strip_prefix(b"<?xml")
+        .and_then(|rest| rest.windows(2).position(|w| w == b"?>").map(|end| String::from_utf8_lossy(&rest[..end]).to_ascii_lowercase()))
+        .and_then(|decl| {
+            decl.split_once("encoding").map(|(_, rest)| {
+                rest.trim_start_matches([' ', '=', '"', '\'']).chars().take_while(|c| !matches!(c, '"' | '\'')).collect::<String>()
+            })
+        });
+    Ok(match declared.as_deref() {
+        Some("iso-8859-1" | "latin1") => Ok(data.iter().map(|b| *b as char).collect()),
+        Some("us-ascii" | "ascii") => Ok(data.iter().map(|b| if *b < 0x80 { *b as char } else { '?' }).collect()),
+        _ => match std::str::from_utf8(data) {
+            Ok(text) => Ok(text.to_string()),
+            Err(e) => Err((String::from_utf8_lossy(data).into_owned(), e.valid_up_to())),
+        },
+    })
+}
+
+/// An XML `Name` as a processing instruction's target must be one (ASCII rules, and any non-ASCII letter).
+fn xml_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_alphabetic() || c == '_' || c == ':')
+        && chars.all(|c| c.is_alphanumeric() || matches!(c, '_' | ':' | '-' | '.' | '\u{B7}'))
+}
+
+/// The XML declaration as the reader takes it: `version="1.0"`, then an optional `encoding`, then an optional `standalone`
+/// (`yes` or `no`), nothing else.
+fn valid_declaration(body: &str) -> bool {
+    if !body.starts_with(char::is_whitespace) {
+        return false;
+    }
+    let mut rest = body.trim_start();
+    let mut seen = Vec::new();
+    while !rest.is_empty() {
+        let Some(eq) = rest.find('=') else { return false };
+        let name = rest[..eq].trim_end();
+        let after = rest[eq + 1..].trim_start();
+        let Some(quote) = after.chars().next().filter(|q| matches!(q, '"' | '\'')) else { return false };
+        let Some(end) = after[1..].find(quote) else { return false };
+        let value = &after[1..1 + end];
+        seen.push((name.to_string(), value.to_string()));
+        rest = after[end + 2..].trim_start();
+    }
+    let names: Vec<&str> = seen.iter().map(|(n, _)| n.as_str()).collect();
+    let ordered = matches!(
+        names.as_slice(),
+        ["version"] | ["version", "encoding"] | ["version", "standalone"] | ["version", "encoding", "standalone"]
+    );
+    ordered && seen[0].1 == "1.0" && seen.iter().all(|(n, v)| n != "standalone" || v == "yes" || v == "no")
 }
 
 fn escape_attribute(out: &mut String, value: &str) {
@@ -497,8 +580,11 @@ impl SafeSvgDocument {
         if svg_loads_external_content(data) {
             return Err(AgentImageError::ExternalSvg);
         }
-        let decoded = text::decode_text(data, false).ok_or(AgentImageError::Undecodable)?;
-        let source = decoded.text.trim_start_matches('\u{FEFF}');
+        let (decoded, bad) = xml_source(data)?;
+        let (source, bad) = match decoded.strip_prefix('\u{FEFF}') {
+            Some(rest) => (rest, bad.map(|b| b.saturating_sub('\u{FEFF}'.len_utf8()))),
+            None => (decoded.as_str(), bad),
+        };
         let mut reader = quick_xml::NsReader::from_str(source);
         reader.config_mut().check_end_names = true;
         reader.config_mut().expand_empty_elements = false;
@@ -518,14 +604,34 @@ impl SafeSvgDocument {
         };
         loop {
             let event = reader.read_event().map_err(|_| AgentImageError::Undecodable)?;
+            // The reader got to a byte it cannot read, or a character XML does not allow.
+            if bad.is_some_and(|b| reader.buffer_position() as usize > b) {
+                return Err(AgentImageError::Undecodable);
+            }
             let text_event = matches!(event, Event::Text(_) | Event::GeneralRef(_));
             if !text_event {
                 in_text = false;
             }
             match event {
-                Event::Decl(_) => count(0, &mut nodes)?,
+                Event::Decl(_) => {
+                    // Only the document's first characters may declare it.
+                    let body = source.strip_prefix("<?xml").and_then(|rest| rest.find("?>").map(|end| &rest[..end]));
+                    if nodes > 0 || root_seen || !body.is_some_and(valid_declaration) {
+                        return Err(AgentImageError::Undecodable);
+                    }
+                    count(0, &mut nodes)?
+                }
                 Event::DocType(_) => return Err(AgentImageError::Undecodable),
-                Event::PI(_) => return Err(AgentImageError::ExternalSvg),
+                Event::PI(ref pi) => {
+                    // A target that is no XML name, or `xml` itself where no declaration may be, is the reader's error.
+                    let target = String::from_utf8_lossy(pi.target());
+                    let error = if !xml_name(&target) || target.eq_ignore_ascii_case("xml") {
+                        AgentImageError::Undecodable
+                    } else {
+                        AgentImageError::ExternalSvg
+                    };
+                    return Err(error);
+                }
                 Event::Comment(_) => {}
                 Event::Start(ref e) | Event::Empty(ref e) => {
                     let empty = matches!(event, Event::Empty(_));
@@ -602,6 +708,8 @@ impl SafeSvgDocument {
                         if !value.chars().all(|c| matches!(c, ' ' | '\t' | '\n' | '\r')) {
                             return Err(AgentImageError::Undecodable);
                         }
+                        // The reader's Whitespace node outside the root: counted, never kept by the document.
+                        count(0, &mut nodes)?;
                         continue;
                     }
                     if !in_text {
@@ -628,7 +736,9 @@ impl SafeSvgDocument {
                     }
                     count(depth, &mut nodes)?;
                     out.push_str("<![CDATA[");
-                    out.push_str(&String::from_utf8_lossy(c));
+                    // Line ends read as LF and written as the new line, as in text.
+                    let newline = if std::path::MAIN_SEPARATOR == '\\' { "\r\n" } else { "\n" };
+                    out.push_str(&String::from_utf8_lossy(c).replace("\r\n", "\n").replace('\r', "\n").replace('\n', newline));
                     out.push_str("]]>");
                 }
                 Event::Eof => break,

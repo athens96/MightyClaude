@@ -66,8 +66,44 @@ fn strict(data: &[u8], kind: TextEncodingKind) -> Option<String> {
                 .map(|p| char::from_u32(if kind == TextEncodingKind::Utf32Le { u32::from_le_bytes(*p) } else { u32::from_be_bytes(*p) }))
                 .collect::<Option<String>>()
         }
-        TextEncodingKind::Cp949 => encoding_rs::EUC_KR.decode_without_bom_handling_and_without_replacement(data).map(|c| c.into_owned()),
+        TextEncodingKind::Cp949 => cp949(data),
     }
+}
+
+/// .NET's code page 949 (`CodePagesEncodingProvider`), strict: WHATWG EUC-KR (`encoding_rs`) for the pairs both read, and what
+/// .NET reads besides (checked byte for byte against it, tests/parity.rs): 0x80 and 0xFF alone as U+0080 and U+F8F7, and the two
+/// user-defined rows C9A1-C9FE and FEA1-FEFE as U+E000-U+E05D and U+E05E-U+E0BB.
+fn cp949(data: &[u8]) -> Option<String> {
+    let mut out = String::with_capacity(data.len());
+    let mut at = 0;
+    while at < data.len() {
+        let lead = data[at];
+        match lead {
+            0x00..=0x7F => {
+                out.push(lead as char);
+                at += 1;
+            }
+            0x80 => {
+                out.push('\u{80}');
+                at += 1;
+            }
+            0xFF => {
+                out.push('\u{F8F7}');
+                at += 1;
+            }
+            _ => {
+                let trail = *data.get(at + 1)?;
+                if matches!(lead, 0xC9 | 0xFE) && (0xA1..=0xFE).contains(&trail) {
+                    let base = if lead == 0xC9 { 0xE000 } else { 0xE05E };
+                    out.push(char::from_u32(base + (trail - 0xA1) as u32)?);
+                } else {
+                    out.push_str(&encoding_rs::EUC_KR.decode_without_bom_handling_and_without_replacement(&data[at..at + 2])?);
+                }
+                at += 2;
+            }
+        }
+    }
+    Some(out)
 }
 
 fn decode(data: &[u8], kind: TextEncodingKind, sample: bool) -> Option<String> {
