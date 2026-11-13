@@ -9,6 +9,8 @@ rust-version.workspace = true
 
 [dependencies]
 mighty-core.workspace = true
+# The run engine's graph seam (`run.rs`): mighty-run never reads this crate, so the two have no cycle.
+mighty-run.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 indexmap = { workspace = true, features = ["serde"] }

@@ -20,6 +20,7 @@ pub mod layout;
 pub mod node;
 pub mod notice;
 pub mod result_files;
+pub mod run;
 pub mod structure;
 pub mod support;
 pub mod timeline;
@@ -29,4 +30,5 @@ pub mod view;
 pub mod view_model;
 
 pub use node::ExecutionGraphNode;
+pub use run::TrackerFactory;
 pub use tracker::ExecutionGraphTracker;
