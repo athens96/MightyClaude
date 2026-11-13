@@ -1144,12 +1144,10 @@ impl Exec {
                 }),
                 clock: Arc::new(mighty_core::time::DateTimeOffset::now),
             };
-            let channel = ClaudePermissionChannel::new(
-                &request.session_id,
-                &ProviderInput::prompt_frame(&input),
-                hooks,
-                &request.settings().permission_mode,
-            );
+            // Files staged for Claude made the input a whole stream-json user frame already (`StagedAttachments.InputFor`, the Mac's
+            // Attachments.swift `prepare`): it goes as it is; plain text is wrapped in one.
+            let prompt = if staged.is_some() { input.clone() } else { ProviderInput::prompt_frame(&input) };
+            let channel = ClaudePermissionChannel::new(&request.session_id, &prompt, hooks, &request.settings().permission_mode);
             *lock(&run.permissions) = Some(Arc::new(channel));
         }
         (self.emit)(RunEvent::state(&request.session_id, "running", None));

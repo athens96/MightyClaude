@@ -547,6 +547,54 @@ async fn fake_cli_receives_attachment_bytes_and_staging_is_removed() {
     common::remove_when_free(&directory).await;
 }
 
+/// A Claude run with host prompts and a picture: the prompt the CLI reads after the handshake is the one stream-json user message
+/// the staged files make, its content the text and the picture, never that message wrapped in another as text.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hosted_claude_run_with_a_picture_sends_its_user_message_once() {
+    use base64::Engine;
+    common::korean();
+    let directory = common::temp("hosted-picture");
+    let workspace = workspace(&directory);
+    let plugin = common::plugin(&directory);
+    let record = directory.join("hosted-picture");
+    let catalog = common::fake_catalog(&["--fake-cli", "claude", &record.to_string_lossy()]);
+    let events = Events::default();
+    let cell: Cell = Arc::default();
+    let mut options = RunManagerOptions::new(&plugin, resolve(&workspace), events.emit());
+    let answer = cell.clone();
+    options.permission_requested = Some(Arc::new(move |value: ToolPermissionRequest| {
+        if value.state == "pending" {
+            manager_of(&answer).respond_to_tool_permission("picture-pane", &value.id, false).unwrap();
+        }
+    }));
+    let manager = Arc::new(RunManager::new(catalog, options));
+    cell.set(Arc::downgrade(&manager)).ok();
+    let png = base64::engine::general_purpose::STANDARD.decode(PNG).unwrap();
+    let picture = mighty_run::attachments::make("image.png", &png).unwrap();
+    let mut start = request("picture-pane", &workspace, "claude", "look at this");
+    start.attachments = Some(vec![picture.clone()]);
+    manager.start(start).await.unwrap();
+    common::until(|| !manager.is_running("picture-pane"), 20000, "the run ends").await;
+    manager.dispose().await;
+
+    let written: Vec<String> = read(suffixed(&record, ".input")).lines().filter(|l| !l.is_empty()).map(str::to_string).collect();
+    assert_eq!(common::json(&written[0])["request"]["subtype"], "initialize", "the handshake is written first");
+    let prompt = common::json(&written[1]);
+    assert_eq!(prompt["type"], "user", "the prompt follows the handshake");
+    let content = prompt["message"]["content"].as_array().expect("the user message's content is a list of blocks, not a wrapped frame");
+    assert!(
+        content.iter().any(|c| c["type"] == "text" && c["text"] == "look at this"),
+        "the text is the message's first block: {content:?}"
+    );
+    let images: Vec<&Value> = content.iter().filter(|c| c["type"] == "image").collect();
+    assert!(
+        images.len() == 1 && images[0]["source"]["data"] == picture.data_base64.as_str(),
+        "the picture is an image block of the same message"
+    );
+    assert_eq!(events.last_status("picture-pane").as_deref(), Some("completed"), "the run completes");
+    common::remove_when_free(&directory).await;
+}
+
 /// Verification.cs "pending stop and disposal prevent a late child launch".
 #[tokio::test(flavor = "multi_thread")]
 async fn pending_stop_and_disposal_prevent_a_late_child_launch() {
