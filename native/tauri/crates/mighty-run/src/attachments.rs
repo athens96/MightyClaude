@@ -310,3 +310,11 @@ impl StagedAttachments {
         &self.directory
     }
 }
+
+/// The copies never outlive their value: a run that ends before it disposes of them (stopped right after the staging, or its task
+/// unwinding) still removes them, silently; [`StagedAttachments::dispose`] is the run's own end, which says when it cannot.
+impl Drop for StagedAttachments {
+    fn drop(&mut self) {
+        let _ = self.dispose();
+    }
+}

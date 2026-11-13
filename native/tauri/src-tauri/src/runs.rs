@@ -119,7 +119,13 @@ impl Runs {
         let (service, mut events) = RunService::new(
             snapshot,
             catalog.clone(),
-            RunServiceOptions { plugin_directory: plugin_directory(), permission_card: true, remote: None, configure: Some(configure) },
+            RunServiceOptions {
+                plugin_directory: plugin_directory(),
+                permission_card: true,
+                remote: None,
+                configure: Some(configure),
+                admitting: None,
+            },
         );
         let runs = Arc::new(Runs { service: Arc::new(service), catalog, images, runtime: Mutex::new(HashMap::new()) });
         host.attach(runs.clone());

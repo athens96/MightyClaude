@@ -151,6 +151,7 @@ pub struct RunService {
     shared: Arc<Shared>,
     manager: RunManager,
     remote: Option<Arc<dyn RemoteRunner>>,
+    admitting: Option<Admitting>,
 }
 
 /// How the service is made.
@@ -161,9 +162,13 @@ pub struct RunServiceOptions {
     pub remote: Option<Arc<dyn RemoteRunner>>,
     /// Plugs the graph tracker, the image store, the Agent IO binding and the file originals into the runner.
     pub configure: Option<Configure>,
+    /// Called with the pane's id once its route is marked started, just before the runner admits the request, under the service's
+    /// lock (a stop asked for meanwhile waits for the admission). The checks' gate on that window; None in the app.
+    pub admitting: Option<Admitting>,
 }
 
 pub type Configure = Box<dyn FnOnce(&mut RunManagerOptions) + Send>;
+pub type Admitting = Arc<dyn Fn(&str) + Send + Sync>;
 
 impl RunService {
     /// A service over `snapshot` (the loaded state), its events on the returned receiver.
@@ -194,7 +199,7 @@ impl RunService {
             configure(&mut manager_options);
         }
         let manager = RunManager::new(providers, manager_options);
-        (RunService { shared, manager, remote: options.remote }, receiver)
+        (RunService { shared, manager, remote: options.remote, admitting: options.admitting }, receiver)
     }
 
     pub fn manager(&self) -> &RunManager {
@@ -323,6 +328,9 @@ impl RunService {
             request.phase_models = phase_models::normalized(state.snapshot.phase_models.as_ref());
             request.todo_progress = if request.resume_id.is_none() { None } else { pane.todo_progress.clone() };
             request.working_folder = pane.working_folder.clone();
+            // C# `DelegationWorktreeRoot(pane)`: the child's worktree as delegation made it, never what the caller says; delegation
+            // (W7) keeps no worktree here yet, so none.
+            request.delegation_worktree_root = None;
             if state.routes.contains_key(&request.session_id) {
                 return Err(RunError::State(strings::get("run.error.alreadyRunning")));
             }
@@ -365,7 +373,7 @@ impl RunService {
         self.shared
             .send(ServiceEvent::Run { event: Box::new(RunEvent::state(&request.session_id, "running", None)), notice_turn_ended: false });
         let session_id = request.session_id.clone();
-        {
+        let admitted = {
             let mut state = lock(&self.shared.state);
             let cancelled = state.closing || state.routes.get(&session_id).is_none_or(|r| r.cancelled);
             if cancelled {
@@ -381,16 +389,22 @@ impl RunService {
             if let Some(route) = state.routes.get_mut(&session_id) {
                 route.started = true;
             }
-        }
-        let started = if remote {
-            match &self.remote {
+            if let Some(admitting) = &self.admitting {
+                admitting(&session_id);
+            }
+            // The runner registers the run under this lock, as C# starts `local.StartAsync` inside it: a stop that finds the route
+            // started always finds the run too.
+            (!remote).then(|| self.manager.admit(request.clone(), reach))
+        };
+        let started = match admitted {
+            Some(admitted) => match admitted {
+                Ok(admitted) => admitted.reached().await.map(Some),
+                Err(error) => Err(error),
+            },
+            None => match &self.remote {
                 Some(runner) => runner.start(request.clone(), workspace).await.map(|reached| reached.then_some(())),
                 None => Err(RunError::State(strings::get("run.error.approvedWorkspaceOnly"))),
-            }
-        } else if reach {
-            self.manager.start_reached(request.clone()).await.map(Some)
-        } else {
-            self.manager.start(request.clone()).await.map(Some)
+            },
         };
         match started {
             Ok(Some(())) => Ok(Some(())),

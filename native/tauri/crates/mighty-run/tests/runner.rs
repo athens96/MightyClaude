@@ -446,8 +446,10 @@ async fn fake_cli_receives_attachment_bytes_and_staging_is_removed() {
         mighty_run::attachments::make("source.cs", b"attachment-fixture-contents").unwrap(),
     ];
     let events = Events::default();
-    // pi and the ACP agents take their attachments in their own channels (W5).
-    for provider in mighty_core::wire::PROVIDERS.iter().copied().filter(|p| *p != "pi" && !mighty_run::providers::is_acp(p)) {
+    // pi, Antigravity and the ACP agents are read through their own channels and streams (W5): their runs are refused until then.
+    for provider in
+        mighty_core::wire::PROVIDERS.iter().copied().filter(|p| !matches!(*p, "pi" | "gemini") && !mighty_run::providers::is_acp(p))
+    {
         let record = directory.join(provider);
         let catalog = common::fake_catalog(&["--fake-cli", provider, &record.to_string_lossy(), "--verify-attachments"]);
         let manager = RunManager::new(catalog, RunManagerOptions::new(&plugin, resolve(&workspace), events.emit()));
@@ -641,7 +643,7 @@ async fn desktop_routing_retains_cancellation_before_manager_admission() {
     let (service, mut events) = RunService::new(
         snapshot,
         common::absent_catalog(),
-        RunServiceOptions { plugin_directory: String::new(), permission_card: false, remote: None, configure: None },
+        RunServiceOptions { plugin_directory: String::new(), permission_card: false, remote: None, configure: None, admitting: None },
     );
     let service = Arc::new(service);
     // `RunEventReceived += value => { if (value.Status == "running") _ = service.StopAsync(value.SessionId); }`
@@ -664,6 +666,217 @@ async fn desktop_routing_retains_cancellation_before_manager_admission() {
     assert_eq!(session.status.as_deref(), Some("stopped"));
     service.dispose().await;
     listener.abort();
+    common::remove_when_free(&directory).await;
+}
+
+/// A pane of `workspace` and the state that has both.
+fn one_pane(workspace: &Workspace, kind: &str) -> (String, AppSnapshot) {
+    let pane = RunSession { workspace_id: workspace.id.clone(), kind: Some(kind.into()), ..RunSession::default() };
+    let id = pane.id.clone().unwrap();
+    (id, AppSnapshot { workspaces: Some(vec![workspace.clone()]), sessions: Some(vec![Arc::new(pane)]), ..AppSnapshot::default() })
+}
+
+/// A stop asked for after the send marked its route started but before the runner admitted the run still stops it: the runner
+/// registers the run under the service's lock (C# starts `local.StartAsync` inside it), so the stop waits for the admission and
+/// then finds the run. The gate holds the launch in that window while the stop is asked for.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_stop_right_after_the_send_is_never_lost() {
+    use std::sync::mpsc;
+    common::korean();
+    let directory = common::temp("stop-race");
+    let workspace = Workspace { name: Some("Race".into()), ..workspace(&directory) };
+    let (pane_id, snapshot) = one_pane(&workspace, "shell");
+    let (at_gate, reached) = mpsc::channel::<()>();
+    let (release, released) = mpsc::channel::<()>();
+    let gate = Mutex::new((at_gate, released));
+    let admitting: mighty_run::service::Admitting = Arc::new(move |_| {
+        let gate = gate.lock().unwrap();
+        let _ = gate.0.send(());
+        let _ = gate.1.recv_timeout(std::time::Duration::from_secs(20));
+    });
+    let (service, _events) = RunService::new(
+        snapshot,
+        common::absent_catalog(),
+        RunServiceOptions {
+            plugin_directory: String::new(),
+            permission_card: false,
+            remote: None,
+            configure: None,
+            admitting: Some(admitting),
+        },
+    );
+    let service = Arc::new(service);
+    let starting = tokio::spawn({
+        let (service, request) = (service.clone(), request(&pane_id, &workspace, "shell", "ping -n 30 127.0.0.1"));
+        async move { service.start(request).await }
+    });
+    tokio::task::spawn_blocking(move || reached.recv_timeout(std::time::Duration::from_secs(20))).await.unwrap().expect("the gate");
+    let stopping = tokio::spawn({
+        let (service, id) = (service.clone(), pane_id.clone());
+        async move { service.stop(&id).await }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    release.send(()).unwrap();
+    let _ = starting.await.unwrap();
+    stopping.await.unwrap().unwrap();
+    let status = || service.snapshot().session(&pane_id).and_then(|s| s.status.clone());
+    common::until(|| status().as_deref() == Some("stopped") && !service.is_session_running(&pane_id), 10000, "the pane stops").await;
+    service.dispose().await;
+    common::remove_when_free(&directory).await;
+}
+
+/// C# `DelegationWorktreeRoot(pane)`: the folder a delegated child may also write is the pane's, never the caller's.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_delegation_root_comes_from_the_pane() {
+    common::korean();
+    let directory = common::temp("delegation-root");
+    let workspace = workspace(&directory);
+    let (pane_id, snapshot) = one_pane(&workspace, "shell");
+    let (service, mut events) = RunService::new(
+        snapshot,
+        common::absent_catalog(),
+        RunServiceOptions { plugin_directory: String::new(), permission_card: false, remote: None, configure: None, admitting: None },
+    );
+    let mut asked = request(&pane_id, &workspace, "shell", "echo ROOT");
+    asked.delegation_worktree_root = Some(directory.to_string_lossy().into_owned());
+    service.start(asked).await.unwrap();
+    let starting = loop {
+        match events.recv().await.expect("the service's events") {
+            mighty_run::ServiceEvent::RequestStarting(request) => break request,
+            _ => continue,
+        }
+    };
+    assert_eq!(starting.delegation_worktree_root, None, "the caller's root is never taken");
+    common::until(|| !service.is_session_running(&pane_id), 20000, "the command ends").await;
+    service.dispose().await;
+    common::remove_when_free(&directory).await;
+}
+
+/// A graph tracker that fails as it starts: the run's task panics.
+struct PanickingGraph;
+
+impl GraphFactory for PanickingGraph {
+    fn start(&self, _start: GraphStart) -> Box<dyn GraphSink> {
+        panic!("the tracker failed")
+    }
+}
+
+/// A panic in a run's task ends the run in an error the pane is told, answers a start that waits, and frees the pane: no stop waits
+/// for it, and the pane runs again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_panic_in_a_run_ends_it_and_frees_its_pane() {
+    common::korean();
+    let directory = common::temp("panic");
+    let workspace = workspace(&directory);
+    let events = Events::default();
+    let mut options = RunManagerOptions::new("", resolve(&workspace), events.emit());
+    options.graph = Some(Arc::new(PanickingGraph));
+    let manager = RunManager::new(common::absent_catalog(), options);
+    let failed = manager.start_reached(request("panic-pane", &workspace, "claude", "x")).await;
+    assert!(matches!(&failed, Err(error) if error.message() == "the tracker failed"), "the waiting start is told why: {failed:?}");
+    assert!(!manager.is_running("panic-pane"), "the run is off the list");
+    assert_eq!(events.last_status("panic-pane").as_deref(), Some("error"), "the pane is told the run ended in an error");
+    assert!(
+        events.of("panic-pane").iter().any(|e| e
+            .entry
+            .as_ref()
+            .is_some_and(|l| l.kind.as_deref() == Some("error") && l.text.as_deref() == Some("the tracker failed"))),
+        "the reason is in the transcript"
+    );
+    // A start that does not wait returns at once; the pane is free again once the panic is caught, and a stop does not wait.
+    manager.start(request("panic-pane", &workspace, "claude", "x")).await.unwrap();
+    common::until(|| !manager.is_running("panic-pane"), 10000, "the second run ends").await;
+    tokio::time::timeout(std::time::Duration::from_secs(2), manager.stop("panic-pane")).await.expect("a stop never waits").unwrap();
+    manager.dispose().await;
+    common::remove_when_free(&directory).await;
+}
+
+/// pi and Antigravity are read by streams of their own (W5): until then their runs are refused with the reason, as the ACP agents'
+/// are, instead of launching a CLI whose answer would never be read.
+#[tokio::test(flavor = "multi_thread")]
+async fn pi_and_antigravity_runs_are_refused_until_their_streams() {
+    common::korean();
+    let directory = common::temp("refused");
+    let workspace = workspace(&directory);
+    let record = directory.join("refused");
+    let catalog = common::fake_catalog(&["--fake-cli", "codex", &record.to_string_lossy()]);
+    let events = Events::default();
+    let manager = RunManager::new(catalog, RunManagerOptions::new("", resolve(&workspace), events.emit()));
+    for provider in ["pi", "gemini"] {
+        let refused = manager.start_reached(request(provider, &workspace, "claude", "hello").with_provider(provider)).await;
+        let name = mighty_run::providers::name(provider);
+        assert!(
+            matches!(&refused, Err(error) if error.message().starts_with(name) && error.message().contains("does not read yet")),
+            "{provider}: {refused:?}"
+        );
+        assert_eq!(events.last_status(provider).as_deref(), Some("error"), "{provider} ends in an error");
+    }
+    manager.dispose().await;
+    assert!(!suffixed(&record, ".args").exists(), "no CLI was launched");
+    common::remove_when_free(&directory).await;
+}
+
+/// A write to the CLI that fails (its input broke before the prompt was written) ends the run in an error that says so, as C#'s pump
+/// ends in the exception, never as a silent "completed".
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_write_to_the_cli_ends_the_run_in_an_error() {
+    common::korean();
+    let directory = common::temp("broken-input");
+    let workspace = workspace(&directory);
+    let plugin = common::plugin(&directory);
+    let record = directory.join("broken");
+    let catalog = common::fake_catalog(&["--fake-cli", "claude", &record.to_string_lossy(), "--close-input"]);
+    let events = Events::default();
+    let mut options = RunManagerOptions::new(&plugin, resolve(&workspace), events.emit());
+    options.permission_requested = Some(Arc::new(|_| {}));
+    let manager = RunManager::new(catalog, options);
+    manager.start(request("broken-pane", &workspace, "claude", "x")).await.unwrap();
+    common::until(|| !manager.is_running("broken-pane"), 20000, "the run ends").await;
+    manager.dispose().await;
+    assert_eq!(events.last_status("broken-pane").as_deref(), Some("error"), "the run ends in an error");
+    assert!(
+        events.of("broken-pane").iter().any(|e| e.entry.as_ref().is_some_and(|l| l.kind.as_deref() == Some("error"))),
+        "the failed write is said"
+    );
+    common::remove_when_free(&directory).await;
+}
+
+/// The input of a Claude run with host prompts after its request's result: a steer opens a new turn, so the last turn's result no
+/// longer lets the 120 s close (here 300 ms) end it; and a turn the CLI still says runs keeps its input however long it is silent.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_idle_close_waits_for_the_turn_the_cli_still_runs() {
+    common::korean();
+    let directory = common::temp("idle-close");
+    let workspace = workspace(&directory);
+    let plugin = common::plugin(&directory);
+    for fixture in ["steered watchdog fixture", "busy watchdog fixture"] {
+        let record = directory.join(fixture.split(' ').next().unwrap());
+        let catalog = common::fake_catalog(&["--fake-cli", "claude", &record.to_string_lossy()]);
+        let events = Events::default();
+        let mut options = RunManagerOptions::new(&plugin, resolve(&workspace), events.emit());
+        options.background_idle_close = std::time::Duration::from_millis(300);
+        options.permission_requested = Some(Arc::new(|_| {}));
+        let manager = RunManager::new(catalog, options);
+        manager.start(request("idle-pane", &workspace, "claude", fixture)).await.unwrap();
+        if fixture.starts_with("steered") {
+            common::until(
+                || events.all().iter().any(|e| e.background.as_ref().is_some_and(work::waiting_on_background)),
+                20000,
+                "the pane waits on its background agent",
+            )
+            .await;
+            assert!(manager.try_steer("idle-pane", "and one more thing"), "the steer joins the open input");
+        } else {
+            common::until(|| read(suffixed(&record, ".input")).lines().count() >= 2, 20000, "the prompt is written").await;
+        }
+        // Well past the idle close: the silent turn's input is still open.
+        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+        assert!(manager.try_steer("idle-pane", "second"), "{fixture}: the input is still open after the silence");
+        common::until(|| !manager.is_running("idle-pane"), 20000, "the run ends").await;
+        manager.dispose().await;
+        assert!(read(suffixed(&record, ".second")).contains("second") && !suffixed(&record, ".closed").exists(), "{fixture}");
+        assert_eq!(events.last_status("idle-pane").as_deref(), Some("completed"), "{fixture}: the run completes");
+    }
     common::remove_when_free(&directory).await;
 }
 
