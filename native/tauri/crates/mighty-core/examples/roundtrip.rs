@@ -1,26 +1,16 @@
-//! Reads state files (read-only) and says whether each loads and is written back without losing a field.
+//! Reads state files (read-only) and says whether each loads as C# loads it, and what a save would write.
 //!
 //!     cargo run -p mighty-core --example roundtrip -- <workspace-state.json>...
 //!
-//! Exits 1 when any file does not load or changes on the round trip.
+//! Exits 1 when any file does not load, or a second save of what the first one wrote changes it (a save is a fixed point).
 
 use std::process::ExitCode;
 
+use mighty_core::locale::Locale;
 use mighty_core::store;
-use serde_json::{Map, Value};
-
-fn comparable(value: &Value) -> Value {
-    match value {
-        Value::Object(map) => {
-            Value::Object(map.iter().filter(|(_, v)| !v.is_null()).map(|(k, v)| (k.clone(), comparable(v))).collect::<Map<_, _>>())
-        }
-        Value::Array(list) => Value::Array(list.iter().map(comparable).collect()),
-        Value::Number(n) => n.as_f64().and_then(serde_json::Number::from_f64).map(Value::Number).unwrap_or(Value::Null),
-        other => other.clone(),
-    }
-}
 
 fn main() -> ExitCode {
+    let locale = Locale::new("en");
     let mut failed = false;
     for path in std::env::args().skip(1) {
         let outcome = (|| -> Result<String, String> {
@@ -28,19 +18,25 @@ fn main() -> ExitCode {
             if store::damaged(&bytes) {
                 return Err("damaged (NUL bytes): the load would read the backup".into());
             }
-            let raw: Value = serde_json::from_slice(bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes)).map_err(|e| e.to_string())?;
-            let decoded = store::decode(raw.clone()).map_err(|e| format!("does not decode: {e}"))?;
-            let written = serde_json::to_value(&decoded).map_err(|e| e.to_string())?;
-            if comparable(&raw) != comparable(&written) {
-                return Err("the round trip changed it".into());
+            let started = std::time::Instant::now();
+            let loaded = store::read_state(&bytes, &locale).map_err(|e| format!("{} ({})", e, e.kind()))?;
+            let read = started.elapsed();
+            let started = std::time::Instant::now();
+            let (_, first) = store::encode_for_save(&loaded).map_err(|e| e.to_string())?;
+            let saved = started.elapsed();
+            let again = store::read_state(&first, &locale).map_err(|e| format!("the saved state does not load: {e}"))?;
+            let (_, second) = store::encode_for_save(&again).map_err(|e| e.to_string())?;
+            if first != second {
+                return Err("a second save changed what the first wrote".into());
             }
-            let loaded = store::parse_state(&bytes).map_err(|e| e.to_string())?;
             Ok(format!(
-                "{} bytes, {} workspaces, {} panes (load keeps {} workspaces)",
+                "{} bytes read in {:.1} ms, {} written in {:.1} ms (normalize and write), {} workspaces, {} panes",
                 bytes.len(),
-                decoded.workspaces.len(),
-                decoded.sessions.len(),
-                loaded.workspaces.len()
+                read.as_secs_f64() * 1000.0,
+                first.len(),
+                saved.as_secs_f64() * 1000.0,
+                loaded.workspaces().len(),
+                loaded.sessions().len()
             ))
         })();
         match outcome {

@@ -6,6 +6,8 @@
 //! `--smoke-out <file>`           where the smoke writes its result (default `<profile>\smoke-result.json`)
 //! `--log-dir <folder>`           the host's logs (default `<profile>\tauri-logs`)
 //! `--remote-debugging-port <n>`  opens WebView2's DevTools protocol on that port (screenshots, inspection)
+//! `--allow-state-write`          lets the host write the profile's state (saves, the damaged-file recovery, the legacy copy) as
+//!                                C# does; without it nothing in the profile is written but the logs and the smoke's result
 
 use std::path::PathBuf;
 
@@ -17,6 +19,7 @@ pub struct Options {
     pub smoke_out: Option<PathBuf>,
     pub log_dir: Option<PathBuf>,
     pub remote_debugging_port: Option<u16>,
+    pub allow_state_write: bool,
 }
 
 fn absolute(flag: &str, value: Option<String>) -> Result<PathBuf, String> {
@@ -35,6 +38,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Options, String> 
             "--profile" if options.profile.is_none() => options.profile = Some(absolute("--profile", args.next())?),
             "--smoke-test" => options.smoke_test = true,
             "--smoke-exit" => options.smoke_exit = true,
+            "--allow-state-write" => options.allow_state_write = true,
             "--smoke-out" => options.smoke_out = Some(absolute("--smoke-out", args.next())?),
             "--log-dir" => options.log_dir = Some(absolute("--log-dir", args.next())?),
             "--remote-debugging-port" => {
@@ -73,5 +77,7 @@ mod tests {
         assert!(parsed(&["--profile", "relative"]).is_err());
         assert!(parsed(&["--bogus"]).is_err());
         assert_eq!(parsed(&["--remote-debugging-port", "9222"]).unwrap().remote_debugging_port, Some(9222));
+        assert!(!parsed(&[]).unwrap().allow_state_write, "writing is off unless asked for");
+        assert!(parsed(&["--allow-state-write"]).unwrap().allow_state_write);
     }
 }

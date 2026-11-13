@@ -1,99 +1,94 @@
-//! A workspace's layout of tab groups and binary splits (C# `PaneLayout`, MightyCode.Core/PaneLayout.cs).
+//! A workspace's layout of tab groups and binary splits (C# `PaneLayout`, MightyCode.Core/PaneLayout.cs), on the saved
+//! [`PaneLayoutNode`] itself.
 
 use std::collections::HashSet;
 
-use serde::{Deserialize, Serialize};
+use serde::ser::{Serialize, SerializeStruct, Serializer};
 
 use crate::model::PaneLayoutNode;
-use crate::wire;
+use crate::wire::{self, new_id};
 
 /// The most panes the app holds, every workspace together.
 pub const MAXIMUM_SESSIONS: usize = 128;
 
-/// A layout node with C#'s defaults filled in; serialized as C# writes `PaneLayoutNode` (null fields left out).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Node {
-    pub id: String,
-    pub kind: String,
-    pub session_ids: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub selected_session_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub axis: Option<String>,
-    pub ratio: f64,
-    pub children: Vec<Node>,
-}
-
-fn new_id() -> String {
-    uuid::Uuid::new_v4().to_string()
-}
-
-impl Node {
-    /// A saved node as C# deserializes it: a missing id is a new one, a missing kind is "tabs", a missing ratio is .5.
-    pub fn from_raw(raw: &PaneLayoutNode) -> Node {
-        Node {
-            id: raw.id.clone().unwrap_or_else(new_id),
-            kind: raw.kind.clone().unwrap_or_else(|| "tabs".into()),
-            session_ids: raw.session_ids.clone().unwrap_or_default(),
-            selected_session_id: raw.selected_session_id.clone(),
-            axis: raw.axis.clone(),
-            ratio: raw.ratio.unwrap_or(0.5),
-            children: raw.children.as_deref().unwrap_or(&[]).iter().map(Node::from_raw).collect(),
+impl Serialize for PaneLayoutNode {
+    /// The page's layout model reads the node as `Wire.Json` writes it (nulls left out).
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut node = serializer.serialize_struct("PaneLayoutNode", 7)?;
+        if let Some(id) = &self.id {
+            node.serialize_field("id", id)?;
         }
-    }
-
-    pub fn to_raw(&self) -> PaneLayoutNode {
-        PaneLayoutNode {
-            id: Some(self.id.clone()),
-            kind: Some(self.kind.clone()),
-            session_ids: Some(self.session_ids.clone()),
-            selected_session_id: self.selected_session_id.clone(),
-            axis: self.axis.clone(),
-            ratio: Some(self.ratio),
-            children: Some(self.children.iter().map(Node::to_raw).collect()),
-            extra: Default::default(),
+        if let Some(kind) = &self.kind {
+            node.serialize_field("kind", kind)?;
         }
-    }
-
-    fn tabs(ids: Vec<String>, active: Option<&str>) -> Node {
-        let selected = match active {
-            Some(a) if ids.iter().any(|id| id == a) => Some(a.to_string()),
-            _ => ids.first().cloned(),
-        };
-        Node {
-            id: new_id(),
-            kind: "tabs".into(),
-            session_ids: ids,
-            selected_session_id: selected,
-            axis: None,
-            ratio: 0.5,
-            children: vec![],
+        if let Some(ids) = &self.session_ids {
+            node.serialize_field("sessionIds", ids)?;
         }
-    }
-
-    fn split(a: Node, b: Node, axis: &str, ratio: f64) -> Node {
-        Node {
-            id: new_id(),
-            kind: "split".into(),
-            session_ids: vec![],
-            selected_session_id: None,
-            axis: Some(axis.into()),
-            ratio,
-            children: vec![a, b],
+        if let Some(selected) = &self.selected_session_id {
+            node.serialize_field("selectedSessionId", selected)?;
         }
+        if let Some(axis) = &self.axis {
+            node.serialize_field("axis", axis)?;
+        }
+        node.serialize_field("ratio", &self.ratio)?;
+        if let Some(children) = &self.children {
+            node.serialize_field("children", children)?;
+        }
+        node.end()
     }
 }
 
-/// The tab groups of a layout, left to right and top to bottom.
-pub fn groups(node: &Node) -> Vec<&Node> {
-    if node.kind == "tabs" { vec![node] } else { node.children.iter().flat_map(groups).collect() }
+/// `new() { SessionIds = ids, SelectedSessionId = ... }`: a tab group with a new id.
+fn tab_node(id: String, ids: Vec<String>, selected: Option<String>) -> PaneLayoutNode {
+    PaneLayoutNode {
+        id: Some(id),
+        kind: Some("tabs".into()),
+        session_ids: Some(ids.into_iter().map(Some).collect()),
+        selected_session_id: selected,
+        axis: None,
+        ratio: 0.5,
+        children: Some(vec![]),
+    }
 }
 
+/// C# `Tabs(ids, active)`.
+fn tabs(ids: Vec<String>, active: Option<&str>) -> PaneLayoutNode {
+    let selected = match active {
+        Some(a) if ids.iter().any(|id| id == a) => Some(a.to_string()),
+        _ => ids.first().cloned(),
+    };
+    tab_node(new_id(), ids, selected)
+}
+
+/// C# `Split(a, b, axis, ratio)`.
+fn split(a: PaneLayoutNode, b: PaneLayoutNode, axis: &str, ratio: f64) -> PaneLayoutNode {
+    PaneLayoutNode {
+        id: Some(new_id()),
+        kind: Some("split".into()),
+        session_ids: Some(vec![]),
+        selected_session_id: None,
+        axis: Some(axis.into()),
+        ratio,
+        children: Some(vec![Some(a), Some(b)]),
+    }
+}
+
+/// C# `PaneLayout.Groups`: the tab groups, left to right and top to bottom.
+pub fn groups(node: &PaneLayoutNode) -> Vec<&PaneLayoutNode> {
+    if node.kind() == "tabs" { vec![node] } else { node.children().flat_map(groups).collect() }
+}
+
+/// C# `PaneLayout.Sessions`.
+pub fn sessions(node: &PaneLayoutNode) -> Vec<&str> {
+    groups(node).into_iter().flat_map(|g| g.session_ids()).collect()
+}
+
+/// C# `PaneLayout.ClampRatio`.
 pub fn clamp_ratio(ratio: f64) -> f64 {
     if ratio.is_finite() { ratio.clamp(0.15, 0.85) } else { 0.5 }
 }
 
+/// `sessionIds.Take(128).Where(Wire.Identifier).Distinct()`.
 fn ordered(session_ids: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
     session_ids.iter().take(MAXIMUM_SESSIONS).filter(|id| wire::identifier(id) && seen.insert(id.as_str())).cloned().collect()
@@ -101,41 +96,41 @@ fn ordered(session_ids: &[String]) -> Vec<String> {
 
 /// C# `PaneLayout.Normalize`: the saved tree with only the given panes, each once, nothing deeper than 16 or larger than 255
 /// nodes, duplicate or invalid node ids replaced; a pane missing from it joins the first group; `active` selected.
-pub fn normalize(root: Option<&Node>, session_ids: &[String], active: Option<&str>) -> Option<Node> {
+pub fn normalize(root: Option<&PaneLayoutNode>, session_ids: &[String], active: Option<&str>) -> Option<PaneLayoutNode> {
     let ordered = ordered(session_ids);
     if ordered.is_empty() {
         return None;
     }
-    let allowed: HashSet<&str> = ordered.iter().map(String::as_str).collect();
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut nodes: HashSet<String> = HashSet::new();
-    let mut count = 0;
-
-    fn visit(
-        node: &Node,
-        depth: usize,
-        allowed: &HashSet<&str>,
-        seen: &mut HashSet<String>,
-        nodes: &mut HashSet<String>,
-        count: &mut usize,
-    ) -> Option<Node> {
+    struct Walk<'a> {
+        allowed: HashSet<&'a str>,
+        seen: HashSet<String>,
+        nodes: HashSet<String>,
+        count: usize,
+    }
+    fn visit(walk: &mut Walk, node: Option<&PaneLayoutNode>, depth: usize) -> Option<PaneLayoutNode> {
+        let node = node?;
         if depth >= 16 {
             return None;
         }
-        *count += 1;
-        if *count > 255 {
+        walk.count += 1;
+        if walk.count > 255 {
             return None;
         }
-        let id = if wire::identifier(&node.id) && nodes.insert(node.id.clone()) { node.id.clone() } else { new_id() };
-        nodes.insert(id.clone());
-        if node.kind == "tabs" {
-            let ids: Vec<String> = node
-                .session_ids
-                .iter()
-                .take(MAXIMUM_SESSIONS)
-                .filter(|s| allowed.contains(s.as_str()) && seen.insert((*s).clone()))
-                .cloned()
-                .collect();
+        let id = match node.id.as_deref() {
+            Some(id) if wire::identifier(id) && walk.nodes.insert(id.to_string()) => id.to_string(),
+            _ => new_id(),
+        };
+        walk.nodes.insert(id.clone());
+        if node.kind() == "tabs" && node.kind.is_some() {
+            let mut ids = vec![];
+            for session in node.session_ids.iter().flatten().take(MAXIMUM_SESSIONS) {
+                if let Some(session) = session
+                    && walk.allowed.contains(session.as_str())
+                    && walk.seen.insert(session.clone())
+                {
+                    ids.push(session.clone());
+                }
+            }
             if ids.is_empty() {
                 return None;
             }
@@ -143,45 +138,37 @@ pub fn normalize(root: Option<&Node>, session_ids: &[String], active: Option<&st
                 Some(s) if ids.contains(s) => s.clone(),
                 _ => ids[0].clone(),
             };
-            return Some(Node {
-                id,
-                kind: "tabs".into(),
-                session_ids: ids,
-                selected_session_id: Some(selected),
-                axis: None,
-                ratio: 0.5,
-                children: vec![],
-            });
+            return Some(tab_node(id, ids, Some(selected)));
         }
-        if node.kind != "split" {
+        if node.kind.as_deref() != Some("split") {
             return None;
         }
-        let mut children: Vec<Node> =
-            node.children.iter().take(2).filter_map(|c| visit(c, depth + 1, allowed, seen, nodes, count)).collect();
+        let mut children: Vec<PaneLayoutNode> =
+            node.children.iter().flatten().take(2).filter_map(|c| visit(walk, c.as_ref(), depth + 1)).collect();
         match children.len() {
             0 => None,
             1 => children.pop(),
-            _ => Some(Node {
-                id,
-                kind: "split".into(),
-                session_ids: vec![],
+            _ => Some(PaneLayoutNode {
+                id: Some(id),
+                kind: Some("split".into()),
+                session_ids: Some(vec![]),
                 selected_session_id: None,
                 axis: Some(if node.axis.as_deref() == Some("vertical") { "vertical" } else { "horizontal" }.into()),
                 ratio: clamp_ratio(node.ratio),
-                children,
+                children: Some(children.into_iter().map(Some).collect()),
             }),
         }
     }
-
-    let result = root.and_then(|r| visit(r, 0, &allowed, &mut seen, &mut nodes, &mut count));
-    let missing: Vec<String> = ordered.iter().filter(|id| !seen.contains(*id)).cloned().collect();
+    let mut walk = Walk { allowed: ordered.iter().map(String::as_str).collect(), seen: HashSet::new(), nodes: HashSet::new(), count: 0 };
+    let result = visit(&mut walk, root, 0);
+    let missing: Vec<String> = ordered.iter().filter(|id| !walk.seen.contains(*id)).cloned().collect();
     let result = match result {
-        None => Node::tabs(missing, active),
+        None => tabs(missing, active),
         Some(tree) if !missing.is_empty() => {
             let target = groups(&tree)[0].clone();
             let mut joined = target.clone();
-            joined.session_ids.extend(missing);
-            replace(&tree, &target.id, &joined)
+            joined.session_ids.get_or_insert_with(Vec::new).extend(missing.into_iter().map(Some));
+            replace(&tree, target.id(), &joined)
         }
         Some(tree) => tree,
     };
@@ -193,58 +180,143 @@ pub fn normalize(root: Option<&Node>, session_ids: &[String], active: Option<&st
 
 /// C# `PaneLayout.Preset`: one group for focus, tabs and custom; otherwise the panes halved recursively, columns always side by
 /// side, grid alternating.
-pub fn preset(session_ids: &[String], layout: &str, active: Option<&str>) -> Option<Node> {
+pub fn preset(session_ids: &[String], layout: &str, active: Option<&str>) -> Option<PaneLayoutNode> {
     let ids = ordered(session_ids);
     if ids.is_empty() {
         return None;
     }
     if matches!(layout, "focus" | "tabs" | "custom") {
-        return Some(Node::tabs(ids, active));
+        return Some(tabs(ids, active));
     }
-    fn build(values: &[String], depth: usize, layout: &str) -> Node {
+    fn build(values: &[String], depth: usize, layout: &str) -> PaneLayoutNode {
         if values.len() == 1 {
-            return Node::tabs(values.to_vec(), None);
+            return tabs(values.to_vec(), None);
         }
         let middle = values.len().div_ceil(2);
         let axis = if layout == "columns" || depth.is_multiple_of(2) { "horizontal" } else { "vertical" };
-        Node::split(
-            build(&values[..middle], depth + 1, layout),
-            build(&values[middle..], depth + 1, layout),
-            axis,
-            middle as f64 / values.len() as f64,
-        )
+        let a = build(&values[..middle], depth + 1, layout);
+        let b = build(&values[middle..], depth + 1, layout);
+        split(a, b, axis, middle as f64 / values.len() as f64)
     }
     Some(build(&ids, 0, layout))
 }
 
+fn map_children(root: &PaneLayoutNode, each: impl Fn(&PaneLayoutNode) -> PaneLayoutNode) -> PaneLayoutNode {
+    PaneLayoutNode { children: root.children.as_ref().map(|c| c.iter().map(|n| n.as_ref().map(&each)).collect()), ..root.clone() }
+}
+
 /// C# `PaneLayout.Select`: the group holding the pane shows it.
-pub fn select(root: &Node, session_id: &str) -> Node {
-    if root.kind == "tabs" {
+pub fn select(root: &PaneLayoutNode, session_id: &str) -> PaneLayoutNode {
+    if root.kind() == "tabs" && root.kind.is_some() {
         let mut node = root.clone();
-        if node.session_ids.iter().any(|s| s == session_id) {
+        if node.session_ids().any(|s| s == session_id) {
             node.selected_session_id = Some(session_id.to_string());
         }
         return node;
     }
-    Node { children: root.children.iter().map(|c| select(c, session_id)).collect(), ..root.clone() }
+    map_children(root, |c| select(c, session_id))
 }
 
 /// C# `PaneLayout.Resize`.
-pub fn resize(root: &Node, split_id: &str, ratio: f64) -> Node {
+pub fn resize(root: &PaneLayoutNode, split_id: &str, ratio: f64) -> PaneLayoutNode {
     if !ratio.is_finite() {
         return root.clone();
     }
-    if root.id == split_id && root.kind == "split" {
-        return Node { ratio: clamp_ratio(ratio), ..root.clone() };
+    if root.id() == split_id && root.kind() == "split" {
+        return PaneLayoutNode { ratio: clamp_ratio(ratio), ..root.clone() };
     }
-    Node { children: root.children.iter().map(|c| resize(c, split_id, ratio)).collect(), ..root.clone() }
+    map_children(root, |c| resize(c, split_id, ratio))
 }
 
-fn replace(root: &Node, id: &str, replacement: &Node) -> Node {
-    if root.id == id {
+/// C# `PaneLayout.Replace`.
+pub fn replace(root: &PaneLayoutNode, id: &str, replacement: &PaneLayoutNode) -> PaneLayoutNode {
+    if root.id.as_deref() == Some(id) {
         return replacement.clone();
     }
-    Node { children: root.children.iter().map(|c| replace(c, id, replacement)).collect(), ..root.clone() }
+    map_children(root, |c| replace(c, id, replacement))
+}
+
+/// C# `PaneLayout.Remove`.
+pub fn remove(root: &PaneLayoutNode, session_id: &str) -> Option<PaneLayoutNode> {
+    if root.kind() == "tabs" {
+        let ids: Vec<String> = root.session_ids().filter(|id| *id != session_id).map(str::to_string).collect();
+        if ids.is_empty() {
+            return None;
+        }
+        let selected = match &root.selected_session_id {
+            Some(s) if ids.contains(s) => Some(s.clone()),
+            _ => Some(ids[0].clone()),
+        };
+        return Some(PaneLayoutNode {
+            session_ids: Some(ids.into_iter().map(Some).collect()),
+            selected_session_id: selected,
+            ..root.clone()
+        });
+    }
+    let mut children: Vec<PaneLayoutNode> = root.children().filter_map(|c| remove(c, session_id)).collect();
+    match children.len() {
+        0 => None,
+        1 => children.pop(),
+        _ => Some(PaneLayoutNode { children: Some(children.into_iter().map(Some).collect()), ..root.clone() }),
+    }
+}
+
+/// C# `PaneLayout.Move`: one tab moved to a group (`center`, at `index` counted before its removal) or beside it.
+pub fn move_tab(root: &PaneLayoutNode, session_id: &str, target_group_id: &str, edge: &str, index: Option<i64>) -> PaneLayoutNode {
+    let all = groups(root);
+    let source = all.iter().find(|g| g.session_ids().any(|s| s == session_id)).copied();
+    let target = all.iter().find(|g| g.id() == target_group_id).copied();
+    let (Some(source), Some(target)) = (source, target) else { return root.clone() };
+    if !matches!(edge, "center" | "left" | "right" | "top" | "bottom") {
+        return root.clone();
+    }
+    if source.id() == target.id() {
+        if edge == "center" {
+            let current: Vec<&str> = target.session_ids().collect();
+            let old = current.iter().position(|s| *s == session_id).map(|i| i as i64).unwrap_or(-1);
+            let mut slot = index.unwrap_or(current.len() as i64).clamp(0, current.len() as i64);
+            if old < slot {
+                slot -= 1;
+            }
+            let mut ids: Vec<String> = current.iter().filter(|s| **s != session_id).map(|s| s.to_string()).collect();
+            let at = slot.clamp(0, ids.len() as i64) as usize;
+            ids.insert(at, session_id.to_string());
+            let changed = PaneLayoutNode {
+                session_ids: Some(ids.into_iter().map(Some).collect()),
+                selected_session_id: Some(session_id.into()),
+                ..target.clone()
+            };
+            return replace(root, target.id(), &changed);
+        }
+        if source.session_ids().count() == 1 {
+            return root.clone();
+        }
+    }
+    let Some(remaining) = remove(root, session_id) else { return root.clone() };
+    let Some(target) = groups(&remaining).into_iter().find(|g| g.id() == target_group_id).cloned() else { return root.clone() };
+    if edge == "center" {
+        let mut ids: Vec<String> = target.session_ids().map(str::to_string).collect();
+        let at = index.unwrap_or(ids.len() as i64).clamp(0, ids.len() as i64) as usize;
+        ids.insert(at, session_id.to_string());
+        let changed = PaneLayoutNode {
+            session_ids: Some(ids.into_iter().map(Some).collect()),
+            selected_session_id: Some(session_id.into()),
+            ..target.clone()
+        };
+        return replace(&remaining, target.id(), &changed);
+    }
+    let tab = tabs(vec![session_id.to_string()], None);
+    let before = matches!(edge, "left" | "top");
+    let axis = if matches!(edge, "left" | "right") { "horizontal" } else { "vertical" };
+    let pair = if before { split(tab, target.clone(), axis, 0.5) } else { split(target.clone(), tab, axis, 0.5) };
+    let result = replace(&remaining, target.id(), &pair);
+    fn depth(node: &PaneLayoutNode) -> usize {
+        node.children().map(|c| 1 + depth(c)).max().unwrap_or(0)
+    }
+    fn count(node: &PaneLayoutNode) -> usize {
+        1 + node.children().map(count).sum::<usize>()
+    }
+    if depth(&result) >= 16 || count(&result) > 255 { root.clone() } else { result }
 }
 
 #[cfg(test)]
@@ -258,13 +330,13 @@ mod tests {
     #[test]
     fn grid_halves_and_alternates() {
         let tree = preset(&ids(3), "grid", None).unwrap();
-        assert_eq!(tree.kind, "split");
+        assert_eq!(tree.kind(), "split");
         assert_eq!(tree.axis.as_deref(), Some("horizontal"));
         assert!((tree.ratio - 2.0 / 3.0).abs() < 1e-9);
-        assert_eq!(tree.children[0].axis.as_deref(), Some("vertical"));
+        assert_eq!(tree.children().next().unwrap().axis.as_deref(), Some("vertical"));
         assert_eq!(groups(&tree).len(), 3);
         let columns = preset(&ids(4), "columns", None).unwrap();
-        assert_eq!(columns.children[0].axis.as_deref(), Some("horizontal"));
+        assert_eq!(columns.children().next().unwrap().axis.as_deref(), Some("horizontal"));
     }
 
     #[test]
@@ -281,9 +353,9 @@ mod tests {
         let mut now = ids(3);
         now.remove(0);
         let fixed = normalize(Some(&tree), &now, Some("s3")).unwrap();
-        let all: Vec<&String> = groups(&fixed).iter().flat_map(|g| g.session_ids.iter()).collect();
+        let all = sessions(&fixed);
         assert_eq!(all, vec!["s2", "s3"]);
-        assert_eq!(fixed.kind, "tabs");
+        assert_eq!(fixed.kind(), "tabs");
         assert_eq!(fixed.selected_session_id.as_deref(), Some("s3"));
     }
 
@@ -292,6 +364,15 @@ mod tests {
         let tree = preset(&ids(2), "columns", None).unwrap();
         let again = normalize(Some(&tree), &ids(2), None).unwrap();
         assert_eq!(again.id, tree.id);
-        assert_eq!(again.children[0].id, tree.children[0].id);
+        assert_eq!(again.children().next().unwrap().id, tree.children().next().unwrap().id);
+    }
+
+    #[test]
+    fn move_beside_splits_the_group() {
+        let tree = preset(&ids(2), "tabs", None).unwrap();
+        let group = tree.id().to_string();
+        let moved = move_tab(&tree, "s2", &group, "right", None);
+        assert_eq!(moved.kind(), "split");
+        assert_eq!(sessions(&moved), vec!["s1", "s2"]);
     }
 }

@@ -6,6 +6,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod args;
+mod delta;
 mod host;
 mod logfile;
 mod methods;
@@ -16,7 +17,6 @@ mod surface;
 use std::sync::Arc;
 
 use mighty_core::locale::Locale;
-use mighty_core::normalize;
 use mighty_core::store::{self, LoadSource};
 use serde_json::{Value, json};
 use tauri::webview::PageLoadEvent;
@@ -82,49 +82,67 @@ fn main() {
     let data_dir = platform.paths.data_dir().to_path_buf();
     let legacy = platform.paths.legacy_data_dirs().to_vec();
     let log = LogFile::new(options.log_dir.clone().unwrap_or_else(|| data_dir.join("tauri-logs")));
-    let report = store::load(&data_dir, &legacy);
-    let snapshot = normalize::for_page(&report.snapshot);
+    // C# StateStore: the state loaded (and, only with --allow-state-write, the damaged file put aside and the legacy one copied);
+    // its notes in the OS's language, as C# loads before the saved preference is applied. A file that does not read stops every
+    // save: the app starts empty in memory and says why.
+    let legacy = legacy.into_iter().find(|dir| dir.join(store::STATE_FILE).exists());
+    let mut state = store::Store::new(data_dir.clone(), legacy, options.allow_state_write);
+    let loaded = state.load(&Locale::new(methods::chosen_language("system")));
+    let (snapshot, failure) = match loaded {
+        Ok(snapshot) => (snapshot, None),
+        Err(error) => (mighty_core::AppSnapshot::default(), Some(error)),
+    };
     let locale = Locale::new(methods::chosen_language(snapshot.language_preference()));
-    let banner = match (&report.notice_key, &report.error) {
-        (Some(key), _) => Some(locale.get_with(key, &[("file", report.aside.as_deref().unwrap_or(""))])),
-        (None, Some(error)) => Some(format!("{} ({error})", locale.get(error.locale_key()))),
+    let banner = match (&state.load_notice, &failure) {
+        (Some(notice), _) => Some(notice.clone()),
+        (None, Some(error)) => Some(format!("{} ({error})", error.message(&locale))),
         _ => None,
     };
+    let source = state.source.clone().unwrap_or(LoadSource::Empty);
     let load = json!({
-        "path": report.path,
-        "source": source_name(&report.source),
-        "notice": report.notice_key,
-        "wouldMoveAsideTo": report.aside,
-        "error": report.error.as_ref().map(|e| e.to_string()),
-        "workspaces": report.snapshot.workspaces.len(),
-        "panes": report.snapshot.sessions.len(),
+        "path": state.state_path(),
+        "source": source_name(&source),
+        "notice": state.load_notice,
+        "movedAsideTo": state.aside,
+        "error": failure.as_ref().map(|e| e.to_string()),
+        "writes": options.allow_state_write,
+        "workspaces": snapshot.workspaces().len(),
+        "panes": snapshot.sessions().len(),
     });
     log.line(&format!(
-        "start {} profile {} load {} ({} workspaces, {} panes) language {}",
+        "start {} profile {} load {} ({} workspaces, {} panes) language {} writes {}",
         env!("CARGO_PKG_VERSION"),
         data_dir.display(),
-        source_name(&report.source),
-        snapshot.workspaces.len(),
-        snapshot.sessions.len(),
-        locale.language()
+        source_name(&source),
+        snapshot.workspaces().len(),
+        snapshot.sessions().len(),
+        locale.language(),
+        if options.allow_state_write { "on" } else { "off" }
     ));
-    if let Some(error) = &report.error {
+    if let Some(error) = &failure {
         log.line(&format!("load: {error}"));
+    }
+    if failure.is_some() {
+        state.snapshot = snapshot.clone();
+    }
+    #[cfg(windows)]
+    {
+        state.replace = host::replace_file;
     }
     let smoke = options.smoke_test.then(|| {
         Smoke::new(options.smoke_out.clone().unwrap_or_else(|| data_dir.join("smoke-result.json")), options.smoke_exit, load.clone())
     });
     let theme = snapshot.theme().to_string();
-    let mut parts = Some((snapshot, banner, log, smoke));
+    let mut parts = Some((state, banner, log, smoke));
     let debugging_port = options.remote_debugging_port;
 
     let app = tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![host_post, smoke_probe, smoke::smoke_surface])
         .setup(move |app| {
-            let (snapshot, banner, log, smoke) = parts.take().expect("setup runs once");
+            let (state, banner, log, smoke) = parts.take().expect("setup runs once");
             let version = app.package_info().version.to_string();
-            let host =
-                Host::new(app.handle().clone(), data_dir.clone(), snapshot, locale, version, banner, log, smoke, methods::registry());
+            let host = Host::new(app.handle().clone(), data_dir.clone(), state, locale, version, banner, log, smoke, methods::registry());
+            host.start_clocks();
             let (inbound, mut calls) = tokio::sync::mpsc::unbounded_channel::<Value>();
             app.manage(Inbound(inbound));
             app.manage(host.clone());
@@ -194,6 +212,8 @@ fn main() {
         RunEvent::ExitRequested { code: Some(code), .. } => exit_code = code,
         RunEvent::Exit => {
             if let Some(host) = app.try_state::<Arc<Host>>() {
+                // The last save (C# DesktopService.DisposeAsync), written only with --allow-state-write.
+                host.close();
                 host.write_unimplemented();
                 host.log.line("exit");
             }

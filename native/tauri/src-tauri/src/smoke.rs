@@ -249,7 +249,7 @@ impl Smoke {
         let (theme, active, workspaces, panes) = {
             let view = host.view();
             let s = &view.snapshot;
-            (s.theme().to_string(), s.active_session_id.clone(), s.workspaces.len(), s.sessions.len())
+            (s.theme().to_string(), s.active_session_id.clone(), s.workspaces().len(), s.sessions().len())
         };
         let count = |key: &str| probe.get(key).and_then(Value::as_u64).unwrap_or(0);
         let text = |key: &str| probe.get(key).and_then(Value::as_str).unwrap_or("");
@@ -339,10 +339,12 @@ fn serve_fixture() -> std::io::Result<String> {
     Ok(address)
 }
 
-/// A browser pane in a workspace of its own, made the active one (in memory, as every change of this host).
+/// A browser pane in a workspace of its own, made the active one (a change of the in-memory state; saved only where the app may
+/// write, which a smoke's profile never is unless asked).
 fn add_browser_pane(host: &Host) -> Result<(), String> {
+    use mighty_core::Wire;
     let mut view = host.view();
-    let mut state = serde_json::to_value(&view.snapshot).map_err(|e| e.to_string())?;
+    let mut state: Value = serde_json::from_str(&view.snapshot.to_json()).map_err(|e| e.to_string())?;
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let workspace = json!({"id": WORKSPACE, "name": "Smoke browser", "path": host.data_dir, "createdAt": now});
     let pane = json!({
@@ -364,8 +366,9 @@ fn add_browser_pane(host: &Host) -> Result<(), String> {
     state["expandedWorkspaceIds"] = json!(expanded);
     state["activeWorkspaceId"] = json!(WORKSPACE);
     state["activeSessionId"] = json!(PANE);
-    let next: AppSnapshot = serde_json::from_value(state).map_err(|e| e.to_string())?;
-    view.update(|snapshot| *snapshot = next);
+    let next = AppSnapshot::read(&state).map_err(|e| e.to_string())?;
+    // The workspace is the smoke's own: the store never approved it, so it is not normalized away but stays in memory as made.
+    view.replace(next);
     Ok(())
 }
 

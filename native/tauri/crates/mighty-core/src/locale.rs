@@ -86,9 +86,34 @@ impl Locale {
     }
 }
 
+/// Every key of the catalogues (ko and en carry them all).
+pub fn keys() -> std::collections::HashSet<&'static str> {
+    LANGUAGES.iter().flat_map(|l| catalogue(l).keys().map(String::as_str)).collect()
+}
+
+/// C# `LocaleKeyLeak.Detect`: the visible strings whose trimmed text is exactly a locale key — a lookup that fell back to its key
+/// instead of a translation. Trimmed of ASCII white space, U+00A0, U+200B and U+FEFF; empty strings are never flagged.
+pub fn key_leaks<'a>(visible: impl IntoIterator<Item = &'a str>, keys: &std::collections::HashSet<&str>) -> Vec<&'a str> {
+    const TRIM: [char; 9] = [' ', '\t', '\n', '\r', '\u{c}', '\u{b}', '\u{a0}', '\u{200b}', '\u{feff}'];
+    visible
+        .into_iter()
+        .filter(|s| {
+            let trimmed = s.trim_matches(TRIM);
+            !trimmed.is_empty() && keys.contains(trimmed)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn key_leaks_are_exact_keys_only() {
+        let keys = keys();
+        let found = key_leaks(["session.state.running", " session.state.idle\u{a0}", "file.name.json", "", "Running"], &keys);
+        assert_eq!(found, vec!["session.state.running", " session.state.idle\u{a0}"]);
+    }
 
     #[test]
     fn every_catalogue_parses() {

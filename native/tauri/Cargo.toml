@@ -12,7 +12,10 @@ rust-version = "1.88"
 [workspace.dependencies]
 mighty-core = { path = "crates/mighty-core" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order: objects keep the order they were read in (C#'s readers and writers see document order); float_roundtrip:
+# every double reads as the closest one, as .NET's parser reads it; raw_value: the host emits the JSON text it wrote as it is.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip", "raw_value"] }
+indexmap = "2"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 dirs = "6"

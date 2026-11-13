@@ -281,7 +281,7 @@ impl SurfaceManager {
 
 /// The pane ids of the state now.
 pub fn live_panes(host: &Host) -> HashSet<String> {
-    host.view().snapshot.sessions.iter().map(|session| session.id().to_string()).collect()
+    host.view().snapshot.sessions().iter().map(|session| session.id().to_string()).collect()
 }
 
 /// Pushes straight to the page's event (the host's ordered outbox is host.rs's own). Each surface push carries its whole state, so
