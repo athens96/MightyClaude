@@ -77,7 +77,8 @@ const PROBE: &str = r#"(async () => {
     let loaded = await until(() => blocks().length >= 3, 6000);
     if (!loaded) { history()?.querySelector('button')?.click(); loaded = await until(() => blocks().length >= 3, 15000); }
     report.loadedRequests = blocks().length;
-    report.loadedFromRecord = blocks().filter((b) => (b.dataset.blockId ?? '').startsWith('record-')).length;
+    // A block's id is "<length of the run id>:<run id>:<suffix>"; runs read back from the record are "record-…".
+    report.loadedFromRecord = blocks().filter((b) => ((b.dataset.blockId ?? '').split(':')[1] ?? '').startsWith('record-')).length;
     report.historyText = history()?.textContent ?? null;
   } catch (error) {
     report.error = String(error);
