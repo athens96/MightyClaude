@@ -39,6 +39,25 @@ async fn a_capture_kills_a_child_past_its_timeout_or_its_output_limit() {
 }
 
 #[tokio::test]
+async fn a_request_names_what_the_child_does_not_inherit_and_how_a_cli_or_a_shell_starts() {
+    let host = FakeProcessHost::default();
+    let request = SpawnRequest::new(absolute("git"), ["status"], absolute("work")).without("GIT_DIR").env("GIT_TERMINAL_PROMPT", "0");
+    assert_eq!(request.env_remove, ["GIT_DIR"]);
+    assert!(format!("{request:?}").contains("GIT_DIR"), "names, never values, show");
+    host.spawn(request).await.unwrap().close().await.unwrap();
+    assert_eq!(host.spawned()[0].env_remove, ["GIT_DIR"]);
+    assert!(host.spawn(SpawnRequest::new(absolute("git"), Vec::<String>::new(), absolute("w")).without("A=B")).await.is_err());
+
+    let env = BTreeMap::from([("NO_COLOR".to_string(), "0".to_string()), ("TOKEN".to_string(), "x".to_string())]);
+    let cli = host.cli_request(&absolute("claude"), &["--print".to_string()], &absolute("work"), &env).unwrap();
+    assert_eq!((cli.program, cli.args), (absolute("claude"), vec!["--print".to_string()]));
+    assert_eq!(cli.env.get("NO_COLOR").map(String::as_str), Some("1"), "StartInfo sets NO_COLOR after the caller's environment");
+    assert_eq!(cli.env.get("TOKEN").map(String::as_str), Some("x"));
+    let shell = host.shell_request("echo hi", &absolute("work"), &env);
+    assert_eq!((shell.program, shell.args), (PathBuf::from("/bin/sh"), vec!["-c".to_string(), "echo hi".to_string()]));
+}
+
+#[tokio::test]
 async fn a_killed_child_ends_and_relative_paths_are_refused() {
     let host = FakeProcessHost::default();
     host.push(FakeScript { hang: true, ..FakeScript::default() });

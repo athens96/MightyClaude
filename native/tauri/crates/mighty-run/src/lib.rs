@@ -1,0 +1,100 @@
+//! Mighty Code's run engine: what starts an agent CLI for a pane, reads its stream and hands the pane what it said
+//! (C# `MightyCode.Core`: RunManager.cs, ProviderCatalog.cs, ToolPermissions.cs, OutputParser.cs, ClaudePlanMode.cs, ModBridge.cs and
+//! the run half of DesktopService.cs). No Tauri, no OS code: every child starts through `mighty_platform::ProcessHost`.
+//!
+//! | C# | here |
+//! |---|---|
+//! | `Models.cs` `StartRunRequest`, `RunEvent`, `ModelOption`/`ModelCatalog`/`ProviderRuntime`/`RuntimeInfo`, `RunSession.Apply` | [`model`], [`apply`] |
+//! | `ProviderCatalog.cs` | [`providers`] |
+//! | `PhaseModelPreferences.cs` (the run's part) | [`phase_models`] |
+//! | `ToolPermissions.cs`, `ToolPermissionPresentation.cs`, `ToolPermissionStrings.cs` | [`permissions`], [`presentation`] |
+//! | `UserQuestionnaire.cs`, `QuestionnaireProgress.cs`, `AgentQuestions.cs` | [`questionnaire`] |
+//! | `OutputParser.cs` (Claude), `ClaudeStream` | [`parser`], [`stream`] |
+//! | `AgentActivity.cs` (`ActivitySupport`, `MetadataJson`) | [`activity`], [`meta`] |
+//! | `SessionUsage.cs`, `AgentRunTiming.cs` | [`usage`], [`timing`] |
+//! | `AgentHandback.cs`, `ClaudeResume.cs`, `RunLogText.cs`, `ContextCompaction.cs`, `BedrockSettings.RuntimeFailureGuidance`, `CliAuthFailure` | [`handback`], [`resume`], [`run_log`], [`compaction`], [`failure`] |
+//! | `ClaudePlanMode.cs`, `FlowSteps.cs` (recording), `BackgroundOutputTail.cs` | [`plan_mode`], [`flow_steps`], [`background_output`] |
+//! | `ModBridge.cs`, `HttpHost.cs` | [`mods`] |
+//! | `AttachmentSupport.cs` | [`attachments`] |
+//! | `RunManager.cs` | [`manager`] (with the [`graph::GraphSink`] the graph tracker plugs into) |
+//! | `DesktopService.cs` (runs) | [`service`] |
+
+pub mod activity;
+pub mod apply;
+pub mod attachments;
+pub mod background_output;
+pub mod compaction;
+pub mod failure;
+pub mod flow_steps;
+pub mod graph;
+pub mod handback;
+pub mod lines;
+pub mod manager;
+pub mod meta;
+pub mod model;
+pub mod mods;
+pub mod os;
+pub mod parser;
+pub mod permissions;
+pub mod phase_models;
+pub mod plan_mode;
+pub mod presentation;
+pub mod providers;
+pub mod questionnaire;
+pub mod resume;
+pub mod run_log;
+pub mod service;
+pub mod stream;
+pub mod strings;
+pub mod text_json;
+pub mod timing;
+pub mod usage;
+
+pub use graph::{GraphFactory, GraphSink, GraphStart};
+pub use manager::{RunManager, RunManagerOptions};
+pub use model::{RunEvent, StartRunRequest};
+pub use service::{RunService, ServiceEvent};
+
+/// A failure a caller shows as it is: C# throws `ArgumentException`, `InvalidOperationException`, `TimeoutException`,
+/// `OperationCanceledException`, `IOException`; the message is the user's text (from the locale catalogues where C# reads them).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunError {
+    /// `ArgumentException`: the request or answer is not one this takes.
+    Invalid(String),
+    /// `InvalidOperationException`: not now (already settled, already running, no such run).
+    State(String),
+    /// `TimeoutException`.
+    TimedOut(String),
+    /// `OperationCanceledException`.
+    Cancelled(String),
+    /// `IOException` and the OS's other failures.
+    Io(String),
+}
+
+impl RunError {
+    pub fn message(&self) -> &str {
+        match self {
+            RunError::Invalid(m) | RunError::State(m) | RunError::TimedOut(m) | RunError::Cancelled(m) | RunError::Io(m) => m,
+        }
+    }
+}
+
+impl std::fmt::Display for RunError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.message())
+    }
+}
+
+impl std::error::Error for RunError {}
+
+impl From<mighty_platform::PlatformError> for RunError {
+    fn from(error: mighty_platform::PlatformError) -> Self {
+        RunError::Io(error.to_string())
+    }
+}
+
+pub type Result<T> = std::result::Result<T, RunError>;
+
+pub(crate) fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}

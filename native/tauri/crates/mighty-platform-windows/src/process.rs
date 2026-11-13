@@ -2,10 +2,11 @@
 //! that kills everything in it when its handle closes, and only then started, so neither the child nor anything it starts can
 //! outlive the app; no window; UTF-8 through a hidden console of the app's own that every child inherits.
 
+use std::collections::BTreeMap;
 use std::ffi::c_void;
 use std::io;
 use std::os::windows::io::{FromRawHandle, IntoRawHandle, OwnedHandle};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -72,6 +73,43 @@ impl ProcessHost for WindowsProcessHost {
     fn spawn(&self, request: SpawnRequest) -> BoxFuture<'_, Result<Child>> {
         Box::pin(async move { start(&request) })
     }
+
+    /// C# `ProviderCatalog.StartCli` (ProviderCatalog.cs:117-126): a batch file (npm's `pi.cmd`) through cmd.exe with every argument
+    /// quoted and the working folder never searched ([`crate::command::launch`]); anything else directly, as `ChildProcess.StartInfo`
+    /// builds it (the caller's environment, then `NO_COLOR=1`).
+    fn cli_request(&self, program: &Path, args: &[String], cwd: &Path, env: &BTreeMap<String, String>) -> Result<SpawnRequest> {
+        let resolved = text(program);
+        if crate::command::is_batch(&resolved) {
+            return crate::command::launch(&resolved, args, cwd, Some(env), None);
+        }
+        let mut request = SpawnRequest::new(program, args.iter().cloned(), cwd);
+        request.env.clear();
+        for (name, value) in env {
+            set_ignoring_case(&mut request.env, name, value);
+        }
+        set_ignoring_case(&mut request.env, "NO_COLOR", "1");
+        Ok(request)
+    }
+
+    /// C# `RunManager.ExecuteAsync`'s shell kind (RunManager.cs:323, 389): `%ComSpec%` (else `C:\Windows\System32\cmd.exe`) run as
+    /// `/d /s /c "<command>"`, the command as typed (the `shellCommand` of `ChildProcess.Start`).
+    fn shell_request(&self, command: &str, cwd: &Path, env: &BTreeMap<String, String>) -> SpawnRequest {
+        let interpreter = std::env::var_os("ComSpec").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\cmd.exe"));
+        let mut request = SpawnRequest::new(interpreter, ["/d", "/s", "/c", command], cwd);
+        request.env.clear();
+        for (name, value) in env {
+            set_ignoring_case(&mut request.env, name, value);
+        }
+        set_ignoring_case(&mut request.env, "NO_COLOR", "1");
+        request.shell_command = Some(command.to_string());
+        request
+    }
+}
+
+/// `dictionary[name] = value` on a dictionary that ignores case: an entry already there in another spelling takes the value.
+fn set_ignoring_case(map: &mut BTreeMap<String, String>, name: &str, value: &str) {
+    let key = map.keys().find(|key| crate::win::equal_ignore_case(key, name)).cloned().unwrap_or_else(|| name.to_string());
+    map.insert(key, value.to_string());
 }
 
 /// Gives the app, once, a console of its own that every child inherits: cmd built-ins and native CLIs then write UTF-8 into the
@@ -257,6 +295,9 @@ fn validate(request: &SpawnRequest) -> Result<()> {
     if request.env.iter().any(|(name, value)| name.is_empty() || name.chars().skip(1).any(|c| c == '=') || nul(name) || nul(value)) {
         return Err(PlatformError::Invalid("invalid child environment".into()));
     }
+    if request.env_remove.iter().any(|name| name.is_empty() || name.chars().skip(1).any(|c| c == '=') || nul(name)) {
+        return Err(PlatformError::Invalid("invalid child environment".into()));
+    }
     Ok(())
 }
 
@@ -290,8 +331,12 @@ fn start(request: &SpawnRequest) -> Result<Child> {
 
     let program = text(&request.program);
     let mut command = wide(command_line(&program, &request.args, request.shell_command.as_deref()));
-    // `ProcessStartInfo.Environment`: this process's environment with the request's laid over it, names ignoring case.
+    // `ProcessStartInfo.Environment`: this process's environment without the names the request takes out, then the request's laid
+    // over it, names ignoring case.
     let mut variables = Variables::process();
+    for name in &request.env_remove {
+        variables.remove(name);
+    }
     for (name, value) in &request.env {
         variables.set(name.clone(), value.clone());
     }

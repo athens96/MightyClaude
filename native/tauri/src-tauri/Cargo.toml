@@ -25,7 +25,7 @@ chrono.workspace = true
 sys-locale.workspace = true
 # unstable: child webviews of the main window (the browser panes' native views, src/surface.rs).
 tauri = { workspace = true, features = ["unstable"] }
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "io-util", "time", "macros"] }
 
 # The OS's implementation of the ports: chosen here and in src/platform.rs, nowhere else.
 [target.'cfg(windows)'.dependencies]
