@@ -59,7 +59,7 @@ native/tauri/
 
 ## 5. Mac (Windows 이후)
 - 같은 Rust 코어에 Mac 플랫폼 계층: forkpty, 로그인 셸 환경, Keychain, UserDefaults 읽기, 휴대폰 페어링 파일 4개, 경로.
-- 바뀌는 것(사용자 확인 필요): Ghostty 터미널 → xterm.js, CEF 브라우저 → WKWebView, 한글 입력 복구 장치는 WebKit에서 다시 시험, 메뉴 막대·딥 링크·알림은 Tauri API로.
+- 플랫폼마다 다른 모듈은 같은 포트에 다른 구현을 끼운다(`docs/tauri-architecture.md`). **Mac 터미널은 Ghostty를 그대로 쓴다**(네이티브 뷰를 페이지의 NativeSlot 위에 올림, 지금 Swift 코드 재사용). Mac 브라우저는 CEF(지금과 같음) 또는 WKWebView를 설정으로 고른다. 한글 입력 보조도 Swift 모듈로 유지한다. 메뉴 막대·딥 링크·알림은 Tauri API로.
 - 0.4.x Mac → 0.5: 번들 id `dev.mightycode.native`, 실행 파일 이름 `MightyCode`, 같은 개발자 서명 유지. CI의 Mac smoke 10종 다시 만들기, 서명·공증.
 
 ## 6. 진행 원칙
@@ -68,6 +68,6 @@ native/tauri/
 - 큰 단계는 여러 에이전트로 나눠 동시에 진행하되, 파일 범위가 겹치지 않게 crate 단위로 나눈다.
 
 ## 7. 정해야 할 것
-1. Mac 기능 변화(Ghostty, CEF, 네이티브 화면 → 웹 화면)를 받아들일지.
+1. ~~Mac 기능 변화~~ → 정함(2026-11-13): Mac은 Ghostty 터미널을 유지하고, 모듈은 플랫폼마다 다르게 끼운다(`docs/tauri-architecture.md`).
 2. 화면 공유(지금 꺼져 있음)를 0.5에 넣을지, 0.5 이후로 미룰지.
 3. 0.4.x → 0.5 손넘김을 Rust exe에 직접 넣을지(추천), 0.4.x 다리 버전을 먼저 낼지.
