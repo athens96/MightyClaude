@@ -276,6 +276,16 @@ fn start(request: &SpawnRequest) -> Result<Child> {
         SetConsoleOutputCP(UTF8_CODE_PAGE);
     }
     let (stdin, stdout, stderr) = (pipe(false)?, pipe(true)?, pipe(true)?);
+    // The app's ends join the runtime's I/O before the job or the child exist: a launch that fails (or panics, outside a runtime
+    // with I/O) here leaves no child to end and no job handle to close. Past this point every failure closes the job as it returns
+    // (C#'s `finally`, ChildProcess.cs:165).
+    let (input, output, error) = match (async_pipe(stdin.app), async_pipe(stdout.app), async_pipe(stderr.app)) {
+        (Ok(input), Ok(output), Ok(error)) => (input, output, error),
+        (input, output, error) => {
+            let failure = [input.err(), output.err(), error.err()].into_iter().flatten().next();
+            return Err(failure.unwrap_or_else(|| PlatformError::Io(io::Error::other("pipe"))));
+        }
+    };
     let job = kill_on_close_job()?;
 
     let program = text(&request.program);
@@ -350,17 +360,8 @@ fn start(request: &SpawnRequest) -> Result<Child> {
         exit,
         members: Mutex::new(Vec::new()),
         killed: AtomicBool::new(false),
-        closed: AtomicBool::new(false),
+        closed: tokio::sync::Mutex::new(false),
     });
-    let pipes = (async_pipe(stdin.app), async_pipe(stdout.app), async_pipe(stderr.app));
-    let (input, output, error) = match pipes {
-        (Ok(input), Ok(output), Ok(error)) => (input, output, error),
-        (input, output, error) => {
-            control.kill();
-            let failure = [input.err(), output.err(), error.err()].into_iter().flatten().next();
-            return Err(failure.unwrap_or_else(|| PlatformError::Io(io::Error::other("pipe"))));
-        }
-    };
     Ok(Child::new(child.dwProcessId, Box::new(ClosingWriter(Some(input))), Box::new(output), Box::new(error), control))
 }
 
@@ -392,13 +393,24 @@ impl AsyncWrite for ClosingWriter {
 
 /// One child's job and exit (C# `ChildProcess` without its streams, which [`Child`] holds).
 pub(crate) struct WindowsChild {
-    /// None once closed.
+    /// None once a close has begun and ended, finished or dropped half-way.
     job: Mutex<Option<OwnedHandle>>,
     exit: ExitWatch,
-    /// The job's processes at the first kill.
+    /// The job's processes at the first kill, until a close has seen each of them end.
     members: Mutex<Vec<OwnedHandle>>,
     killed: AtomicBool,
-    closed: AtomicBool,
+    /// Held by the close that runs, so closes run one at a time; true once one has finished (C# `disposed`).
+    closed: tokio::sync::Mutex<bool>,
+}
+
+/// Closes the job's handle when the close holding it ends, however it ends: a close dropped half-way (a cancelled task) still ends
+/// everything left in the job, as C#'s `finally` does (ChildProcess.cs:81).
+struct CloseJob<'a>(&'a Mutex<Option<OwnedHandle>>);
+
+impl Drop for CloseJob<'_> {
+    fn drop(&mut self) {
+        drop(lock(self.0).take());
+    }
 }
 
 impl ChildControl for WindowsChild {
@@ -420,7 +432,9 @@ impl ChildControl for WindowsChild {
 
     /// C# `DisposeAsync` (ChildProcess.cs:54-85): kill; wait up to 3 s for the exit; then, since `TerminateJobObject` is
     /// asynchronous and the parent can already have exited while a descendant still owns the workspace's files, wait up to 3 s
-    /// more until the job holds no process; finally close the job (which ends anything left). A second close does nothing.
+    /// more until the job holds no process; finally close the job (which ends anything left). A close waits for one already
+    /// running; a second close after one that finished does nothing. A close dropped half-way has still closed the job, and the
+    /// next close waits for the exit and the job's processes again and finishes.
     ///
     /// Beyond C#: the job's count of active processes drops before a terminated process has finished ending (seen here at 0
     /// within 0.1 ms of the kill while a `start /b` descendant still ran for some milliseconds; C#'s check passes only because
@@ -428,21 +442,21 @@ impl ChildControl for WindowsChild {
     /// it has ended, within the same 3 s — what C#'s "job disposal returned while its descendant was alive" check asks.
     fn close(&self) -> BoxFuture<'_, Result<()>> {
         Box::pin(async move {
-            if self.closed.swap(true, Ordering::SeqCst) {
+            let mut closed = self.closed.lock().await;
+            if *closed {
                 return Ok(());
             }
+            let job = CloseJob(&self.job);
             self.kill();
-            let job = lock(&self.job).as_ref().map(|job| raw(job) as usize);
-            let members = std::mem::take(&mut *lock(&self.members));
             let outcome = async {
                 match tokio::time::timeout(CLOSE_WAIT, exited(&self.exit)).await {
                     Ok(result) => result?,
                     Err(_) => return Err(PlatformError::TimedOut("the child to exit")),
                 };
-                let Some(job) = job else { return Ok(()) };
                 let started = Instant::now();
                 loop {
-                    if active_processes(job as HANDLE)? == 0 && members.iter().all(ended) {
+                    let active = lock(&self.job).as_ref().map(|job| active_processes(raw(job))).transpose()?.unwrap_or(0);
+                    if active == 0 && lock(&self.members).iter().all(ended) {
                         return Ok(());
                     }
                     if started.elapsed() >= CLOSE_WAIT {
@@ -452,7 +466,9 @@ impl ChildControl for WindowsChild {
                 }
             }
             .await;
-            lock(&self.job).take();
+            drop(job);
+            lock(&self.members).clear();
+            *closed = true;
             outcome
         })
     }
