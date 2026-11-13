@@ -38,11 +38,12 @@ Still left (each needs more than the two crates' public rules, or a fixture the 
   the parser's picture path into the tracker (`graphImages`) with the picture cache, and C#'s fake in its `--runtime-parity-cli` mode
   (not in `mighty-fake-cli`), with the same binary question as `RecordedFromARun`.
 
-### SessionHistory (the session record reader, W4)
+### SessionHistory (the session record reader, W4) — ported in W4-C (2026-11-14)
 
-- AgentNoticeVerification.cs:280-296 (`Replay` writes a Claude record and reads it with `SessionHistory.Load`), used by
-  :308 `ARecordedHandBackTurnSettlesTheAgentAsLive` and :338 `AQueuedHandBackSettlesTheAgentByItsName` (both whole). The shared cases are
-  tests/agent_notices.rs.
+| C# check | Rust |
+|---|---|
+| AgentNoticeVerification.cs:308 `ARecordedHandBackTurnSettlesTheAgentAsLive` (whole, with :280-296 `Replay`) | mighty-history tests/agent_notices.rs `agent_notices_a_recorded_hand_back_turn_settles_the_agent_as_live` |
+| AgentNoticeVerification.cs:338 `AQueuedHandBackSettlesTheAgentByItsName` (whole) | mighty-history tests/agent_notices.rs `agent_notices_a_queued_hand_back_settles_the_agent_by_its_name` |
 
 ## The phone (W8)
 
@@ -63,10 +64,9 @@ Still left (each needs more than the two crates' public rules, or a fixture the 
 `src-tauri/src/mighty.rs` does what `MainWindow.WebShell.Mighty.cs` does around the projection: the 120 ms tick (`MightyPushes::due`,
 every eighth whole), the page methods marking the pane (`dirty`), the result files looked through off the page's thread
 (`take_result_file_lookups` → `result_files::files_in` → `found_result_files`), `mightyImages`' tiles as data URLs. The run steps of
-`--smoke-test` (smoke_runs.rs) draw a real run's request, sub-agents and result and the progress panel against the page. What the
-projection still gets empty (`Sources`), each its stage's:
+`--smoke-test` (smoke_runs.rs) draw a real run's request, sub-agents and result and the progress panel against the page. The session
+record's older requests and the history block's words (`GraphHistoryRuns`, `SessionHistoryState`) come from `src-tauri/src/history.rs`
+over mighty-history since W4-C (`mightyLoadOlder` reads the next chunk). What the projection still gets empty (`Sources`), each its stage's:
 
-- the session record's older requests and the history block's words (`GraphHistoryRuns`, `SessionHistoryState`; `mightyLoadOlder` names
-  the read, W4);
 - the Ouroboros dashboard (`ExecutionDashboard`: `NoDashboard`, `mightyOpenDashboard` opens nothing) and `OuroborosExecutionLinks.Extract`;
 - the background output tails (`BackgroundOutputFor`), the custom agents' definitions (`FlowDefinitions`) and the guided style (W9).

@@ -28,6 +28,8 @@ tokio = { workspace = true, features = ["sync", "time", "rt", "macros", "io-util
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["sync", "time", "rt", "rt-multi-thread", "macros", "io-util"] }
+# WorkDashboardVerification's background strip (`PlanCardSupport.ShowsBackgroundStrip`).
+mighty-composer.workspace = true
 
 [target.'cfg(windows)'.dev-dependencies]
 mighty-platform-windows.workspace = true
