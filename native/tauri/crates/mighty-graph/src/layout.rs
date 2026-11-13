@@ -924,3 +924,115 @@ pub fn make(runs: &[MightyGraphRun], draft: &str, running: bool, expanded: &Hash
     }
     layout
 }
+
+/// A diagram block resizes from its corner handle and from a band along each border (C# `ResizeEdges`, `ResizeEdgeRules`,
+/// MightyCode.Core/ResizeEdges.cs, a port of macOS ResizeEdges). Coordinates are y-down.
+pub mod resize {
+    use crate::camera::{GraphRect, Point, Size};
+
+    /// `ResizeEdges`: which sides of a box a drag is moving (flags).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub struct Edges(pub u8);
+
+    impl Edges {
+        pub const NONE: Edges = Edges(0);
+        pub const LEFT: Edges = Edges(1);
+        pub const RIGHT: Edges = Edges(2);
+        pub const TOP: Edges = Edges(4);
+        pub const BOTTOM: Edges = Edges(8);
+        pub const BOTTOM_RIGHT: Edges = Edges(2 | 8);
+
+        pub fn contains(self, other: Edges) -> bool {
+            self.0 & other.0 == other.0
+        }
+        /// `Horizontal`.
+        pub fn horizontal(self) -> bool {
+            self.0 & (Self::LEFT.0 | Self::RIGHT.0) != 0
+        }
+        /// `Vertical`.
+        pub fn vertical(self) -> bool {
+            self.0 & (Self::TOP.0 | Self::BOTTOM.0) != 0
+        }
+
+        /// `Size`: the size after the pointer moved `delta` screen points since the drag began at `initial`.
+        pub fn size(self, initial: Size, delta: Point, zoom: f64, minimum: Size, maximum: Size) -> Size {
+            let scale = if zoom.is_finite() && zoom > 0.0 { zoom } else { 1.0 };
+            let (mut width, mut height) = (initial.w, initial.h);
+            if self.contains(Self::RIGHT) {
+                width += delta.x / scale;
+            } else if self.contains(Self::LEFT) {
+                width -= delta.x / scale;
+            }
+            if self.contains(Self::BOTTOM) {
+                height += delta.y / scale;
+            } else if self.contains(Self::TOP) {
+                height -= delta.y / scale;
+            }
+            Size::new(maximum.w.min(minimum.w.max(width)), maximum.h.min(minimum.h.max(height)))
+        }
+
+        /// `PinnedUnit`: the corner that stays put, as a fraction of the box.
+        pub fn pinned_unit(self) -> Point {
+            Point::new(if self.contains(Self::LEFT) { 1.0 } else { 0.0 }, if self.contains(Self::TOP) { 1.0 } else { 0.0 })
+        }
+    }
+
+    impl std::ops::BitOr for Edges {
+        type Output = Edges;
+        fn bitor(self, other: Edges) -> Edges {
+            Edges(self.0 | other.0)
+        }
+    }
+
+    /// `Band`: how far outside a block's border a press still grabs that side, in screen points at `zoom`.
+    pub fn band(zoom: f64) -> f64 {
+        4f64.max(6.0 * zoom)
+    }
+    /// `BandInside`.
+    pub const BAND_INSIDE: f64 = 2.0;
+    /// `HandleSide`: the corner handle's side on screen at `zoom`.
+    pub fn handle_side(zoom: f64) -> f64 {
+        16f64.max(22.0 * zoom)
+    }
+
+    /// `At`: the sides whose band holds the point; near a corner both.
+    pub fn at(point: Point, frame: GraphRect, outside: f64, inside: f64) -> Edges {
+        if point.x < frame.x - outside || point.x >= frame.max_x() + outside || point.y < frame.y - outside || point.y >= frame.max_y() + outside {
+            return Edges::NONE;
+        }
+        let band = |distance: f64| distance >= -outside && distance <= inside;
+        let mut edges = Edges::NONE;
+        if band(point.x - frame.x) {
+            edges = edges | Edges::LEFT;
+        } else if band(frame.max_x() - point.x) {
+            edges = edges | Edges::RIGHT;
+        }
+        if band(point.y - frame.y) {
+            edges = edges | Edges::TOP;
+        } else if band(frame.max_y() - point.y) {
+            edges = edges | Edges::BOTTOM;
+        }
+        edges
+    }
+
+    /// `Target`: the block and sides a press would resize: the bottom-right handle first, then a band; the block drawn last wins.
+    pub fn target(point: Point, frames: &[(String, GraphRect)], zoom: f64) -> Option<(String, GraphRect, Edges)> {
+        let side = handle_side(zoom);
+        for (id, frame) in frames.iter().rev() {
+            let inside = point.x >= frame.x && point.x < frame.max_x() && point.y >= frame.y && point.y < frame.max_y();
+            if inside && point.x >= frame.max_x() - side && point.y >= frame.max_y() - side {
+                return Some((id.clone(), *frame, Edges::BOTTOM_RIGHT));
+            }
+            let edges = at(point, *frame, band(zoom), BAND_INSIDE);
+            if edges != Edges::NONE {
+                return Some((id.clone(), *frame, edges));
+            }
+        }
+        None
+    }
+
+    /// `PinnedCamera`: the camera that keeps the pinned corner of a resized block at `anchor`.
+    pub fn pinned_camera(anchor: Point, unit: Point, frame: GraphRect, zoom: f64) -> Point {
+        Point::new(anchor.x - (frame.x + unit.x * frame.w) * zoom, anchor.y - (frame.y + unit.y * frame.h) * zoom)
+    }
+}
