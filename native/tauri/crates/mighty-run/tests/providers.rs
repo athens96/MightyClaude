@@ -52,6 +52,8 @@ fn catalog_json(catalog: &ModelCatalog) -> String {
     out.finish()
 }
 
+/// Only the Windows-only model-list checks below compare lists this way.
+#[cfg(windows)]
 fn models_json(models: &[ModelOption]) -> String {
     let mut out = JsonOut::new();
     out.begin_array();
