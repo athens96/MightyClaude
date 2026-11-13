@@ -35,3 +35,28 @@ pub fn open_url(url: &str) -> std::result::Result<(), String> {
 pub fn number_grouping() -> Option<(String, Vec<usize>)> {
     os::number_grouping()
 }
+
+/// A workspace's folder opened in the OS's file manager (C# `ShowWorkspaceInExplorer`).
+pub fn show_in_explorer(folder: &std::path::Path) -> std::result::Result<(), String> {
+    os::show_in_explorer(folder)
+}
+
+/// The browser engine's installed version (C# `WebView2RuntimeLocator`), or none when the pane must offer its install.
+pub fn browser_runtime() -> Option<String> {
+    os::browser_runtime()
+}
+
+/// The browser engine's installer (C# `WebView2BootstrapperInstaller`), for mighty-core's `browser::install`.
+pub struct BrowserInstaller;
+
+impl mighty_core::browser::BrowserInstaller for BrowserInstaller {
+    fn download(&self, path: &std::path::Path) -> std::result::Result<(), String> {
+        os::download_bootstrapper(path)
+    }
+    fn verify_microsoft_signature(&self, path: &std::path::Path) -> bool {
+        os::is_microsoft_signed(path)
+    }
+    fn run(&self, path: &std::path::Path) -> std::result::Result<i32, String> {
+        os::run_installer(path)
+    }
+}

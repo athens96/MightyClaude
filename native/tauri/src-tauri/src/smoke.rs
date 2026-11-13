@@ -49,7 +49,13 @@ pub enum Mode {
 enum Stage {
     #[default]
     Main,
+    /// The frame's steps (smoke_frame.rs).
+    Frame,
     Browser,
+    /// The Git sheet's clone of a local bare repository (smoke_frame.rs).
+    Create,
+    /// A rename sheet open while the page loads again: drawn again and answered (smoke_frame.rs).
+    Reload,
     Runs,
 }
 
@@ -96,9 +102,12 @@ const BROWSER_PROBE: &str = r#"(async () => {
   const surface = () => invoke('smoke_surface', { paneId, action: 'inspect' });
   const report = { paneId, fixture };
   try {
-    const slot = await until(() => document.querySelector('[data-testid=browser-slot]'), 15000);
+    // This pane's slot, looked up again whenever it is measured (the page may draw it anew).
+    const ofPane = (selector) => document.querySelector('.pane-slot[data-pane-id="' + paneId + '"] ' + selector);
+    const slotNow = () => ofPane('[data-testid=browser-slot]');
+    const slot = await until(slotNow, 15000);
     report.slot = !!slot;
-    const address = await until(() => { const field = document.querySelector('[data-testid=browser-address]'); return field && !field.disabled ? field : null; }, 10000);
+    const address = await until(() => { const field = ofPane('[data-testid=browser-address]'); return field && !field.disabled ? field : null; }, 10000);
     report.addressField = !!address;
     // Typed as a person would: the field's value, its input event, then Enter (BrowserView's keyDown sends browserNavigate).
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(address, fixture);
@@ -109,7 +118,7 @@ const BROWSER_PROBE: &str = r#"(async () => {
     report.url = loaded?.url ?? null;
     // The slot in device pixels as the page reports it (src/slot/bounds.ts), against the view's own bounds from the OS.
     await new Promise((r) => setTimeout(r, 300));
-    const box = slot.getBoundingClientRect(), ratio = window.devicePixelRatio || 1;
+    const box = (slotNow() ?? slot).getBoundingClientRect(), ratio = window.devicePixelRatio || 1;
     const x = Math.round(box.left * ratio), y = Math.round(box.top * ratio);
     report.expected = { x, y, width: Math.round((box.left + box.width) * ratio) - x, height: Math.round((box.top + box.height) * ratio) - y };
     const placed = await surface();
@@ -122,6 +131,35 @@ const BROWSER_PROBE: &str = r#"(async () => {
     await invoke('smoke_surface', { paneId, action: 'dialogClose' });
     report.dialogClosed = !!(await until(() => !document.querySelector('[data-testid=dialog]'), 5000));
     report.shownAfterDialog = !!(await until(async () => { const s = await surface(); return s && s.visible; }, 5000));
+    // The address the field shows came back from the host's history as a push.
+    const field = () => ofPane('[data-testid=browser-address]')?.value ?? '';
+    report.navigated = !!(await until(() => field() === fixture, 10000));
+    // A second page, then the page's back button: the host's history and the engine go back to the first.
+    const second = fixture.replace('/fixture', '/second'), popup = fixture.replace('/fixture', '/popup');
+    const go = (url) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(address, url); address.dispatchEvent(new Event('input', { bubbles: true })); address.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); };
+    go(second);
+    report.onSecond = !!(await until(() => field() === second, 10000));
+    const back = await until(() => { const b = ofPane('button.browser-nav'); return b && !b.disabled ? b : null; }, 10000);
+    back?.click();
+    report.wentBack = report.onSecond && !!(await until(async () => { const s = await surface(); return field() === fixture && s && (s.url || '') === fixture; }, 10000));
+    // window.open from a page: refused and counted, no window opens, and the page stays where it is.
+    const before = await invoke('smoke_surface', { paneId, action: 'popups' });
+    go(popup);
+    report.popupPage = !!(await until(() => field() === popup, 10000));
+    const after = await until(async () => { const p = await invoke('smoke_surface', { paneId, action: 'popups' }); return p.refused > before.refused ? p : null; }, 10000);
+    const stayed = await surface();
+    report.popups = after;
+    report.popupBlocked = !!after && after.webviews === before.webviews && (stayed?.url || '') === popup;
+    // A page menu over the slot (the tab's menu at a point inside it): the view steps aside, and comes back once the menu closes.
+    const box2 = (slotNow() ?? slot).getBoundingClientRect();
+    report.menuAt = { x: Math.round(box2.left + 20), y: Math.round(box2.top + 20) };
+    const handle = document.querySelector('[data-testid=tab][data-tab-id="' + paneId + '"] .tab-handle');
+    handle?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: box2.left + 20, clientY: box2.top + 20 }));
+    report.menuOpened = !!handle && !!(await until(() => document.querySelector('[data-testid=menu]'), 5000));
+    report.steppedAside = report.menuOpened && !!(await until(async () => { const s = await surface(); return s && !s.visible; }, 5000));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    report.menuClosed = report.steppedAside && !!(await until(async () => { const s = await surface(); return !document.querySelector('[data-testid=menu]') && s && s.visible; }, 5000));
   } catch (error) {
     report.error = String(error);
   }
@@ -131,6 +169,13 @@ const BROWSER_PROBE: &str = r#"(async () => {
 /// The fixture page the browser pane loads.
 const FIXTURE: &str = "<!doctype html><html><head><meta charset=utf-8><title>Mighty smoke fixture</title></head>\
 <body style=\"margin:0;background:#1f7a52;color:#fff;font:28px system-ui\"><p style=\"padding:24px\">Mighty Code browser surface fixture</p></body></html>";
+/// The second page (`/second`), for back.
+const SECOND: &str = "<!doctype html><html><head><meta charset=utf-8><title>Mighty smoke second</title></head>\
+<body style=\"margin:0;background:#20508f;color:#fff;font:28px system-ui\"><p style=\"padding:24px\">Second page</p></body></html>";
+/// A page that asks for a new window as it loads (`/popup`): the host refuses it.
+const POPUP: &str = "<!doctype html><html><head><meta charset=utf-8><title>Mighty smoke popup</title></head>\
+<body style=\"margin:0;background:#7a1f52;color:#fff;font:28px system-ui\"><p style=\"padding:24px\">Popup page</p>\
+<script>window.open('/second', '_blank');</script></body></html>";
 
 /// The ids of the pane and workspace the step adds (UUID-shaped, as the state's ids are).
 const PANE: &str = "5a0e0b0b-0000-4000-8000-00000000b10b";
@@ -149,7 +194,20 @@ struct Progress {
     main: Option<Value>,
     /// The host's active pane when the first probe reported (its click must have reached the state).
     main_active: Option<String>,
+    frame: Option<Value>,
     browser: Option<Value>,
+    create: Option<Value>,
+    /// Where the gitCreate step's clone goes.
+    create_location: Option<PathBuf>,
+    /// The `gitProgress` pushes the page was sent.
+    git_progress: usize,
+    reload: Option<Value>,
+    /// The reload step's page is loading again: its `ready` brings the probe.
+    reload_waiting: bool,
+    reload_ready: bool,
+    reload_injected: bool,
+    /// The name the reload step's rename sheet opened with.
+    reload_name: Option<String>,
     finished: bool,
 }
 
@@ -176,8 +234,8 @@ impl Smoke {
 
     fn timeout(&self) -> Duration {
         Duration::from_secs(match self.mode {
-            Mode::Page => 90,
-            Mode::FakeClaude => 240,
+            Mode::Page => 210,
+            Mode::FakeClaude => 360,
             Mode::RealClaude => 420,
         })
     }
@@ -191,6 +249,9 @@ impl Smoke {
         if !progress.calls.iter().any(|m| m == method) {
             progress.calls.push(method.to_string());
         }
+        if method == "ready" && progress.reload_waiting {
+            progress.reload_ready = true;
+        }
     }
 
     pub fn pushed(&self, kind: &str) {
@@ -198,12 +259,27 @@ impl Smoke {
         match kind {
             "snapshot" => progress.snapshot_sent = true,
             "shell" => progress.shell_sent = true,
+            "gitProgress" => progress.git_progress += 1,
             _ => {}
         }
     }
 
     /// Runs the probe once the page is up (see the module comment).
     pub fn check(&self, host: &Host) {
+        let reloaded = {
+            let mut progress = self.progress();
+            let now = progress.reload_ready && !progress.reload_injected;
+            if now {
+                progress.reload_injected = true;
+            }
+            now.then(|| progress.reload_name.clone().unwrap_or_default())
+        };
+        if let Some(name) = reloaded {
+            host.log.line("smoke: the page loaded again; probing its dialogs");
+            let name = serde_json::to_string(&name).unwrap_or_default();
+            self.eval(host, &crate::smoke_frame::RELOAD_PROBE.replace("__NAME__", &name));
+            return;
+        }
         {
             let mut progress = self.progress();
             let up = ["getLocale", "ready"].iter().all(|m| progress.calls.iter().any(|c| c == m))
@@ -239,7 +315,10 @@ impl Smoke {
             }
             match progress.stage {
                 Stage::Main => progress.main = Some(probe.clone()),
+                Stage::Frame => progress.frame = Some(probe.clone()),
                 Stage::Browser => progress.browser = Some(probe.clone()),
+                Stage::Create => progress.create = Some(probe.clone()),
+                Stage::Reload => progress.reload = Some(probe.clone()),
                 Stage::Runs => {}
             }
             progress.stage
@@ -248,10 +327,17 @@ impl Smoke {
             let active = host.view().snapshot.active_session_id.clone();
             self.progress().main_active = active;
         }
+        let page_steps = self.mode != Mode::RealClaude;
         let next = match stage {
             Stage::Main if probe.get("error").is_some() => None,
-            Stage::Main if self.mode != Mode::RealClaude && self.start_browser(host) => Some(Stage::Browser),
-            Stage::Main | Stage::Browser if self.start_runs(host) => Some(Stage::Runs),
+            Stage::Main if page_steps => {
+                self.eval(host, crate::smoke_frame::FRAME_PROBE);
+                Some(Stage::Frame)
+            }
+            Stage::Frame if self.start_browser(host) => Some(Stage::Browser),
+            Stage::Frame | Stage::Browser if self.start_create(host) => Some(Stage::Create),
+            Stage::Frame | Stage::Browser | Stage::Create if self.start_reload(host) => Some(Stage::Reload),
+            Stage::Main | Stage::Frame | Stage::Browser | Stage::Create | Stage::Reload if self.start_runs(host) => Some(Stage::Runs),
             _ => None,
         };
         match next {
@@ -261,6 +347,75 @@ impl Smoke {
                 self.finish(host, runs);
             }
         }
+    }
+
+    /// Makes the gitCreate step's bare repository, points the sheets' location at a temporary folder and runs its probe (smoke_frame.rs);
+    /// false without git on PATH.
+    fn start_create(&self, host: &Host) -> bool {
+        if crate::workspace_create::git_executable().is_none() {
+            host.log.line("smoke: git is not on PATH; no gitCreate step");
+            return false;
+        }
+        let Some(shared) = host.app.try_state::<Arc<Host>>().map(|h| h.inner().clone()) else { return false };
+        host.log.line("smoke: gitCreate step");
+        tauri::async_runtime::spawn(async move {
+            let Some(smoke) = &shared.smoke else { return };
+            match crate::smoke_frame::bare_repository(&shared).await {
+                Ok((bare, location)) => {
+                    {
+                        let mut view = shared.view();
+                        let mut next = view.snapshot.clone();
+                        next.last_create_location = Some(location.to_string_lossy().into_owned());
+                        view.replace(next);
+                    }
+                    smoke.progress().create_location = Some(location);
+                    let workspace = shared.view().snapshot.active_workspace_id.clone().unwrap_or_default();
+                    let url = serde_json::to_string(&bare.to_string_lossy()).unwrap_or_default();
+                    smoke.eval(&shared, &crate::smoke_frame::CREATE_PROBE.replace("__URL__", &url).replace("__WORKSPACE__", &workspace));
+                }
+                Err(error) => smoke.probed(&shared, json!({"error": format!("no bare repository: {error}")})),
+            }
+        });
+        true
+    }
+
+    /// Starts a rename of the active workspace (its sheet in the page, the flow waiting on its answer), then loads the page again;
+    /// the page's `ready` brings the reload probe (`check`). False without an active workspace.
+    fn start_reload(&self, host: &Host) -> bool {
+        let Some(shared) = host.app.try_state::<Arc<Host>>().map(|h| h.inner().clone()) else { return false };
+        let Some((id, name)) = ({
+            let view = host.view();
+            let state = &view.snapshot;
+            state.active_workspace_id.as_deref().and_then(|id| state.workspace(id)).map(|w| (w.id().to_string(), w.name().to_string()))
+        }) else {
+            return false;
+        };
+        host.log.line("smoke: reload step");
+        self.progress().reload_name = Some(name);
+        tauri::async_runtime::spawn(async move {
+            let Some(smoke) = &shared.smoke else { return };
+            let dialogs = crate::dialogs::of(&shared);
+            // The step before may still be ending its own sheet (its answer reaches the host after the page took it away).
+            let settled = || dialogs.open_count() == 0 && !shared.view().dialog_open;
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !settled() && Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            crate::frame::start_rename_workspace(&shared, id);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while dialogs.open_count() == 0 && Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            if dialogs.open_count() == 0 {
+                smoke.probed(&shared, json!({"error": "the rename sheet never opened"}));
+                return;
+            }
+            // A moment for the page to draw the sheet before it loads again.
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            smoke.progress().reload_waiting = true;
+            smoke.eval(&shared, "location.reload()");
+        });
+        true
     }
 
     /// Adds the run steps' pane and runs their probe; false in the page-only smoke.
@@ -291,6 +446,8 @@ impl Smoke {
         if surfaces.capabilities()["surfaces"]["browser"] != "native" {
             return false;
         }
+        // The browser engine counts as on for this smoke only (C# `ForceBrowserEngineForSmoke`).
+        surfaces.force_engine();
         let fixture = match serve_fixture() {
             Ok(fixture) => fixture,
             Err(error) => {
@@ -319,6 +476,16 @@ impl Smoke {
             let probe = progress.main.clone().unwrap_or_else(|| json!({"error": "no probe report"}));
             (progress.calls.clone(), probe, progress.browser.clone(), progress.main_active.clone())
         };
+        let (frame, create, create_location, git_progress, reload) = {
+            let progress = self.progress();
+            (
+                progress.frame.clone(),
+                progress.create.clone(),
+                progress.create_location.clone(),
+                progress.git_progress,
+                progress.reload.clone(),
+            )
+        };
         let (snapshot_sent, shell_sent) = {
             let progress = self.progress();
             (progress.snapshot_sent, progress.shell_sent)
@@ -344,6 +511,16 @@ impl Smoke {
             "hostSelected": host_selected.unwrap_or(true),
             "noProbeError": probe.get("error").is_none(),
         });
+        let merge = |checks: &mut Value, more: Value| {
+            if let (Some(checks), Some(more)) = (checks.as_object_mut(), more.as_object()) {
+                checks.extend(more.clone());
+            }
+        };
+        match &frame {
+            Some(frame) => merge(&mut checks, crate::smoke_frame::frame_checks(frame)),
+            None if self.mode != Mode::RealClaude => merge(&mut checks, json!({"frameSidebar": false})),
+            None => {}
+        }
         if let Some(browser) = &browser {
             let yes = |key: &str| browser.get(key) == Some(&Value::Bool(true));
             checks["browserSurface"] = json!(
@@ -354,6 +531,18 @@ impl Smoke {
                     && yes("hiddenUnderDialog")
                     && yes("shownAfterDialog")
             );
+            checks["browserNavigated"] = json!(yes("navigated"));
+            checks["browserBack"] = json!(yes("onSecond") && yes("wentBack"));
+            checks["browserPopupBlocked"] = json!(yes("popupPage") && yes("popupBlocked"));
+            checks["browserMenuOver"] = json!(yes("menuOpened") && yes("steppedAside") && yes("menuClosed"));
+        }
+        if let Some(create) = &create {
+            merge(&mut checks, crate::smoke_frame::create_checks(create, host, create_location.as_deref(), git_progress));
+        }
+        match &reload {
+            Some(reload) => merge(&mut checks, crate::smoke_frame::reload_checks(reload)),
+            None if self.mode != Mode::RealClaude => merge(&mut checks, json!({"dialogResentAfterReload": false})),
+            None => {}
         }
         match self.mode {
             Mode::Page => {}
@@ -399,7 +588,11 @@ impl Smoke {
             "passed": passed,
             "checks": checks,
             "probe": probe,
+            "frame": frame,
             "browser": browser,
+            "gitCreate": create,
+            "gitProgressPushes": git_progress,
+            "reload": reload,
             "runs": runs,
             "mode": format!("{:?}", self.mode),
             "host": {"workspaces": workspaces, "panes": panes, "theme": theme, "activeSessionId": active, "language": host.locale.language()},
@@ -433,7 +626,10 @@ impl Smoke {
                     let mut progress = smoke.progress();
                     match progress.stage {
                         Stage::Main => progress.main = Some(error.clone()),
+                        Stage::Frame => progress.frame = Some(error.clone()),
                         Stage::Browser => progress.browser = Some(error.clone()),
+                        Stage::Create => progress.create = Some(error.clone()),
+                        Stage::Reload => progress.reload = Some(error.clone()),
                         Stage::Runs => {}
                     }
                     progress.stage
@@ -452,10 +648,18 @@ fn serve_fixture() -> std::io::Result<String> {
         for mut stream in listener.incoming().flatten() {
             let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
             let mut request = [0u8; 4096];
-            let _ = stream.read(&mut request);
+            let read = stream.read(&mut request).unwrap_or(0);
+            let line = String::from_utf8_lossy(&request[..read]);
+            let page = if line.starts_with("GET /second") {
+                SECOND
+            } else if line.starts_with("GET /popup") {
+                POPUP
+            } else {
+                FIXTURE
+            };
             let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{FIXTURE}",
-                FIXTURE.len()
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{page}",
+                page.len()
             );
             let _ = stream.write_all(response.as_bytes());
         }
@@ -520,6 +724,12 @@ pub async fn smoke_surface(pane_id: String, action: String, host: tauri::State<'
             push(json!({"kind": "dialogClose", "id": DIALOG}));
             Ok(Value::Null)
         }
+        // The popups the pane's page asked for (all refused) and the webviews the app holds (none more for a popup).
+        "popups" => Ok(json!({"refused": surfaces.popups_refused(&pane_id), "webviews": host.app.webviews().len()})),
+        // The frame step's view of the host's state (smoke_frame.rs).
+        "state" => Ok(crate::smoke_frame::state(&host)),
+        // The dialogs whose flows still wait (the reload step's: none once the redrawn sheet was answered).
+        "dialogs" => Ok(json!({"open": crate::dialogs::of(&host).open_count(), "dialogOpen": host.view().dialog_open})),
         other => Err(format!("unknown smoke action {other}")),
     }
 }
