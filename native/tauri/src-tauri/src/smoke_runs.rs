@@ -112,8 +112,8 @@ pub const REAL_PROBE: &str = r#"(async () => {
     const finished = await until(async () => { const s = await step('state'); return ['completed', 'idle', 'error', 'stopped'].includes(s.status) ? s : null; }, 240000);
     report.state = finished ?? (await step('state'));
     const blocks = () => [...(scope()?.querySelectorAll('[data-testid=mighty-diagram] .mighty-block[data-kind=result]') ?? [])];
-    // The block's own text runs its title, agent and time into the answer ("Final resultClaude · 2:34 AMok"): its answer pad is read.
-    report.resultBlock = await until(() => blocks().map((b) => (b.querySelector('.mighty-pad') ?? b).textContent.trim()).find((t) => /^ok\b/i.test(t) || /\bok$/i.test(t)) ?? null, 20000);
+    // The block's text runs its title, agent and time into the answer ("Final resultClaude · 2:49 AMok"): the answer is its end.
+    report.resultBlock = await until(() => blocks().map((b) => b.textContent.trim()).find((t) => t.toLowerCase().endsWith('ok')) ?? null, 20000);
     report.resultBlockText = blocks().map((b) => b.textContent.trim()).join(' | ');
     report.requestBlock = !!scope()?.querySelector('[data-testid=mighty-diagram] .mighty-block[data-kind=request]');
     await new Promise((r) => setTimeout(r, 1500));
