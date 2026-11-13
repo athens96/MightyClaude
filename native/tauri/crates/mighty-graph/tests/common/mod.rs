@@ -3,11 +3,13 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use mighty_core::graph::{GraphResponseRecord, GraphTokenUsage, MightyGraphAgent, MightyGraphRun};
 use mighty_core::locale::Locale;
 use mighty_core::model::LogEntry;
 use mighty_graph::ExecutionGraphNode;
+use mighty_graph::tracker::ExecutionGraphTracker;
 use serde_json::{Map, Value, json};
 
 /// native/contracts.
@@ -249,4 +251,147 @@ pub fn run_in(value: &Value, locale: &Locale) -> MightyGraphRun {
 
 pub fn object(fields: &[(&str, Value)]) -> Value {
     Value::Object(fields.iter().map(|(k, v)| (k.to_string(), v.clone())).collect::<Map<_, _>>())
+}
+
+// ── the tracker as a run makes it ────────────────────────────────────────────────────────────────────────────────────────────
+
+/// A tracker that records every node it emits.
+pub fn recording_tracker(
+    run_id: &str,
+    input: Option<&str>,
+    provider: &str,
+    model: Option<&str>,
+) -> (ExecutionGraphTracker, Arc<Mutex<Vec<ExecutionGraphNode>>>) {
+    recording_tracker_with(run_id, input, provider, model, None, None, ko())
+}
+
+/// [`recording_tracker`] with the pane's effort and advisor and a locale.
+pub fn recording_tracker_with(
+    run_id: &str,
+    input: Option<&str>,
+    provider: &str,
+    model: Option<&str>,
+    effort: Option<&str>,
+    advisor: Option<&str>,
+    locale: Locale,
+) -> (ExecutionGraphTracker, Arc<Mutex<Vec<ExecutionGraphNode>>>) {
+    let emitted = Arc::new(Mutex::new(vec![]));
+    let sink = emitted.clone();
+    let tracker = ExecutionGraphTracker::new(
+        run_id,
+        input,
+        provider,
+        model,
+        Box::new(move |n: &ExecutionGraphNode| sink.lock().expect("sink").push(n.clone())),
+        effort,
+        advisor,
+        locale,
+    );
+    (tracker, emitted)
+}
+
+/// The latest snapshot of every node, in first-emission order.
+pub fn latest(emitted: &[ExecutionGraphNode]) -> Vec<ExecutionGraphNode> {
+    let mut order: Vec<String> = vec![];
+    let mut latest = std::collections::HashMap::new();
+    for node in emitted {
+        if !latest.contains_key(&node.id) {
+            order.push(node.id.clone());
+        }
+        latest.insert(node.id.clone(), node.clone());
+    }
+    order.iter().map(|id| latest[id].clone()).collect()
+}
+
+/// `MightyGraphBlockModel.ResultTitle(runStatus, waiting, awaiting)` (MightyGraphViewModel.cs:295), a copy of the exact rule for the tests
+/// that read it before the view model is here.
+pub fn result_title(status: &str, waiting: i32, awaiting: bool, locale: &Locale) -> String {
+    match status {
+        "error" | "failed" => locale.get("graph.block.resultError"),
+        "stopped" | "cancelled" | "interrupted" => locale.get("graph.block.resultStopped"),
+        _ if awaiting => locale.get("graph.block.awaitingNotice"),
+        _ if waiting > 0 => locale.get_with("graph.block.resultSoFar", &[("count", &waiting.to_string())]),
+        _ => locale.get("graph.block.result"),
+    }
+}
+
+/// The lines of a shared recording (native/contracts/fixtures/<name>.jsonl), blank lines left out.
+pub fn recording(name: &str) -> Vec<Value> {
+    fixture_text(&format!("{name}.jsonl"))
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("{name}: {e}")))
+        .collect()
+}
+
+/// `FlowTrackerVerification.Pane`: a tracker as a run makes it, and the pane's runs as the run pipeline hands them over — the
+/// request's, then each notice run.
+pub struct Pane {
+    pub tracker: ExecutionGraphTracker,
+    pub nodes: Arc<Mutex<Vec<ExecutionGraphNode>>>,
+}
+
+impl Pane {
+    pub fn new(run_id: &str) -> Pane {
+        Pane::with(run_id, None, None, ko())
+    }
+
+    pub fn with(run_id: &str, effort: Option<&str>, advisor: Option<&str>, locale: Locale) -> Pane {
+        let (tracker, nodes) = recording_tracker_with(run_id, Some("probe"), "claude", None, effort, advisor, locale);
+        Pane { tracker, nodes }
+    }
+
+    pub fn send(&mut self, value: Value) {
+        self.tracker.consume(&value);
+    }
+
+    pub fn runs(&self) -> Vec<MightyGraphRun> {
+        self.runs_live(true)
+    }
+
+    pub fn runs_live(&self, live: bool) -> Vec<MightyGraphRun> {
+        let mut runs: Vec<MightyGraphRun> = self.tracker.build_run(live).into_iter().collect();
+        runs.extend(self.tracker.build_notice_runs(live));
+        runs
+    }
+
+    pub fn finish(&mut self, state: &str) -> Vec<MightyGraphRun> {
+        self.tracker.finish(state);
+        self.runs_live(false)
+    }
+
+    pub fn emitted(&self) -> Vec<ExecutionGraphNode> {
+        self.nodes.lock().expect("nodes").clone()
+    }
+}
+
+/// `FlowTrackerVerification.Replay`: a recording through a tracker, finished completed.
+pub fn replay(fixture: &str, run_id: &str, effort: Option<&str>) -> Vec<MightyGraphRun> {
+    replay_in(fixture, run_id, effort, ko())
+}
+
+pub fn replay_in(fixture: &str, run_id: &str, effort: Option<&str>, locale: Locale) -> Vec<MightyGraphRun> {
+    let mut pane = Pane::with(run_id, effort, None, locale);
+    for line in recording(fixture) {
+        pane.send(line);
+    }
+    pane.finish("completed")
+}
+
+/// A run's block of the tool call `tool` (`FlowTrackerVerification.Agent`): the last one any of the pane's runs holds.
+pub fn agent_of(runs: &[MightyGraphRun], run: &str, tool: &str) -> MightyGraphAgent {
+    let id = mighty_graph::node::agent_node_id(run, tool);
+    runs.iter().flat_map(|r| r.agents().iter()).rfind(|a| a.id() == id).cloned().unwrap_or_else(|| panic!("no block for {tool}"))
+}
+
+/// `Same(actual, expected, why)`.
+#[track_caller]
+pub fn same<T: PartialEq + std::fmt::Debug>(actual: T, expected: T, why: &str) {
+    assert!(actual == expected, "{why}: expected <{expected:?}> but was <{actual:?}>");
+}
+
+/// `Check(value, why)`.
+#[track_caller]
+pub fn check(value: bool, why: &str) {
+    assert!(value, "{why}");
 }

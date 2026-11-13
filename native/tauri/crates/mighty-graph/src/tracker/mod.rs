@@ -29,6 +29,7 @@ use mighty_core::model::{AgentActivity, LogEntry};
 use mighty_core::{normalize, time, wire};
 use serde_json::Value;
 
+pub use claude::report;
 pub use codex::{CodexAgentState, CodexCollaborationItem, codex_usage};
 
 use crate::labels;
