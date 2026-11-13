@@ -36,9 +36,10 @@ A command that chains, pipes, redirects or may delete data offers only {{ui:perm
 - If the status is stuck on connecting to the relay, click {{ui:settings.mobileRemote.reconnectButton}}.
 - If the phone's {{ui:phone.tabs.hosts}} tab shows {{ui:phone.hosts.reachability.unauthorized}}, the Mac's key changed. Pair again with the QR code.
 - A sleeping Mac can't be reached.
+- If a phone paired before 0.4.58 gets no notifications, pair it again once with the QR code: the default relay moved to a new server ([Notifications](phone.md#notifications)).
 
 ## Does closing a pane lose the conversation? {#history}
-No. The conversation stays as a CLI session. When you add a Claude, Codex or Antigravity pane on the same folder, choose {{ui:resume.choice.resume}} to continue it. See [Continue an earlier session](layout.md#resume).
+No. The conversation stays as a CLI session. When you add an agent pane on the same folder, choose {{ui:resume.choice.resume}} to continue it. See [Continue an earlier session](layout.md#resume).
 
 ## Where is my data kept? {#data}
 The app's settings and history stay on this computer. See where under {{ui:settings.appInfo.stateLocationLabel}} on the {{ui:settings.nav.about}} tab. Requests to the AI are sent by each CLI to its own company's service. With the phone remote, content passes the relay encrypted.

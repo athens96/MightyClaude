@@ -3,7 +3,7 @@ title: 휴대폰 원격
 order: 9
 section: phone
 ---
-휴대폰 앱으로 밖에서도 Mac의 Mighty Code를 보고 다룰 수 있습니다. 작업 상태를 보고, 요청을 보내고, 승인과 질문에 답합니다.
+휴대폰 앱으로 밖에서도 Mac이나 Windows PC의 Mighty Code를 보고 다룰 수 있습니다. 작업 상태를 보고, 요청을 보내고, 승인과 질문에 답합니다.
 
 Mac과 휴대폰은 릴레이 서버를 거쳐 연결됩니다. 내용은 처음부터 끝까지 암호화되어 릴레이는 내용을 볼 수 없습니다. 공유기 포트를 열거나 VPN을 쓸 필요가 없습니다. Tailscale을 쓰고 있다면 [릴레이 없이 직접](#direct) 연결할 수도 있습니다.
 
@@ -23,7 +23,7 @@ Mac에서:
 
 ![[settings-mobile]]
 
-연결된 휴대폰은 Mac의 {{ui:settings.mobileRemote.connectedDevicesTitle}}에 보입니다. 휴대폰을 더 이상 쓰지 않으면 {{ui:settings.mobileRemote.revokeRowButton}}를 누릅니다.
+연결된 휴대폰은 Mac의 {{ui:settings.mobileRemote.connectedDevicesTitle}}에 보입니다. 휴대폰을 더 이상 쓰지 않으면 {{ui:settings.mobileRemote.revokeRowButton}}를 누릅니다. 이미 연결한 휴대폰을 QR 코드로 다시 연결하면 그 휴대폰의 항목이 새것으로 바뀌고, 예전 연결은 더 이상 쓰이지 않습니다.
 
 > [!warning]
 > {{ui:settings.mobileRemote.regenerateKeyButton}}를 누르면 연결된 휴대폰을 모두 다시 연결해야 합니다. QR 코드나 키가 남에게 보였을 때 쓰세요.
@@ -80,12 +80,16 @@ Mac에서 [마이티 오케스트레이션](delegation.md)으로 만든 자식 �
 - 알림은 잠금 화면에서 비공개로 표시됩니다. 잠금 화면에서 민감한 내용을 숨기도록 정해 두었다면 제목과 내용이 보이지 않습니다.
 - 알림 내용은 컴퓨터가 이 휴대폰만 열 수 있게 암호화합니다. 릴레이와 Google은 읽지 못합니다. 알림은 릴레이를 거치므로 Tailscale로 직접 연결해도 컴퓨터가 인터넷에 닿아야 옵니다.
 - 컴퓨터 앱과 휴대폰 앱이 모두 이 기능이 있는 버전이어야 합니다. 이 기능이 없는 컴퓨터 앱에서는 알림이 오지 않습니다. 아주 오래된 휴대폰 앱으로 페어링했다면 다시 페어링하세요.
+- 0.4.58에서 기본 릴레이가 새 서버로 바뀌었습니다. 그 전에 연결한 휴대폰에 알림이 오지 않으면 QR 코드로 한 번 다시 연결하세요.
 - 휴대폰 연결(모바일 리모트)을 끈 동안에는 컴퓨터가 아무것도 보내지 않고, 다시 켜면 그동안 있었던 일은 알리지 않습니다.
 
 앱이 멈추면 멈춘 곳만 개발자에게 보냅니다. 대화·명령·경로는 보내지 않고, {{ui:phone.settings.title}}에서 {{ui:phone.settings.crashReports}}를 끌 수 있습니다.
 
 ## 화면 보기 {#screen}
 휴대폰에서 Mac 화면을 보고, 허용하면 조작할 수도 있습니다. {{ui:badge.beta}} 기능이며 지금은 Android 앱에만 있습니다.
+
+> [!warning]
+> 0.4.58부터 화면 보기·조작을 잠시 멈췄습니다(Mac과 Windows 모두). 기본 릴레이가 새 서버로 옮겨 가는 동안에는 휴대폰에 화면 보기 단추가 나오지 않고, 설정의 {{ui:settings.screenShare.sectionTitle}} 자리에는 멈췄다는 안내 한 줄만 보입니다. 휴대폰마다 정해 둔 허용 범위와 권한은 그대로 남아 다시 켜지면 돌아옵니다. 아래는 다시 켜졌을 때의 사용법입니다.
 1. Mac의 {{ui:settings.nav.mobile}} 탭 아래 {{ui:settings.screenShare.sectionTitle}}에서 휴대폰마다 {{ui:settings.screenShare.grantLabel}}을 {{ui:settings.screenShare.grantView}} 또는 {{ui:settings.screenShare.grantControl}}으로 정합니다. 새 휴대폰은 {{ui:settings.screenShare.grantNone}}으로 시작합니다.
 2. {{ui:settings.screenShare.permissions.openButton}}으로 화면 기록, 손쉬운 사용 등 Mac 권한을 허용합니다.
 3. 휴대폰에서 {{ui:phone.screenShare.open}}를 누르고 {{ui:phone.screenShare.mode.view}} 또는 {{ui:phone.screenShare.mode.control}}을 고릅니다.

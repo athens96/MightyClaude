@@ -6,7 +6,7 @@ section: styles
 风格是预先定好请求方式的工作流程。它备有阶段和按钮，能让较长的任务按既定顺序推进。不使用风格时，就像平常一样自由地发送请求（CLI）。
 
 ## 选择风格 {#pick}
-风格用于此 Mac 上的 Claude 窗格。
+风格用于 Claude 窗格（Mac 和 Windows）。
 1. 打开输入框上方的风格菜单（{{ui:guidedPanel.stylesMenuAccessibility}}）。
 2. 选择一种风格。要回到自由请求，请选择 CLI。
 

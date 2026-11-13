@@ -19,7 +19,7 @@ section: agent-pane
 ### 运行时继续提出请求 {#queue}
 任务运行期间也可以写下一个请求。输入框中有文字时，停止按钮旁会出现与发送按钮相同的圆形按钮。
 - {{kbd:Enter}}或{{ui:queue.add}}按钮：作为下一个请求放入队列。当前任务结束后按顺序执行。每个窗格最多可放 16 个。
-- {{kbd:⌘Enter}}或{{ui:queue.worktree}}按钮：在此 Mac 上开启了 Mighty 编排、位于有提交的分支上的 git 仓库中的 Claude 窗格，或处于子窗格能更改文件的模式的 Codex、Antigravity 窗格里，会在此窗格旁打开一个拥有自己 git worktree 的新子窗格并立即运行，正在运行的任务照常继续；子窗格完成后，在侧边栏的卡片上合并它的结果（[在新的 worktree 中运行](delegation.md#worktree)）。
+- {{kbd:⌘Enter}}或{{ui:queue.worktree}}按钮：在开启了 Mighty 编排、位于有提交的分支上的 git 仓库中的 Claude 窗格，或处于子窗格能更改文件的模式的 Codex、Antigravity 窗格里，会在此窗格旁打开一个拥有自己 git worktree 的新子窗格并立即运行，正在运行的任务照常继续；子窗格完成后，在侧边栏的卡片上合并它的结果（[在新的 worktree 中运行](delegation.md#worktree)）。
 - 在子窗格中、在这样的仓库之外，或关闭 Mighty 编排时，{{kbd:⌘Enter}}也会像{{kbd:Enter}}一样放入队列。无法创建或启动子窗格时，文字同样会放入队列（[在新的 worktree 中运行](delegation.md#worktree)）。你发送的内容不再插入正在运行的任务；在较早的记录中，Mighty 视图仍会把这类文字显示为橙色的{{ui:graph.block.steer}}块。直接送进正在运行的 Claude 父窗格的委派通知，显示为同样颜色的{{ui:graph.block.delegationNotice}}块（[通知和保留](delegation.md#notices)）。
 - 队列中的每个请求，在 ✕ 旁都有一个{{ui:queue.runNow}}按钮。在能创建新 worktree 的地方（条件与上面的 {{kbd:⌘Enter}} 相同），它会立即在新的子窗格中运行该请求，正在运行的任务照常继续。右键点按（Mac 上也可按住 Control 点按）可以选择其他代理。按钮的提示会说明将会发生哪一种。只有附件、没有文字的请求不会进入 worktree。
 - 无法创建 worktree 时，请求在本窗格中处理。窗格处于空闲状态（例如因出错而停止）时，会立即开始该请求。Claude 的回答已结束、只剩后台任务的窗格，会把它直接送进正在运行的 Claude，并在 Mighty 视图中显示为{{ui:graph.block.steer}}块（带附件的请求要等到任务结束）。其他情况下按钮显示为灰色，提示会说明原因：当前任务必须先结束、为该窗格保留的项目要先送出，或 CLI 正在更新。此时请求依次等待。Antigravity 卡片的后续请求只会在它自己的窗格中运行。
@@ -70,7 +70,7 @@ pi（`pi`）是支持多家模型提供商的开源编码智能体 CLI。
 - 权限：pi 没有审批窗口，所以只有两种模式。{{ui:permission.label.defaultCodex}}模式只启用读取工具（read、grep、find、ls）。{{ui:permission.label.fullAccess}}模式不经询问使用所有工具，也可能触及项目之外。
 - 每次请求都会在窗格的工作文件夹中运行 `pi --mode rpc`，并延续窗格自己的会话，会话保存在 `~/.pi/agent/sessions`。{{ui:resume.choice.resume}}中也会列出该文件夹的 pi 会话。
 - 提问：pi 没有提问工具，因此应用在每次运行时以扩展的形式加入 `ask_user` 工具（不会更改你的 `~/.pi` 设置）。pi 通过它提问时会弹出[提问卡片](approvals.md#questions)，回答后同一请求继续进行。其他扩展打开的选择、确认和输入对话框也以同样的卡片显示。
-- 暂不支持：pi 窗格不参与[Mighty 编排](delegation.md)，不能在[远程工作区](remote.md)中打开，也没有审批卡。目前只能在 Mac 上使用。
+- 暂不支持：pi 窗格不参与[Mighty 编排](delegation.md)，不能在[远程工作区](remote.md)中打开，也没有审批卡。
 
 ### opencode {#opencode}
 opencode（`opencode`）是支持多家模型提供商的开源编码智能体 CLI，其自有服务 opencode Zen 的免费模型无需登录即可使用。
@@ -81,18 +81,18 @@ opencode（`opencode`）是支持多家模型提供商的开源编码智能体 C
 - 权限：所选模式会成为该次请求专用的 opencode 规则，规则留待询问的操作会像 Claude 一样以审批卡出现在窗格中。{{ui:permission.label.default}}在修改文件、执行命令、访问网络和访问项目外内容前询问；{{ui:permission.label.acceptEdits}}修改文件不询问；{{ui:permission.label.plan}}使用不修改文件的 opencode plan 智能体运行；{{ui:permission.label.fullAccess}}从不询问。
 - 每次请求都会在窗格的工作文件夹中运行 `opencode acp`（OpenCode 2，Agent Client Protocol），并延续窗格自己的会话，会话保存在 opencode 的 `opencode.db`。{{ui:resume.choice.resume}}中也会列出该文件夹的 opencode 会话。用量中显示会话费用、正在使用的上下文和该次请求的令牌。
 - 提问：opencode 通过 `question` 工具提问时会弹出[提问卡片](approvals.md#questions)，回答后同一请求继续进行。在卡片上点击{{ui:phone.questionnaire.cancel}}后，opencode 会结束该请求。
-- 暂不支持：opencode 窗格不参与[Mighty 编排](delegation.md)，不能在[远程工作区](remote.md)中打开。目前只能在 Mac 上使用。
+- 暂不支持：opencode 窗格不参与[Mighty 编排](delegation.md)，不能在[远程工作区](remote.md)中打开。
 
 ### Hermes {#hermes}
 Hermes（`hermes`）是 Nous Research 的开源智能体 CLI（Hermes Agent），可使用 Nous Portal、OpenRouter、Anthropic、OpenAI 等多家模型提供商。
 
-- 安装：在{{ui:setup.title}}界面安装（没有 Git 时会先安装）。官方安装脚本会连同自带的 Python 环境一起装到 `~/.hermes`，并下载浏览器工具，需要几分钟。也可以自行运行 `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`。更新由应用通过 `hermes update` 完成。
+- 安装：在{{ui:setup.title}}界面安装（没有 Git 时会先安装）。官方安装脚本会连同自带的 Python 环境一起装到 `~/.hermes`，并下载浏览器工具，需要几分钟。也可以自行安装：在 Mac 上运行 `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`，在 Windows 上于 PowerShell 中运行 `irm https://hermes-agent.nousresearch.com/install.ps1 | iex`。更新由应用通过 `hermes update` 完成。
 - 登录：点击{{ui:settings.nav.cli}}标签页中的{{ui:settings.cliAccounts.buttonLogin}}按钮，会打开运行 `hermes model` 的终端窗格。在其中选择模型提供商，登录或输入 API 密钥，然后选择默认模型。应用只读取 Hermes 找到凭据的提供商名称。要删除凭据，请在终端使用 `hermes auth`。
 - 模型：第一项跟随 Hermes 自身的设置（通过 `hermes model` 设定的默认模型）。Hermes 只有打开会话后才给出模型列表，因此发送第一个请求后才会出现 `提供商:模型` 列表。
 - 权限：{{ui:permission.label.default}}在每次修改文件前用窗格中的批准卡片询问；{{ui:permission.label.acceptEdits}}不询问工作文件夹内的修改；{{ui:permission.label.fullAccess}}即 Hermes 的 `--yolo`，危险命令也不询问。危险命令（如 `rm -rf`）按 Hermes 的审批设置（`approvals.mode`）用卡片询问，其他命令和读取不询问。没有仅规划的模式。{{ui:permission.label.fullAccess}}在会话开始时确定，已开始的会话要从新对话起才生效。
 - 每个请求都会在窗格的工作文件夹中运行 `hermes acp`（Agent Client Protocol），并继续该窗格的会话。实际工作由 Hermes 的网关（后台进程）完成，它按需启动，空闲时退出。会话保存在 `~/.hermes/state.db` 中，{{ui:resume.choice.resume}}中也会列出此文件夹的 Hermes 会话。用量显示会话的累计令牌数和正在使用的上下文；Hermes 不报告费用。
 - 提问：Hermes 通过 clarify 工具提问时会弹出[提问卡片](approvals.md#questions)，回答后同一请求继续进行。Hermes 默认在编辑器连接（ACP）中关闭此工具，因此应用会在第一次 Hermes 请求之前，用 `hermes config set` 设置 Hermes 配置中的 `platform_toolsets.acp` 这一项来开启它，并在记录中说明。如果你自己保存过该列表，应用不会改动。从新对话开始生效；要撤销，请在终端运行 `hermes config unset platform_toolsets.acp`。Hermes 只等待回答一段时间（默认 90 秒），之后卡片会关闭，Hermes 在没有回答的情况下继续。
-- 暂不支持：Hermes 窗格不参与[Mighty 编排](delegation.md)，也无法在[远程工作区](remote.md)中打开。目前仅在 Mac 上可用。
+- 暂不支持：Hermes 窗格不参与[Mighty 编排](delegation.md)，也无法在[远程工作区](remote.md)中打开。
 
 ### 更多运行设置 {#run-settings}
 点击 … 按钮会打开{{ui:settings.run.title}}。
@@ -138,7 +138,7 @@ Codex 和 Antigravity 的命令名称略有不同（例如 Codex 的 `/new`、`/
 ![[session-info]]
 
 ## Mighty 视图 {#views}
-Claude、Codex 和 Antigravity 窗格都以{{ui:graph.view.mighty}}视图显示：以块状流程显示请求、子智能体、后台任务和结果。没有需要切换的地方。
+所有智能体窗格（Claude、Codex、Antigravity、pi、opencode、Hermes）都以{{ui:graph.view.mighty}}视图显示：以块状流程显示请求、子智能体、后台任务和结果。没有需要切换的地方。
 
 ### Mighty 流程 {#diagram}
 Claude 窗格的流程是：请求 → 中间发生的事 → {{ui:graph.block.result}}。请求块只包含你发送的内容。在答复到来之前，结果的位置上会有一张{{ui:graph.block.execution}}卡片，显示主会话的模型和它现在在做的事（Claude 最后说的话，或之后运行的命令）。点击卡片会展开包含全部消息和工具调用的{{ui:graph.block.execution}}块；答复到来后，{{ui:graph.block.result}}卡片会出现在那个位置。中间没有任何事情的简短提问只有请求和结果两个块。其他智能体的窗格仍然在请求块正下方接着{{ui:graph.block.execution}}块。
@@ -153,7 +153,7 @@ Claude 列出待办清单后，请求下方会按顺序为每个已开始的步�
 
 在后台启动的子智能体和后台命令（任务）在运行期间不会画成请求的块，而是在输入框上方的后台任务条里。在 Mac 的 Claude 窗格中，子智能体还会显示为上面的卡片。每一行显示类型、名称、用时和输出的最后一行；展开一行会显示它运行的命令（子智能体显示提示的第一行）和输出的最后几行（最多 6 行）。任务结束、通知送达 Claude 后，Claude 的每一次回答都会生成一个新的{{ui:graph.background.noticeRun}}图表，每个已结束的任务一个块：类型行（子智能体还是后台命令，以及结束状态）、命令、输出的最后几行，以及子智能体的报告。在{{ui:graph.view.timeline}}中，这个图表是新增的一行；在{{ui:graph.view.structure}}中，它是末尾新增的一张卡片（看板）。手机上的 Mighty 视图和流水线也一样。
 
-Claude 窗格流程的左上角有{{ui:graph.progress.title}}面板。它显示画面中请求的编号、状态和内容，有待办清单时还会显示每个步骤是已完成、进行中（时间在走）还是未开始。新请求开始时显示该请求；你自己滚动后，改为显示画面中的请求。点击请求行会移到该请求，点击步骤行会移到该步骤的卡片。可以用标题栏的按钮折叠。Codex 窗格在流程左上角的{{ui:graph.steps.title}}面板中显示待办清单，并把第一个未完成的步骤显示为进行中。Antigravity 没有可显示的待办清单，所以没有面板。
+每个智能体窗格的流程左上角都有{{ui:graph.progress.title}}面板。它显示画面中请求的编号、状态和内容；智能体告知计划时，还会显示每个步骤是已完成、进行中（时间在走）还是未开始。步骤来自 Claude 的待办清单、Codex 的计划以及 opencode 和 Hermes 的计划；Antigravity 和 pi 不发送计划，所以只显示请求和状态。如果请求启动了后台任务（命令、后台子智能体），底部的{{ui:graph.progress.background}}组会显示正在运行的数量和总数，并为每项显示一行（状态和耗时）：正在运行的排在前面，最多四行，其余以数量显示。新请求开始时显示该请求；你自己滚动后，改为显示画面中的请求。点击请求行会移到该请求，点击步骤行会移到该步骤的卡片（只有 Claude 窗格的流程有步骤卡片）。用标题栏的按钮折叠后，只留下标题和请求行。
 
 - 拖动空白处或滚动即可移动流程。用缩放按钮可以在 50% 到 150% 之间调整。
 - 点击某个块后，只在该块内部滚动。点击空白处或按{{kbd:Esc}}即可取消选择。

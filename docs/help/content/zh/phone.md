@@ -3,7 +3,7 @@ title: 手机远程
 order: 9
 section: phone
 ---
-通过手机应用，你在外面也能查看和操作 Mac 上的 Mighty Code：查看任务状态、发送请求、回答批准和提问。
+通过手机应用，你在外面也能查看和操作 Mac 或 Windows 电脑上的 Mighty Code：查看任务状态、发送请求、回答批准和提问。
 
 Mac 与手机通过中继服务器连接。内容全程端到端加密，中继无法查看内容。无需在路由器上开放端口，也无需使用 VPN。如果你在用 Tailscale，手机也可以[不经中继直接连接](#direct)。
 
@@ -23,7 +23,7 @@ Mac 与手机通过中继服务器连接。内容全程端到端加密，中继�
 
 ![[settings-mobile]]
 
-已连接的手机会显示在 Mac 的{{ui:settings.mobileRemote.connectedDevicesTitle}}中。不再使用某部手机时，请点击{{ui:settings.mobileRemote.revokeRowButton}}。
+已连接的手机会显示在 Mac 的{{ui:settings.mobileRemote.connectedDevicesTitle}}中。不再使用某部手机时，请点击{{ui:settings.mobileRemote.revokeRowButton}}。已连接的手机再次扫描二维码连接时，会用新的条目替换它原来的条目，旧的连接不再可用。
 
 > [!warning]
 > 点击{{ui:settings.mobileRemote.regenerateKeyButton}}后，所有已连接的手机都需要重新连接。请在二维码或密钥被他人看到时使用。
@@ -80,12 +80,16 @@ Windows 电脑也一样，只是需要一条 Windows 防火墙规则，以免连
 - 通知在锁屏上以私密方式显示：如果你设置了在锁屏上隐藏敏感内容，标题和正文就不会显示。
 - 电脑会加密每条通知，只有这部手机能读取，中继和 Google 无法读取。通知经由中继发送，因此通过 Tailscale 直接连接时，只要电脑能上网也会收到。
 - 电脑应用和手机应用都必须是带有此功能的版本。没有此功能的电脑应用不会发送通知。如果你是用很旧的手机应用配对的，请重新配对。
+- 0.4.58 起默认中继换到了新服务器。在此之前连接的手机如果收不到通知，请用二维码重新连接一次。
 - 手机远程访问关闭期间，电脑不会发送任何内容；重新打开后，也不会补发这段时间里发生的事。
 
 应用崩溃时只会把出错位置发给开发者，不发送对话、命令或路径。可以在 {{ui:phone.settings.title}} 中关闭 {{ui:phone.settings.crashReports}}。
 
 ## 远程屏幕 {#screen}
 可以在手机上查看 Mac 的屏幕，获得允许后还可以操控。这是{{ui:badge.beta}}功能，目前仅在 Android 应用中提供。
+
+> [!warning]
+> 从 0.4.58 起，屏幕查看与控制暂时停用（Mac 和 Windows 都是）。在默认中继迁移到新服务器期间，手机上不会出现查看屏幕的按钮，设置的{{ui:settings.screenShare.sectionTitle}}处只显示一行停用说明。为每部手机设定的允许范围和已授予的权限都会保留，重新开启后恢复。以下是重新开启后的用法。
 1. 在 Mac 的{{ui:settings.nav.mobile}}标签页下方的{{ui:settings.screenShare.sectionTitle}}中，为每部手机将{{ui:settings.screenShare.grantLabel}}设为{{ui:settings.screenShare.grantView}}或{{ui:settings.screenShare.grantControl}}。新手机的初始设置为{{ui:settings.screenShare.grantNone}}。
 2. 用{{ui:settings.screenShare.permissions.openButton}}授予屏幕录制、辅助功能等 Mac 权限。
 3. 在手机上轻点{{ui:phone.screenShare.open}}，然后选择{{ui:phone.screenShare.mode.view}}或{{ui:phone.screenShare.mode.control}}。

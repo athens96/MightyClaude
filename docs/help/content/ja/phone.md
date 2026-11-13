@@ -3,7 +3,7 @@ title: モバイルリモート
 order: 9
 section: phone
 ---
-スマートフォンアプリを使うと、外出先からでもMacのMighty Codeを確認して操作できます。作業の状態を確認し、リクエストを送信し、許可や質問に答えます。
+スマートフォンアプリを使うと、外出先からでもMacやWindows PCのMighty Codeを確認して操作できます。作業の状態を確認し、リクエストを送信し、許可や質問に答えます。
 
 Macとスマートフォンはリレーサーバー経由で接続されます。内容はエンドツーエンドで暗号化されるため、リレーは内容を見ることができません。ルーターのポートを開けたり、VPNを使ったりする必要はありません。Tailscale を使っていれば、[リレーを通さず直接](#direct)接続することもできます。
 
@@ -23,7 +23,7 @@ Macで:
 
 ![[settings-mobile]]
 
-接続したスマートフォンは、Macの{{ui:settings.mobileRemote.connectedDevicesTitle}}に表示されます。スマートフォンを使わなくなったら、{{ui:settings.mobileRemote.revokeRowButton}}をクリックします。
+接続したスマートフォンは、Macの{{ui:settings.mobileRemote.connectedDevicesTitle}}に表示されます。スマートフォンを使わなくなったら、{{ui:settings.mobileRemote.revokeRowButton}}をクリックします。接続済みのスマートフォンをQRコードでもう一度接続すると、そのスマートフォンの項目が新しいものに置き換わり、以前の接続は使えなくなります。
 
 > [!warning]
 > {{ui:settings.mobileRemote.regenerateKeyButton}}をクリックすると、接続済みのスマートフォンをすべて接続し直す必要があります。QRコードやキーが他人に見られたときに使ってください。
@@ -80,12 +80,16 @@ Macで[Mightyオーケストレーション](delegation.md)により作られた
 - 通知はロック画面では非公開で表示されます。ロック画面で機密性の高い内容を隠す設定にしていると、タイトルと本文は表示されません。
 - 通知の内容は、このスマートフォンだけが読めるようにコンピューターが暗号化します。リレーと Google は読めません。通知はリレーを通るので、Tailscale で直接接続していても、コンピューターがインターネットにつながっていれば届きます。
 - コンピューターのアプリとスマートフォンのアプリの両方が、この機能のあるバージョンである必要があります。この機能のないコンピューターのアプリは通知を送りません。とても古いスマートフォンアプリでペアリングした場合は、もう一度ペアリングしてください。
+- 0.4.58で既定のリレーが新しいサーバーに変わりました。それより前に接続したスマートフォンに通知が届かない場合は、QRコードで一度接続し直してください。
 - スマートフォンからの接続（モバイルリモート）をオフにしている間、コンピューターは何も送りません。オンに戻したときも、その間にあったことは知らせません。
 
 アプリが止まったときは、止まった場所だけを開発者に送ります。会話・コマンド・パスは送りません。{{ui:phone.settings.title}} で {{ui:phone.settings.crashReports}} をオフにできます。
 
 ## リモート画面 {#screen}
 スマートフォンからMacの画面を表示し、許可すれば操作することもできます。{{ui:badge.beta}}の機能で、現在はAndroidアプリでのみ利用できます。
+
+> [!warning]
+> 0.4.58から、画面の表示と操作を一時停止しています(MacとWindowsの両方)。既定のリレーを新しいサーバーへ移行している間は、スマートフォンに画面表示のボタンが出ず、設定の{{ui:settings.screenShare.sectionTitle}}にはその旨の1行だけが表示されます。スマートフォンごとに決めた許可範囲と権限はそのまま残り、再開すると元に戻ります。以下は再開したときの使い方です。
 1. Macの{{ui:settings.nav.mobile}}タブの下にある{{ui:settings.screenShare.sectionTitle}}で、スマートフォンごとに{{ui:settings.screenShare.grantLabel}}を{{ui:settings.screenShare.grantView}}または{{ui:settings.screenShare.grantControl}}に設定します。新しいスマートフォンは{{ui:settings.screenShare.grantNone}}から始まります。
 2. {{ui:settings.screenShare.permissions.openButton}}で、画面収録やアクセシビリティなどのMacの権限を許可します。
 3. スマートフォンで{{ui:phone.screenShare.open}}をタップし、{{ui:phone.screenShare.mode.view}}または{{ui:phone.screenShare.mode.control}}を選びます。

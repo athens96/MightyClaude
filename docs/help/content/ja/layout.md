@@ -41,19 +41,19 @@ section: layout
 ![[dashboard]]
 
 ## ペインを追加する {#add-pane}
-ペインは、AIエージェント(Claude、Codex、Antigravity)、ターミナル、ブラウザ、ファイルのいずれかです。
+ペインは、AIエージェント(Claude、Codex、Antigravity、pi、opencode、Hermes)、ターミナル、ブラウザ、ファイルのいずれかです。
 
 1. サイドバーの{{ui:workspace.addPane}}ボタンをクリックします。
-2. 作成するペインを選びます: Claude/Codex/Antigravityのペイン、{{ui:workspace.newTerminal}}、{{ui:browser.newTab}}。メニューの一番下のまとまりには、ワークスペースを追加する3つの方法、{{ui:workspace.add.existing}}、{{ui:workspace.add.newFolder}}、{{ui:workspace.add.fromGit}}があります([ワークスペースを開く](getting-started.md#open-workspace))。
+2. 作成するペインを選びます: エージェント(Claude、Codex、Antigravity、pi、opencode、Hermes)のペイン、{{ui:workspace.newTerminal}}、{{ui:browser.newTab}}。メニューの一番下のまとまりには、ワークスペースを追加する3つの方法、{{ui:workspace.add.existing}}、{{ui:workspace.add.newFolder}}、{{ui:workspace.add.fromGit}}があります([ワークスペースを開く](getting-started.md#open-workspace))。
 3. 新しいAIペインは、同じエージェントで最後に使ったペインのモデル、思考レベル、権限、表示方法を引き継ぎます。会話は新しく始まります。
 
 ショートカット: {{ui:menu.newClaudePane}}は{{kbd:⌘N}}、{{ui:menu.addTerminalPane}}は{{kbd:⌘T}}、{{ui:menu.showFiles}}は{{kbd:⇧⌘E}}です。
 
 > [!note]
-> CodexとAntigravityのペインには{{ui:badge.beta}}の表示が付きます。
+> Claude以外のエージェント(Codex、Antigravity、pi、opencode、Hermes)のペインには{{ui:badge.beta}}の表示が付きます。
 
 ### 以前のセッションを続ける {#resume}
-Claude、Codex、Antigravityのペインを追加するとき、このフォルダに以前のセッションがあると選択画面が表示されます。Antigravityはこのフォルダの会話が表示され、サブエージェントが実行した会話は表示されません。
+エージェントのペインを追加するとき、このフォルダに以前のセッションがあると選択画面が表示されます。Antigravityはこのフォルダの会話が表示され、サブエージェントが実行した会話は表示されません。
 1. 新しい会話なら{{ui:resume.choice.startNew}}、以前の会話なら{{ui:resume.choice.resume}}ボタンをクリックします。
 2. {{ui:resume.title}}の一覧からセッションを選びます。{{ui:resume.search}}で探すこともできます。
 3. 新しいペインがそのセッションの続きから始まります。

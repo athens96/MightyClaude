@@ -3,7 +3,7 @@ title: Phone remote
 order: 9
 section: phone
 ---
-With the phone app you can follow and drive Mighty Code on your Mac while you're away: check on tasks, send requests, and answer approvals and questions.
+With the phone app you can follow and drive Mighty Code on your Mac or Windows PC while you're away: check on tasks, send requests, and answer approvals and questions.
 
 The Mac and the phone connect through a relay server. Everything is encrypted end to end, so the relay can't read it. You don't need to open router ports or use a VPN. If you use Tailscale, the phone can also [connect directly](#direct) without the relay.
 
@@ -23,7 +23,7 @@ On the phone:
 
 ![[settings-mobile]]
 
-Paired phones are listed under {{ui:settings.mobileRemote.connectedDevicesTitle}} on the Mac. When you stop using a phone, click {{ui:settings.mobileRemote.revokeRowButton}}.
+Paired phones are listed under {{ui:settings.mobileRemote.connectedDevicesTitle}} on the Mac. When you stop using a phone, click {{ui:settings.mobileRemote.revokeRowButton}}. Pairing a phone again with the QR code replaces its entry, and its old pairing stops working.
 
 > [!warning]
 > {{ui:settings.mobileRemote.regenerateKeyButton}} means every paired phone has to pair again. Use it if someone else saw the QR code or the key.
@@ -80,12 +80,16 @@ Your phone gets a notification when a run on a connected computer (Mac or Window
 - Notifications are private on the lock screen: if you chose to hide sensitive content there, the title and text are hidden.
 - The computer encrypts each notification so only this phone can read it; the relay and Google can't. Notifications go through the relay, so over a direct Tailscale connection they still arrive, as long as the computer can reach the internet.
 - Both the desktop app and the phone app need a version with this feature. A desktop app without it sends no notifications. If you paired with a very old phone app, pair again.
+- The default relay moved to a new server in 0.4.58. If a phone paired before then gets no notifications, pair it again once with the QR code.
 - While phone remote access is off the computer sends nothing, and when you turn it back on it does not report what happened in the meantime.
 
 When the app crashes it sends the developers only where it stopped, never conversations, commands or paths. You can turn {{ui:phone.settings.crashReports}} off in {{ui:phone.settings.title}}.
 
 ## Screen view {#screen}
 You can watch your Mac's screen from the phone and, if you allow it, control it. This is a {{ui:badge.beta}} feature, in the Android app only for now.
+
+> [!warning]
+> Since 0.4.58, screen view & control is paused (on the Mac and on Windows). While the default relay moves to a new server, the phone offers no screen button, and the {{ui:settings.screenShare.sectionTitle}} section of Settings shows only a line saying it is paused. The access you set for each phone and the permissions you granted are kept and come back when it returns. What follows describes it as it works when it is back.
 1. On the Mac, under {{ui:settings.screenShare.sectionTitle}} on the {{ui:settings.nav.mobile}} tab, set {{ui:settings.screenShare.grantLabel}} for each phone to {{ui:settings.screenShare.grantView}} or {{ui:settings.screenShare.grantControl}}. A new phone starts at {{ui:settings.screenShare.grantNone}}.
 2. Use {{ui:settings.screenShare.permissions.openButton}} to grant the Mac permissions it needs, such as Screen Recording and Accessibility.
 3. On the phone, tap {{ui:phone.screenShare.open}} and choose {{ui:phone.screenShare.mode.view}} or {{ui:phone.screenShare.mode.control}}.

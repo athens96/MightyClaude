@@ -69,7 +69,7 @@ CLI를 처음 설치한 방법(npm, Homebrew 등)을 그대로 씁니다.
 ![[settings-cli]]
 
 ## 모바일 리모트 {#mobile}
-{{ui:settings.nav.mobile}} 탭에서 휴대폰을 연결하고 화면 보기를 허용합니다. [휴대폰 원격](phone.md)을 보세요.
+{{ui:settings.nav.mobile}} 탭에서 휴대폰을 연결합니다. 화면 보기·조작은 지금 잠시 멈춰 있어서 이 탭에는 그렇다는 안내 한 줄만 보입니다([화면 보기](phone.md#screen)). [휴대폰 원격](phone.md)을 보세요.
 
 ## 원격 연결 {#remote}
 {{ui:settings.remote.navTitle}} 탭에서 이 컴퓨터의 워크스페이스를 Tailscale로 공유하거나, 다른 컴퓨터가 공유한 워크스페이스에 연결합니다. [원격 연결 (Tailscale)](remote.md)을 보세요.
@@ -77,7 +77,7 @@ CLI를 처음 설치한 방법(npm, Homebrew 등)을 그대로 씁니다.
 ## 펫과 알림 {#companion}
 {{ui:settings.nav.companion}} 탭에서 데스크톱 펫과 완료 알림을 정합니다.
 - {{ui:companion.settings.enabled}}: 화면 위를 다니는 너구리 펫을 켭니다. 펫을 끌어 옮기고, 누르면 말풍선이 열리고 닫힙니다.
-- {{ui:companion.settings.task}}: 말풍선에 요청과 지금 하는 일, 걸린 시간을 보여 줍니다. 말풍선에서 승인({{ui:permission.allowOnce}} / {{ui:permission.deny}})에 답할 수도 있습니다.
+- {{ui:companion.settings.task}}: 말풍선에 요청과 지금 하는 일, 걸린 시간을 보여 줍니다. 말풍선에서 승인({{ui:permission.allowOnce}} / {{ui:permission.deny}})에 답할 수도 있습니다. Mac에서는 요청에 단계나 백그라운드 작업이 있으면 말풍선 위에 진행 카드가 붙어, 가장 새 요청과 진행 중인 단계 앞뒤의 단계(5개까지), 백그라운드 작업(3개까지)을 보여 줍니다. 머리를 누르면 한 줄로 접히고(앱을 다시 열어도 유지됩니다), 줄을 누르면 그 실행 창이 열립니다.
 - {{ui:companion.settings.pet}}: 펫을 고릅니다. {{ui:companion.settings.import}}로 다른 펫을 더할 수 있습니다.
 - {{ui:companion.settings.motion}}: 움직임을 줄입니다.
 - {{ui:companion.settings.macNotifications}}: 요청이 성공적으로 끝나면 Mac 알림을 보냅니다. 알림을 누르면 그 실행 창이 열립니다. 알림에는 요청이나 결과 내용이 들어가지 않습니다.

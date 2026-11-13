@@ -41,19 +41,19 @@ section: layout
 ![[dashboard]]
 
 ## 添加窗格 {#add-pane}
-窗格可以是 AI 智能体（Claude、Codex、Antigravity）、终端、浏览器或文件中的一种。
+窗格可以是 AI 智能体（Claude、Codex、Antigravity、pi、opencode、Hermes）、终端、浏览器或文件中的一种。
 
 1. 点击侧边栏中的{{ui:workspace.addPane}}按钮。
-2. 选择要创建的窗格：Claude、Codex 或 Antigravity 窗格，{{ui:workspace.newTerminal}}，{{ui:browser.newTab}}。菜单最下方一组是添加工作区的三种方式：{{ui:workspace.add.existing}}、{{ui:workspace.add.newFolder}}和{{ui:workspace.add.fromGit}}（[打开工作区](getting-started.md#open-workspace)）。
+2. 选择要创建的窗格：智能体（Claude、Codex、Antigravity、pi、opencode、Hermes）窗格，{{ui:workspace.newTerminal}}，{{ui:browser.newTab}}。菜单最下方一组是添加工作区的三种方式：{{ui:workspace.add.existing}}、{{ui:workspace.add.newFolder}}和{{ui:workspace.add.fromGit}}（[打开工作区](getting-started.md#open-workspace)）。
 3. 新的 AI 窗格会沿用同一智能体最近使用过的窗格的模型、思考强度、权限和视图。对话则从头开始。
 
 快捷键：{{ui:menu.newClaudePane}}为{{kbd:⌘N}}，{{ui:menu.addTerminalPane}}为{{kbd:⌘T}}，{{ui:menu.showFiles}}为{{kbd:⇧⌘E}}。
 
 > [!note]
-> Codex 和 Antigravity 窗格带有{{ui:badge.beta}}标记。
+> 除 Claude 以外的智能体窗格（Codex、Antigravity、pi、opencode、Hermes）带有{{ui:badge.beta}}标记。
 
 ### 继续之前的会话 {#resume}
-添加 Claude、Codex 或 Antigravity 窗格时，如果此文件夹中有之前的会话，会弹出选择窗口。Antigravity 会列出此文件夹中的对话，子代理运行的对话不会列出。
+添加智能体窗格时，如果此文件夹中有之前的会话，会弹出选择窗口。Antigravity 会列出此文件夹中的对话，子代理运行的对话不会列出。
 1. 要开始新对话，请点击{{ui:resume.choice.startNew}}；要继续之前的对话，请点击{{ui:resume.choice.resume}}按钮。
 2. 在{{ui:resume.title}}列表中选择会话。可以用{{ui:resume.search}}查找。
 3. 新窗格会继续该会话。

@@ -69,7 +69,7 @@ section: settings
 ![[settings-cli]]
 
 ## 手机远程 {#mobile}
-在{{ui:settings.nav.mobile}}标签页中连接手机，并允许查看屏幕。请参阅[手机远程](phone.md)。
+在{{ui:settings.nav.mobile}}标签页中连接手机。屏幕查看与控制目前暂时停用，此标签页只显示一行相关说明（[远程屏幕](phone.md#screen)）。请参阅[手机远程](phone.md)。
 
 ## 远程连接 {#remote}
 在{{ui:settings.remote.navTitle}}标签页中，通过 Tailscale 共享这台电脑的工作区，或连接另一台电脑共享的工作区。请参阅[远程连接（Tailscale）](remote.md)。
@@ -77,7 +77,7 @@ section: settings
 ## 宠物与提醒 {#companion}
 在{{ui:settings.nav.companion}}标签页中设置桌面宠物和完成通知。
 - {{ui:companion.settings.enabled}}：显示一只在屏幕上走动的浣熊宠物。可以拖动宠物移动位置，点击它可以打开或关闭气泡。
-- {{ui:companion.settings.task}}：在气泡中显示请求、当前任务和用时。也可以在气泡中回答批准请求（{{ui:permission.allowOnce}} / {{ui:permission.deny}}）。
+- {{ui:companion.settings.task}}：在气泡中显示请求、当前任务和用时。也可以在气泡中回答批准请求（{{ui:permission.allowOnce}} / {{ui:permission.deny}}）。在 Mac 上，请求有步骤或后台任务时，气泡上方会出现进度卡片，显示最新的请求、进行中步骤前后的步骤（最多 5 个）和后台任务（最多 3 个）。点击标题可折叠为一行（重新打开应用后仍保持），点击某一行会打开该窗格。
 - {{ui:companion.settings.pet}}：选择宠物。可以用{{ui:companion.settings.import}}添加其他宠物。
 - {{ui:companion.settings.motion}}：减少动作。
 - {{ui:companion.settings.macNotifications}}：请求成功完成时发送 Mac 通知。点击通知会打开对应的窗格。通知中不包含请求或结果的内容。

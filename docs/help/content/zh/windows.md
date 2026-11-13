@@ -51,8 +51,8 @@ Windows 没有菜单栏。相同的功能位于侧边栏和{{ui:workspace.addPan
 | 终端窗格 | 使用 Windows PowerShell。 |
 | 浏览器窗格 | 使用 Microsoft Edge WebView2 打开。与 Mac 一样，需要打开{{ui:settings.display.browserToggle}}并重新打开应用。 |
 | 完成通知 | 通过{{ui:windows.notifications.toggleLabel}}开启。 |
-| 远程屏幕 | 支持手机远程的屏幕查看，但画质选项比 Mac 少。按{{kbd:Ctrl+Alt+Esc}}可立即停止所有远程屏幕会话。 |
-| 宠物气泡 | 批准和提问的气泡多一个图标按钮。批准时它打开显示完整请求的窗口，提问时它打开可以自己输入答案的窗口。 |
+| 远程屏幕 | 支持手机远程的屏幕查看（目前与 Mac 一样[暂时停用](phone.md#screen)），但画质选项比 Mac 少。按{{kbd:Ctrl+Alt+Esc}}可立即停止所有远程屏幕会话。 |
+| 宠物气泡 | 批准和提问的气泡多一个图标按钮。批准时它打开显示完整请求的窗口，提问时它打开可以自己输入答案的窗口。气泡上方的进度卡片暂时还没有。 |
 | 语言 | 更改的语言在重新打开应用后生效。 |
 | 文件位置 | 提供{{ui:menu.showInExplorer}}，而不是{{ui:menu.showInFinder}}。 |
 | Mighty 编排 | 默认开启，可用设置中的开关关闭，这个开关也是一个注册表值（[开启和关闭](delegation.md#enable)）。worktree 位于 `%USERPROFILE%\.mightycode\worktrees`，其中含有目录联接或符号链接时不会自动清理（[关闭窗格和清理](delegation.md#close)）。右键单击 {{ui:queue.worktree}} 按钮，可在另一个代理的子窗格中运行请求（[在新 worktree 中运行](delegation.md#worktree)）。 |

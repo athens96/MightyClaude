@@ -51,8 +51,8 @@ Windows에는 메뉴 막대가 없습니다. 같은 기능은 사이드바와 {{
 | 터미널 창 | Windows PowerShell을 씁니다. |
 | 브라우저 창 | Microsoft Edge WebView2로 엽니다. Mac처럼 {{ui:settings.display.browserToggle}}를 켜고 앱을 다시 열어야 합니다. |
 | 완료 알림 | {{ui:windows.notifications.toggleLabel}}으로 켭니다. |
-| 화면 보기 | 휴대폰 원격의 화면 보기는 됩니다. 화질 옵션은 Mac보다 적습니다. 모든 원격 화면 세션은 {{kbd:Ctrl+Alt+Esc}}로 바로 멈춥니다. |
-| 펫 말풍선 | 승인과 질문 말풍선에 기호 단추가 하나 더 있습니다. 승인에서는 요청 전체를 보는 창을, 질문에서는 답을 직접 써서 보내는 창을 엽니다. |
+| 화면 보기 | 휴대폰 원격의 화면 보기는 됩니다(지금은 Mac처럼 [잠시 멈춰 있습니다](phone.md#screen)). 화질 옵션은 Mac보다 적습니다. 모든 원격 화면 세션은 {{kbd:Ctrl+Alt+Esc}}로 바로 멈춥니다. |
+| 펫 말풍선 | 승인과 질문 말풍선에 기호 단추가 하나 더 있습니다. 승인에서는 요청 전체를 보는 창을, 질문에서는 답을 직접 써서 보내는 창을 엽니다. 말풍선 위의 진행 카드는 아직 없습니다. |
 | 언어 | 바꾼 언어는 앱을 다시 열면 적용됩니다. |
 | 파일 위치 | {{ui:menu.showInFinder}} 대신 {{ui:menu.showInExplorer}}가 있습니다. |
 | 마이티 오케스트레이션 | 기본으로 켜져 있고 설정의 스위치로 끕니다. 이 스위치는 레지스트리 값이기도 합니다([켜고 끄기](delegation.md#enable)). worktree는 `%USERPROFILE%\.mightycode\worktrees`에 생기고, 안에 정션이나 심볼릭 링크가 있으면 자동으로 정리하지 않습니다([창 닫기와 정리](delegation.md#close)). {{ui:queue.worktree}} 버튼을 오른쪽 클릭하면 다른 에이전트의 자식에서 요청을 실행합니다([새 worktree에서 실행하기](delegation.md#worktree)). |

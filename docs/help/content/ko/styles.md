@@ -6,7 +6,7 @@ section: styles
 스타일은 요청을 보내는 방식을 정해 둔 작업 흐름입니다. 단계와 단추가 준비되어 있어서, 긴 작업을 정해진 순서로 진행할 수 있습니다. 스타일을 쓰지 않으면 지금처럼 자유롭게 요청합니다(CLI).
 
 ## 스타일 고르기 {#pick}
-스타일은 이 Mac의 Claude 창에서 씁니다.
+스타일은 Claude 창에서 씁니다(Mac과 Windows).
 1. 입력창 위의 스타일 메뉴({{ui:guidedPanel.stylesMenuAccessibility}})를 엽니다.
 2. 스타일을 고릅니다. 다시 자유 요청으로 돌아가려면 CLI를 고릅니다.
 
