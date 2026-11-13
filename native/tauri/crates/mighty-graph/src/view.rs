@@ -4,20 +4,30 @@
 //! older?, timeline?, structure?}`, blocks by id). The page's types are native/windows/web/src/mighty/types.ts; every record here writes
 //! the same field names (camelCase, an absent value left out, as `Wire.Json` writes C#'s records).
 //!
-//! The pure parts: the records ([`WebMightyBlock`] …), the differ ([`MightySent`]), and the projection of a pane into them
-//! ([`project`]), which takes what lives outside this crate (the session record's older requests, the pending plan, the pictures, the
-//! background executions, the background output tails, the custom agents' definitions, the model catalogue) as plain inputs.
+//! The pure parts: the records ([`WebMightyBlock`] …), the differ ([`MightySent`], [`MightyPushes`]), and the projection of a pane into
+//! them ([`project()`], `project.rs`), which takes what lives outside this crate (the session record's older requests, the pending plan,
+//! the pictures, the background executions, the background output tails, the custom agents' definitions, the model catalogue) as plain
+//! inputs ([`Sources`]).
+
+mod project;
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use indexmap::IndexMap;
 use mighty_core::graph::MightyGraphRun;
 use mighty_core::json::Wire;
 use mighty_core::locale::Locale;
+use mighty_core::model::RunSession;
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::notice;
+
+pub use project::{
+    ExecutionDashboard, GalleryPage, MightyPane, NoDashboard, OlderRequest, ResultFilesLookup, Sources, StyleSource, diagram_plan_run_id,
+    diagram_records, project,
+};
 
 /// `WebMightyAwaitedTask(Title, Status, Word)`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -390,11 +400,20 @@ impl MightySent {
     }
 }
 
+/// One shown pane (C# `WebMightySent`): what was pushed, whether a page method changed what its projection reads (`Dirty`), and the
+/// session it was last projected from.
+#[derive(Debug, Clone)]
+struct Shown {
+    sent: MightySent,
+    dirty: bool,
+    session: Option<Arc<RunSession>>,
+}
+
 /// The panes whose Mighty view the page shows and what was last pushed for each (C# `webMighty`): `mightyVisible` starts and stops one;
 /// the host projects each at most once per 120 ms while it changed (and every eighth tick, as the inputs may have).
 #[derive(Debug, Clone, Default)]
 pub struct MightyPushes {
-    panes: HashMap<String, MightySent>,
+    panes: HashMap<String, Shown>,
     ticks: u64,
 }
 
@@ -402,7 +421,7 @@ impl MightyPushes {
     /// `mightyVisible{visible}`: the page shows (or stops showing) a pane's Mighty view; pushes start with the whole model.
     pub fn visible(&mut self, pane_id: &str, visible: bool) {
         if visible {
-            self.panes.insert(pane_id.into(), MightySent::new());
+            self.panes.insert(pane_id.into(), Shown { sent: MightySent::new(), dirty: true, session: None });
         } else {
             self.panes.remove(pane_id);
         }
@@ -413,15 +432,46 @@ impl MightyPushes {
         self.panes.keys().map(String::as_str)
     }
 
+    /// `MightyDirty`: a page method changed what a shown pane's projection reads; the next tick projects it.
+    pub fn dirty(&mut self, pane_id: &str) {
+        if let Some(shown) = self.panes.get_mut(pane_id) {
+            shown.dirty = true;
+        }
+    }
+
     /// One 120 ms tick: whether every pane is projected again this time (every eighth), whatever changed.
     pub fn tick(&mut self) -> bool {
         self.ticks += 1;
         self.ticks.is_multiple_of(8)
     }
 
+    /// `FlushWebMighty`'s choice for one tick: the shown panes to project now — those a page method changed, those whose session is not
+    /// the one last projected (the snapshot hands a changed session as a new `Arc`), and every one each eighth tick. A pane whose session
+    /// left the snapshot stops being shown.
+    pub fn due(&mut self, sessions: &[Arc<RunSession>]) -> Vec<Arc<RunSession>> {
+        let slow = self.tick();
+        let mut due = vec![];
+        self.panes.retain(|id, shown| {
+            let Some(session) = sessions.iter().find(|s| s.id() == id) else { return false };
+            let same = shown.session.as_ref().is_some_and(|last| Arc::ptr_eq(last, session));
+            if shown.dirty || slow || !same {
+                shown.dirty = false;
+                shown.session = Some(session.clone());
+                due.push(session.clone());
+            }
+            true
+        });
+        due
+    }
+
     /// The message for one shown pane, or none (a pane not shown, or nothing changed).
     pub fn message(&mut self, pane_id: &str, model: &MightyProjection) -> Option<Value> {
-        self.panes.get_mut(pane_id)?.message(pane_id, model)
+        self.panes.get_mut(pane_id)?.sent.message(pane_id, model)
+    }
+
+    /// The blocks the last message for `pane_id` set (the smoke's `WebMightyLastSet`).
+    pub fn last_set(&self, pane_id: &str) -> &[String] {
+        self.panes.get(pane_id).map_or(&[], |s| s.sent.last_set.as_slice())
     }
 
     /// A pane that left the state stops being shown.
