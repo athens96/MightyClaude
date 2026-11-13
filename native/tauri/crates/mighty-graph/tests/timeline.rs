@@ -1,6 +1,6 @@
 //! The Mighty 기록 view against C# `MightyTimelineVerification` (native/windows/MightyCode.Core.Tests/MightyTimelineVerification.cs,
-//! registered in Verification.cs:236-237, 291-292, 340). The checks that read the diagram's layout (`MightyGraphLayout.Make`), the
-//! toolbar (`MightyGraphBlockModel.ToolbarSummary`) or the graph tracker are left to those modules' ports; each is named where it stood.
+//! registered in Verification.cs:236-237, 291-292, 340), with the diagram's layout and the toolbar they read. The graph tracker's halves
+//! (a run that ends before a steer is answered, a task notification's notice run) are in tracker_views.rs.
 
 mod common;
 
@@ -12,8 +12,8 @@ use mighty_core::graph::{GraphBlockSize, MightyGraphAgent, MightyGraphRun, WORK_
 use mighty_core::json::Wire;
 use mighty_core::model::{AppSnapshot, LogEntry, RunSession, Workspace};
 use mighty_core::shell::Tone;
-use mighty_graph::support;
 use mighty_graph::timeline::{self, Node, Tally};
+use mighty_graph::{layout, support, view_model};
 
 /// `MightyTimelineVerification.Run`: a run with the request "request <id>", no provider, refreshed as the app refreshes it.
 fn run(id: &str, status: &str, final_output: Option<&str>, agents: Vec<MightyGraphAgent>) -> MightyGraphRun {
@@ -97,10 +97,17 @@ fn recorded_order_and_results_match_diagram() {
             && timeline::kind_label(timeline::EXECUTION_KIND, None, &ko) == ko.get("graph.block.execution"),
         "the 실행 row is named for its request"
     );
-    // Deferred to the layout's port: "every timeline row shares a real diagram node identity" (MightyGraphLayout.Make, splitsExecution).
+    let diagram =
+        layout::make(&runs, "", true, &HashSet::new(), &layout::Options { splits_execution: true, ..layout::Options::default() }, &ko);
+    assert!(
+        made.iter().flat_map(|g| &g.rows).all(|r| diagram.nodes.iter().any(|n| n.id == r.node_id)),
+        "every timeline row shares a real diagram node identity"
+    );
     let result = made[0].result.as_ref().expect("a result");
-    // Deferred to the layout's port: the result's node is one the diagram lays out.
-    assert!(result.text.as_deref() == Some("done") && result.tone == Tone::Done, "result identity and final answer are shared");
+    assert!(
+        result.text.as_deref() == Some("done") && result.tone == Tone::Done && diagram.nodes.iter().any(|n| n.id == result.node_id),
+        "result identity and final answer are shared"
+    );
     assert!(
         groups(&[run("pending-child", "completed", Some("premature"), vec![agent("still-running")])])[0].result.is_none(),
         "an unfinished child prevents a premature result"
@@ -136,18 +143,21 @@ fn recorded_order_and_results_match_diagram() {
             && support::block_kind(&notice) == "steer",
         "the timeline names the kind the same way, and the kind stays steer"
     );
-    // Deferred to the view model's port: "the toolbar counts only a person's steers" (MightyGraphBlockModel.ToolbarSummary).
-    // Deferred to the tracker's port: "an unanswered delegation notice ends with its own words, a person's steer with the 중간 요청 words"
-    // (ExecutionGraphTracker.Steer, Finish).
+    let steered = view_model::toolbar_summary(&[run("steered", "completed", Some("done"), vec![notice, follow_up, person])], &ko);
+    assert!(
+        steered.contains("중간 요청 1") && !steered.contains("중간 요청 3"),
+        "the toolbar counts only a person's steers; got {steered}"
+    );
+    // "an unanswered delegation notice ends with its own words, a person's steer with the 중간 요청 words" (ExecutionGraphTracker.Steer,
+    // Finish): tracker_views.rs, recorded_order_and_results_match_diagram_tracker_part.
 }
 
 #[test]
 fn a_task_notification_is_a_task_notice_steer() {
     let ko = ko();
-    // Deferred to the tracker's port: the notification copies its block into one notice run that is complete at once and has no result
-    // ("no 작업 알림 steer is made", "the absorbed notice run is complete without a result", "the notice run names each finished task and
-    // how it ended", "each block is copied once, as it ended", "the request's answer stays its own", "the request holds no notice block",
-    // "the notice run is built apart, flagged") — ExecutionGraphTracker.Consume, Finish, BuildRun, BuildNoticeRuns.
+    // The notification copies its block into one notice run that is complete at once and has no result, and the toolbar does not count
+    // the saved notice among a person's steers: tracker_views.rs, a_task_notification_is_a_task_notice_steer_tracker_part, over the
+    // tracker's own run.
     let saved = MightyGraphAgent {
         kind: Some("steer".into()),
         input: Some(format!("{}Build · 완료\nBuild done", support::TASK_NOTICE_PREFIX)),
@@ -182,7 +192,6 @@ fn a_task_notification_is_a_task_notice_steer() {
             && timeline::kind_label("steer", Some("Also add tests"), &ko) == "중간 요청",
         "the timeline names it the same way"
     );
-    // Deferred to the view model's port: "task notices are not counted as a person's steers" (MightyGraphBlockModel.ToolbarSummary).
 }
 
 #[test]

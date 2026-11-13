@@ -55,7 +55,7 @@ fn mod_in(value: &Value) -> ModMetadata {
 }
 
 fn result_title(status: &str, waiting: i32) -> String {
-    common::result_title(status, waiting, false, &ko())
+    mighty_graph::view_model::result_title(status, waiting, false, &ko())
 }
 
 /// claudeStream, codexStream and mods all drive the tracker: a run identity plus an ordered list of steps.

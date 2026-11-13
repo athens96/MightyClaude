@@ -1,7 +1,7 @@
 //! The tracker's checks among the views' C# suites: FlowLayoutVerification.TheTrackersFiguresForTheCards and
-//! FlowStepsVerification.TheRecordedHeartbeatMakesNoBlock whole, and the tracker's half of MightyTimelineVerification's
-//! RecordedOrderAndResultsMatchDiagram and ATaskNotificationIsATaskNoticeSteer (their 기록 rows, diagram and toolbar halves belong to the
-//! timeline's, the layout's and the view model's tests).
+//! FlowStepsVerification.TheRecordedHeartbeatMakesNoBlock whole, the tracker's half of MightyTimelineVerification's
+//! RecordedOrderAndResultsMatchDiagram (its 기록 rows, diagram and toolbar are timeline.rs's) and ATaskNotificationIsATaskNoticeSteer with
+//! the toolbar over the tracker's run, and AcpGraphVerification.OpencodeAndHermesPanesDrawTheGraph.
 
 mod common;
 
@@ -12,7 +12,7 @@ use mighty_core::graph::{GraphAgentFigures, MightyGraphAgent};
 use mighty_core::locale::Locale;
 use mighty_core::time;
 use mighty_graph::tracker::{ModGraphMetadata, ModMetadata};
-use mighty_graph::{ExecutionGraphNode, node, notice, support};
+use mighty_graph::{ExecutionGraphNode, labels, node, notice, support, view_model};
 use serde_json::{Value, json};
 
 fn figures(started: Option<&str>, ended: Option<&str>) -> Option<GraphAgentFigures> {
@@ -172,8 +172,7 @@ fn recorded_order_and_results_match_diagram_tracker_part() {
     );
 }
 
-/// The tracker's and the run rules' half of MightyTimelineVerification.ATaskNotificationIsATaskNoticeSteer (the 기록 kind label and the
-/// toolbar's count are the timeline's and the view model's).
+/// MightyTimelineVerification.ATaskNotificationIsATaskNoticeSteer over the tracker's run (the 기록 kind label is timeline.rs's).
 #[test]
 fn a_task_notification_is_a_task_notice_steer_tracker_part() {
     let ko = Locale::new("ko");
@@ -227,7 +226,7 @@ fn a_task_notification_is_a_task_notice_steer_tracker_part() {
         answer.is_none() || answer.as_deref() == Some("The build passed."),
         &format!("the request's answer stays its own; got '{answer:?}'"),
     );
-    let run = tracker.build_run(false).expect("a run");
+    let mut run = tracker.build_run(false).expect("a run");
     check(run.agents().iter().all(|a| a.kind.as_deref() != Some("steer")) && run.notice_run.is_none(), "the request holds no notice block");
     let notices = tracker.build_notice_runs(false);
     check(notices.len() == 1 && notices[0].is_notice() && notices[0].agents().len() == 2, "the notice run is built apart, flagged");
@@ -250,4 +249,36 @@ fn a_task_notification_is_a_task_notice_steer_tracker_part() {
         support::is_delegation_notice_block(&steer_agent("o", "[Mighty Claude notice n-0] Your child c-0 reported revision 1.")),
         "a delegation notice saved before the rename is still one",
     );
+    let agents = run.agents.get_or_insert_with(Vec::new);
+    agents.push(saved);
+    agents.push(steer_agent("person", "Also add tests"));
+    let summary = view_model::toolbar_summary(&[run], &ko);
+    check(
+        summary.contains("중간 요청 1") && !summary.contains("중간 요청 3"),
+        &format!("task notices are not counted as a person's steers; got {summary}"),
+    );
+}
+
+/// AcpGraphVerification.OpencodeAndHermesPanesDrawTheGraph: opencode and Hermes panes draw the graph beside the four, as on the Mac, and
+/// their request block is titled by the agent's own name.
+#[test]
+fn opencode_and_hermes_panes_draw_the_graph() {
+    check(support::PROVIDERS == ["claude", "codex", "gemini", "pi", "opencode", "hermes"], "every agent's pane draws the graph");
+    for provider in ["opencode", "hermes"] {
+        let pane = mighty_core::model::RunSession {
+            kind: Some("claude".into()),
+            provider: Some(provider.into()),
+            ..mighty_core::model::RunSession::default()
+        };
+        check(
+            view_model::supports_mighty(&pane) && view_model::view_mode("claude", provider) == Some("mighty"),
+            &format!("{provider} opens in the Mighty view"),
+        );
+        let (_tracker, nodes) = recording_tracker("r", Some("hi"), provider, None);
+        let nodes = nodes.lock().expect("nodes");
+        check(
+            nodes.len() == 1 && nodes[0].title == labels::provider_label(provider),
+            &format!("{provider}'s request block carries its name: {:?}", nodes.iter().map(|n| &n.title).collect::<Vec<_>>()),
+        );
+    }
 }

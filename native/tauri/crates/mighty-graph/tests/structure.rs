@@ -17,7 +17,7 @@ use mighty_graph::structure::follow::{ColumnWatch, Page, PageWatch, Scroll};
 use mighty_graph::structure::pan::{self, Target};
 use mighty_graph::structure::wheel::Axis;
 use mighty_graph::structure::{self, Excerpt, Inputs, ItemCache, Shape, Signature, Step, Tally, fold, mobile, word};
-use mighty_graph::{support, timeline};
+use mighty_graph::{layout, support, timeline};
 use unicode_segmentation::UnicodeSegmentation;
 
 fn cards(shape: &Shape) -> String {
@@ -330,7 +330,13 @@ fn cards_show_the_work_in_place() {
         card.execution_node_id == node_id("r", "execution") && card.execution_node_id != card.node_id,
         "the run part stands for its own diagram node"
     );
-    // Deferred to the layout's port: "the request and its sub-agent are nodes the diagram lays out" (MightyGraphLayout.Make).
+    let branched_run = run("r", Some("화면을 고쳐줘"), "running", vec![sub("a")], None, None);
+    let branched = item(&branched_run, 0);
+    let laid = layout::make(std::slice::from_ref(&branched_run), "", true, &HashSet::new(), &layout::Options::default(), &ko());
+    assert!(
+        laid.nodes.iter().any(|n| n.id == branched.node_id) && laid.nodes.iter().any(|n| n.id == branched.clusters[0].nodes[0].node_id),
+        "the request and its sub-agent are nodes the diagram lays out"
+    );
     let fresh = item(&status("n", "running"), 0);
     assert!(
         fresh.message.is_none() && fresh.activity.is_empty() && !fresh.finished,

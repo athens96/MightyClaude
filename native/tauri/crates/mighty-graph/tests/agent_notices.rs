@@ -13,6 +13,7 @@ use mighty_core::json::Wire;
 use mighty_core::locale::Locale;
 use mighty_graph::notice::{self, Opener};
 use mighty_graph::tracker::{self, ExecutionGraphTracker};
+use mighty_graph::view_model::result_title;
 use mighty_graph::{ExecutionGraphNode, handback, node, support};
 use serde_json::Value;
 
@@ -282,7 +283,7 @@ fn notice_titles_follow_the_fixture() {
     }
 }
 
-/// The result title rule (`MightyGraphBlockModel.ResultTitle`, MightyGraphViewModel.cs:295; the tests' copy until the view model is here).
+/// The result title rule (`MightyGraphBlockModel.ResultTitle`, MightyGraphViewModel.cs:295), the view model's own.
 fn result_titles_follow_the_fixture() {
     let ko = Locale::new("ko");
     let cases = fixture_cases("resultTitles");

@@ -3,9 +3,9 @@
 //! background agent, which ends before the request's own result (frames 0–17); the notice turn its end opens resumes it (18–27), and its
 //! second end opens the next notice turn (28–35); a second user message on stdin resumes it once more from an ordinary turn (36–52).
 //!
-//! Only what the graph tracker decides is here: the background task tracker, the input's close, the queue, the strip and the session log
-//! strip are the run engine's and the role view's (C# BackgroundTaskTracker, ClaudeStream.ClosesInput, BackgroundQueuePolicy, QueueRunNow,
-//! PlanCardSupport, FlowLog).
+//! What the graph tracker decides is here, and the session log strip's status line it gives the role view (FlowLog); the background task
+//! tracker, the input's close, the queue and the strip are the run engine's (C# BackgroundTaskTracker, ClaudeStream.ClosesInput,
+//! BackgroundQueuePolicy, QueueRunNow, PlanCardSupport; crates/mighty-graph/DEFERRED.md).
 
 mod common;
 
@@ -13,6 +13,7 @@ use common::*;
 use mighty_core::graph::MightyGraphRun;
 use mighty_core::locale::Locale;
 use mighty_core::model::RunSession;
+use mighty_graph::flow::log;
 use mighty_graph::{node, notice, support};
 use serde_json::Value;
 
@@ -104,6 +105,11 @@ fn an_agent_resumed_from_a_notice_turn_keeps_the_pane_waiting_until_its_notifica
         flow.iter().map(|a| a.title()).collect::<Vec<_>>() == vec!["Count one to three", "Count four to six"]
             && flow.iter().map(|a| a.status()).collect::<Vec<_>>() == vec!["completed", "running"],
         "the role view draws it as a running card",
+    );
+    let status = log::status_of(&runs, &ko).expect("a status line");
+    check(
+        status.lead.ends_with("알림 대기") && status.subagents.as_deref() == Some("하위 에이전트 1/2 실행 중"),
+        &format!("the log strip's status line counts it: {} / {:?}", status.lead, status.subagents),
     );
     // Its end: the run's own notification ends it and its copy opens the next notice run.
     for frame in &frames[28..=30] {

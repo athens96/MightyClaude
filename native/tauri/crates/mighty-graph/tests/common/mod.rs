@@ -554,18 +554,6 @@ pub fn latest(emitted: &[ExecutionGraphNode]) -> Vec<ExecutionGraphNode> {
     order.iter().map(|id| latest[id].clone()).collect()
 }
 
-/// `MightyGraphBlockModel.ResultTitle(runStatus, waiting, awaiting)` (MightyGraphViewModel.cs:295), a copy of the exact rule for the tests
-/// that read it before the view model is here.
-pub fn result_title(status: &str, waiting: i32, awaiting: bool, locale: &Locale) -> String {
-    match status {
-        "error" | "failed" => locale.get("graph.block.resultError"),
-        "stopped" | "cancelled" | "interrupted" => locale.get("graph.block.resultStopped"),
-        _ if awaiting => locale.get("graph.block.awaitingNotice"),
-        _ if waiting > 0 => locale.get_with("graph.block.resultSoFar", &[("count", &waiting.to_string())]),
-        _ => locale.get("graph.block.result"),
-    }
-}
-
 /// The lines of a shared recording (native/contracts/fixtures/<name>.jsonl), blank lines left out.
 pub fn recording(name: &str) -> Vec<Value> {
     fixture_text(&format!("{name}.jsonl"))

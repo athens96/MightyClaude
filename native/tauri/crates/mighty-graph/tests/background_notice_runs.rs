@@ -1,22 +1,27 @@
 //! A notice turn is a run of its own (C# BackgroundNoticeRunsVerification.cs; macOS BackgroundNoticeRunsTests): the tracker opens it, the
 //! pane keeps it flagged with its own lines, views draw background blocks only there, and it never takes the newest request's place.
 //!
-//! What is here is what the tracker and the run rules decide. The diagram's layout, camera and blocks, 기록, the pipeline, the phone
-//! (MobileMightySupport, MobileStructure, PlanCardSupport) and the pane's own `Apply` of a run event (its transcript routing) are other
-//! modules': those assertions are ported with them. The pane is fed here as the run pipeline feeds it, the tracker's runs by id.
+//! The tracker and the run rules, and what the views draw of them: the diagram's layout, camera and blocks, 기록, the pipeline and the
+//! phone's pipeline (MobileStructure). The phone's runs and digest (MobileMightySupport), the background strip (PlanCardSupport) and the
+//! pane's own `Apply` of a run event (its transcript routing) are the phone's and the run engine's (crates/mighty-graph/DEFERRED.md). The
+//! pane is fed here as the run pipeline feeds it, the tracker's runs by id.
 
 mod common;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use common::*;
-use mighty_core::graph::{MightyGraphAgent, MightyGraphRun};
+use mighty_core::graph::{MightyGraphAgent, MightyGraphRun, WORK_SUFFIX};
 use mighty_core::json::Wire;
 use mighty_core::locale::Locale;
 use mighty_core::model::RunSession;
+use mighty_core::shell::Tone;
 use mighty_core::wire;
+use mighty_graph::structure::board::{self, Navigation};
+use mighty_graph::structure::{self, Inputs, mobile, tone};
 use mighty_graph::tracker::ExecutionGraphTracker;
-use mighty_graph::{ExecutionGraphNode, node, notice, support};
+use mighty_graph::view_model::{self, MightyGraphBlock, result_title};
+use mighty_graph::{ExecutionGraphNode, activity, follow, layout, node, notice, support, timeline};
 use serde_json::{Value, json};
 
 fn ko() -> Locale {
@@ -228,7 +233,21 @@ fn first_result_text(run: &MightyGraphRun) -> Option<String> {
     run.result_entries().first().map(|e| e.text().to_string())
 }
 
-/// The run rules of C# TheRunRulesAndTheViews; its diagram, camera, 기록, pipeline and phone digest assertions belong to those modules.
+/// `MightyGraphLayout.Make(runs, "", running, [], splitsExecution: true)`.
+fn split_layout(runs: &[MightyGraphRun], running: bool) -> layout::Layout {
+    layout::make(runs, "", running, &HashSet::new(), &layout::Options { splits_execution: true, ..layout::Options::default() }, &ko())
+}
+
+/// `MightyStructure.Make(runs, null, null)`.
+fn free_shape(runs: &[MightyGraphRun]) -> structure::Shape {
+    structure::make(runs, &Inputs::default(), None, &ko())
+}
+
+fn free_rows(runs: &[MightyGraphRun]) -> Vec<structure::Row> {
+    free_shape(runs).rows.expect("a free pane's rows")
+}
+
+/// C# TheRunRulesAndTheViews; its phone digest (MobileMightySupport.Digest) is the phone's (DEFERRED.md).
 #[test]
 fn the_run_rules_and_the_views() {
     let ko = ko();
@@ -266,8 +285,74 @@ fn the_run_rules_and_the_views() {
     );
     check(!shown[0].to_json().to_lowercase().contains("backgroundwaiting"), "the count is never saved");
     check(support::background_waiting(&support::shown_runs(&runs(true, "running"), &ko)[0]) == 0, "a running request waits on nothing yet");
+    // The diagram: the quiet run has no result card, the answered one does, and the latest result is never the empty card.
+    let made = split_layout(&all, false);
+    let ids: HashSet<&str> = made.nodes.iter().map(|n| n.id.as_str()).collect();
+    check(
+        ids.contains(node_id("r", "result").as_str()) && !ids.contains(node_id("r", "agent:t").as_str()),
+        "the request draws its result, not its background block",
+    );
+    check(
+        !ids.contains(node_id("r:notice:1", "result").as_str())
+            && ids.contains(node_id("r:notice:1", "agent:r:notice:1:t").as_str())
+            && ids.contains(node_id("r:notice:2", "result").as_str()),
+        "a quiet notice run has its copy and no result card",
+    );
     same(support::latest_result_id(&all), Some(node_id("r:notice:2", "result")), "the latest result");
     same(support::latest_result_id(&all[..2]), Some(node_id("r", "result")), "never the quiet run's");
+    check(layout::files_panel_open(&all[..2], Some("r")), "the request's files panel stays open beside its card");
+    same(follow::target_id(&made, &all), Some(node_id("r:notice:2", "result")), "a following camera moves on to the answered notice run");
+    let running: Vec<MightyGraphRun> = runs(true, "running").into_iter().take(2).collect();
+    let live = split_layout(&running, true);
+    same(follow::target_id(&live, &running), Some(node_id("r", "agent:fg")), "a quiet notice run leaves the camera on the request");
+    same(live.newest_request_target_id(&running), Some(node_id("r", WORK_SUFFIX)), "the newest request's target");
+    // 기록 numbers the request alone, titles notice runs as such and opens the newest request and answered notice runs after it.
+    let groups = timeline::groups(&all, &ko);
+    check(
+        groups.iter().map(|g| g.ordinal).collect::<Vec<_>>() == [1, 1, 1]
+            && groups.iter().map(|g| g.notice_run).collect::<Vec<_>>() == [false, true, true],
+        "기록's numbers and flags",
+    );
+    check(
+        groups[1].result.is_none() && groups[2].result.as_ref().and_then(|r| r.text.as_deref()) == Some("The build passed."),
+        "기록 gives the quiet run no result card",
+    );
+    check(
+        groups[0].rows.iter().map(|r| r.node_id.clone()).collect::<Vec<_>>()
+            == [node_id("r", "request"), node_id("r", WORK_SUFFIX), node_id("r", "agent:fg")],
+        "the request's rows leave its background block out",
+    );
+    // A notice run saved without a title of its own (an older save) is headed generically.
+    same(groups[1].rows[0].title.clone(), notice::generic_title(&ko), "a notice run's request row");
+    check(
+        groups[1].notice_title.is_none() && groups[0].notice_title.is_none(),
+        "neither a request nor an untitled notice run carries a title",
+    );
+    same(groups[1].rows[1].title.clone(), ko.get("graph.block.execution"), "a notice run's 실행 row has no request number");
+    let none = HashSet::new();
+    check(
+        timeline::group_open(&groups[0], &all, &none)
+            && !timeline::group_open(&groups[1], &all, &none)
+            && timeline::group_open(&groups[2], &all, &none),
+        "기록 opens the request and the answered notice run",
+    );
+    // The pipeline: numbered alike, the request's background block left out, never moving on to a quiet board.
+    let rows = free_rows(&all);
+    check(
+        rows.iter().map(|r| r.item.ordinal).collect::<Vec<_>>() == [1, 1, 1]
+            && rows.iter().map(|r| r.item.notice_run).collect::<Vec<_>>() == [false, true, true],
+        "pipeline cards' numbers and flags",
+    );
+    let agents_of = |row: &structure::Row| row.item.clusters.iter().flat_map(|c| &c.nodes).map(|n| n.agent_id.clone()).collect::<Vec<_>>();
+    check(agents_of(&rows[0]) == ["fg"] && agents_of(&rows[1]) == ["r:notice:1:t"], "pipeline clusters");
+    let boards = board::boards(&free_shape(&all[..2]), &ko);
+    check(boards.iter().map(|b| b.quiet()).collect::<Vec<_>>() == [false, true], "the quiet board is marked");
+    let mut navigation = Navigation::new();
+    check(navigation.index(&boards) == Some(0) && navigation.on_newest(&boards), "the view stays on the request's board");
+    navigation.step(1, &boards);
+    check(navigation.index(&boards) == Some(1) && !navigation.on_newest(&boards), "the quiet board can be stepped to");
+    navigation.show_newest(&boards);
+    same(navigation.index(&boards), Some(0), "the newest board is the request's");
     // A failed notice turn keeps its card; a reopened one keeps its earlier reply; a first one still waiting has none.
     let mut failed = graph_run("r:notice:1", "error");
     failed.notice_run = Some(true);
@@ -460,8 +545,8 @@ fn the_heading_is_the_runs_title_or_the_generic_one() {
     );
 }
 
-/// The awaiting-notice rule of C# ARequestAwaitingNoticesIsTheAwaitingNoticeBlock; the diagram's block, 기록, the pipeline and the phone are
-/// those modules'.
+/// C# ARequestAwaitingNoticesIsTheAwaitingNoticeBlock: the rule, and the diagram's 알림 대기 block, 기록, the pipeline and the phone's pipeline
+/// that draw it; the phone's runs and digest (MobileMightySupport) are the phone's (DEFERRED.md).
 #[test]
 fn a_request_awaiting_notices_is_the_awaiting_notice_block() {
     let ko = ko();
@@ -485,9 +570,44 @@ fn a_request_awaiting_notices_is_the_awaiting_notice_block() {
     same(result_title("completed", 0, true, &ko), "알림 대기 중".to_string(), "the title while awaiting");
     same(result_title("completed", 0, false, &ko), "최종 결과".to_string(), "not awaiting is the final result");
     same(result_title("error", 0, true, &ko), ko.get("graph.block.resultError"), "a failed request keeps its title");
+    // The diagram's result block is the 알림 대기 block; the shown run carries what it read of the notice runs.
+    let card = |all: &[MightyGraphRun]| -> MightyGraphBlock {
+        let made = split_layout(all, false);
+        view_model::blocks(&made, all, "", "Claude", true, None, None, &ko)
+            .into_iter()
+            .find(|b| b.id == node_id("r", "result"))
+            .expect("the result")
+    };
+    let block = card(&all);
+    check(
+        block.kind == "result"
+            && block.title == "알림 대기 중"
+            && block.status == "waiting"
+            && block.outline == activity::MARCHING
+            && block.awaiting.as_ref() == Some(&awaiting)
+            && block.state == "알림 대기"
+            && view_model::tone(&block) == Tone::Wait,
+        &format!("the diagram's 알림 대기 block: {block:?}"),
+    );
     check(
         notice::awaiting_notice(&support::shown_runs(&all, &ko)[0], &[], &ko) == Some(awaiting.clone()),
         "a shown run carries its awaiting",
+    );
+    check(timeline::groups(&all, &ko)[0].result.as_ref().is_some_and(|r| r.awaiting && r.tone == Tone::Wait), "기록's result head waits");
+    check(free_rows(&all).iter().map(|r| r.item.awaiting).collect::<Vec<_>>() == [true, false, false], "the pipeline card awaits");
+    let result_column = |all: &[MightyGraphRun]| {
+        let boards = board::boards(&free_shape(all), &ko);
+        let column = &boards[0].columns[2];
+        tone::of_card(&column.cards[0], column)
+    };
+    same(result_column(&all), Some(Tone::Wait), "the pipeline's 결과 waits");
+    // The phone's pipeline: the 알림 대기 card, and the running count for an older phone.
+    let phone = mobile::make(&free_shape(&all), all.len(), None, None, None, None).expect("a structure");
+    let items: Vec<mobile::MobileItem> = phone.rows.expect("rows").into_iter().map(|r| r.item).collect();
+    check(
+        items.iter().map(|i| i.awaiting_notice).collect::<Vec<_>>() == [Some(true), None, None]
+            && items.iter().map(|i| i.background_waiting).collect::<Vec<_>>() == [Some(1), Some(1), None],
+        &format!("the phone's pipeline awaits: {:?}", items.iter().map(|i| (i.awaiting_notice, i.background_waiting)).collect::<Vec<_>>()),
     );
     // The pane is alive only for the notice: the pet and the header say 알림 대기.
     check(
@@ -502,14 +622,23 @@ fn a_request_awaiting_notices_is_the_awaiting_notice_block() {
     check(
         delivered.as_ref().is_some_and(|d| {
             d.delivered() == 1 && notice::awaiting_progress(d, &ko) == "알림 1/1" && notice::awaited_word(&d.tasks[0], &ko) == "알림 전달됨"
-        }) && support::background_waiting(&all[0]) == 0,
+        }) && support::background_waiting(&all[0]) == 0
+            && card(&all).title == "알림 대기 중",
         "an unanswered notice turn keeps it awaiting",
     );
     // The notice turn answered: the normal 최종 결과.
     all[2].status = Some("completed".into());
     all[2].final_output = Some("The build passed.".into());
+    let answered = card(&all);
     check(
-        notice::awaiting_notice(&all[0], &all, &ko).is_none() && !notice::awaits_notice(&pane_of(&all, "running")),
+        notice::awaiting_notice(&all[0], &all, &ko).is_none()
+            && answered.title == "최종 결과"
+            && answered.status == "completed"
+            && answered.awaiting.is_none()
+            && answered.outline == activity::NONE
+            && timeline::groups(&all, &ko)[0].result.as_ref().is_some_and(|r| !r.awaiting && r.tone == Tone::Done)
+            && !notice::awaits_notice(&pane_of(&all, "running"))
+            && result_column(&all) == Some(Tone::Done),
         "answered, it is the final result",
     );
     // Failed or stopped work keeps its word; a failed or stopped request, or a notice run, awaits nothing.
@@ -539,6 +668,16 @@ fn a_request_awaiting_notices_is_the_awaiting_notice_block() {
     copy.source_block_id = Some("t".into());
     foreign.agents = Some(vec![copy]);
     check(notice::awaiting_notice(&all[0], &[all[0].clone(), foreign], &ko).is_none(), "another request's notice run");
+    // The phone's pipeline titles a notice run after its own title, none from an older save; a request takes its style's name.
+    let mut named = runs(true, "completed");
+    named[2].notice_title = Some("백그라운드 작업 완료 · npm run build".into());
+    let style_name = |_: &str| Some("style name".to_string());
+    let phone = mobile::make(&free_shape(&named), named.len(), Some(&style_name), None, None, None).expect("a structure");
+    let titles: Vec<Option<String>> = phone.rows.expect("rows").into_iter().map(|r| r.item.title).collect();
+    check(
+        titles == [Some("style name".to_string()), None, Some("백그라운드 작업 완료 · npm run build".to_string())],
+        &format!("the phone's pipeline titles: {titles:?}"),
+    );
 }
 
 fn block(tracker: &ExecutionGraphTracker, tool: &str) -> MightyGraphAgent {
@@ -617,7 +756,8 @@ fn a_command_started_in_a_notice_turn_is_settled_by_its_notification() {
     same(block(&bare, "build").status().to_string(), "error".to_string(), "a failed command by its task ID");
 }
 
-/// The counts of C# ANoticeRunReadsTheRequestsWaitingCount; the diagram's cards, the pipeline, 기록 and the phone are those modules'.
+/// C# ANoticeRunReadsTheRequestsWaitingCount: the counts, the diagram's cards, the pipeline and 기록; the phone's runs (MobileMightySupport)
+/// are the phone's (DEFERRED.md).
 #[test]
 fn a_notice_run_reads_the_requests_waiting_count() {
     let ko = ko();
@@ -666,6 +806,31 @@ fn a_notice_run_reads_the_requests_waiting_count() {
     );
     same(support::follow_run_index(&all[..3]), Some(2), "the newest notice run is followed");
     same(result_title("completed", waiting[2], false, &ko), "현재까지의 결과 · 백그라운드 작업 3개 기다리는 중".to_string(), "the title");
+    let shown = &all[..3];
+    let made = split_layout(shown, false);
+    let cards: Vec<MightyGraphBlock> =
+        view_model::blocks(&made, shown, "", "Claude", false, None, None, &ko).into_iter().filter(|b| b.kind == "result").collect();
+    let notice_cards: Vec<&MightyGraphBlock> = cards.iter().filter(|c| c.id != node_id("r", "result")).collect();
+    check(
+        notice_cards.len() >= 2
+            && notice_cards
+                .iter()
+                .all(|c| c.title == "현재까지의 결과 · 백그라운드 작업 3개 기다리는 중" && c.so_far && c.awaiting.is_none()),
+        &format!("every notice run's result card: {:?}", cards.iter().map(|c| c.title.as_str()).collect::<Vec<_>>()),
+    );
+    check(
+        cards
+            .iter()
+            .find(|c| c.id == node_id("r", "result"))
+            .is_some_and(|c| c.title == "알림 대기 중" && !c.so_far && c.awaiting.is_some()),
+        "the request's own card awaits notices",
+    );
+    check(free_rows(&all).iter().map(|r| r.item.background_waiting).collect::<Vec<_>>() == [3, 3, 3, 1], "pipeline cards");
+    check(
+        timeline::groups(&all, &ko).iter().map(|g| g.result.as_ref().map(|r| r.tone)).collect::<Vec<_>>()
+            == [Some(Tone::Wait), Some(Tone::Idle), Some(Tone::Idle), Some(Tone::Wait)],
+        "기록's results: the requests wait, the notice runs read so far",
+    );
     // The work ends one by one; the notice run goes on reading the count until the last one.
     agents_mut(&mut all[0])[1].status = Some("completed".into());
     agents_mut(&mut all[0])[3].status = Some("completed".into());
