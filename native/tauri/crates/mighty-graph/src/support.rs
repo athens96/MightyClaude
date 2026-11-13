@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 
-use mighty_core::graph::{GraphTokenUsage, MightyGraphAgent, MightyGraphRun, shown_agents};
+use mighty_core::graph::{Awaiting, GraphTokenUsage, MightyGraphAgent, MightyGraphRun, shown_agents};
 use mighty_core::locale::Locale;
 use mighty_core::model::{LogEntry, RunSession};
 use mighty_core::normalize;
@@ -135,13 +135,14 @@ pub fn background_waiting(run: &MightyGraphRun) -> i32 {
 }
 
 /// `MightyGraphSupport.WithBackgroundWaiting`: each completed run's count over its whole request (the request run and its notice runs).
+/// The runs themselves when no count changes (runs already counted among them); a copy only then.
 pub fn with_background_waiting(runs: &[MightyGraphRun]) -> Cow<'_, [MightyGraphRun]> {
     if !runs.iter().any(MightyGraphRun::is_notice)
         || !runs.iter().any(|r| r.agents().iter().any(|a| a.is_task() || a.is_background_agent()))
     {
         return Cow::Borrowed(runs);
     }
-    let mut counted = Vec::with_capacity(runs.len());
+    let mut changes: Vec<(usize, i32)> = vec![];
     let mut start = 0;
     while start < runs.len() {
         let mut end = start + 1;
@@ -149,15 +150,20 @@ pub fn with_background_waiting(runs: &[MightyGraphRun]) -> Cow<'_, [MightyGraphR
             end += 1;
         }
         let total: i32 = runs[start..end].iter().map(held).sum();
-        for run in &runs[start..end] {
+        for (index, run) in runs.iter().enumerate().take(end).skip(start) {
             let waiting = if run.status() == "completed" { total } else { 0 };
-            let mut copy = run.clone();
             if background_waiting(run) != waiting {
-                copy.request_background_waiting = Some(waiting);
+                changes.push((index, waiting));
             }
-            counted.push(copy);
         }
         start = end;
+    }
+    if changes.is_empty() {
+        return Cow::Borrowed(runs);
+    }
+    let mut counted = runs.to_vec();
+    for (index, waiting) in changes {
+        counted[index].request_background_waiting = Some(waiting);
     }
     Cow::Owned(counted)
 }
@@ -232,32 +238,76 @@ pub fn shown(run: &MightyGraphRun, locale: &Locale) -> MightyGraphRun {
 
 /// `MightyGraphRun.ShownIn`: `Shown`, awaiting notices as the pane's `runs` (its notice runs among them) say it does.
 pub fn shown_in(run: &MightyGraphRun, runs: &[MightyGraphRun], locale: &Locale) -> MightyGraphRun {
-    let agents: Vec<MightyGraphAgent> = shown_agents(run).into_iter().cloned().collect();
-    if agents.len() == run.agents().len() {
-        return run.clone();
-    }
-    let mut copy = run.clone();
-    copy.shown_background_waiting = Some(held(run));
-    copy.shown_awaiting = notice::awaiting_notice(run, runs, locale);
-    let fan_out = notice::fan_out(run);
-    let kept: HashSet<&str> = agents.iter().map(|a| a.id()).collect();
-    copy.shown_fan_out = Some(fan_out.iter().map(|&i| run.agents()[i].clone()).collect());
-    let mut order: Vec<usize> = (0..run.agents().len()).filter(|&i| kept.contains(run.agents()[i].id())).collect();
-    order.extend(fan_out.iter().copied());
-    copy.shown_flow_order = Some(order);
-    copy.agents = Some(agents);
-    copy
+    shown_in_borrowed(run, runs, locale).into_owned()
 }
 
-/// `MightyGraphSupport.ShownRuns`: the runs as views draw them; the same list when no run holds a background block.
+/// [`shown_in`], the run itself when it hides nothing.
+pub fn shown_in_borrowed<'a>(run: &'a MightyGraphRun, runs: &[MightyGraphRun], locale: &Locale) -> Cow<'a, MightyGraphRun> {
+    match Hidden::of(run, runs, locale) {
+        None => Cow::Borrowed(run),
+        Some(hidden) => {
+            let mut copy = run.clone();
+            hidden.apply(&mut copy);
+            Cow::Owned(copy)
+        }
+    }
+}
+
+/// What `ShownIn` changes of a run that hides blocks, read before any copy is made: the blocks' places, not the blocks.
+struct Hidden {
+    waiting: i32,
+    awaiting: Option<Awaiting>,
+    kept: Vec<usize>,
+    fan_out: Vec<usize>,
+}
+
+impl Hidden {
+    /// None when the run hides no block (a notice run, a run without background blocks, a run already shown).
+    fn of(run: &MightyGraphRun, runs: &[MightyGraphRun], locale: &Locale) -> Option<Hidden> {
+        if !hides(run) {
+            return None;
+        }
+        let shown: HashSet<&str> = shown_agents(run).into_iter().map(|a| a.id()).collect();
+        let kept: Vec<usize> = (0..run.agents().len()).filter(|&i| shown.contains(run.agents()[i].id())).collect();
+        if kept.len() == run.agents().len() {
+            return None;
+        }
+        Some(Hidden { waiting: held(run), awaiting: notice::awaiting_notice(run, runs, locale), kept, fan_out: notice::fan_out(run) })
+    }
+
+    /// The copy's blocks moved where the views draw them: the shown ones stay, the fanned-out ones go to the flow's own list.
+    fn apply(self, copy: &mut MightyGraphRun) {
+        let mut agents: Vec<Option<MightyGraphAgent>> = copy.agents.take().unwrap_or_default().into_iter().map(Some).collect();
+        copy.shown_background_waiting = Some(self.waiting);
+        copy.shown_awaiting = self.awaiting;
+        copy.agents = Some(self.kept.iter().filter_map(|&i| agents[i].take()).collect());
+        copy.shown_fan_out = Some(self.fan_out.iter().filter_map(|&i| agents[i].take()).collect());
+        let mut order = self.kept;
+        order.extend(self.fan_out);
+        copy.shown_flow_order = Some(order);
+    }
+}
+
+/// Whether `ShownAgents` may hide any of a run's blocks: a request run that holds a background block.
+fn hides(run: &MightyGraphRun) -> bool {
+    !run.is_notice() && run.agents().iter().any(|a| a.background == Some(true))
+}
+
+/// `MightyGraphSupport.ShownRuns`: the runs as views draw them; the same list when no run hides a background block, so runs already
+/// shown come back as they are. Otherwise one copy of the list, each run changed in place (C#'s `ShownIn` copies a run shallowly).
 pub fn shown_runs<'a>(runs: &'a [MightyGraphRun], locale: &Locale) -> Cow<'a, [MightyGraphRun]> {
     let counted = with_background_waiting(runs);
-    if counted.iter().any(|r| r.agents().iter().any(|a| a.background == Some(true))) {
-        let list: &[MightyGraphRun] = &counted;
-        Cow::Owned(list.iter().map(|r| shown_in(r, list, locale)).collect())
-    } else {
-        counted
+    if !counted.iter().any(hides) {
+        return counted;
     }
+    let hidden: Vec<Option<Hidden>> = counted.iter().map(|r| Hidden::of(r, &counted, locale)).collect();
+    let mut shown = counted.into_owned();
+    for (run, hidden) in shown.iter_mut().zip(hidden) {
+        if let Some(hidden) = hidden {
+            hidden.apply(run);
+        }
+    }
+    Cow::Owned(shown)
 }
 
 /// `MightyGraphRun.FlowAgents`: every block the flow diagram draws for the run, the shown agents then the fanned-out ones.

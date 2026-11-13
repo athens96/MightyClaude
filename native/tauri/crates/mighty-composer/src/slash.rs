@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use mighty_core::locale::Locale;
-use mighty_core::normalize;
+use mighty_core::{normalize, workspace_files};
 
 use crate::text;
 
@@ -224,28 +224,35 @@ pub trait SlashFiles {
     /// A file's length, None when it is not there.
     fn len(&self, path: &Path) -> Option<u64>;
     fn read(&self, path: &Path) -> std::io::Result<Vec<u8>>;
+    /// Where a folder really is, its links followed: a folder reached again through a link is read once. None when it cannot be
+    /// reached. A tree without links is where it says it is.
+    fn real_path(&self, path: &Path) -> Option<PathBuf> {
+        Some(path.to_path_buf())
+    }
 }
 
-/// The real file system.
+/// The real file system. Every path is walked first ([`workspace_files::real_path`]): a command folder or file that is a link to another
+/// machine's share (a cloned workspace's `.claude/commands`) is not read, as reading it would hand that machine the user's credentials.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DiskFiles;
 
 impl SlashFiles for DiskFiles {
     fn is_dir(&self, path: &Path) -> bool {
-        path.is_dir()
+        workspace_files::real_path(path).is_some_and(|real| real.is_dir())
     }
     fn is_file(&self, path: &Path) -> bool {
-        path.is_file()
+        workspace_files::real_path(path).is_some_and(|real| real.is_file())
     }
     fn entries(&self, dir: &Path) -> std::io::Result<Vec<(String, EntryKind)>> {
+        let real = workspace_files::real_path(dir).ok_or_else(|| std::io::Error::from(std::io::ErrorKind::PermissionDenied))?;
         let mut out = Vec::new();
-        for entry in std::fs::read_dir(dir)? {
+        for entry in std::fs::read_dir(real)? {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().into_owned();
-            // `Directory.Exists`/`File.Exists` follow links, as `metadata` does.
-            let kind = match std::fs::metadata(entry.path()) {
-                Ok(m) if m.is_dir() => EntryKind::Directory,
-                Ok(m) if m.is_file() => EntryKind::File,
+            // `Directory.Exists`/`File.Exists` follow links, as `metadata` of the real path does.
+            let kind = match workspace_files::real_path(&entry.path()).map(std::fs::metadata) {
+                Some(Ok(m)) if m.is_dir() => EntryKind::Directory,
+                Some(Ok(m)) if m.is_file() => EntryKind::File,
                 _ => EntryKind::Other,
             };
             out.push((name, kind));
@@ -253,10 +260,13 @@ impl SlashFiles for DiskFiles {
         Ok(out)
     }
     fn len(&self, path: &Path) -> Option<u64> {
-        std::fs::metadata(path).ok().filter(|m| m.is_file()).map(|m| m.len())
+        std::fs::metadata(workspace_files::real_path(path)?).ok().filter(|m| m.is_file()).map(|m| m.len())
     }
     fn read(&self, path: &Path) -> std::io::Result<Vec<u8>> {
-        std::fs::read(path)
+        std::fs::read(workspace_files::real_path(path).ok_or_else(|| std::io::Error::from(std::io::ErrorKind::PermissionDenied))?)
+    }
+    fn real_path(&self, path: &Path) -> Option<PathBuf> {
+        workspace_files::real_path(path)
     }
 }
 
@@ -503,23 +513,8 @@ pub fn commands(provider: &str, workspace: Option<&Path>, home: &Path, files: &d
     list
 }
 
-/// `StringComparer.OrdinalIgnoreCase`: UTF-16 units compared upper-cased.
-pub(crate) fn ordinal_ignore_case(a: &str, b: &str) -> std::cmp::Ordering {
-    let upper = |s: &str| -> Vec<u16> {
-        s.chars()
-            .flat_map(|c| {
-                let u = if c.is_ascii() {
-                    c.to_ascii_uppercase()
-                } else {
-                    c.to_uppercase().next().filter(|_| c.to_uppercase().count() == 1).unwrap_or(c)
-                };
-                let mut buf = [0u16; 2];
-                u.encode_utf16(&mut buf).to_vec()
-            })
-            .collect()
-    };
-    upper(a).cmp(&upper(b))
-}
+// `StringComparer.OrdinalIgnoreCase`: UTF-16 units compared upper-cased.
+pub(crate) use mighty_core::normalize::ordinal_ignore_case;
 
 fn file_name(name: &str) -> &str {
     name
@@ -551,9 +546,26 @@ fn skills(files: &dyn SlashFiles, directory: &Path, source: &str, origin: SlashC
     result
 }
 
+/// Group folders nest at most this deep (`a:b:…:name`). C# goes on until a path is too long for the system, which a folder linked to
+/// itself or to one above it reaches only thousands of levels down; here such a folder is read once, and no tree goes deeper than this.
+pub const MAXIMUM_GROUP_DEPTH: usize = 8;
+
 /// `<dir>/<name>.md` and `<dir>/<group>/<name>.md`, invoked as `group:name` (SlashCommands.cs:230).
 fn command_files(files: &dyn SlashFiles, directory: &Path, source: &str, origin: SlashCommandOrigin, prefix: &str) -> Vec<SlashCommand> {
-    if !files.is_dir(directory) {
+    command_files_under(files, directory, source, origin, prefix, 0, &mut HashSet::new())
+}
+
+/// [`command_files`] of a group `depth` folders down; `read` holds the real paths of the folders read so far.
+fn command_files_under(
+    files: &dyn SlashFiles,
+    directory: &Path,
+    source: &str,
+    origin: SlashCommandOrigin,
+    prefix: &str,
+    depth: usize,
+    read: &mut HashSet<PathBuf>,
+) -> Vec<SlashCommand> {
+    if !files.is_dir(directory) || !files.real_path(directory).is_some_and(|real| read.insert(real)) {
         return vec![];
     }
     let mut result = Vec::new();
@@ -571,9 +583,9 @@ fn command_files(files: &dyn SlashFiles, directory: &Path, source: &str, origin:
                 None => first_line(&text),
             };
             result.push(SlashCommand::new(&format!("{prefix}{base}"), &description, source, origin));
-        } else if kind == EntryKind::Directory {
+        } else if kind == EntryKind::Directory && depth < MAXIMUM_GROUP_DEPTH {
             let Some(group) = valid_name(&name) else { continue };
-            result.extend(command_files(files, &entry, source, origin, &format!("{prefix}{group}:")));
+            result.extend(command_files_under(files, &entry, source, origin, &format!("{prefix}{group}:"), depth + 1, read));
         }
     }
     result

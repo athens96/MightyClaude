@@ -212,6 +212,17 @@ fn svgs() -> Vec<String> {
         "<?xml version='1.0' encoding='latin1'?><svg>\u{e9}</svg>",
         "<!-- c --><?xml version='1.0'?><svg/>",
         "<svg><text>안녕</text></svg>",
+        // Names XmlReader cannot read, which an HTML parser reads as a script, an event or a SMIL change of href.
+        "<svg><set/attributeName='href'/to='https://example.com'/></svg>",
+        "<svg><g/onload='alert(1)'/></svg>",
+        "<svg><script/x>alert(1)</script/x></svg>",
+        "<svg><g a/b='1'/></svg>",
+        "<svg><script a='1' a='2'>x</script></svg>",
+        "<svg><svg:set xmlns:svg='http://www.w3.org/2000/svg' attributeName='href' to='https://example.com'/></svg>",
+        "<svg><SET attributeName='href' to='https://example.com'/></svg>",
+        // A comment or a CDATA section inside text that spells nothing external.
+        "<svg><style>rect { fill: red }<!-- c --></style><text>ur<!-- -->l</text></svg>",
+        "<svg><style><![CDATA[rect { fill: ]]><![CDATA[url(#g) }]]></style></svg>",
     ]
     .iter()
     .map(|s| s.to_string())

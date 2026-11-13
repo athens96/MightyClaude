@@ -179,10 +179,19 @@ struct Memo {
     status: String,
     items: Vec<AgentImageItem>,
     located: HashMap<String, AgentImageLocation>,
+    /// When the step was last asked about ([`Memos::tick`]): the least recently asked is let go first.
+    used: u64,
 }
 
-/// Each step's answer, and where each Markdown source it read was found while the step kept its status (C#'s static `Memo`).
-static MEMO: LazyLock<Mutex<HashMap<String, Memo>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+/// Each step's answer, and where each Markdown source it read was found while the step kept its status (C#'s static `Memo`), at most
+/// [`MAXIMUM_REMEMBERED`] steps: past that the step asked about longest ago goes, so the steps a push reads every time stay.
+#[derive(Default)]
+struct Memos {
+    steps: HashMap<String, Memo>,
+    tick: u64,
+}
+
+static MEMO: LazyLock<Mutex<Memos>> = LazyLock::new(|| Mutex::new(Memos::default()));
 
 fn remembered(
     run_id: &str,
@@ -196,12 +205,12 @@ fn remembered(
     let mut hasher = DefaultHasher::new();
     status.hash(&mut hasher);
     entries.len().hash(&mut hasher);
-    // Only entries that can carry pictures; their text by length, not content.
+    // Only entries that can carry pictures; their text by length (in bytes: only a change is looked for), not content.
     if !settled {
         for entry in entries.iter().filter(|e| e.kind() == "assistant" || e.images.is_some()) {
             entry.id().hash(&mut hasher);
             entry.kind().hash(&mut hasher);
-            entry.text().encode_utf16().count().hash(&mut hasher);
+            entry.text().len().hash(&mut hasher);
             for image in entry.images.iter().flatten().flatten() {
                 image.hash.hash(&mut hasher);
             }
@@ -210,9 +219,14 @@ fn remembered(
     let signature = hasher.finish();
     let key = format!("{run_id}\u{1F}{step}\u{1F}{}", root.unwrap_or(""));
     let mut located = {
-        let memo = MEMO.lock().unwrap_or_else(|e| e.into_inner());
-        match memo.get(&key) {
-            Some(hit) if hit.signature == signature => return hit.items.clone(),
+        let mut memo = MEMO.lock().unwrap_or_else(|e| e.into_inner());
+        memo.tick += 1;
+        let tick = memo.tick;
+        match memo.steps.get_mut(&key) {
+            Some(hit) if hit.signature == signature => {
+                hit.used = tick;
+                return hit.items.clone();
+            }
             // A step that settled looks every file up again, so one that appeared meanwhile is picked up.
             Some(hit) if hit.status == status => hit.located.clone(),
             _ => HashMap::new(),
@@ -227,9 +241,45 @@ fn remembered(
         place
     });
     let mut memo = MEMO.lock().unwrap_or_else(|e| e.into_inner());
-    if memo.len() >= MAXIMUM_REMEMBERED {
-        memo.clear();
+    if memo.steps.len() >= MAXIMUM_REMEMBERED
+        && !memo.steps.contains_key(&key)
+        && let Some(oldest) = memo.steps.iter().min_by_key(|(_, m)| m.used).map(|(k, _)| k.clone())
+    {
+        memo.steps.remove(&oldest);
     }
-    memo.insert(key, Memo { signature, status: status.into(), items: found.clone(), located });
+    memo.tick += 1;
+    let used = memo.tick;
+    memo.steps.insert(key, Memo { signature, status: status.into(), items: found.clone(), located, used });
     found
+}
+
+/// How many steps are remembered, and whether the step `run_id`'s `step` under `root` is one of them.
+#[cfg(test)]
+fn remembers(run_id: &str, step: &str, root: Option<&str>) -> (usize, bool) {
+    let memo = MEMO.lock().unwrap_or_else(|e| e.into_inner());
+    (memo.steps.len(), memo.steps.contains_key(&format!("{run_id}\u{1F}{step}\u{1F}{}", root.unwrap_or(""))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Past 1,024 steps the one asked about longest ago goes, not every step: the steps each push reads stay remembered.
+    #[test]
+    fn the_memo_lets_go_of_the_step_asked_about_longest_ago() {
+        let root = format!("lru-{}", mighty_core::wire::new_id());
+        let entries = [LogEntry::new("e".into(), "assistant", "![a](a.png)".into(), "2026-01-01T00:00:00Z".into(), None)];
+        let locate = |_: &str, _: Option<&str>| AgentImageLocation::Refused;
+        let ask = |run: &str| remembered(run, REQUEST_STEP, &entries, "running", Some(&root), false, &locate);
+        for index in 0..MAXIMUM_REMEMBERED + 200 {
+            ask("kept");
+            ask(&format!("run-{index}"));
+        }
+        let (count, kept) = remembers("kept", REQUEST_STEP, Some(&root));
+        assert_eq!(count, MAXIMUM_REMEMBERED, "full, never emptied");
+        assert!(kept, "the step asked about every time stays");
+        // The step asked about every time and the newest 1,023 others: run-201 to run-1223.
+        assert!(!remembers("run-200", REQUEST_STEP, Some(&root)).1, "the ones asked about longest ago went");
+        assert!(remembers("run-201", REQUEST_STEP, Some(&root)).1 && remembers("run-1223", REQUEST_STEP, Some(&root)).1);
+    }
 }

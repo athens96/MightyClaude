@@ -12,7 +12,7 @@ use mighty_core::model::{AgentImageRef, LogEntry};
 use mighty_graph::camera::{self, GraphRect};
 use mighty_graph::images::{self, AgentImageLocation, ImageLocator};
 use mighty_graph::layout::{self, Gallery, Options};
-use mighty_graph::{follow, view_model};
+use mighty_graph::{follow, result_files, view_model};
 use view_support::*;
 
 /// A workspace whose files are a set of names: `Locate` as C# reads it for a relative path inside the root, a data URI and a web address.
@@ -303,4 +303,41 @@ fn the_attachments_hang_off_the_execution_block_and_stack() {
             && shared.nodes.iter().find(|n| n.kind == layout::EXECUTION_KIND).unwrap().frame.y == request.y,
         "without a 실행 block they hang off the request",
     );
+}
+
+/// Pictures and file references named in Korean, Chinese, Japanese or with an emoji: no rule of the graph cuts one of their characters,
+/// and each is found as an ASCII name is.
+#[test]
+fn pictures_and_files_named_in_any_script_are_found_whole() {
+    let files = Files::new("C:/작업 공간");
+    let names = ["스크린샷.png", "截图.png", "スクショ.png", "📷.png"];
+    for name in names {
+        files.write(name);
+    }
+    let mut r = with_final(run(&format!("run-scripts-{}", mighty_core::wire::new_id()), "화면을 보여줘", "completed"), "끝 📷");
+    r.root_entries = Some(vec![markdown(
+        "![결과](스크린샷.png) ![图](截图.png)\n```\n![코드](코드.png)\n```\n![写真](スクショ.png) ![📷](📷.png) ![없음](없는.png)",
+    )]);
+    let root = Some(files.root.as_str());
+    let galleries = images::galleries(std::slice::from_ref(&r), root, 0, &files);
+    check(galleries == vec![gallery(r.id(), images::REQUEST_STEP, 4)], format!("every picture that is there: {galleries:?}"));
+    let items = images::items(&r, images::REQUEST_STEP, root, &files);
+    check(items.iter().map(|i| i.source.as_str()).collect::<Vec<_>>() == names, format!("in order, whole: {items:?}"));
+    check(items[0].alt == "결과" && items[3].alt == "📷", "with their words");
+    let made = layout::make(std::slice::from_ref(&r), "", false, &HashSet::new(), &Options { galleries, ..Options::default() }, &ko());
+    check(made.node(&layout::node_id(&r, &format!("{}request", layout::IMAGES_SUFFIX))).is_some(), "the preview is laid out");
+
+    let found = result_files::matches("결과는 src/화면.ts:12 와 文档/说明.md 에, 📷 사진/스크린샷.png (끝)");
+    check(
+        found.iter().map(|m| (m.path.as_str(), m.line)).collect::<Vec<_>>()
+            == [("src/화면.ts", Some(12)), ("文档/说明.md", None), ("사진/스크린샷.png", None)],
+        format!("paths in any script, after any script: {found:?}"),
+    );
+    check(result_files::local_path("file:///C:/%ED%99%94%EB%A9%B4.png").as_deref() == Some("C:/화면.png"), "a file address");
+    check(result_files::local_path("화면/사진.png").as_deref() == Some("화면/사진.png"), "a relative destination");
+    for text in ["스", "📷", "a:한", "한:1", "x/한.한", "C:\\한\\글.md:7", "`src/화면.ts`", "https://例え.jp/画像.png 다음 a/b.md"]
+    {
+        let _ = result_files::matches(text);
+        let _ = result_files::local_path(text);
+    }
 }

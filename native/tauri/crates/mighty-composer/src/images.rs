@@ -622,7 +622,8 @@ pub fn locate(reference: &str, workspace_root: Option<&Path>, temporary: Option<
     if value.is_empty() || value.contains('\0') {
         return AgentImageLocation::Refused;
     }
-    if value.len() >= 5 && value[..5].eq_ignore_ascii_case("data:") {
+    // A name like "스크린샷.png" has no character boundary at byte 5: compared only when the first five bytes are whole characters.
+    if value.get(..5).is_some_and(|head| head.eq_ignore_ascii_case("data:")) {
         return inline(value);
     }
     let scheme = uri_scheme(value);

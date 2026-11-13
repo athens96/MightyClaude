@@ -211,7 +211,7 @@ pub fn progress_of(index: usize, runs: &[MightyGraphRun], heading: &str, locale:
     let request = &runs[index];
     let all = steps(request);
     let activity = activity_runs(index, runs);
-    let awaiting = notice::awaiting_notice(request, &activity, locale).is_some();
+    let awaiting = notice::awaiting_notice_in(request, &activity, locale).is_some();
     let running = activity.iter().any(|r| !support::layout_terminal(r.status())) || awaiting;
     let rows: Vec<ProgressRow> = all
         .iter()
@@ -386,13 +386,19 @@ pub fn record_steps(session: &RunSession, todos: Option<&TodoProgress>, now: Dat
 
 /// `StepIndex`: the step whose span holds `time`, the one that started last when spans meet.
 pub fn step_index(time: &DateTimeOffset, steps: &[FlowStep]) -> Option<usize> {
+    let spans: Vec<(Option<DateTimeOffset>, Option<DateTimeOffset>)> = steps.iter().map(|s| (started(s), ended(s))).collect();
+    step_index_in(time, &spans)
+}
+
+/// [`step_index`] over the steps' spans, read once.
+fn step_index_in(time: &DateTimeOffset, spans: &[(Option<DateTimeOffset>, Option<DateTimeOffset>)]) -> Option<usize> {
     let mut best: Option<(usize, DateTimeOffset)> = None;
-    for (index, step) in steps.iter().enumerate() {
-        let Some(start) = started(step) else { continue };
+    for (index, (start, end)) in spans.iter().enumerate() {
+        let Some(start) = *start else { continue };
         if (unix_ms(&start) as f64 / 1000.0).floor() > unix_ms(time) as f64 / 1000.0 {
             continue;
         }
-        if let Some(end) = ended(step)
+        if let Some(end) = end
             && end.utc_ticks() < time.utc_ticks()
         {
             continue;
@@ -410,36 +416,50 @@ pub fn slot(agent: &MightyGraphAgent, steps: &[FlowStep]) -> usize {
 }
 
 /// `ActivityRuns`: the request `runs[index]` and the notice runs that answer for its work.
-pub fn activity_runs(index: usize, runs: &[MightyGraphRun]) -> Vec<MightyGraphRun> {
+pub fn activity_runs(index: usize, runs: &[MightyGraphRun]) -> Vec<&MightyGraphRun> {
     let request = &runs[index];
-    let Some(source) = request.source_run_id.as_deref() else { return vec![request.clone()] };
-    std::iter::once(request.clone())
+    let Some(source) = request.source_run_id.as_deref() else { return vec![request] };
+    std::iter::once(request)
         .chain(
             runs.iter()
-                .filter(|r| r.is_notice() && r.source_run_id.as_deref().is_some_and(|id| notice::original_run_id(id) == Some(source)))
-                .cloned(),
+                .filter(|r| r.is_notice() && r.source_run_id.as_deref().is_some_and(|id| notice::original_run_id(id) == Some(source))),
         )
         .collect()
 }
 
 /// `Entries`: what the main session recorded during `step` of `runs[index]`, in the request and the notice turns after it.
 pub fn entries(step: usize, index: usize, runs: &[MightyGraphRun]) -> Vec<LogEntry> {
+    let mut held = entries_by_step(index, runs);
+    if step < held.len() { held.swap_remove(step).into_iter().cloned().collect() } else { vec![] }
+}
+
+/// [`entries`] of every step of `runs[index]` at once: each entry's time and each step's span read once, the entries borrowed.
+pub fn entries_by_step(index: usize, runs: &[MightyGraphRun]) -> Vec<Vec<&LogEntry>> {
     let all = steps(&runs[index]);
-    if step >= all.len() {
-        return vec![];
+    let mut held = vec![Vec::new(); all.len()];
+    if all.is_empty() {
+        return held;
     }
-    activity_runs(index, runs)
-        .iter()
-        .flat_map(|r| r.root_entries().to_vec())
-        .filter(|entry| time::parse(entry.timestamp.as_deref()).is_some_and(|t| step_index(&t, all) == Some(step)))
-        .collect()
+    let spans: Vec<(Option<DateTimeOffset>, Option<DateTimeOffset>)> = all.iter().map(|s| (started(s), ended(s))).collect();
+    for run in activity_runs(index, runs) {
+        for entry in run.root_entries() {
+            if let Some(step) = time::parse(entry.timestamp.as_deref()).and_then(|t| step_index_in(&t, &spans)) {
+                held[step].push(entry);
+            }
+        }
+    }
+    held
 }
 
 // ── cards ──
 
 /// `Latest`: the newest thing the main session did, as a card's line: what it last said (prose), or the tool call it made after that.
 pub fn latest(entries: &[LogEntry]) -> Option<(String, bool)> {
-    for entry in entries.iter().rev() {
+    latest_of(entries.iter())
+}
+
+fn latest_of<'a>(entries: impl DoubleEndedIterator<Item = &'a LogEntry>) -> Option<(String, bool)> {
+    for entry in entries.rev() {
         if let Some(activity) = &entry.activity {
             if activity.kind == "turn" {
                 continue;
@@ -464,22 +484,27 @@ pub fn prose(raw: &str) -> Option<String> {
     card::line(&text[start..])
 }
 
-fn calls(entries: &[LogEntry]) -> i32 {
-    entries.iter().filter(|e| e.activity.as_ref().is_some_and(|a| a.kind != "turn")).count() as i32
+fn calls<'a>(entries: impl IntoIterator<Item = &'a LogEntry>) -> i32 {
+    entries.into_iter().filter(|e| e.activity.as_ref().is_some_and(|a| a.kind != "turn")).count() as i32
 }
 
 /// `Card`: a step as its card.
 pub fn card(step: usize, index: usize, runs: &[MightyGraphRun], locale: &Locale) -> Option<Content> {
+    let held = entries_by_step(index, runs);
+    card_held(step, index, runs, held.get(step).map_or(&[], Vec::as_slice), locale)
+}
+
+/// [`card`] with the step's entries ([`entries_by_step`]) already read.
+pub fn card_held(step: usize, index: usize, runs: &[MightyGraphRun], held: &[&LogEntry], locale: &Locale) -> Option<Content> {
     let request = &runs[index];
     let all = steps(request);
     let item = all.get(step)?;
-    let held = entries(step, index, runs);
     let activity_runs = activity_runs(index, runs);
     let state = state_of(item, &activity_runs, locale);
     let pending = is_pending(item);
     let running = !support::layout_terminal(&state) && !pending;
-    let newest =
-        latest(&held).or_else(|| if running { item.active_form.as_deref().and_then(card::line).map(|line| (line, true)) } else { None });
+    let newest = latest_of(held.iter().copied())
+        .or_else(|| if running { item.active_form.as_deref().and_then(card::line).map(|line| (line, true)) } else { None });
     let activity = if pending { None } else { newest };
     let end = ended(item).or_else(|| if support::layout_terminal(&state) && !pending { activity_end(index, runs) } else { None });
     Some(Content {
@@ -490,7 +515,7 @@ pub fn card(step: usize, index: usize, runs: &[MightyGraphRun], locale: &Locale)
         state_word: if pending { locale.get("graph.state.pending") } else { card::state_word(&state, locale) },
         started_at: started(item),
         ended_at: end,
-        tool_calls: Some(calls(&held)),
+        tool_calls: Some(calls(held.iter().copied())),
         tokens: None,
         nested: 0,
         marks: vec![],
@@ -504,7 +529,7 @@ pub fn card(step: usize, index: usize, runs: &[MightyGraphRun], locale: &Locale)
 }
 
 /// `State`: the state a step's card shows: done as the list says; in progress, the state of its activity.
-pub fn state_of(step: &FlowStep, activity: &[MightyGraphRun], locale: &Locale) -> String {
+pub fn state_of(step: &FlowStep, activity: &[&MightyGraphRun], locale: &Locale) -> String {
     if status(step) == "completed" {
         return "completed".into();
     }
@@ -512,7 +537,7 @@ pub fn state_of(step: &FlowStep, activity: &[MightyGraphRun], locale: &Locale) -
         return "running".into();
     }
     if let Some(first) = activity.first()
-        && notice::awaiting_notice(first, activity, locale).is_some()
+        && notice::awaiting_notice_in(first, activity, locale).is_some()
     {
         return "running".into();
     }

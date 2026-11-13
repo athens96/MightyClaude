@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
 use mighty_core::wire;
+use mighty_core::workspace_files::real_path;
 use serde_json::Value;
 
 use crate::flow::roles::AGENT_COLORS;
@@ -43,12 +44,13 @@ pub trait AgentFiles {
     fn head(&self, path: &Path, max: usize) -> Option<Vec<u8>>;
 }
 
-/// The file system itself.
+/// The file system itself. Every path is walked first ([`real_path`]), so a definition folder or file that is a link to another machine's
+/// share (a cloned workspace's `.claude/agents`) is not opened: reading it would hand that machine the user's credentials.
 pub struct DiskFiles;
 
 impl AgentFiles for DiskFiles {
     fn list(&self, folder: &Path) -> Option<Vec<FileInfo>> {
-        let entries = std::fs::read_dir(folder).ok()?;
+        let entries = std::fs::read_dir(real_path(folder)?).ok()?;
         Some(
             entries
                 .filter_map(Result::ok)
@@ -66,7 +68,7 @@ impl AgentFiles for DiskFiles {
     }
 
     fn info(&self, path: &Path) -> Option<FileInfo> {
-        let meta = std::fs::metadata(path).ok()?;
+        let meta = std::fs::metadata(real_path(path)?).ok()?;
         Some(FileInfo {
             name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
             length: meta.len(),
@@ -77,7 +79,7 @@ impl AgentFiles for DiskFiles {
 
     fn head(&self, path: &Path, max: usize) -> Option<Vec<u8>> {
         use std::io::Read;
-        let file = std::fs::File::open(path).ok()?;
+        let file = std::fs::File::open(real_path(path)?).ok()?;
         let mut buffer = Vec::with_capacity(max.min(64 * 1024));
         file.take(max as u64).read_to_end(&mut buffer).ok()?;
         Some(buffer)

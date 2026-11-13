@@ -139,6 +139,56 @@ fn markdown_pictures_outside_code_fences_follow_the_path_rule() {
     assert_eq!(images::read_located(&path, &workspace).unwrap(), png_default());
 }
 
+/// A picture named in Korean, Chinese, Japanese or with an emoji is looked up like any other, and no byte offset of the path rule falls
+/// inside a character: `![결과](스크린샷.png)` once split "스크린샷" at its fifth byte and took the app down.
+#[test]
+fn pictures_named_in_any_script_are_looked_up_whole() {
+    let directory = Temp::new("image-scripts");
+    let workspace = directory.path().join("작업 공간");
+    std::fs::create_dir_all(workspace.join("결과")).unwrap();
+    let names = ["스크린샷.png", "截图.png", "スクショ.png", "📷.png", "결과/화면 1.png"];
+    for name in names {
+        std::fs::write(workspace.join(name), png_default()).unwrap();
+    }
+    let roots = [directory.path().join("temporary")];
+    let locate = |value: &str| images::locate(value, Some(&workspace), Some(&roots));
+    let pictures =
+        images::markdown_images("![결과](스크린샷.png) ![图](截图.png)\n![写真](スクショ.png) ![📷](📷.png) ![화면](<결과/화면 1.png>)");
+    assert_eq!(pictures.iter().map(|p| p.source.as_str()).collect::<Vec<_>>(), names);
+    assert_eq!(pictures[0].alt, "결과");
+    for picture in &pictures {
+        assert!(matches!(locate(&picture.source), AgentImageLocation::File { .. }), "{} is in the workspace", picture.source);
+        assert_eq!(images::media_type_for_file_name(&picture.source), Some("image/png"));
+        assert!(!images::entry_text(1, &picture.source, &common::ko()).is_empty());
+    }
+    let encoded = percent_encoding::utf8_percent_encode("스크린샷.png", percent_encoding::NON_ALPHANUMERIC).to_string();
+    assert!(matches!(locate(&encoded), AgentImageLocation::File { .. }), "percent-encoded, it is the same picture");
+    // Every whole-character cut of these, and short values whose fifth byte is inside a character: refused or read, never a panic.
+    let values = [
+        "스크린샷.png",
+        "📷.png",
+        "data😀,x",
+        "dat한:image/png;base64,AAAA",
+        "데이터:image/png;base64,AAAA",
+        "日本語:x.png",
+        "ü:x.png",
+        "한:/x.png",
+        "file:///작업/스크린샷.png",
+        "file://서버/공유/a.png",
+        "https://例え.jp/画像.png",
+        "%ED%95%9C.png",
+        "\u{feff}스크린샷.png",
+    ];
+    for value in values {
+        for (at, _) in value.char_indices().chain([(value.len(), ' ')]) {
+            let _ = locate(&value[..at]);
+        }
+    }
+    assert!(matches!(locate("https://例え.jp/画像.png"), AgentImageLocation::Remote { ref host, .. } if host == "例え.jp"));
+    assert_eq!(locate("데이터:image/png;base64,AAAA"), AgentImageLocation::Refused, "only an ASCII data: is a data URI");
+    assert_eq!(locate("file://서버/공유/a.png"), AgentImageLocation::Refused, "a share is never asked");
+}
+
 /// Verification.cs:1294 "agent images: the transcript draws a PNG thumbnail at most 480 x 640" (TheTranscriptDrawsAPngThumbnailAtMost480By640).
 #[test]
 fn the_transcript_draws_a_png_thumbnail_at_most_480_by_640() {
@@ -216,6 +266,35 @@ fn svg_raster_input_refuses_active_or_external_content() {
     ] {
         assert!(SafeSvgDocument::parse(svg.as_bytes()).is_err(), "unsafe SVG admitted: {svg}");
     }
+}
+
+/// A style sheet reads the parsed text: a comment or a CDATA section between the letters of `@import` or `url(` hides them from the
+/// bytes' check, not from the drawing (and the canonical document drops the comment). C#'s SafeSvgDocument checks the bytes only and
+/// admits these (the parity vectors leave them out); here they are refused. Names XmlReader cannot read are refused as C# refuses them.
+#[test]
+fn references_split_by_markup_and_names_no_parser_reads_are_refused() {
+    for svg in [
+        "<svg><style>@im<!-- x -->port 'https://example.com/a.css';</style></svg>",
+        "<svg><style>@im<![CDATA[port 'https://example.com/a.css';]]></style></svg>",
+        "<svg><style><![CDATA[@im]]><![CDATA[port 'https://example.com/a.css';]]></style></svg>",
+        "<svg><style>rect { fill: ur<!-- -->l(https://example.com/x.png) }</style></svg>",
+        "<svg><style><![CDATA[rect { fill: ur]]><![CDATA[l(https://example.com/x.png) }]]></style></svg>",
+        "<svg><style>rect { fill: url(<!-- -->https://example.com/x.png) }</style></svg>",
+        "<svg><style>@i&#109;<!-- -->port 'https://example.com/a.css';</style></svg>",
+        "<svg><text>i&#109;age-set<!-- -->(</text></svg>",
+    ] {
+        assert_eq!(SafeSvgDocument::parse(svg.as_bytes()).err(), Some(AgentImageError::ExternalSvg), "{svg}");
+    }
+    for svg in [
+        "<svg><set/attributeName='href'/to='https://example.com'/></svg>",
+        "<svg><g/onload='alert(1)'/></svg>",
+        "<svg><script/x>alert(1)</script/x></svg>",
+        "<svg><g a/b='1'/></svg>",
+    ] {
+        assert_eq!(SafeSvgDocument::parse(svg.as_bytes()).err(), Some(AgentImageError::Undecodable), "{svg}");
+    }
+    let kept = SafeSvgDocument::parse(b"<svg><style>rect { fill: red }<!-- c --></style><text>ur<!-- -->l</text></svg>").unwrap();
+    assert_eq!(kept.xml, "<svg><style>rect { fill: red }</style><text>url</text></svg>", "a comment that spells nothing external");
 }
 
 /// The canonical document keeps the drawing and writes it as `XElement.ToString(DisableFormatting)` does: double quotes, `" />"`

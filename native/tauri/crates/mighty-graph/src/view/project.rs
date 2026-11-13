@@ -6,6 +6,7 @@
 //! `RunSession`; what lives outside this crate (the session record, the Ouroboros dashboard, the style engine, the files on disk, the
 //! background output) comes in through [`Sources`].
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
@@ -371,17 +372,23 @@ impl MightyPane {
 pub fn project(pane: &RunSession, state: &mut MightyPane, sources: &Sources, locale: &Locale) -> MightyProjection {
     let retained = pane.graph_runs();
     let older = sources.older;
-    let runs: Vec<MightyGraphRun> = older.iter().chain(retained).cloned().collect();
+    let runs: Cow<[MightyGraphRun]> =
+        if older.is_empty() { Cow::Borrowed(retained) } else { Cow::Owned(older.iter().chain(retained).cloned().collect()) };
+    let runs: &[MightyGraphRun] = &runs;
+    // The runs as views draw them, made once here for the diagram, its copy, the log strip, the progress panel and 기록 (each of which
+    // takes them as they are: shown runs show as they are).
+    let shown = support::shown_runs(runs, locale);
+    let shown: &[MightyGraphRun] = &shown;
     let presentation = timeline::mode(pane);
     // Each result card names its own request's files; the newest that names any opens its list by itself, once.
     let files = state.resolve_result_files(retained, sources.root);
     let published: Vec<(String, bool)> =
         retained.iter().filter_map(|r| files.get(r.id()).map(|f| (r.id().to_string(), !f.is_empty()))).collect();
     state.result_files.publish(&published);
-    let plan_run_id = diagram_plan_run_id(sources.pending_plan, true, &runs);
+    let plan_run_id = diagram_plan_run_id(sources.pending_plan, true, runs);
     state.executions = sources.executions.to_vec();
-    let galleries = images::galleries(&runs, sources.root, older.len(), sources.images);
-    let plan_records = diagram_records(pane.plan_history.as_deref(), &runs);
+    let galleries = images::galleries(runs, sources.root, older.len(), sources.images);
+    let plan_records = diagram_records(pane.plan_history.as_deref(), runs);
     // A Claude pane's flow is its role view: every card is laid out open here, so every block the page may open has its copy.
     let fan_out = pane.kind() == "claude" && pane.provider() == "claude";
     let history = shows_history_block(pane.provider(), retained, pane.resume_id.as_deref());
@@ -399,12 +406,12 @@ pub fn project(pane: &RunSession, state: &mut MightyPane, sources: &Sources, loc
         ..layout::Options::default()
     };
     let draft = pane.draft.as_deref().unwrap_or("");
-    let made = layout::make(&runs, draft, pane.status() == "running", &state.expanded, &options, locale);
+    let made = layout::make(shown, draft, pane.status() == "running", &state.expanded, &options, locale);
     let provider_label = labels::provider_label(pane.provider());
-    let blocks = view_model::blocks(&made, &runs, draft, provider_label, sources.animations, sources.catalog, Some(true), locale);
+    let blocks = view_model::blocks(&made, runs, draft, provider_label, sources.animations, sources.catalog, Some(true), locale);
     // The background sub-agents and tasks by their diagram node, for their kind, output lines and notice reply.
     let mut background: HashMap<String, &MightyGraphAgent> = HashMap::new();
-    for run in &runs {
+    for run in runs {
         for agent in run.agents() {
             if agent.is_task() || agent.is_background_agent() {
                 background.entry(support::node_id(run, &format!("agent:{}", agent.id()))).or_insert(agent);
@@ -413,8 +420,8 @@ pub fn project(pane: &RunSession, state: &mut MightyPane, sources: &Sources, loc
     }
     let tails = sources.tails;
     let output = |id: &str| tails.get(id).cloned().unwrap_or_default();
-    let flow = copy::blocks(&made, &runs, fan_out, sources.definitions, &output, locale);
-    let ordinals = support::request_ordinals(&runs);
+    let flow = copy::blocks(&made, shown, fan_out, sources.definitions, &output, locale);
+    let ordinals = support::request_ordinals(runs);
     let mut cards: IndexMap<String, Value> = IndexMap::new();
     let mut copies: IndexMap<String, WebMightyBlock> = IndexMap::new();
     for raw in blocks {
@@ -544,20 +551,20 @@ pub fn project(pane: &RunSession, state: &mut MightyPane, sources: &Sources, loc
         header: header(style.map(|s| s.name), style.and_then(|s| s.phase_title), locale),
         fan_out: fan_out.then_some(true),
         log: if fan_out {
-            copy::log_of(&runs, pane.flow_log_collapsed == Some(true), sources.definitions, sources.zone, locale).map(|l| l.to_json())
+            copy::log_of(shown, pane.flow_log_collapsed == Some(true), sources.definitions, sources.zone, locale).map(|l| l.to_json())
         } else {
             None
         },
         // Every agent pane has the progress panel: the request in view, its state, and the plan its agent keeps, if any.
-        progress: Some(Value::Object(copy::progress_of(&runs, locale).into_iter().map(|(id, p)| (id, p.to_json())).collect())),
+        progress: Some(Value::Object(copy::progress_of(shown, locale).into_iter().map(|(id, p)| (id, p.to_json())).collect())),
     };
     MightyProjection {
         blocks: copies,
         inputs,
         older_key: older_key(older),
         older_runs: older.to_vec(),
-        timeline: (presentation == "timeline").then(|| web_timeline(&runs, older.len(), state, sources, pane.provider(), locale)),
-        structure: (presentation == "structure").then(|| web_structure(pane, &runs, state, sources, locale)),
+        timeline: (presentation == "timeline").then(|| web_timeline(shown, older.len(), state, sources, pane.provider(), locale)),
+        structure: (presentation == "structure").then(|| web_structure(pane, runs, state, sources, locale)),
     }
 }
 
@@ -567,7 +574,7 @@ fn graph_request_title(run: &MightyGraphRun, ordinal: i32, provider: &str, sourc
     request_title(run, ordinal, labels::provider_label(provider), prefix.as_deref(), locale)
 }
 
-/// `WebTimeline`: the timeline's groups (`MightyTimeline.Groups`), each row's words built here.
+/// `WebTimeline`: the timeline's groups (`MightyTimeline.Groups`), each row's words built here. `runs` are shown already, or not.
 fn web_timeline(
     runs: &[MightyGraphRun],
     older: usize,

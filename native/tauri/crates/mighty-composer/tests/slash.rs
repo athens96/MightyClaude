@@ -189,6 +189,41 @@ fn cap_at_400() {
     assert_eq!(slash::commands("claude", None, &home, &DiskFiles, &ko()).len(), slash::MAXIMUM_COMMANDS);
 }
 
+/// Command groups nest eight folders deep at most, and a folder linked to itself or to one above it is read once (C# reads on until the
+/// path is too long for the system).
+#[test]
+fn command_groups_are_read_once_and_eight_deep_at_most() {
+    let root = Temp::new("slash-depth");
+    let home = root.path().join("home");
+    let commands = home.join(".claude").join("commands");
+    let deep = |levels: usize| (1..=levels).fold(commands.clone(), |path, level| path.join(format!("g{level}")));
+    write(&deep(8).join("eighth.md"), "eight down");
+    write(&deep(9).join("ninth.md"), "nine down");
+    write(&commands.join("top.md"), "top");
+    let found = |l: &Locale| slash::commands("claude", None, &home, &DiskFiles, l).into_iter().map(|c| c.invocation).collect::<Vec<_>>();
+    assert_eq!(found(&ko()), ["g1:g2:g3:g4:g5:g6:g7:g8:eighth", "top"]);
+    #[cfg(windows)]
+    {
+        #[allow(clippy::disallowed_methods, reason = "the test's own mklink, no child of the app")]
+        let junction = |link: &Path, target: &Path| {
+            std::process::Command::new("cmd")
+                .arg("/c")
+                .arg("mklink")
+                .arg("/J")
+                .arg(link)
+                .arg(target)
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        // A junction anyone may make: to the commands folder itself, and to a group above it.
+        if junction(&commands.join("again"), &commands) && junction(&deep(2).join("up"), &deep(1)) {
+            assert_eq!(found(&ko()), ["g1:g2:g3:g4:g5:g6:g7:g8:eighth", "top"], "each folder once");
+        } else {
+            eprintln!("skipped: no junction could be made here");
+        }
+    }
+}
+
 /// The catalogue through a fixture tree instead of the disk: the same answers as `discovery` (the trait the host's tests use).
 #[test]
 fn discovery_through_fixture_files() {

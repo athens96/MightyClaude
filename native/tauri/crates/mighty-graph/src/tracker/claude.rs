@@ -258,7 +258,7 @@ impl ExecutionGraphTracker {
         } else if kind == Some("user")
             && let Some(message) = message
         {
-            let blocks = objects(prop(Some(message), "content")).cloned().unwrap_or_default();
+            let blocks = objects(prop(Some(message), "content")).map_or(&[][..], Vec::as_slice);
             for block in blocks.iter().filter(|b| text(Some(b), "type") == Some("tool_result")) {
                 let Some(tool_id) = key(prop(Some(block), "tool_use_id")).map(str::to_string) else { continue };
                 self.remember_tool(&tool_id, owner.clone());
