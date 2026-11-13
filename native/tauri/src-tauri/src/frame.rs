@@ -490,6 +490,14 @@ pub fn start_rename_workspace(host: &Arc<Host>, id: String) {
     });
 }
 
+/// The composer's `/rename` (C# `SlashPalette`: `owner.RenameSession(id)`): the pane's rename sheet, its flow left to run on its own.
+pub fn start_rename_session(host: &Arc<Host>, id: String) {
+    let host = host.clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = act(&host, rename_session(&host, &id)).await;
+    });
+}
+
 async fn rename_session(host: &Arc<Host>, id: &str) -> Result<(), String> {
     let Some((current, agent)) = host.view().snapshot.session(id).map(|s| (s.title().to_string(), s.kind() == "claude")) else {
         return Ok(());
@@ -617,7 +625,8 @@ fn saved_text(host: &Host) -> TextAppearance {
     )
 }
 
-fn current_text(host: &Host) -> TextAppearance {
+/// The text setting now (C# `AppText.Current`): the saved one until `textSize` changes it; the terminals' size and code font too.
+pub fn text_setting(host: &Host) -> TextAppearance {
     let frame = frame(host);
     let mut text = lock(&frame.text);
     text.get_or_insert_with(|| saved_text(host)).clone()
@@ -631,20 +640,22 @@ fn push_text(host: &Host, text: &TextAppearance) {
 /// C# `textSize{step}` (`SetTextAppearance`): one size larger or smaller, or back to 100% with the fonts kept; the page follows the
 /// `text` push. Saving it is Settings' (W6): the registry is shared with the installed app, and this host writes none of it yet.
 fn text_size(host: &Host, step: f64) {
-    let current = current_text(host);
+    let current = text_setting(host);
     let next = if step == 0.0 { current.with_scale(1.0) } else { current.stepped(if step > 0.0 { 1 } else { -1 }) };
     if next == current {
         return;
     }
     *lock(&frame(host).text) = Some(next.clone());
     push_text(host, &next);
+    // C# `TextAppearanceChanged`: the terminals take their size again.
+    crate::terminal::restyle(host);
 }
 
 /// What the page's `ready` brings back that a reload lost: its open dialogs (`dialogs.rs`) and, when it is not the standard one, the
 /// text setting.
 pub fn page_ready(host: &Arc<Host>) {
     dialogs::page_ready(host);
-    let text = current_text(host);
+    let text = text_setting(host);
     if !text.is_standard() {
         push_text(host, &text);
     }

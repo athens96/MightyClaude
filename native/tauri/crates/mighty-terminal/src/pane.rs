@@ -729,6 +729,20 @@ impl TerminalPane {
         self.emit(effects);
     }
 
+    /// C# `RefreshTerminalTheme` when the theme or the text setting changed: the colours and the font again, to a ready page.
+    pub fn restyle(&self) {
+        let look = self.look();
+        let mut effects = Effects::default();
+        {
+            let state = lock(&self.state);
+            if state.closed || !state.ready {
+                return;
+            }
+            TerminalPane::theme_messages(&state, &mut effects, look);
+        }
+        self.emit(effects);
+    }
+
     /// One tick of the window's 32 ms clock: the output while the terminal runs, and the footer when it changed since the page last
     /// had it (C# `QueueWebTerminalFooter`, after `terminalOpen`).
     pub fn tick(&self) {

@@ -8,6 +8,8 @@ pub const SCALE_KEY: &str = "textScale";
 pub const FAMILY_KEY: &str = "textFontFamily";
 pub const TRANSCRIPT_FAMILY_KEY: &str = "textTranscriptFontFamily";
 pub const CODE_FAMILY_KEY: &str = "textCodeFontFamily";
+/// `TerminalBaseSize`: a terminal's size at the standard setting (points).
+pub const TERMINAL_BASE_SIZE: f64 = 12.0;
 
 /// One stored value as the settings store returns it.
 #[derive(Debug, Clone, PartialEq)]
@@ -67,6 +69,16 @@ impl TextAppearance {
 
     pub fn with_scale(&self, scale: f64) -> TextAppearance {
         TextAppearance { scale: normalized(scale), ..self.clone() }
+    }
+
+    /// `Size`: a size the app draws at 100%, drawn at this scale to the nearest half point (as it is at 100%).
+    pub fn size(&self, size: f64) -> f64 {
+        if self.scale == 1.0 { size } else { (size * self.scale * 2.0).round() / 2.0 }
+    }
+
+    /// `TerminalSize`: the terminal's size, 12 pt at 100%.
+    pub fn terminal_size(&self) -> f64 {
+        self.size(TERMINAL_BASE_SIZE)
     }
 
     /// `ResolvedTranscriptFamily`: the conversation's own family, else the interface's.
@@ -133,6 +145,21 @@ mod tests {
         assert_eq!(normalized(f64::NAN), 1.0);
         assert_eq!(normalized(-3.0), 1.0);
         assert_eq!(normalized(9.0), 1.5);
+    }
+
+    /// C# `TextAppearanceVerification`: sizes at a scale, to the nearest half point, and the terminal's.
+    #[test]
+    fn sizes_follow_the_scale_to_the_half_point() {
+        let standard = TextAppearance::default();
+        for size in [9.0, 10.0, 10.5, 10.8, 11.0, 11.3, 12.5, 13.0, 34.0] {
+            assert_eq!(standard.size(size), size, "at scale 1 a {size}pt base stays");
+        }
+        assert_eq!(standard.terminal_size(), 12.0);
+        assert_eq!(TextAppearance::new(1.1, None, None, None).size(13.0), 14.5, "13 at 110% is 14.3, drawn at 14.5");
+        assert_eq!(TextAppearance::new(0.85, None, None, None).size(12.5), 10.5, "12.5 at 85% is 10.625, drawn at 10.5");
+        let large = TextAppearance::new(1.5, None, None, None);
+        assert_eq!((large.size(11.0), large.terminal_size()), (16.5, 18.0), "150% of 11 and of the terminal's 12");
+        assert_eq!(TextAppearance::new(0.85, None, None, None).size(10.0), 8.5);
     }
 
     #[test]

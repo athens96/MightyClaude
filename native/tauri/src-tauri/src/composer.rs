@@ -577,10 +577,10 @@ fn slash_action(host: &Arc<Host>, view: &mut View, id: &str, action: SlashComman
                 slash_note(view, id, &l.get_with("slash.note.permissionChanged", &[("label", &label)]))?;
             }
         }
-        // Usage, Settings, plugins and rename open screens of later stages (W6, W4).
-        SlashCommandAction::ShowUsage | SlashCommandAction::OpenSettings | SlashCommandAction::OpenPlugins | SlashCommandAction::Rename => {
-            return Ok(false);
-        }
+        // The pane's rename sheet (frame.rs); it answers on its own while the typed command clears.
+        SlashCommandAction::Rename => crate::frame::start_rename_session(host, id.to_string()),
+        // Usage, Settings and plugins open screens of a later stage (W6).
+        SlashCommandAction::ShowUsage | SlashCommandAction::OpenSettings | SlashCommandAction::OpenPlugins => return Ok(false),
     }
     Ok(true)
 }

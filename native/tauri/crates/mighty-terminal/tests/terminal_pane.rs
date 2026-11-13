@@ -192,6 +192,24 @@ async fn output_waits_for_a_ready_page_and_a_second_ready_takes_the_look_again()
     pane.dispose().await;
 }
 
+/// C# `RefreshTerminalTheme` on a theme or text setting change: a ready terminal takes the colours and the font again; one the page
+/// has not opened yet takes them when it is ready.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_theme_or_text_setting_reaches_a_ready_terminal() {
+    let fixture = Fixture::new("restyle");
+    let pane = fixture.pane(PaneKind::Shell, Some(fixture.folder.clone()));
+    pane.restyle();
+    assert!(fixture.window.posts().is_empty(), "nothing before the page opens the pane");
+    pane.handle_message(&json!({"type": "ready", "columns": 80, "rows": 24})).await;
+    *fixture.window.light.lock().unwrap() = true;
+    *fixture.window.font.lock().unwrap() = TerminalFont { size: 18.0, family: Some("Fira Code".into()) };
+    pane.restyle();
+    let posts = fixture.window.posts();
+    assert!(posts.contains(&TerminalMessage::Theme { light: true }));
+    assert!(posts.contains(&TerminalMessage::Font { size: 18.0, family: Some("Fira Code".into()) }));
+    pane.dispose().await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_terminal_pane_shows_its_owners_commands() {
     let fixture = Fixture::new("agent-pane");

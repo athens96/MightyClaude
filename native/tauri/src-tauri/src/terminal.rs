@@ -47,19 +47,16 @@ pub enum Pending {
     /// The shell pane's history dialog is a native panel (C# `ShowTerminalHistory`, host-contract D14): `terminalHistory` makes its
     /// content (mighty-terminal `history`) and shows nothing until W6's NativeNode forms.
     HistoryDialog,
-    /// The text setting (C# `AppText.Current`: the terminal's size and code font, W6): terminals take 12 pt and the stand-in face.
-    TextSetting,
     /// The agent's `run_in_terminal` / `read_latest_output` / `stop` (Agent IO MCP, W7): its terminals are [`Terminals::agent`]'s.
     AgentIoTools,
-    /// A command the app types into a new shell pane (C# `RunTerminalCommandAsync`: style installs, sign-ins; W6/W9), which needs
-    /// `addPane`: [`TerminalPane::write`] with `TerminalInput::apply` is its typing.
+    /// A command the app types into a new shell pane (C# `RunTerminalCommandAsync`: style installs, sign-ins; W6/W9): the pane is
+    /// frame.rs's `add_pane`, and [`TerminalPane::write`] with `TerminalInput::apply` is its typing.
     RunTerminalCommand,
     /// The phone's view of a shell's status and of a terminal prompt (C# `mobileRouter.Changed`, `mobilePush`; W8).
     Mobile,
 }
 
-pub const PENDING: [Pending; 5] =
-    [Pending::HistoryDialog, Pending::TextSetting, Pending::AgentIoTools, Pending::RunTerminalCommand, Pending::Mobile];
+pub const PENDING: [Pending; 4] = [Pending::HistoryDialog, Pending::AgentIoTools, Pending::RunTerminalCommand, Pending::Mobile];
 
 /// How often an agent terminal is looked at for a prompt, and how many looks with no command running end the watch.
 const PROMPT_INTERVAL: Duration = Duration::from_millis(400);
@@ -156,9 +153,11 @@ impl PaneEvents for HostEvents {
         self.host.upgrade().is_some_and(|host| host.view().snapshot.theme() == "light")
     }
 
-    /// The text setting is W6's ([`Pending::TextSetting`]).
+    /// The text setting (frame.rs, C# `AppText.Current`): its terminal size and code font.
     fn font(&self) -> TerminalFont {
-        TerminalFont::default()
+        let Some(host) = self.host.upgrade() else { return TerminalFont::default() };
+        let text = crate::frame::text_setting(&host);
+        TerminalFont { size: text.terminal_size(), family: text.code_family }
     }
 
     fn agent_terminal(&self, owner: &str) -> Option<Arc<AgentTerminal>> {
@@ -340,6 +339,13 @@ impl Terminals {
 
     fn all(&self) -> Vec<Arc<TerminalPane>> {
         lock(&self.panes).values().cloned().collect()
+    }
+
+    /// C# `RefreshTerminalTheme` for every pane (`Retheme`, `TextAppearanceChanged`): the theme or the text setting changed.
+    pub fn restyle(&self) {
+        for pane in self.all() {
+            pane.restyle();
+        }
     }
 
     /// The terminal of a shell or agent-terminal pane, made the first time (C# `WebTerminalPane`); "Session not found." for any
@@ -723,6 +729,13 @@ pub fn terminals(host: &Host) -> Result<Arc<Terminals>, String> {
     host.app.try_state::<Arc<Terminals>>().map(|state| state.inner().clone()).ok_or_else(|| "the terminals are not ready".to_string())
 }
 
+/// The theme or the text setting changed (methods.rs's `setTheme`, frame.rs's `textSize`): every terminal takes its look again.
+pub fn restyle(host: &Host) {
+    if let Ok(terminals) = terminals(host) {
+        terminals.restyle();
+    }
+}
+
 /// The terminal prompt card of a pane, for the cards model (panes.rs).
 pub fn prompt_input(host: &Host, pane: &str) -> Option<TerminalPromptInput> {
     terminals(host).ok()?.prompt_input(pane)
@@ -863,6 +876,6 @@ mod tests {
     fn a_working_folder_is_a_full_path() {
         assert!(is_working_folder(if cfg!(windows) { "C:\\work\\child" } else { "/work/child" }));
         assert!(!is_working_folder("relative\\child") && !is_working_folder("a\0b") && !is_working_folder(&"x".repeat(4097)));
-        assert_eq!(PENDING.len(), 5);
+        assert_eq!(PENDING.len(), 4);
     }
 }

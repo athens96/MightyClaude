@@ -112,7 +112,10 @@ pub fn registry() -> Registry {
     });
     methods.add("setTheme", |host: Arc<Host>, args| async move {
         let theme = if text(&args, "theme") == Some("light") { "light" } else { "dark" };
-        change(&host, |view| view.update(|state| state.theme = Some(theme.into())))
+        change(&host, |view| view.update(|state| state.theme = Some(theme.into())))?;
+        // C# `Retheme`: the terminals take their colours again.
+        crate::terminal::restyle(&host);
+        Ok(Value::Null)
     });
     methods.add("setSidebarCollapsed", |host: Arc<Host>, args| async move {
         let collapsed = flag(&args, "collapsed");

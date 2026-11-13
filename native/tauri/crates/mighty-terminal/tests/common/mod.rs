@@ -20,6 +20,7 @@ pub struct Window {
     pub pressed: Mutex<Vec<String>>,
     pub agents: Mutex<HashMap<String, Arc<AgentTerminal>>>,
     pub light: Mutex<bool>,
+    pub font: Mutex<TerminalFont>,
 }
 
 impl Window {
@@ -68,7 +69,7 @@ impl PaneEvents for Window {
         *self.light.lock().unwrap()
     }
     fn font(&self) -> TerminalFont {
-        TerminalFont::default()
+        self.font.lock().unwrap().clone()
     }
     fn agent_terminal(&self, owner: &str) -> Option<Arc<AgentTerminal>> {
         self.agents.lock().unwrap().get(owner).cloned()
