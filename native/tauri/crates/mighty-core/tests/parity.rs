@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// The C# tool, built into the workspace's target folder, or None when there is no .NET SDK to build it.
+#[allow(clippy::disallowed_methods, reason = "the check's own .NET build, no child of the app")]
 fn csharp_tool() -> Option<PathBuf> {
     let tauri = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let project = tauri.join("tools/parity/Parity.csproj");
@@ -35,6 +36,7 @@ fn csharp_tool() -> Option<PathBuf> {
     }
 }
 
+#[allow(clippy::disallowed_methods, reason = "the check's own .NET tool, no child of the app")]
 fn dotnet(tool: &Path, args: &[&Path]) {
     let mut command = Command::new("dotnet");
     command.arg(tool);

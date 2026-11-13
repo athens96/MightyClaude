@@ -475,6 +475,12 @@ fn active_git_key(state: &AppSnapshot) -> Option<String> {
 
 /// C# `WorkspaceGitInfo.ReadAsync`: `git status --porcelain=v2 --branch` in the folder, locks, hooks and fsmonitor off, the
 /// `GIT_*` environment cleared, at most 2 s and 256 KB; None when git is not on PATH, the folder is gone or git fails.
+///
+/// The one spawn of the app that does not go through `Platform::processes` yet (README: Child processes): C# starts git with
+/// `ChildProcess.Start`, but the port cannot remove the app's `GIT_*` variables (its environment is laid over the app's) and the
+/// Mac's `ProcessHost` is still `Unsupported`. Until it moves, a git read that coincides with a Windows launch can hold that
+/// child's pipe ends open for as long as git runs (2 s at most).
+#[allow(clippy::disallowed_methods, reason = "the one named exception to the ProcessHost rule, until git reads move onto the port")]
 pub fn read_git(folder: &str) -> Option<WorkspaceGitInfo> {
     use std::io::Read;
     use std::process::{Command, Stdio};

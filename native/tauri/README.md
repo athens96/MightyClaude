@@ -105,6 +105,18 @@ origins). Back/forward state, popups, downloads, per-workspace profiles and the 
 The C# host never sends `host`, and every page change for it sits behind `import.meta.env.MODE === 'tauri'`, so the C# page build
 (`dist/`) is byte for byte what it was.
 
+### Child processes
+
+Every child process the app starts goes through the platform's `ProcessHost` (on Windows `WindowsProcessHost`: created
+suspended, put in a kill-on-close job, only its three pipe ends inherited). A `std::process::Command` or `tokio::process::Command`
+spawn passes `bInheritHandles = TRUE` with no handle list, so one that runs while `WindowsProcessHost` launches a child inherits
+that child's pipe ends and keeps its stdin, stdout and stderr open after the child has closed them. `clippy.toml` therefore
+disallows `std::process::Command::new` and `tokio::process::Command::new`, and `cargo clippy -- -D warnings` fails on either. Only
+tests, the fakes and the tests' stand-in child (`mighty-fake-child`) start processes directly, each with an
+`#[allow(clippy::disallowed_methods, reason = "…")]`. One exception is left in the app, named the same way: `host.rs`'s
+`read_git` (the header's git status), until the port can remove the app's `GIT_*` variables as C# does and the Mac has a
+`ProcessHost`.
+
 The frame model (`shell.rs`) ports C# `WebShellModel` whole, field for field: the panes (status word, tone, agent mark, the
 "· 20 days ago" / clock / context meta, the waiting words, the dashboard meta with the model's label), the counts, the sidebar with
 the delegation tree (children under their parent, a closed parent's node), the header with the active workspace's git (read with

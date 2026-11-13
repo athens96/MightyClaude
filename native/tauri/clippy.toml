@@ -1,0 +1,8 @@
+# Every child process starts through the platform's ProcessHost (Windows: WindowsProcessHost). A std or tokio spawn passes
+# bInheritHandles = TRUE with no handle list, so one that runs while WindowsProcessHost launches a child inherits that child's
+# inheritable pipe ends (and holds its stdin, stdout and stderr open after the child has closed them). Tests, the fakes and the
+# tests' stand-in child (tests/fake/child.rs) may spawn directly, each with an #[allow] that says why.
+disallowed-methods = [
+    { path = "std::process::Command::new", reason = "start children through the platform's ProcessHost (README: Child processes)" },
+    { path = "tokio::process::Command::new", reason = "start children through the platform's ProcessHost (README: Child processes)", allow-invalid = true },
+]

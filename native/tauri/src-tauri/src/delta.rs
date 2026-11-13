@@ -659,6 +659,7 @@ mod tests {
     /// The C# bridge itself (`tools/parity`'s `delta` command, WebDelta.cs compiled in) over a random sequence: the same pushes,
     /// byte for byte. Skipped without the .NET SDK (`MIGHTY_PARITY=require` makes that a failure).
     #[test]
+    #[allow(clippy::disallowed_methods, reason = "the check's own .NET tool (dotnet build and run), no child of the app")]
     fn the_deltas_are_the_csharp_bridges() {
         let tauri = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let tool = tauri.join("target/parity-cs/parity.dll");

@@ -37,6 +37,10 @@ fn main() {
             }
         }
         ["--group-child", pid_file] => {
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "the stand-in child is not the app: its grandchild must start outside any job of its own, as a CLI's would"
+            )]
             let mut command = Command::new(std::env::current_exe().expect("own path"));
             command.args(["--long-child", pid_file]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
             #[cfg(windows)]

@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use mighty_platform::SecretVault;
 use mighty_platform_windows::{DpapiVault, REMOTE_KEYS_FOLDER, remote_key_file_name};
 
+#[allow(clippy::disallowed_methods, reason = "a check's own tool, standing in for the C# app; this test starts no child of the app")]
 fn powershell(script: &str, env: &[(&str, &str)]) -> String {
     let mut command = Command::new("powershell.exe");
     command.args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script]);
