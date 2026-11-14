@@ -15,7 +15,6 @@ mod reset;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use mighty_platform::BoxFuture;
@@ -212,60 +211,23 @@ impl From<AccountUsageFailure> for UsageError {
     }
 }
 
-// ── the HTTPS GET port ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── the HTTPS GET over mighty-platform's port ────────────────────────────────────────────────────────────────────────────
 
-/// `AccountUsageHttpRequest`: always a GET.
-#[derive(Clone)]
-pub struct AccountUsageHttpRequest {
-    pub url: Url,
-    pub headers: Vec<(String, String)>,
-    pub timeout: Duration,
-    /// Always "GET"; there so a check's fake transport can say it never saw a POST.
-    pub method: &'static str,
+pub use mighty_platform::http::{HttpsGet, HttpsRequest, HttpsResponse};
+
+/// `AccountUsageHttpRequest`: the port's GET (always a GET: the port has no other method, so no POST can exist on this surface).
+pub type AccountUsageHttpRequest = HttpsRequest;
+/// `AccountUsageHttpResponse`.
+pub type AccountUsageHttpResponse = HttpsResponse;
+
+/// A response with `status` and `body` and nothing else.
+pub fn response(status: u16, body: &str) -> HttpsResponse {
+    HttpsResponse { status, body: body.into(), retry_after: None, redirect_location: None }
 }
 
-impl AccountUsageHttpRequest {
-    pub fn new(url: Url, headers: Vec<(String, String)>, timeout: Duration) -> AccountUsageHttpRequest {
-        AccountUsageHttpRequest { url, headers, timeout, method: "GET" }
-    }
-
-    /// A header's value by name (ignoring case).
-    pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers.iter().find(|(key, _)| key.eq_ignore_ascii_case(name)).map(|(_, value)| value.as_str())
-    }
-
-    /// `Uri.PathAndQuery`.
-    pub fn path_and_query(&self) -> String {
-        path_and_query(&self.url)
-    }
-}
-
-/// The headers' names only: a value can be the sign-in.
-impl std::fmt::Debug for AccountUsageHttpRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AccountUsageHttpRequest")
-            .field("method", &self.method)
-            .field("url", &self.url.as_str())
-            .field("headers", &self.headers.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>())
-            .field("timeout", &self.timeout)
-            .finish()
-    }
-}
-
-/// `AccountUsageHttpResponse`: `redirect_location` is set only by a transport that saw a 3xx; the probe refuses it rather than
-/// following it.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct AccountUsageHttpResponse {
-    pub status: u16,
-    pub body: String,
-    pub retry_after: Option<String>,
-    pub redirect_location: Option<String>,
-}
-
-impl AccountUsageHttpResponse {
-    pub fn new(status: u16, body: &str) -> AccountUsageHttpResponse {
-        AccountUsageHttpResponse { status, body: body.into(), retry_after: None, redirect_location: None }
-    }
+/// A request's header by name (ignoring case).
+pub fn header<'a>(request: &'a HttpsRequest, name: &str) -> Option<&'a str> {
+    request.headers.iter().find(|(key, _)| key.eq_ignore_ascii_case(name)).map(|(_, value)| value.as_str())
 }
 
 /// Why a GET gave no response: the guard refused its URL before it was sent, or the transport failed (no network, a timeout, a
@@ -276,33 +238,38 @@ pub enum HttpFailure {
     Transport(String),
 }
 
-/// `AccountUsageHttpHandler`: one HTTPS GET — no cookies, no credential store, no redirect followed, no retry.
-pub trait HttpsGet: Send + Sync {
-    fn get(&self, request: AccountUsageHttpRequest) -> BoxFuture<'_, Result<AccountUsageHttpResponse, HttpFailure>>;
+/// One GET through the port: the URL guarded first ([`guard`]: refused before it leaves), then sent with the 1 MiB body cap.
+pub async fn send(http: &dyn HttpsGet, request: HttpsRequest) -> Result<HttpsResponse, HttpFailure> {
+    let refused = || HttpFailure::Refused(AccountUsageFailure::refresh_failed(AccountUsageFailureKind::Network));
+    let url = Url::parse(&request.url).map_err(|_| refused())?;
+    guard(&url).map_err(HttpFailure::Refused)?;
+    http.get(request, MAXIMUM_BODY_BYTES).await.map_err(|error| HttpFailure::Transport(error.to_string()))
 }
 
-/// A synchronous handler as an [`HttpsGet`] (the checks' recording transports).
+/// A synchronous handler as an [`HttpsGet`] (the checks' recording transports, the reset smoke's fake): it never reaches a network.
 pub struct HttpFn<F>(pub F);
 
 impl<F> HttpsGet for HttpFn<F>
 where
-    F: Fn(&AccountUsageHttpRequest) -> Result<AccountUsageHttpResponse, HttpFailure> + Send + Sync,
+    F: Fn(&HttpsRequest) -> mighty_platform::Result<HttpsResponse> + Send + Sync,
 {
-    fn get(&self, request: AccountUsageHttpRequest) -> BoxFuture<'_, Result<AccountUsageHttpResponse, HttpFailure>> {
+    fn get(&self, request: HttpsRequest, _max_body: usize) -> BoxFuture<'_, mighty_platform::Result<HttpsResponse>> {
         let answer = (self.0)(&request);
         Box::pin(async move { answer })
     }
 }
 
-/// `ClaudeAccountProbe.Guarded`: the guard runs before the transport, so a URL it refuses never reaches the network.
-pub struct Guarded<H>(pub H);
+/// `ClaudeAccountProbe.Guarded`: the guard runs before the transport, so a URL it refuses never reaches the network (refused with
+/// the guard's copy, never a header value).
+pub struct Guarded(pub Arc<dyn HttpsGet>);
 
-impl<H: HttpsGet> HttpsGet for Guarded<H> {
-    fn get(&self, request: AccountUsageHttpRequest) -> BoxFuture<'_, Result<AccountUsageHttpResponse, HttpFailure>> {
-        match guard(&request.url) {
-            Err(refused) => Box::pin(async move { Err(HttpFailure::Refused(refused)) }),
-            Ok(()) => self.0.get(request),
+impl HttpsGet for Guarded {
+    fn get(&self, request: HttpsRequest, max_body: usize) -> BoxFuture<'_, mighty_platform::Result<HttpsResponse>> {
+        let allowed = Url::parse(&request.url).ok().is_some_and(|url| guard(&url).is_ok());
+        if !allowed {
+            return Box::pin(async { Err(mighty_platform::PlatformError::Refused(copy::detail_refresh_failed())) });
         }
+        self.0.get(request, max_body)
     }
 }
 
@@ -312,7 +279,8 @@ pub const HOST: &str = "api.anthropic.com";
 const ALLOWED: [&str; 4] =
     ["/api/oauth/usage", "/api/oauth/profile", "/api/oauth/usage?cedar_ember=1&skip_spend=1", "/api/oauth/usage?at_wall=1&skip_spend=1"];
 
-fn path_and_query(url: &Url) -> String {
+/// `Uri.PathAndQuery` of a URL.
+pub fn path_and_query(url: &Url) -> String {
     match url.query() {
         Some(query) => format!("{}?{query}", url.path()),
         None => url.path().to_string(),

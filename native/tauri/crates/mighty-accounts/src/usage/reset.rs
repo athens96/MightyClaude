@@ -11,8 +11,8 @@ use mighty_run::{meta, strings};
 use serde_json::Value;
 
 use super::{
-    AccountUsageFailure, AccountUsageHttpRequest, AccountUsageHttpResponse, AccountUsageSnapshot, ClaudeAccountProbe,
-    ClaudeQuotaCredential, HttpFailure, HttpFn, MAXIMUM_BODY_BYTES, UsageError, date, guard, number, retry_interval, timestamp,
+    AccountUsageFailure, AccountUsageHttpRequest, AccountUsageSnapshot, ClaudeAccountProbe, ClaudeQuotaCredential, HttpFailure, HttpFn,
+    MAXIMUM_BODY_BYTES, UsageError, date, guard, number, path_and_query, response, retry_interval, send, timestamp,
 };
 use crate::lock;
 
@@ -351,7 +351,7 @@ impl ClaudeResetEntitlements {
             let mut row = Self::unknown(program);
             let reply = match request(ResetProgram::query(program)) {
                 Err(_) => None,
-                Ok(request) => match http.get(request).await {
+                Ok(request) => match send(http, request).await {
                     Ok(reply) => Some(reply),
                     Err(HttpFailure::Refused(_)) => None,
                     Err(HttpFailure::Transport(why)) => return Err(UsageError::Other(why)),
@@ -486,17 +486,15 @@ pub mod claude_reset_smoke {
     pub async fn run() -> AccountResetSmokeResult {
         let seen: Mutex<(Vec<String>, usize)> = Mutex::new((vec![], 0));
         let http = HttpFn(|request: &AccountUsageHttpRequest| {
-            guard(&request.url).map_err(HttpFailure::Refused)?;
-            let mut seen = lock(&seen);
-            seen.0.push(format!("{} {}", request.method, request.path_and_query()));
-            if request.method != "GET" {
-                seen.1 += 1;
-            }
-            Ok(match request.url.query() {
-                Some("cedar_ember=1&skip_spend=1") => AccountUsageHttpResponse::new(200, CEDAR_AVAILABLE_BODY),
+            let url = url::Url::parse(&request.url).map_err(|_| mighty_platform::PlatformError::Invalid("no URL".into()))?;
+            guard(&url).map_err(|refused| mighty_platform::PlatformError::Refused(refused.detail))?;
+            // The port has GET alone: every request seen is one, so the count of others stays 0 (C# counts `Method != "GET"`).
+            lock(&seen).0.push(format!("GET {}", path_and_query(&url)));
+            Ok(match url.query() {
+                Some("cedar_ember=1&skip_spend=1") => response(200, CEDAR_AVAILABLE_BODY),
                 // A 5xx on an entitlement GET leaves that row unknown and never disturbs the base usage windows.
-                Some("at_wall=1&skip_spend=1") => AccountUsageHttpResponse::new(503, ""),
-                _ => AccountUsageHttpResponse::new(200, if request.url.path().ends_with("profile") { "{}" } else { USAGE_BODY }),
+                Some("at_wall=1&skip_spend=1") => response(503, ""),
+                _ => response(200, if url.path().ends_with("profile") { "{}" } else { USAGE_BODY }),
             })
         });
         let deadline = ResetReadDeadlineBox::new();

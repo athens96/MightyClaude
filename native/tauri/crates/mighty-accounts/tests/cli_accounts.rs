@@ -11,8 +11,10 @@ use std::time::Duration;
 
 use base64::Engine;
 use common::{FakeRunner, catalog, env, ok, result, temp, text, touch};
+#[cfg(windows)]
+use common::{TerminalHosts, launch_plan};
 use mighty_accounts::accounts::{self, CliAccountStatus, CliAccountsCoordinator, CliLoginOption, CliRunner, HostRunner, copy, method};
-use mighty_accounts::terminal::{RecordingTerminal, TerminalHosts, launch_plan};
+use mighty_platform::fake::RecordingTerminalLauncher;
 use mighty_platform::fake::{FakeProcessHost, FakeScript};
 use mighty_run::acp::accounts::Probe;
 use mighty_run::model::CliCommand;
@@ -275,7 +277,13 @@ fn commands_are_the_clis_own() {
     assert_eq!(accounts::status_arguments("gemini"), Some(vec!["agy", "models"]), "antigravity: the model list stands in for a status");
     assert_eq!(accounts::logout_arguments("codex"), Some(vec!["codex", "logout"]), "codex: logout argv");
     assert_eq!(accounts::logout_arguments("gemini"), None, "antigravity: no logout argv");
+}
 
+/// CliAccountVerification.cs:125-140, the terminal half of `CommandsAreTheCLIsOwn`: the external sign-in terminal carries the CLI's
+/// own argv as a separate argument list (the plan is mighty-platform-windows' `launch_plan`, the launcher's own).
+#[cfg(windows)]
+#[test]
+fn the_sign_in_terminal_carries_the_clis_own_argv() {
     let hosts = TerminalHosts::new(None);
     let login = strings_of(&accounts::login_arguments("claude", CliLoginOption::Console).unwrap());
     let wt = launch_plan(&hosts, &login, true, None, None, None, None).unwrap();
@@ -734,54 +742,50 @@ async fn the_host_runner_runs_a_cli_to_its_end_and_kills_one_past_its_time() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
-/// `CliAccountsCoordinator.StartSignInAsync` over the recording launcher (it never opens a window): a terminal sign-in's CLI by its
-/// full path in a Windows Terminal tab, titled and in its folder, with no folder search for a shim; Bedrock's setup in the console
-/// host, whose window closes with it; no launcher, no sign-in.
+/// `CliAccountsCoordinator.StartSignInAsync` over mighty-platform's recording launcher (it never opens a window): a terminal sign-in's
+/// CLI by its full path (the name replaced, the path also given as resolved), titled and in its folder, a terminal app preferred, with
+/// the CLI environment; Bedrock's setup in the system's own console with `CLAUDE_CODE_USE_BEDROCK`; a refused start says so; no
+/// launcher, no sign-in. Where the window opens (Windows Terminal or the console host) is the launcher's plan.
 #[tokio::test]
 async fn a_sign_in_opens_the_clis_own_command_in_a_terminal() {
     common::korean();
     let home = temp("sign-in");
     let bin = home.join("bin");
-    let wt = touch(bin.join(common::program("wt")));
     let agy = touch(bin.join(common::program("agy")));
     touch(bin.join(common::program("claude")));
-    let launcher = Arc::new(RecordingTerminal::default());
-    let hosts = TerminalHosts::new(None);
+    let launcher = Arc::new(RecordingTerminalLauncher::default());
     let coordinator = CliAccountsCoordinator::new(FakeRunner::new(|_, _| ok("")), catalog(), text(&home))
         .with_environment(env(&[("PATH", &text(&bin)), ("FIXTURE_KEY", "sk-FIXTURE-SECRET")]))
-        .with_terminal(launcher.clone(), hosts.clone());
+        .with_terminal(launcher.clone());
     let home_text = text(&home);
     let opened = coordinator.start_sign_in(&strings_of(&["agy"]), Some(&home_text), Some("Antigravity 로그인")).await.expect("it opened");
-    assert!(!opened.closes_with_window, "a Windows Terminal tab hands off at once");
-    let launch = &launcher.launches()[0];
+    assert!(opened.closes_with_window, "the recording launcher's window holds its command");
+    let launch = &launcher.opened()[0];
     assert!(
-        launch.program == wt
-            && launch.args == strings_of(&["new-tab", "--title", "Antigravity 로그인", "-d", &home_text, "--", &agy])
-            && launch.cwd.as_deref() == Some(home.as_path())
-            && launch.env.get("NoDefaultCurrentDirectoryInExePath").map(String::as_str) == Some("1"),
-        "{launch:?}"
+        launch.argv == strings_of(&[&agy])
+            && launch.resolved.as_deref() == Some(agy.as_str())
+            && launch.directory.as_deref() == Some(home.as_path())
+            && launch.title.as_deref() == Some("Antigravity 로그인")
+            && launch.prefer_terminal_app
+            && launch.environment.get("FIXTURE_KEY").map(String::as_str) == Some("sk-FIXTURE-SECRET"),
+        "the terminal sign-in: {:?}",
+        (&launch.argv, &launch.resolved, &launch.directory, &launch.title)
     );
-    assert!(
-        launch.env.get("FIXTURE_KEY").map(String::as_str) == Some("sk-FIXTURE-SECRET")
-            && !format!("{launch:?}").contains("sk-FIXTURE-SECRET"),
-        "the environment goes with the command, and Debug names its names only"
-    );
-
-    let mut bedrock = coordinator
+    let bedrock = coordinator
         .start_sign_in(&strings_of(&accounts::login_arguments("claude", CliLoginOption::Bedrock).unwrap()), None, None)
         .await
         .expect("it opened");
-    let launch = &launcher.launches()[1];
+    let launch = &launcher.opened()[1];
     assert!(
-        bedrock.closes_with_window
-            && launch.program == hosts.console_host
-            && launch.args == strings_of(&["claude", "/setup-bedrock"])
-            && launch.env.get("CLAUDE_CODE_USE_BEDROCK").map(String::as_str) == Some("1"),
-        "Bedrock's setup in the console host: {launch:?}"
+        launch.argv == strings_of(&["claude", "/setup-bedrock"])
+            && launch.resolved.is_none()
+            && !launch.prefer_terminal_app
+            && launch.environment.get("CLAUDE_CODE_USE_BEDROCK").map(String::as_str) == Some("1"),
+        "Bedrock's setup in the system's own console: {:?}",
+        (&launch.argv, launch.prefer_terminal_app)
     );
-    launcher.close(1, 0);
     assert_eq!(bedrock.window.wait().await.ok(), Some(0), "the window's end is awaited");
-    launcher.fail_next();
+    launcher.refuse();
     assert!(coordinator.start_sign_in(&strings_of(&["agy"]), None, None).await.is_err(), "a terminal that cannot start says so");
     let without = CliAccountsCoordinator::new(FakeRunner::new(|_, _| ok("")), catalog(), text(&home));
     assert!(without.start_sign_in(&strings_of(&["agy"]), None, None).await.is_err_and(|e| e.is_unsupported()), "no launcher, no sign-in");

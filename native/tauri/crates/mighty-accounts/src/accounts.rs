@@ -21,7 +21,9 @@ use tokio::io::AsyncReadExt;
 
 pub use mighty_run::acp::accounts::{CliAccountStatus, clean, login_hint, logout_arguments, status_arguments};
 
-use crate::terminal::{self, CliTerminalSignIn, TerminalHosts, TerminalLaunch, TerminalLauncher, TerminalWindow};
+use mighty_platform::{TerminalLaunch, TerminalLauncher, TerminalWindow};
+
+use crate::terminal::CliTerminalSignIn;
 use crate::{bedrock, env_get, lock};
 
 /// `CliAccountMethod`: the language-free ids of the sign-in methods [`CliAccountStatus::method_id`] carries. Decisions compare
@@ -561,7 +563,6 @@ pub struct CliAccountsCoordinator {
     home: String,
     hermes_probe: Option<HermesProbe>,
     terminal: Option<Arc<dyn TerminalLauncher>>,
-    hosts: TerminalHosts,
     statuses: Mutex<HashMap<String, CliAccountStatus>>,
 }
 
@@ -583,7 +584,6 @@ impl CliAccountsCoordinator {
             home: home.into(),
             hermes_probe: None,
             terminal: None,
-            hosts: TerminalHosts::new(None),
             statuses: Mutex::new(HashMap::new()),
         }
     }
@@ -600,10 +600,9 @@ impl CliAccountsCoordinator {
         self
     }
 
-    /// The window a sign-in opens in, and where the console host and cmd.exe are ([`TerminalHosts`]).
-    pub fn with_terminal(mut self, launcher: Arc<dyn TerminalLauncher>, hosts: TerminalHosts) -> CliAccountsCoordinator {
+    /// The window a sign-in opens in (mighty-platform's `TerminalLauncher`).
+    pub fn with_terminal(mut self, launcher: Arc<dyn TerminalLauncher>) -> CliAccountsCoordinator {
         self.terminal = Some(launcher);
-        self.hosts = hosts;
         self
     }
 
@@ -774,25 +773,20 @@ impl CliAccountsCoordinator {
             argv[0] = path.clone();
         }
         let bedrock = argv.iter().any(|a| a == "/setup-bedrock");
-        // Windows Terminal by the full path found along the PATH, the console host by the system folder's: never a bare name.
-        let windows_terminal = if bedrock { None } else { self.find_binary("wt", &environment) };
-        let (program, args) = terminal::launch_plan(
-            &self.hosts,
-            &argv,
-            windows_terminal.is_some(),
-            directory,
-            resolved.as_deref(),
-            windows_terminal.as_deref(),
-            title,
-        )?;
         let mut env = environment;
-        // A login command that is an npm .cmd shim must not find a planted node.exe in the folder it starts in.
-        env.insert(terminal::NO_CURRENT_DIRECTORY_SEARCH.into(), "1".into());
         if bedrock {
             env.insert("CLAUDE_CODE_USE_BEDROCK".into(), "1".into());
         }
-        let closes_with_window = program == self.hosts.console_host;
-        let window = launcher.open(TerminalLaunch { program, args, cwd: directory.map(PathBuf::from), env }).await?;
+        // Bedrock's setup holds the account until its window closes, so it takes the console host, never a Windows Terminal tab.
+        let window = launcher.open(TerminalLaunch {
+            argv,
+            resolved,
+            directory: directory.map(PathBuf::from),
+            title: title.map(str::to_string),
+            environment: env,
+            prefer_terminal_app: !bedrock,
+        })?;
+        let closes_with_window = window.holds_command();
         Ok(SignInWindow { closes_with_window, window })
     }
 

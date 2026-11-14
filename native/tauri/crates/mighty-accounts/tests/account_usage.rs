@@ -15,8 +15,8 @@ use mighty_accounts::usage::{
     self, AccountResetEntitlement, AccountUsageFailure, AccountUsageFailureKind, AccountUsageHttpRequest, AccountUsageHttpResponse,
     AccountUsageService, AccountUsageShapeLog, AccountUsageSmokeOutcome, AccountUsageSnapshot, AccountUsageStatus, AccountUsageStdio,
     AccountUsageWindow, AntigravityAccountProbe, ClaudeAccountProbe, ClaudeQuotaCredential, ClaudeResetEntitlements, Clock,
-    CodexAccountProbe, Guarded, HttpFailure, HttpFn, HttpsGet, ResetProgram, ResetReadDeadlineBox, ResetState, RuntimeProbe, UsageError,
-    UsageProbe, claude_reset_smoke, copy, credential_file,
+    CodexAccountProbe, Guarded, HttpFn, HttpsGet, ResetProgram, ResetReadDeadlineBox, ResetState, RuntimeProbe, UsageError, UsageProbe,
+    claude_reset_smoke, copy, credential_file, header, response,
 };
 use mighty_core::json::Wire;
 use mighty_core::model::AppSnapshot;
@@ -28,6 +28,18 @@ use serde_json::{Value, json};
 const FIXTURE_TOKEN: &str = "sk-ant-oat01-FIXTURE-NOT-A-REAL-TOKEN-0123456789";
 const USAGE_BODY: &str = r#"{"five_hour":{"utilization":42.5,"resets_at":"2026-09-20T12:00:00Z"},"seven_day":{"utilization":91,"resets_at":"2026-09-24T00:00:00Z"}}"#;
 const PROFILE_BODY: &str = r#"{"account":{"email":"fixture@example.test"},"organization":{"rate_limit_tier":"max_20x"}}"#;
+
+/// A request's URL, parsed (the port carries it as text).
+fn url_of(request: &AccountUsageHttpRequest) -> url::Url {
+    url::Url::parse(&request.url).expect("a URL")
+}
+
+/// The guard as a transport sees it: a refused URL never answers.
+fn guarded(request: &AccountUsageHttpRequest) -> mighty_platform::Result<url::Url> {
+    let url = url_of(request);
+    usage::guard(&url).map_err(|refused| mighty_platform::PlatformError::Refused(refused.detail))?;
+    Ok(url)
+}
 
 fn instant() -> DateTime<Utc> {
     DateTime::parse_from_rfc3339("2026-09-20T10:00:00Z").unwrap().with_timezone(&Utc)
@@ -61,10 +73,10 @@ fn answers(
     cedar: (u16, &'static str),
     juniper: (u16, &'static str),
 ) -> impl Fn(&AccountUsageHttpRequest) -> AccountUsageHttpResponse + Send + Sync {
-    move |request: &AccountUsageHttpRequest| match request.url.query() {
-        Some("cedar_ember=1&skip_spend=1") => AccountUsageHttpResponse::new(cedar.0, cedar.1),
-        Some("at_wall=1&skip_spend=1") => AccountUsageHttpResponse::new(juniper.0, juniper.1),
-        _ => AccountUsageHttpResponse::new(200, if request.url.path().ends_with("profile") { PROFILE_BODY } else { USAGE_BODY }),
+    move |request: &AccountUsageHttpRequest| match url_of(request).query() {
+        Some("cedar_ember=1&skip_spend=1") => response(cedar.0, cedar.1),
+        Some("at_wall=1&skip_spend=1") => response(juniper.0, juniper.1),
+        _ => response(200, if url_of(request).path().ends_with("profile") { PROFILE_BODY } else { USAGE_BODY }),
     }
 }
 
@@ -227,9 +239,9 @@ async fn secret() {
     let record = seen.clone();
     let http = HttpFn(move |request: &AccountUsageHttpRequest| {
         let mut seen = record.lock().unwrap();
-        seen.0.push(request.header("Authorization").unwrap_or("").to_string());
+        seen.0.push(header(request, "Authorization").unwrap_or("").to_string());
         seen.1.push_str(&format!("GET {} timeout={:?} {request:?}\n", request.url, request.timeout));
-        Ok(AccountUsageHttpResponse::new(200, if request.url.path().ends_with("usage") { USAGE_BODY } else { PROFILE_BODY }))
+        Ok(response(200, if url_of(request).path().ends_with("usage") { USAGE_BODY } else { PROFILE_BODY }))
     });
     let loaded = credential_file::read(&text(&home), &env(&[]), instant());
     assert_eq!(loaded.as_ref().map(|c| c.token.as_str()), Some(FIXTURE_TOKEN), "the fixture credential must be read from the file");
@@ -328,7 +340,7 @@ async fn refuses_another_host_or_a_redirect() {
         let counted = attempts.clone();
         let http = HttpFn(move |request: &AccountUsageHttpRequest| {
             counted.fetch_add(1, Ordering::SeqCst);
-            usage::guard(&request.url).map_err(HttpFailure::Refused)?;
+            guarded(request)?;
             Ok(AccountUsageHttpResponse {
                 status,
                 body: USAGE_BODY.into(),
@@ -346,7 +358,7 @@ async fn refuses_another_host_or_a_redirect() {
     for key in ClaudeAccountProbe::BLOCKED_ENVIRONMENT {
         let loaded = Arc::new(AtomicUsize::new(0));
         let flag = loaded.clone();
-        let http = HttpFn(|_: &AccountUsageHttpRequest| Ok(AccountUsageHttpResponse::new(200, USAGE_BODY)));
+        let http = HttpFn(|_: &AccountUsageHttpRequest| Ok(response(200, USAGE_BODY)));
         let read = read_claude(
             &env(&[(key, "1")]),
             move || {
@@ -482,10 +494,10 @@ async fn claude_reads_quota_and_profile_from_the_credentials_file() {
     let urls = Arc::new(Mutex::new(Vec::<String>::new()));
     let record = urls.clone();
     let http = HttpFn(move |request: &AccountUsageHttpRequest| {
-        record.lock().unwrap().push(request.path_and_query());
-        let budget = if request.url.query().is_some() { ClaudeAccountProbe::RESET_TIMEOUT } else { ClaudeAccountProbe::TIMEOUT };
+        record.lock().unwrap().push(usage::path_and_query(&url_of(request)));
+        let budget = if url_of(request).query().is_some() { ClaudeAccountProbe::RESET_TIMEOUT } else { ClaudeAccountProbe::TIMEOUT };
         assert_eq!(request.timeout, budget, "the usage and profile reads take 10 seconds, the entitlement reads the CLI's 5");
-        Ok(AccountUsageHttpResponse::new(200, if request.url.path().ends_with("usage") { USAGE_BODY } else { PROFILE_BODY }))
+        Ok(response(200, if url_of(request).path().ends_with("usage") { USAGE_BODY } else { PROFILE_BODY }))
     });
     let home_text = text(&home);
     let deadline = ResetReadDeadlineBox::new();
@@ -811,19 +823,18 @@ fn scenarios() -> Vec<Scenario> {
 fn scenario_http(scenario: &Scenario, posts: Arc<AtomicUsize>) -> impl HttpsGet + use<> {
     let (cedar, juniper) = (scenario.cedar.clone(), scenario.juniper.clone());
     HttpFn(move |request: &AccountUsageHttpRequest| {
-        usage::guard(&request.url).map_err(HttpFailure::Refused)?;
-        if request.method != "GET" {
-            posts.fetch_add(1, Ordering::SeqCst);
-        }
+        guarded(request)?;
+        // The port has GET alone: no other method can reach a transport, so `posts` stays 0.
+        let _ = &posts;
         assert_eq!(
-            request.header("Authorization"),
+            header(request, "Authorization"),
             Some(format!("Bearer {FIXTURE_TOKEN}").as_str()),
             "the sign-in only rides the Authorization header"
         );
-        Ok(match request.url.query() {
-            Some("cedar_ember=1&skip_spend=1") => AccountUsageHttpResponse::new(cedar.0, &cedar.1),
-            Some("at_wall=1&skip_spend=1") => AccountUsageHttpResponse::new(juniper.0, &juniper.1),
-            _ => AccountUsageHttpResponse::new(200, if request.url.path().ends_with("profile") { PROFILE_BODY } else { USAGE_BODY }),
+        Ok(match url_of(request).query() {
+            Some("cedar_ember=1&skip_spend=1") => response(cedar.0, &cedar.1),
+            Some("at_wall=1&skip_spend=1") => response(juniper.0, &juniper.1),
+            _ => response(200, if url_of(request).path().ends_with("profile") { PROFILE_BODY } else { USAGE_BODY }),
         })
     })
 }
@@ -969,10 +980,10 @@ async fn usage_reset_renders_seven_states() {
     let expiring_cedar = cedar(Some(grant(4, closing, true, false)), true, None, "[]", true, None);
     let expiring_juniper = juniper(true, None, 1);
     let expiring = HttpFn(move |request: &AccountUsageHttpRequest| {
-        Ok(match request.url.query() {
-            Some("cedar_ember=1&skip_spend=1") => AccountUsageHttpResponse::new(200, &expiring_cedar),
-            Some("at_wall=1&skip_spend=1") => AccountUsageHttpResponse::new(200, &expiring_juniper),
-            _ => AccountUsageHttpResponse::new(200, if request.url.path().ends_with("profile") { PROFILE_BODY } else { USAGE_BODY }),
+        Ok(match url_of(request).query() {
+            Some("cedar_ember=1&skip_spend=1") => response(200, &expiring_cedar),
+            Some("at_wall=1&skip_spend=1") => response(200, &expiring_juniper),
+            _ => response(200, if url_of(request).path().ends_with("profile") { PROFILE_BODY } else { USAGE_BODY }),
         })
     });
     let before = read_claude(&env(&[]), || Some(credential()), &expiring, clock, &deadline, None).await.unwrap();
@@ -1082,7 +1093,7 @@ async fn usage_reset_rate_limit_deadline() {
     let make = |status: u16, retry_after: Option<&'static str>| {
         let calls = reset_calls.clone();
         HttpFn(move |request: &AccountUsageHttpRequest| {
-            Ok(match request.url.query() {
+            Ok(match url_of(request).query() {
                 Some(_) => {
                     calls.fetch_add(1, Ordering::SeqCst);
                     AccountUsageHttpResponse {
@@ -1092,7 +1103,7 @@ async fn usage_reset_rate_limit_deadline() {
                         redirect_location: None,
                     }
                 }
-                None => AccountUsageHttpResponse::new(200, if request.url.path().ends_with("profile") { PROFILE_BODY } else { USAGE_BODY }),
+                None => response(200, if url_of(request).path().ends_with("profile") { PROFILE_BODY } else { USAGE_BODY }),
             })
         })
     };
@@ -1136,10 +1147,10 @@ async fn usage_reset_guard_check() {
     }
     let attempts = Arc::new(AtomicUsize::new(0));
     let counted = attempts.clone();
-    let guarded = Guarded(HttpFn(move |_: &AccountUsageHttpRequest| {
+    let guarded = Guarded(Arc::new(HttpFn(move |_: &AccountUsageHttpRequest| {
         counted.fetch_add(1, Ordering::SeqCst);
-        Ok(AccountUsageHttpResponse::new(200, USAGE_BODY))
-    }));
+        Ok(response(200, USAGE_BODY))
+    })));
     for address in [
         "https://api.anthropic.com/api/oauth/usage?cedar_ember=1",
         "https://api.anthropic.com/api/oauth/usage?at_wall=1",
@@ -1150,12 +1161,19 @@ async fn usage_reset_guard_check() {
         "http://api.anthropic.com/api/oauth/usage",
         "https://evil.test/api/oauth/usage",
     ] {
-        let request = AccountUsageHttpRequest::new(url::Url::parse(address).unwrap(), vec![], ClaudeAccountProbe::TIMEOUT);
-        assert!(matches!(guarded.get(request).await, Err(HttpFailure::Refused(_))), "{address} is refused");
+        let request = AccountUsageHttpRequest { url: address.into(), headers: vec![], timeout: ClaudeAccountProbe::TIMEOUT };
+        assert!(guarded.get(request, usage::MAXIMUM_BODY_BYTES).await.is_err(), "{address} is refused");
     }
     assert_eq!(attempts.load(Ordering::SeqCst), 0, "the transport count stays 0 for refused queries");
-    let sanctioned = AccountUsageHttpRequest::new(usage::endpoint("usage", None).unwrap(), vec![], ClaudeAccountProbe::TIMEOUT);
-    assert!(guarded.get(sanctioned).await.is_ok() && attempts.load(Ordering::SeqCst) == 1, "a sanctioned request reaches the transport");
+    let sanctioned = AccountUsageHttpRequest {
+        url: usage::endpoint("usage", None).unwrap().to_string(),
+        headers: vec![],
+        timeout: ClaudeAccountProbe::TIMEOUT,
+    };
+    assert!(
+        guarded.get(sanctioned, usage::MAXIMUM_BODY_BYTES).await.is_ok() && attempts.load(Ordering::SeqCst) == 1,
+        "a sanctioned request reaches the transport"
+    );
 }
 
 /// AccountUsageVerification.cs:853 `UsageResetShapeLogPathsMatchMacOS`.
