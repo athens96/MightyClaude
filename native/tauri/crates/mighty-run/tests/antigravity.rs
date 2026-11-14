@@ -349,3 +349,16 @@ fn only_the_live_list_says_a_model_is_gone() {
         "the fallback list never resets a model"
     );
 }
+
+/// ModelListProbeVerification.cs:343 `AKeptListRetiresNothing`, its two `AntigravityMigration.ModelUnavailable` assertions (:350-351; the
+/// rest is W5-D's): a list kept from an earlier read (its latest read failed) never resets an Antigravity pane's model; a fresh one does.
+#[test]
+fn a_kept_list_retires_nothing() {
+    use mighty_run::model::ModelOption;
+    let mut kept =
+        ModelCatalog::new("cli", vec![ModelOption::new("default", "Default", "")], "").with_failure("claude: 종료 코드 1".into());
+    kept.listed_at = Some(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.fZ").to_string());
+    assert!(!mighty_run::antigravity::model_unavailable("gemini-4-carbon-medium", &kept), "a kept list never resets an Antigravity pane");
+    let fresh = ModelCatalog { read_failure: None, ..kept };
+    assert!(mighty_run::antigravity::model_unavailable("gemini-4-carbon-medium", &fresh), "a fresh one does");
+}
