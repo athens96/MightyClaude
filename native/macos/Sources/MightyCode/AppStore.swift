@@ -1360,7 +1360,7 @@ final class AppStore: ObservableObject, DelegationHost {
                     // An allowed card's continuation that could not start leaves the queue with its rules (S-L3): its card comes back with the reason.
                     if let card = next.antigravityCard {
                         antigravityBoard.restore(card, sessionId: id)
-                        if antigravityBoard[sessionId: id] == card { antigravityPermissionErrors[id] = error ?? L("remote.error.startFailed") }
+                        if antigravityBoard[id] == card { antigravityPermissionErrors[id] = error ?? L("remote.error.startFailed") }
                     }
                 } else {
                     // Validation refused it; keep the item so nothing typed is lost.

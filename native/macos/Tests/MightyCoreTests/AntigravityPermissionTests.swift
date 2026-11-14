@@ -187,7 +187,10 @@ struct AntigravityPermissionTests {
     /// than space and tab, format and bidi characters) refuses a rule, and only a plain ASCII line may be
     /// kept; the shared cases hold the bypasses.
     @Test func aCommandRuleIsKeptOnlyForAPlainAsciiLine() {
-        let hidden: [UInt32] = [0x85, 0xA0, 0x1680, 0x2028, 0x2029, 0x205F, 0x3000, 0xFEFF] + Array(0x2000...0x200F) + Array(0x202A...0x202F) + Array(0x2066...0x2069)
+        var hidden: [UInt32] = [0x85, 0xA0, 0x1680, 0x2028, 0x2029, 0x205F, 0x3000, 0xFEFF]
+        hidden += Array(UInt32(0x2000)...UInt32(0x200F))
+        hidden += Array(UInt32(0x202A)...UInt32(0x202F))
+        hidden += Array(UInt32(0x2066)...UInt32(0x2069))
         for code in hidden {
             let character = Character(Unicode.Scalar(code)!)
             #expect(AntigravityRuleSafety.verdict("command(echo\(character)hi)") == .refused, "U+\(String(code, radix: 16))")
@@ -216,8 +219,10 @@ struct AntigravityPermissionTests {
         let later = QueuedInput(text: "continue", antigravityGrant: otherGrant, antigravityCard: other)
         #expect(waiting.continues(card: card.id) && grantOnly.continues(card: card.id) && !later.continues(card: card.id) && !typed.continues(card: card.id))
         var queue = [typed, waiting, grantOnly, later]
-        #expect(queue.revokeContinuations(of: card.id) == 2 && queue.map(\.id) == [typed.id, later.id])
-        #expect(queue.revokeContinuations(of: card.id) == 0 && queue.count == 2)
+        let first = queue.revokeContinuations(of: card.id)
+        #expect(first == 2 && queue.map(\.id) == [typed.id, later.id])
+        let again = queue.revokeContinuations(of: card.id)
+        #expect(again == 0 && queue.count == 2)
     }
 
     @Test func aQueuedItemKeepsItsRecordedModeWhenItsStylePlansEveryRequest() {
