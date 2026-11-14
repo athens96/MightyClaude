@@ -608,13 +608,25 @@ public sealed partial class MainWindow
                 if (!QueuePaneAlive || submission != composerSubmissionVersion) throw new OperationCanceledException();
                 request = request with { Model = Session.Model, Settings = Session.Settings };
                 var submitted = prepared ? text : await PrepareStyleSubmission(text, files.Count > 0); request = await PrepareStyleRunRequest(request with { Input = submitted });
-                // A queued item keeps the launch decision made when it was queued (§1.17.4).
-                if (queueId is not null && queuedInputs.Items.FirstOrDefault(q => q.Id == queueId) is { } queuedItem) request = request with { PermissionModeOverride = queuedItem.PermissionModeOverride, AntigravityGrant = queuedItem.AntigravityGrant };
+                // A queued item keeps the launch decision made when it was queued (§1.17.4); an Antigravity card's continuation carries its rules and card.
+                QueuedComposerInput? continuation = null;
+                if (queueId is not null && queuedInputs.Items.FirstOrDefault(q => q.Id == queueId) is { } queuedItem)
+                {
+                    request = request with { PermissionModeOverride = queuedItem.PermissionModeOverride, AntigravityGrant = queuedItem.AntigravityGrant, AntigravityCard = queuedItem.AntigravityCard };
+                    if (QueueRunNow.IsContinuation(queuedItem)) continuation = queuedItem;
+                }
                 token.ThrowIfCancellationRequested(); if (!QueuePaneAlive || submission != composerSubmissionVersion || queueId is not null && !queuedInputs.Items.Any(q => q.Id == queueId)) throw new OperationCanceledException();
                 // A phone send no run took is dropped, and never put in the composer (M/AppStore+Delegation.swift:196-198).
                 var receipt = new RunStartReceipt();
-                var release = await owner.StartFromComposer(request with { Receipt = receipt });
-                if (release is DelegationRelease.NotStarted) throw new MobileRequestException(409, Locale.Get("remote.error.dropped"));
+                DelegationRelease release;
+                // A continuation that could not start leaves the queue with its rules, as the desktop's drain drops it (S-L3).
+                try { release = await owner.StartFromComposer(request with { Receipt = receipt }); }
+                catch (Exception ex) when (ex is not OutOfMemoryException && continuation is not null) { RevokeContinuation(continuation, ex is OperationCanceledException ? null : ex.Message); throw; }
+                if (release is DelegationRelease.NotStarted)
+                {
+                    if (continuation is not null) RevokeContinuation(continuation, Locale.Get("remote.error.startFailed"));
+                    throw new MobileRequestException(409, Locale.Get("remote.error.dropped"));
+                }
                 // Only a request that started at once carries its ids (natural submit B5): one that went out with the items delegation
                 // held answers without them, as the Mac's does, since a wrong id is worse than none.
                 return release is DelegationRelease.Released ? new("started") : new("started", receipt.EntryId, receipt.GraphRunId);
