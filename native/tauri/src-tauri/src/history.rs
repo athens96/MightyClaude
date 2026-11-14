@@ -139,6 +139,16 @@ pub fn older(host: &Host, view: &View, pane: &Arc<RunSession>) -> (Arc<Vec<Might
     (runs, block)
 }
 
+/// `ForgetGraphHistory`: a pane that left the state lets its history go, and a load still reading for it stops (panes.rs calls this
+/// where the host drops a closed pane's view, so a pane no projection asks about again lets go too).
+pub fn forget(host: &Host, pane_id: &str) {
+    let history = of(host);
+    let entry = lock(&history.panes).remove(pane_id);
+    if let Some(load) = entry.and_then(|entry| entry.load) {
+        load.store(true, Ordering::SeqCst);
+    }
+}
+
 /// The older runs a pane holds now (for `mightyImages` and a block's size), without following a trim; shared, not copied.
 pub fn loaded(host: &Host, pane: &RunSession) -> Arc<Vec<MightyGraphRun>> {
     let history = of(host);

@@ -208,6 +208,8 @@ pub fn flush(host: &Host) {
     for id in ids {
         let Some(session) = view.snapshot.session(&id).cloned() else {
             view.panes.remove(&id);
+            // The closed pane's older requests read from its record go with it (history.rs).
+            crate::history::forget(host, &id);
             continue;
         };
         let Some(ui) = view.panes.get_mut(&id) else { continue };
