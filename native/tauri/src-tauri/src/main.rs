@@ -322,6 +322,10 @@ fn main() {
             app.manage(platform.prefs.clone());
             // W6's ports: the terminal window, the font families, the HTTPS GET (platform.rs; a smoke's fakes).
             app.manage(platform::ports(host.smoke.is_some()));
+            // Completion notifications: registered with the OS only with --allow-state-write, never in a smoke (notifications.rs).
+            if host.smoke.is_none() {
+                notifications::start(&host);
+            }
             let dispatcher = host.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(message) = calls.recv().await {

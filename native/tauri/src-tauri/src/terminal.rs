@@ -44,9 +44,6 @@ use crate::methods::text;
 /// What a later stage gives the terminals; until then each stays at rest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pending {
-    /// The shell pane's history dialog is a native panel (C# `ShowTerminalHistory`, host-contract D14): `terminalHistory` makes its
-    /// content (mighty-terminal `history`) and shows nothing until W6's NativeNode forms.
-    HistoryDialog,
     /// The agent's `run_in_terminal` / `read_latest_output` / `stop` (Agent IO MCP, W7): its terminals are [`Terminals::agent`]'s.
     AgentIoTools,
     /// A command the app types into a new shell pane (C# `RunTerminalCommandAsync`: style installs, sign-ins; W6/W9): the pane is
@@ -56,7 +53,39 @@ pub enum Pending {
     Mobile,
 }
 
-pub const PENDING: [Pending; 4] = [Pending::HistoryDialog, Pending::AgentIoTools, Pending::RunTerminalCommand, Pending::Mobile];
+pub const PENDING: [Pending; 3] = [Pending::AgentIoTools, Pending::RunTerminalCommand, Pending::Mobile];
+
+/// C# `ShowTerminalHistory` (MainWindow.WorkflowParity.cs:10-23, dialog D14): the pane's saved entries in the panel `terminalHistory`
+/// (its help dimmed over the entries, 11pt code, selectable, at most 360 high), closed with its ✕; the window holds its dialog
+/// meanwhile, and nothing opens while another sheet is up.
+pub async fn show_history(host: &Arc<Host>, pane: &RunSession) {
+    use mighty_native::surface::{DialogChrome, DialogSpec};
+    use mighty_native::ui::{Content, El, Kind, TextBlock, Wrapping};
+    let Some(_sheet) = crate::frame::Sheet::begin(host) else { return };
+    let history = terminal_history(pane, &host.locale);
+    let (help, words) = (history.help.clone(), history.text.clone());
+    let mut spec = DialogSpec::new(history.title.clone(), move |ui| {
+        let mut help = ui.text_block(help.clone(), 12.0).opacity(0.7);
+        if let Some(text) = help.text_mut() {
+            text.wrapping = Wrapping::Wrap;
+        }
+        let entries = El::new(Kind::TextBlock(TextBlock {
+            text: words.clone(),
+            size: Some(11.0),
+            weight: 400,
+            family: Some(ui.code_family()),
+            wrapping: Wrapping::Wrap,
+            selectable: true,
+            ..TextBlock::default()
+        }));
+        let scroll = El::new(Kind::ScrollViewer { content: entries.into() }).max_height(360.0);
+        Content::El(Box::new(El::stack(false, mighty_core::design_tokens::metrics::SPACING_MD, vec![help, scroll]).width(580.0)))
+    })
+    .styled(None, None);
+    spec.close = Some(history.close.clone());
+    spec.chrome = Some(DialogChrome { panel: Some(history.panel.into()), icon: Some(history.icon.into()), ..DialogChrome::default() });
+    crate::native::show_dialog(host, spec).await;
+}
 
 /// How often an agent terminal is looked at for a prompt, and how many looks with no command running end the watch.
 const PROMPT_INTERVAL: Duration = Duration::from_millis(400);
@@ -796,17 +825,9 @@ pub fn register(methods: &mut Registry) {
         Ok(Value::Null)
     });
     methods.add("terminalHistory", |host: Arc<Host>, args| async move {
-        // C# ShowTerminalHistory: a native panel dialog (W6's NativeNode forms, `Pending::HistoryDialog`); its content is made here.
         let pane = text(&args, "paneId").and_then(|id| host.view().snapshot.session(id).filter(|s| s.kind() == "shell").cloned());
         if let Some(pane) = pane {
-            let history = terminal_history(&pane, &host.locale);
-            host.log.line(&format!(
-                "terminalHistory: \"{}\" ({} entries, {} characters) is a native dialog, W6's ({:?}); not shown",
-                history.title,
-                pane.logs().len(),
-                history.text.chars().count(),
-                Pending::HistoryDialog
-            ));
+            show_history(&host, &pane).await;
         }
         Ok(Value::Null)
     });
@@ -928,6 +949,6 @@ mod tests {
     fn a_working_folder_is_a_full_path() {
         assert!(is_working_folder(if cfg!(windows) { "C:\\work\\child" } else { "/work/child" }));
         assert!(!is_working_folder("relative\\child") && !is_working_folder("a\0b") && !is_working_folder(&"x".repeat(4097)));
-        assert_eq!(PENDING.len(), 4);
+        assert_eq!(PENDING.len(), 3, "the history dialog is drawn now (show_history)");
     }
 }

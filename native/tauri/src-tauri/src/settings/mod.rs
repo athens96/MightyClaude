@@ -9,6 +9,7 @@
 //! `--allow-state-write`); the CLI tab reads the account statuses again, except in a smoke.
 
 pub mod about;
+pub mod app_update;
 pub mod cli_accounts;
 pub mod cli_update;
 pub mod general;
@@ -169,6 +170,10 @@ fn start(host: &Arc<Host>) -> Option<tokio::sync::oneshot::Receiver<()>> {
         return None;
     }
     let sheet = Sheet::begin(host)?;
+    // The text box's font lists, read once per run before any builder runs (C# `InstalledFamilies`).
+    general::read_families(host);
+    // omc's and Ouroboros's settings for the phase models box (C# `LoadTools`; the fixture in a smoke).
+    models::read_tools(host);
     let saved = host.view().snapshot.settings_pane.clone();
     let categories = available(&host.locale);
     let category = saved.filter(|pane| categories.iter().any(|c| c.id == pane)).unwrap_or_else(|| categories[0].id.to_string());
@@ -210,6 +215,17 @@ pub fn close(host: &Arc<Host>) {
     crate::native::close(host, SURFACE);
 }
 
+/// C# `OpenHelp` (the sidebar's help symbol, F1, Settings › 앱 정보): the guide's folder in the language the app shows, in the user's
+/// browser. A smoke opens nothing (the browser would outlive it): the address is logged instead.
+pub fn open_help(host: &Host) -> Result<(), String> {
+    let address = help_site::current(&host.locale);
+    if host.smoke.is_some() {
+        host.log.line(&format!("smoke: help not opened: {address}"));
+        return Ok(());
+    }
+    crate::platform::open_url(&address)
+}
+
 pub fn register(methods: &mut Registry) {
     // C# `openSettings`: `if (!dialogOpen) await OpenSettings()`, which answers once Settings closed.
     methods.add("openSettings", |host: Arc<Host>, _| async move {
@@ -224,9 +240,8 @@ pub fn register(methods: &mut Registry) {
         })
         .await
     });
-    // C# `OpenHelp`: the guide's folder in the language the app shows.
     methods.add("openHelp", |host: Arc<Host>, _| async move {
-        crate::platform::open_url(&help_site::current(&host.locale))?;
+        open_help(&host)?;
         Ok(Value::Null)
     });
 }

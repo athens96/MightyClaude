@@ -34,11 +34,13 @@ pub fn clipboard() -> Arc<dyn mighty_platform::Clipboard> {
 /// W6's ports, managed by the app (`host.app.state::<Ports>()`): a terminal window that outlives the app (sign-ins, the setup
 /// screen's install), the installed font families (Settings › 글자) and the account usage's HTTPS GET. A smoke gets the recording
 /// fakes for the two that reach outside the app (no window opens, no request leaves), and the real font list, which only reads.
-#[allow(dead_code, reason = "the W6 parts read them: W6-B and W6-C the terminal window, W6-A1 the fonts, W6-C the HTTPS GET")]
+#[allow(dead_code, reason = "the W6 parts read them: W6-B and W6-C the terminal window, W6-C the HTTPS GET")]
 pub struct Ports {
     pub terminals: Arc<dyn TerminalLauncher>,
     pub fonts: Arc<dyn FontCatalog>,
     pub https: Arc<dyn HttpsGet>,
+    /// The completion notification (a smoke's records them: no toast shows).
+    pub notifier: Arc<dyn mighty_platform::Notifier>,
 }
 
 pub fn ports(smoke: bool) -> Ports {
@@ -47,10 +49,24 @@ pub fn ports(smoke: bool) -> Ports {
             terminals: Arc::new(mighty_platform::fake::RecordingTerminalLauncher::default()),
             fonts: os::font_catalog(),
             https: Arc::new(mighty_platform::fake::RecordingHttps::default()),
+            notifier: Arc::new(mighty_platform::fake::RecordingNotifier::default()),
         }
     } else {
-        Ports { terminals: os::terminal_launcher(), fonts: os::font_catalog(), https: os::https_get() }
+        Ports { terminals: os::terminal_launcher(), fonts: os::font_catalog(), https: os::https_get(), notifier: os::notifier() }
     }
+}
+
+/// C# `DateTimeOffset.TryParse(updatedAt) … ToLocalTime().ToString("T", CurrentCulture)`: a reported time in the user's long time
+/// format (the session info popover's "received"); none when it does not read or the OS does not say.
+pub fn long_time(at: &str) -> Option<String> {
+    let parsed = chrono::DateTime::parse_from_rfc3339(at).ok()?;
+    let system = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(u64::try_from(parsed.timestamp_millis()).ok()?);
+    os::long_time(system)
+}
+
+/// Registers the app for its notifications with the OS (Windows: the AUMID under HKCU); the caller decides whether it may write.
+pub fn register_notifications() -> std::result::Result<(), String> {
+    os::register_notifications()
 }
 
 /// An http(s) or mailto address opened with the user's default handler (C# `Process.Start` with `UseShellExecute`).

@@ -633,18 +633,37 @@ pub fn text_setting(host: &Host) -> TextAppearance {
     text.get_or_insert_with(|| saved_text(host)).clone()
 }
 
-/// C# `textSize{step}` (`SetTextAppearance`): one size larger or smaller, or back to 100% with the fonts kept; the page follows the
-/// `text` push (native.rs, as C#'s `PushWebText`). Saving it is Settings' (W6-A1): the registry is shared with the installed app.
-fn text_size(host: &Host, step: f64) {
-    let current = text_setting(host);
-    let next = if step == 0.0 { current.with_scale(1.0) } else { current.stepped(if step > 0.0 { 1 } else { -1 }) };
-    if next == current {
+/// C# `SetTextAppearance`: a new text setting, saved per user (`TextAppearanceStore.Save`: the standard values removed, the others
+/// as strings) only when the app may write the user's settings (`--allow-state-write`, never a smoke: the key is shared with the
+/// installed C# app), then drawn everywhere: the `text` push (native.rs, C#'s `PushWebText`) and the terminals' size.
+pub fn set_text(host: &Host, next: TextAppearance) {
+    if next == text_setting(host) {
         return;
+    }
+    if host.may_change_machine()
+        && let Some(prefs) = host.app.try_state::<Arc<dyn PrefsStore>>()
+    {
+        for (name, value) in next.to_values() {
+            let saved = match value {
+                Some(value) => prefs.set(name, PrefValue::Text(value)),
+                None => prefs.remove(name),
+            };
+            if let Err(error) = saved {
+                host.log.line(&format!("text setting: {name} not saved: {error}"));
+            }
+        }
     }
     *lock(&frame(host).text) = Some(next);
     crate::native::push_text(host);
     // C# `TextAppearanceChanged`: the terminals take their size again.
     crate::terminal::restyle(host);
+}
+
+/// C# `textSize{step}`: one size larger or smaller, or back to 100% with the fonts kept ([`set_text`]).
+fn text_size(host: &Host, step: f64) {
+    let current = text_setting(host);
+    let next = if step == 0.0 { current.with_scale(1.0) } else { current.stepped(if step > 0.0 { 1 } else { -1 }) };
+    set_text(host, next);
 }
 
 /// What the page's `ready` brings back that a reload lost: its open dialogs (`dialogs.rs`). The text setting and the native views

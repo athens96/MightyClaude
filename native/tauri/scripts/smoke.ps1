@@ -45,8 +45,21 @@ function Fingerprint {
     [pscustomobject]@{ Hash = (Get-FileHash $state -Algorithm SHA256).Hash; Bytes = $item.Length; Modified = $item.LastWriteTimeUtc.ToString('o') }
 }
 function Listing { Get-ChildItem -Force $Profile | ForEach-Object { $_.Name } | Sort-Object }
+# The user's settings outside any profile, which a smoke must never change (W6 plan §4.4): HKCU Software\MightyCode (shared with the
+# installed C# app), the app's toast registration, Claude's settings.json and omc's and Ouroboros's configs (their times and hashes).
+function UserConfig {
+    $values = [ordered]@{}
+    foreach ($key in 'HKCU:\Software\MightyCode', 'HKCU:\Software\Classes\AppUserModelId\dev.mightycode.tauri') {
+        $item = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
+        $values[$key] = if ($item) { ($item.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' } | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ';' } else { $null }
+    }
+    foreach ($file in (Join-Path $env:USERPROFILE '.claude\settings.json'), (Join-Path $env:USERPROFILE '.config\claude-omc\config.jsonc'), (Join-Path $env:USERPROFILE '.ouroboros\config.yaml')) {
+        $values[$file] = if (Test-Path $file) { $info = Get-Item $file; "$($info.LastWriteTimeUtc.ToString('o')) $((Get-FileHash $file -Algorithm SHA256).Hash)" } else { $null }
+    }
+    [pscustomobject]$values
+}
 
-$before = Fingerprint; $namesBefore = Listing
+$before = Fingerprint; $namesBefore = Listing; $userBefore = UserConfig
 $arguments = @('--smoke-test', '--smoke-exit', '--profile', $Profile, '--smoke-out', $result)
 if ($RealClaude) {
     $arguments += '--smoke-real-claude'
@@ -62,7 +75,9 @@ if ($RemoteDebuggingPort -gt 0) { $arguments += @('--remote-debugging-port', "$R
 $watch = [Diagnostics.Stopwatch]::StartNew()
 $process = Start-Process -FilePath $Exe -ArgumentList $arguments -PassThru -Wait -WindowStyle Normal
 $watch.Stop()
-$after = Fingerprint; $namesAfter = Listing
+$after = Fingerprint; $namesAfter = Listing; $userAfter = UserConfig
+$userChanged = @($userBefore.PSObject.Properties | Where-Object { $userAfter.($_.Name) -ne $_.Value } | ForEach-Object { $_.Name })
+$exitCode = $process.ExitCode
 
 Write-Output "profile:  $Profile"
 Write-Output "result:   $result"
@@ -74,6 +89,13 @@ if ($readOnly) {
     Write-Output "state unchanged: $same"
     $added = $namesAfter | Where-Object { $namesBefore -notcontains $_ }
     Write-Output "files added to the profile: $(if ($added) { $added -join ', ' } else { 'none' })"
+    if (-not $same) { $exitCode = 1 }
+}
+if ($userChanged.Count -gt 0) {
+    Write-Output "USER SETTINGS CHANGED (the smoke must leave them alone): $($userChanged -join ', ')"
+    $exitCode = 1
+} else {
+    Write-Output 'user settings unchanged: HKCU Software\MightyCode, the toast registration, ~\.claude\settings.json, omc and Ouroboros configs'
 }
 if (Test-Path $result) { Get-Content $result -Raw -Encoding utf8 } else { Write-Output 'no smoke-result.json' }
 if (-not $readOnly) {
@@ -85,4 +107,4 @@ if (-not $readOnly) {
         Remove-Item -Recurse -Force (Join-Path $env:LOCALAPPDATA "dev.mightycode.tauri\$kind\$name") -ErrorAction SilentlyContinue
     }
 }
-exit $process.ExitCode
+exit $exitCode
