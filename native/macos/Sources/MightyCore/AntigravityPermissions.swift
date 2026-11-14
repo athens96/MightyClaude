@@ -507,7 +507,7 @@ public struct AntigravityDenialCollector: Sendable {
         // A refusal the steps did not show (agy reports each permission once).
         let covered = Set(result.map(\.action))
         for (action, name) in reported where !covered.contains(action) {
-            add(AntigravityDeniedAction(kind: Self.kind(action: action, tool: action), action: action, displayName: name))
+            add(AntigravityDeniedAction(kind: Self.kind(action: action, tool: action), action: action, displayName: name, knownVerdict: .refused))
         }
         return result
     }
