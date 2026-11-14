@@ -662,12 +662,13 @@ struct Exec {
 }
 
 /// C#'s `codexHome` (here the CLI's environment the run started with, which says where Codex keeps it), `antigravityBrain` and
-/// `watcherDisabled`.
+/// `watcherDisabled`; `closed` once the closing read began (nothing is read after it).
 #[derive(Default)]
 struct Children {
     environment: Option<BTreeMap<String, String>>,
     antigravity_brain: Option<PathBuf>,
     disabled: bool,
+    closed: bool,
 }
 
 enum Failure {
@@ -1106,12 +1107,12 @@ impl Exec {
         let start_failure = match outcome {
             Ok(()) => None,
             Err(Failure::Cancelled) => {
-                exec.finish(if run.protocol_failed.load(Ordering::SeqCst) { "error" } else { "stopped" });
+                exec.end(if run.protocol_failed.load(Ordering::SeqCst) { "error" } else { "stopped" }).await;
                 Some(RunError::Cancelled(strings::get("run.activity.stopped")))
             }
             Err(Failure::Error(message)) => {
                 Self::log(&run, &emit, "error", &message);
-                exec.finish(if run.cancel.is_cancelled() && !run.protocol_failed.load(Ordering::SeqCst) { "stopped" } else { "error" });
+                exec.end(if run.cancel.is_cancelled() && !run.protocol_failed.load(Ordering::SeqCst) { "stopped" } else { "error" }).await;
                 Some(RunError::State(message))
             }
         };
@@ -1269,20 +1270,12 @@ impl Exec {
         !work::running(&lock(&self.background).work()).is_empty()
     }
 
-    /// `PublishGraph(false)`.
+    /// `PublishGraph`: the live graph when it changed since the last one sent; false once the run is ending. The graph's loop reads the
+    /// sub-agents' files first, on a blocking thread of its own ([`Exec::read_children`]).
     fn publish_graph(&self) -> bool {
-        self.publish_graph_with(false)
-    }
-
-    /// `PublishGraph(readChildren)`: the live graph when it changed since the last one sent (the sub-agents' files read first
-    /// when asked); false once the run is ending.
-    fn publish_graph_with(&self, read_children: bool) -> bool {
         let _gate = lock(&self.graph_gate);
         if self.run.finalizing.load(Ordering::SeqCst) || self.run.finished.load(Ordering::SeqCst) {
             return false;
-        }
-        if read_children {
-            self.read_children(false);
         }
         if self.graph_dirty.swap(false, Ordering::SeqCst)
             && let Some(tracker) = &self.tracker
@@ -1300,20 +1293,48 @@ impl Exec {
 
     /// `ReadChildren(closing)`: the run's sub-agents read from the CLI's own files through the graph ([`GraphSink::read_children`]):
     /// agy's stream names each sub-agent's conversation but not its work (M/ProcessRunner.swift watchAntigravitySubagents), and Codex's
-    /// sub-agents are in its session files. Observation is optional: a file changing under it must never fail the actual CLI turn, so a
-    /// failed read stops the reading for the rest of the run.
+    /// sub-agents are in its session files. Called on a blocking thread (the graph's loop gives it one, `finish` runs on one): the
+    /// tracker is locked only to ask what is due and to merge what was read, never while the files are read, so the run's output, its
+    /// cards and their answers go on meanwhile (C#'s watchers poll outside the tracker's lock and lock it only in `CodexSession` /
+    /// `AntigravitySession`). One read at a time, `children` held throughout; none once the run is ending but the closing one, and
+    /// none after it. Observation is optional: a file changing under it must never fail the actual CLI turn, so a failed read stops the
+    /// reading for the rest of the run (C#'s `watcherDisabled`; the watcher the read took along is dropped with it).
     fn read_children(&self, closing: bool) {
         let Some(tracker) = &self.tracker else { return };
         let mut children = lock(&self.children);
-        if children.disabled {
+        if children.disabled || children.closed || !closing && self.run.finalizing.load(Ordering::SeqCst) {
             return;
         }
-        let Some(environment) = &children.environment else { return };
-        let sources =
-            ChildSources { environment, antigravity_brain: children.antigravity_brain.as_deref(), namespace: &self.run.activity_id };
-        let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lock(tracker).read_children(&sources, closing)));
-        if read.is_err() {
+        if closing {
+            children.closed = true;
+        }
+        let failed = {
+            let Some(environment) = &children.environment else { return };
+            let sources =
+                ChildSources { environment, antigravity_brain: children.antigravity_brain.as_deref(), namespace: &self.run.activity_id };
+            let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let read = lock(tracker).read_children(&sources, closing)?;
+                Some(read())
+            }));
+            match read {
+                Ok(Some(found)) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lock(tracker).merge_children(found))).is_err(),
+                Ok(None) => false,
+                Err(_) => true,
+            }
+        };
+        if failed {
             children.disabled = true;
+        }
+    }
+
+    /// [`Exec::finish`] on a blocking thread: its closing read of the sub-agents' files can be large (C#'s `Finish` runs on a pool
+    /// thread). A panic in it is the run's own, as before.
+    async fn end(self: &Arc<Self>, state: &'static str) {
+        let exec = self.clone();
+        if let Err(failed) = tokio::task::spawn_blocking(move || exec.finish(state)).await
+            && let Ok(panic) = failed.try_into_panic()
+        {
+            std::panic::resume_unwind(panic);
         }
     }
 
@@ -1524,7 +1545,10 @@ impl Exec {
                         _ = tokio::time::sleep(Duration::from_secs(1)) => {}
                         _ = exec.graph_stop.cancelled() => return,
                     }
-                    if !exec.publish_graph_with(true) {
+                    // `PublishGraph(true)`: the sub-agents' files first, read on a blocking thread, then the graph.
+                    let reader = exec.clone();
+                    let _ = tokio::task::spawn_blocking(move || reader.read_children(false)).await;
+                    if !exec.publish_graph() {
                         return;
                     }
                 }
@@ -1954,7 +1978,7 @@ impl Exec {
         } else {
             "error"
         };
-        self.finish(state);
+        self.end(state).await;
         Ok(())
     }
 

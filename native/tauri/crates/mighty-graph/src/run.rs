@@ -15,7 +15,7 @@ use mighty_core::json::Wire;
 use mighty_core::locale::Locale;
 use mighty_core::model::{AgentActivity, LogEntry};
 use mighty_core::time::DateTimeOffset;
-use mighty_run::graph::{ChildSources, GraphFactory, GraphSink, GraphStart};
+use mighty_run::graph::{ChildRead, ChildSources, ChildrenFound, GraphFactory, GraphSink, GraphStart};
 use serde_json::Value;
 
 use crate::antigravity::{AntigravitySubagentWatcher, Limits};
@@ -112,35 +112,45 @@ impl TrackerSink {
         TrackerSink { tracker, started: DateTimeOffset::now(), codex_sessions, watcher: None, antigravity: None }
     }
 
-    /// The Codex half of C#'s `ReadChildren`: the watcher opens once the stream named the root thread, and each sub-agent it read is
-    /// merged (`CodexSession`).
-    fn codex_children(&mut self, environment: &BTreeMap<String, String>, closing: bool) {
-        if self.watcher.is_none()
-            && let (Some(open), Some(root)) = (&self.codex_sessions, self.tracker.codex_root_thread())
-        {
-            self.watcher = open(environment, root, self.started, self.tracker.run_id());
+    /// The Codex half of C#'s `ReadChildren`: the watcher, opened once the stream named the root thread (the opening goes with the read,
+    /// as it may look at the disk), goes with the read; each sub-agent it read is merged on the way back (`CodexSession`).
+    fn codex_children(&mut self, environment: &BTreeMap<String, String>, closing: bool) -> Option<ChildRead> {
+        if let Some(mut watcher) = self.watcher.take() {
+            return Some(Box::new(move || {
+                let children = if closing { watcher.finish() } else { watcher.poll() };
+                Box::new(Found::Codex(Some(watcher), children)) as ChildrenFound
+            }));
         }
-        let Some(watcher) = self.watcher.as_mut() else { return };
-        let children = if closing { watcher.finish() } else { watcher.poll() };
-        for child in &children {
-            self.tracker.codex_session(child);
-        }
+        let (open, root) = (self.codex_sessions.clone()?, self.tracker.codex_root_thread()?.to_string());
+        let (environment, started, run_id) = (environment.clone(), self.started, self.tracker.run_id().to_string());
+        Some(Box::new(move || {
+            let mut watcher = open(&environment, &root, started, &run_id);
+            let children = watcher.as_mut().map(|w| if closing { w.finish() } else { w.poll() }).unwrap_or_default();
+            Box::new(Found::Codex(watcher, children)) as ChildrenFound
+        }))
     }
 
     /// The Antigravity half of C#'s `ReadChildren`: the watcher made once the stream named a sub-agent (the run's own conversation never
-    /// followed), each snapshot it reads handed to `AntigravitySession`.
-    fn antigravity_children(&mut self, brain: &Path, namespace: &str, closing: bool) {
+    /// followed) goes with the read and the sub-agents known now; each snapshot it read is handed to `AntigravitySession` on the way
+    /// back.
+    fn antigravity_children(&mut self, brain: &Path, namespace: &str, closing: bool) -> Option<ChildRead> {
         let known = self.tracker.antigravity_subagents().to_vec();
         if self.antigravity.is_none() && !known.is_empty() {
             let root = self.tracker.antigravity_conversation().map(str::to_string);
             self.antigravity = Some(AntigravitySubagentWatcher::new(brain, namespace, root.as_deref(), None, Limits::default()));
         }
-        let Some(watcher) = self.antigravity.as_mut() else { return };
-        let children = if closing { watcher.finish(&known) } else { watcher.poll(&known) };
-        for child in children {
-            self.tracker.antigravity_session(&child);
-        }
+        let mut watcher = self.antigravity.take()?;
+        Some(Box::new(move || {
+            let children = if closing { watcher.finish(&known) } else { watcher.poll(&known) };
+            Box::new(Found::Antigravity(watcher, children)) as ChildrenFound
+        }))
     }
+}
+
+/// What a [`TrackerSink`]'s read found: the watcher it took along, given back, and the sub-agents it read.
+enum Found {
+    Codex(Option<Box<dyn SessionWatcher>>, Vec<CodexSessionAgent>),
+    Antigravity(AntigravitySubagentWatcher, Vec<CodexSessionAgent>),
 }
 
 impl GraphSink for TrackerSink {
@@ -181,14 +191,30 @@ impl GraphSink for TrackerSink {
         self.tracker.antigravity_answer(text);
     }
     /// C#'s `ReadChildren`: an Antigravity run's sub-agents from their own transcripts under its `brain`, a Codex run's from its session
-    /// files.
-    fn read_children(&mut self, sources: &ChildSources<'_>, closing: bool) {
-        if self.tracker.provider() == "gemini" {
-            if let Some(brain) = sources.antigravity_brain {
-                self.antigravity_children(brain, sources.namespace, closing);
+    /// files — read by the runner without this sink's lock.
+    fn read_children(&mut self, sources: &ChildSources<'_>, closing: bool) -> Option<ChildRead> {
+        match self.tracker.provider() {
+            "gemini" => self.antigravity_children(sources.antigravity_brain?, sources.namespace, closing),
+            "codex" => self.codex_children(sources.environment, closing),
+            _ => None,
+        }
+    }
+    /// The read's sub-agents merged into the graph (`CodexSession`, `AntigravitySession`), its watcher kept for the next read.
+    fn merge_children(&mut self, found: ChildrenFound) {
+        let Ok(found) = found.downcast::<Found>() else { return };
+        match *found {
+            Found::Codex(watcher, children) => {
+                self.watcher = watcher;
+                for child in &children {
+                    self.tracker.codex_session(child);
+                }
             }
-        } else if self.tracker.provider() == "codex" {
-            self.codex_children(sources.environment, closing);
+            Found::Antigravity(watcher, children) => {
+                self.antigravity = Some(watcher);
+                for child in &children {
+                    self.tracker.antigravity_session(child);
+                }
+            }
         }
     }
 }
