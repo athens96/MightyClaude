@@ -99,16 +99,18 @@ fn with_menu_inputs<T>(host: &Host, view: &View, pane: &RunSession, read: impl F
 // ── starting a request ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /// C# `StartFromComposer`: the pane's request with `text` and `files` through the run service. Ok(Some(entry id, graph run id)) when
-/// it started, Ok(None) when it was stopped before it started.
+/// it started, Ok(None) when it was stopped before it started. `continuation`: a queued Antigravity card's rules and card.
 async fn start_run(
     host: &Arc<Host>,
     id: &str,
     text: &str,
     files: Vec<RunAttachment>,
     permission_override: Option<String>,
+    continuation: Option<(mighty_run::antigravity::AllowGrant, mighty_run::antigravity::PermissionRequest)>,
 ) -> Result<Option<(Option<String>, Option<String>)>, String> {
     let engine = host.engine()?;
     let receipt = Arc::new(Mutex::new(RunStartReceipt::default()));
+    reset_unavailable_agy_model(host, id)?;
     let request = {
         let view = host.view();
         let pane = session(&view, id)?;
@@ -122,6 +124,10 @@ async fn start_run(
         request.attachments = (!files.is_empty()).then_some(files);
         request.permission_mode_override = permission_override;
         request.receipt = Some(receipt.clone());
+        if let Some((grant, card)) = continuation {
+            request.antigravity_grant = Some(grant);
+            request.antigravity_card = Some(card);
+        }
         request
     };
     match engine.service.start(request).await {
@@ -132,6 +138,28 @@ async fn start_run(
         Ok(None) => Ok(None),
         Err(error) => Err(error.message().to_string()),
     }
+}
+
+/// C# `PrepareStyleRunRequest`'s Antigravity part (MainWindow.Styles.cs:571, M/AppStore.swift:981-988): agy refuses a model its live
+/// list lacks, so the run starts on its default instead, the pane's model set back with a note.
+fn reset_unavailable_agy_model(host: &Host, id: &str) -> Result<(), String> {
+    let mut view = host.view();
+    let pane = session(&view, id)?;
+    if pane.kind() != "claude" || pane.provider() != "gemini" {
+        return Ok(());
+    }
+    let Some(catalog) = host.runs().and_then(|r| r.runtime("gemini")).map(|r| r.model_catalog) else { return Ok(()) };
+    if !mighty_run::antigravity::model_unavailable(pane.model(), &catalog) {
+        return Ok(());
+    }
+    let missing = pane.model().to_string();
+    let note = host.locale.get_with("run.notice.antigravityModelReset", &[("model", &missing)]);
+    change(&mut view, id, |p| {
+        let mut next = p.clone();
+        next.model = Some("default".into());
+        next.logs.get_or_insert_with(Vec::new).push(LogEntry::new(wire::new_id(), "system", note.clone(), time::now_o(), None));
+        next
+    })
 }
 
 /// C# `PaneView.Submit` (MainWindow.cs:533): the editor's text and attachments go the way the spec orders it — a busy pane's queue,
@@ -189,7 +217,7 @@ async fn submit(host: &Arc<Host>, id: &str) -> Result<SubmitReceipt, String> {
         (typed, files, ui.submission)
     };
     let (typed, files, submission) = taken;
-    let outcome = start_run(host, id, &typed, files.clone(), None).await;
+    let outcome = start_run(host, id, &typed, files.clone(), None, None).await;
     let mut view = host.view();
     let alive = panes::alive(&view, id);
     let started = matches!(outcome, Ok(Some(_)));
@@ -269,15 +297,20 @@ pub fn drain_queue(host: Arc<Host>, id: String) {
                 let item = ui.queue.items()[0].clone();
                 ui.view.queue_starting = true;
                 ui.dirty = true;
-                item
+                // The decision made when the item was queued wins; an Antigravity card's continuation carries its rules.
+                let continuation = ui.continuations.get(&item.id).cloned();
+                (item, continuation)
             };
-            let outcome = start_run(&host, &id, &next.text, next.attachments.clone(), next.permission_mode_override.clone()).await;
+            let (next, continuation) = next;
+            let outcome =
+                start_run(&host, &id, &next.text, next.attachments.clone(), next.permission_mode_override.clone(), continuation).await;
             let mut view = host.view();
             if let Some(ui) = view.panes.get_mut(&id) {
                 ui.view.queue_starting = false;
                 ui.dirty = true;
                 if matches!(outcome, Ok(Some(_))) {
                     ui.queue.remove(&next.id);
+                    ui.continuations.remove(&next.id);
                 }
             }
             if let Err(error) = outcome {

@@ -818,6 +818,39 @@ pub fn replace_file(source: &std::path::Path, destination: &std::path::Path, bac
     if done != 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
 }
 
+/// `File.Replace(source, destination, null, ignoreMetadataErrors: true)` on Windows: `ReplaceFileW` without a backup, the replaced
+/// file's ACL, attributes and creation time kept (agy's settings, C# `AntigravityRuleLeases.Save`).
+#[cfg(windows)]
+pub fn replace_file_keeping(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn ReplaceFileW(
+            replaced: *const u16,
+            replacement: *const u16,
+            backup: *const u16,
+            flags: u32,
+            exclude: *mut std::ffi::c_void,
+            reserved: *mut std::ffi::c_void,
+        ) -> i32;
+    }
+    const REPLACEFILE_IGNORE_MERGE_ERRORS: u32 = 0x2;
+    let wide = |path: &std::path::Path| path.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let (replaced, replacement) = (wide(destination), wide(source));
+    // SAFETY: two NUL-terminated paths that live across the call; no backup, and the two reserved pointers are null as documented.
+    let done = unsafe {
+        ReplaceFileW(
+            replaced.as_ptr(),
+            replacement.as_ptr(),
+            std::ptr::null(),
+            REPLACEFILE_IGNORE_MERGE_ERRORS,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if done != 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

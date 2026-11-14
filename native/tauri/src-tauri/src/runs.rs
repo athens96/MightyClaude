@@ -16,6 +16,7 @@ use mighty_composer::runtime as composer_runtime;
 use mighty_core::model::{AgentImageRef, AppSnapshot, RegisteredModelEntry, RunSession, Workspace};
 use mighty_graph::TrackerFactory;
 use mighty_platform::{ProcessHost, ShellEnvironment};
+use mighty_run::antigravity::AntigravityRuleLeases;
 use mighty_run::model::{CliCommand, ModelCatalog, ProviderRuntime};
 use mighty_run::parser::{ImageError, ImageStore};
 use mighty_run::providers::{self, Finder, ProviderCatalog};
@@ -27,13 +28,22 @@ use crate::host::Host;
 const IMAGE_CACHE_BYTES: u64 = 200 * 1_048_576;
 
 /// The smoke's stand-in Claude (mighty-run's `mighty-fake-cli --replay-cli`): asks one Bash permission and one plan, then replays a
-/// recording. Every other provider is missing.
+/// recording. Its Antigravity is the same binary as C#'s fake agy (`--agy-denied`, refused `echo hi` on a new conversation) over the
+/// smoke's own agy settings ([`FakeClaude::agy_settings`]). Every other provider is missing.
 #[derive(Debug, Clone)]
 pub struct FakeClaude {
     pub binary: PathBuf,
     pub recording: String,
     /// Where the fake writes what it was sent (`<record>.args`, `.input`, `.answers`).
     pub record: PathBuf,
+}
+
+impl FakeClaude {
+    /// The smoke's own agy settings (never the user's): beside the fake's record.
+    pub fn agy_settings(&self) -> PathBuf {
+        let folder = self.record.parent().map(Path::to_path_buf).unwrap_or_default();
+        folder.join("agy-home").join(".gemini").join("antigravity-cli").join("settings.json")
+    }
 }
 
 pub struct Runs {
@@ -90,6 +100,7 @@ impl Runs {
         environment: Arc<dyn ShellEnvironment>,
         fake: Option<FakeClaude>,
         image_dir: PathBuf,
+        antigravity: AntigravityRuleLeases,
     ) -> Arc<Runs> {
         mighty_run::strings::set_language(host.locale.language());
         // `{value:N0}` (the attachments' sizes) in the user's regional format, as C#'s current culture writes it.
@@ -102,8 +113,23 @@ impl Runs {
                 vec!["--replay-cli".into(), fake.recording.clone(), fake.record.to_string_lossy().into_owned()],
                 Some("2.1.322"),
             );
+            let agy = CliCommand::new(
+                fake.binary.to_string_lossy().into_owned(),
+                vec![
+                    "--fake-cli".into(),
+                    "gemini".into(),
+                    format!("{}-agy", fake.record.display()),
+                    "--agy-denied".into(),
+                    fake.agy_settings().to_string_lossy().into_owned(),
+                ],
+                Some("1.4.4"),
+            );
             let finder: Finder = Arc::new(move |provider: String| {
-                let found = (provider == "claude").then(|| command.clone());
+                let found = match provider.as_str() {
+                    "claude" => Some(command.clone()),
+                    "gemini" => Some(agy.clone()),
+                    _ => None,
+                };
                 Box::pin(async move { found })
             });
             finder
@@ -113,10 +139,14 @@ impl Runs {
         let store: Arc<dyn ImageStore> = Arc::new(CacheStore(images.clone()));
         // A Claude run's Edit, Write and MultiEdit results keep the files' originals (files.rs, C# FileOriginalStore).
         let originals = crate::files::originals_hook(&host.app);
+        // Temporary Antigravity rules a crash left in agy's settings go first (C# `InitializeAsync`, M/AppStore.swift:433-434).
+        let leftovers = antigravity.clone();
+        std::thread::spawn(move || leftovers.remove_leftovers());
         let configure: Configure = Box::new(move |options| {
             options.graph = Some(Arc::new(TrackerFactory::new()));
             options.images = Some(store);
             options.file_originals = originals;
+            options.antigravity_rules = Some(antigravity);
         });
         let snapshot = host.view().snapshot.clone();
         let (service, mut events) = RunService::new(

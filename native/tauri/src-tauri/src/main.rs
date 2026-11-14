@@ -5,6 +5,7 @@
 //! registration, a WebView2 folder or local data with the installed C# app. It must become the real one before this ships.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod antigravity;
 mod args;
 mod cards;
 mod composer;
@@ -202,6 +203,9 @@ fn main() {
     };
     // The work map's summaries likewise, and its git's empty hooks folder this machine's own (workmap.rs).
     let workmap_folders = workmap::Folders::new(platform.paths.as_ref(), options.allow_state_write);
+    // The Antigravity rules' ledger (antigravity.rs, C# `AntigravityRuleLeases`) likewise.
+    let antigravity_ledger =
+        antigravity::ledger_path(&data_dir, platform.paths.local_dir(), platform.paths.profile_key(), options.allow_state_write);
     // The file originals (files.rs, C# `FileOriginalStore`) likewise: the profile's `file-originals`, else this machine's own.
     let originals_dir = if options.allow_state_write {
         platform.paths.file_originals_dir()
@@ -249,7 +253,17 @@ fn main() {
             {
                 let _ = std::fs::create_dir_all(folder);
             }
-            runs::Runs::start(&host, platform.processes.clone(), platform.environment.clone(), fake_claude.clone(), image_dir.clone());
+            // The smoke's stand-in agy writes its own settings, never the user's.
+            let agy_settings = fake_claude.as_ref().map(runs::FakeClaude::agy_settings);
+            let agy_rules = antigravity::rules(agy_settings.as_deref(), &antigravity_ledger, &data_dir);
+            runs::Runs::start(
+                &host,
+                platform.processes.clone(),
+                platform.environment.clone(),
+                fake_claude.clone(),
+                image_dir.clone(),
+                agy_rules,
+            );
             // Terminal panes, the agents' terminals, terminal prompts and shell block runs (terminal.rs).
             terminal::Terminals::start(&host, &platform);
             host.start_clocks();
