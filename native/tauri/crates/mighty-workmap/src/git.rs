@@ -109,11 +109,8 @@ impl Git {
                 request = request.without(key);
             }
         }
-        let request = request
-            .env("GIT_OPTIONAL_LOCKS", "0")
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .env("LC_ALL", "C")
-            .env("GIT_NO_LAZY_FETCH", "1");
+        let request =
+            request.env("GIT_OPTIONAL_LOCKS", "0").env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C").env("GIT_NO_LAZY_FETCH", "1");
         let mut child = self.processes.spawn(request).await.ok()?;
         drop(child.stdin.take());
         let control = child.control();

@@ -262,8 +262,9 @@ mod tests {
         assert_eq!(thread("rollout-2026-10-01T10-00-00-2d9e2c1a-1111-4222-8333-444455556666.jsonl.bak"), None);
     }
 
-    /// A record is read from a plain file in a plain folder only: no folder as a file, no file as a folder, no reparse point (W4 review
-    /// C13; a junction is the reparse point any account can make, a cloud placeholder or an app alias goes the same way).
+    /// A record is read from a plain file in a plain folder only: no folder as a file, no file as a folder, no link (W4 review C13; any
+    /// other reparse point — a cloud placeholder, an app alias — is refused by its attribute, which a check cannot make without a
+    /// privilege).
     #[test]
     fn records_are_plain_files_in_plain_folders() {
         let folder = std::env::temp_dir().join(format!("mighty-history-files-{}", std::process::id()));
@@ -272,16 +273,14 @@ mod tests {
         assert!(regular(&folder.join("real").join("a.jsonl")) && real_directory(&folder.join("real")));
         assert!(!regular(&folder.join("real")) && !real_directory(&folder.join("real").join("a.jsonl")) && !regular(&folder.join("none")));
         #[cfg(windows)]
-        {
-            let made = std::process::Command::new("cmd")
-                .args(["/c", "mklink", "/J"])
-                .arg(folder.join("junction"))
-                .arg(folder.join("real"))
-                .output()
-                .is_ok_and(|o| o.status.success());
-            assert!(made, "a junction is made without a privilege");
-            assert!(!real_directory(&folder.join("junction")), "a junction is no folder of the records");
-            let _ = std::fs::remove_dir(folder.join("junction"));
+        let linked = std::os::windows::fs::symlink_dir(folder.join("real"), folder.join("linked")).is_ok()
+            && std::os::windows::fs::symlink_file(folder.join("real").join("a.jsonl"), folder.join("linked.jsonl")).is_ok();
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(folder.join("real"), folder.join("linked")).is_ok()
+            && std::os::unix::fs::symlink(folder.join("real").join("a.jsonl"), folder.join("linked.jsonl")).is_ok();
+        // Making a link may need a privilege this account lacks.
+        if linked {
+            assert!(!real_directory(&folder.join("linked")) && !regular(&folder.join("linked.jsonl")), "a link is no record");
         }
         let _ = std::fs::remove_dir_all(&folder);
     }

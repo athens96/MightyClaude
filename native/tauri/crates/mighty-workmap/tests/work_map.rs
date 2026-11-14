@@ -345,6 +345,7 @@ mod real {
 
     use super::*;
     use mighty_workmap::{WorkMapService, WorkMapStart, WorkMapStoredSummary, WorkMapTopic};
+    use tokio::io::AsyncReadExt;
 
     fn topic(title: &str, lanes: &[&str], commits: &[String]) -> WorkMapTopic {
         WorkMapTopic {
@@ -580,11 +581,16 @@ mod real {
         for setting in [["log.showSignature", "true"], ["gpg.program", &script_text], ["gpg.ssh.program", &script_text]] {
             run_git(&git, &folder, &["config", setting[0], setting[1]]).await;
         }
-        let plain = std::process::Command::new(&program)
-            .args(["-C", &folder.to_string_lossy(), "log", "-n", "1", "--format=%H"])
-            .output()
-            .expect("git runs");
-        assert!(plain.status.success() && marker.exists(), "the repository's settings run the script under a plain git log");
+        // A plain git log, none of the work map's settings, through the same process layer.
+        let folder_text = folder.to_string_lossy().into_owned();
+        let request = mighty_platform::SpawnRequest::new(&program, ["-C", &folder_text, "log", "-n", "1", "--format=%H"], &folder);
+        let mut child = processes().spawn(request).await.expect("git starts");
+        drop(child.stdin.take());
+        let (mut stdout, mut stderr) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
+        let (mut out, mut err) = (vec![], vec![]);
+        let _ = tokio::join!(stdout.read_to_end(&mut out), stderr.read_to_end(&mut err));
+        let code = child.control().wait().await.expect("git ends");
+        assert!(code == 0 && marker.exists(), "the repository's settings run the script under a plain git log");
         std::fs::remove_file(&marker).unwrap();
 
         let (empty, none) = (IndexMap::new(), HashMap::new());

@@ -20,8 +20,8 @@ use std::sync::{Arc, Mutex};
 use mighty_core::graph::MightyGraphRun;
 use mighty_core::model::{RunSession, Workspace};
 use mighty_graph::view::{MightyPane, WebMightyHistory, shows_history_block};
-use mighty_history::resumable::{self, known};
 use mighty_history::history::SessionHistoryError;
+use mighty_history::resumable::{self, known};
 use mighty_history::{
     ResumableSession, ResumableSessionListing, ResumableSessionQuery, SessionHistoryRequest, SessionHistoryState, history,
 };

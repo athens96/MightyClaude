@@ -735,9 +735,7 @@ pub async fn read_git(processes: &dyn ProcessHost, folder: &str) -> Option<Works
             .collect();
     // No program the repository's config names (signature checks, a partial clone's fetch), as the work map's git (W4 review C1).
     arguments.extend(mighty_workmap::git::no_programs(&binary));
-    arguments.extend(
-        ["-C", folder, "status", "--porcelain=v2", "--branch", "--untracked-files=normal"].iter().map(|s| s.to_string()),
-    );
+    arguments.extend(["-C", folder, "status", "--porcelain=v2", "--branch", "--untracked-files=normal"].iter().map(|s| s.to_string()));
     let mut request = SpawnRequest::new(binary, arguments, folder);
     for (key, _) in std::env::vars_os() {
         let key = key.to_string_lossy().into_owned();
@@ -745,11 +743,7 @@ pub async fn read_git(processes: &dyn ProcessHost, folder: &str) -> Option<Works
             request = request.without(key);
         }
     }
-    let request = request
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("LC_ALL", "C")
-        .env("GIT_NO_LAZY_FETCH", "1");
+    let request = request.env("GIT_OPTIONAL_LOCKS", "0").env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C").env("GIT_NO_LAZY_FETCH", "1");
     let mut child = processes.spawn(request).await.ok()?;
     drop(child.stdin.take());
     let control = child.control();
@@ -936,24 +930,31 @@ mod tests {
     #[cfg(windows)]
     #[tokio::test(flavor = "multi_thread")]
     async fn the_headers_git_status_runs_no_program_of_the_repositorys() {
-        let Some(program) = mighty_workmap::git::executable() else { return };
+        if mighty_workmap::git::executable().is_none() {
+            return;
+        }
         let parent = std::env::temp_dir().join(format!("mighty-host-git-{}", std::process::id()));
         let folder = parent.join("repo");
         std::fs::create_dir_all(&folder).unwrap();
-        let git = |arguments: &[&str]| {
-            let output = std::process::Command::new(&program).arg("-C").arg(&folder).args(arguments).output().expect("git runs");
-            assert!(output.status.success(), "git {arguments:?}: {}", String::from_utf8_lossy(&output.stderr));
-        };
-        git(&["init", "-q", "-b", "main"]);
-        git(&["-c", "user.name=a", "-c", "user.email=a@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "one"]);
+        let processes = mighty_platform_windows::WindowsProcessHost::new();
+        // The fixture's git commands through the work map's git (the process layer every child starts through).
+        let fixture = mighty_workmap::Git::new(Arc::new(mighty_platform_windows::WindowsProcessHost::new()), parent.join("hooks"));
         let marker = parent.join("ran");
         let script = parent.join("program.bat");
         std::fs::write(&script, format!("@echo off\r\necho ran> \"{}\"\r\n", marker.display())).unwrap();
         let script = script.to_string_lossy().into_owned();
-        git(&["config", "log.showSignature", "true"]);
-        git(&["config", "gpg.program", &script]);
-        git(&["config", "core.sshCommand", &script]);
-        let processes = mighty_platform_windows::WindowsProcessHost::new();
+        let commit = ["-c", "user.name=a", "-c", "user.email=a@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty"];
+        let steps: [&[&str]; 5] = [
+            &["init", "-q", "-b", "main"],
+            &[&commit[..], &["-m", "one"]].concat(),
+            &["config", "log.showSignature", "true"],
+            &["config", "gpg.program", &script],
+            &["config", "core.sshCommand", &script],
+        ];
+        for step in steps {
+            let result = fixture.run(step, &folder, 30.0).await;
+            assert!(result.as_ref().is_some_and(|r| r.exit_code == 0), "git {step:?}: {result:?}");
+        }
         let info = read_git(&processes, &folder.to_string_lossy()).await.expect("the status is read");
         assert_eq!(info.branch, "main");
         assert!(!marker.exists(), "no program of the repository's ran");

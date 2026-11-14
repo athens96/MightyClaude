@@ -126,8 +126,11 @@ impl PtyHost for HeldStart {
 async fn a_command_still_starting_holds_up_no_other_close() {
     let fixture = Fixture::new("agent-dispose");
     let (go, release) = tokio::sync::watch::channel(false);
-    let terminal =
-        AgentTerminal::new(fixture.folder.clone(), Arc::new(HeldStart { ptys: fixture.ptys.clone(), release }), fixture.environment.clone());
+    let terminal = AgentTerminal::new(
+        fixture.folder.clone(),
+        Arc::new(HeldStart { ptys: fixture.ptys.clone(), release }),
+        fixture.environment.clone(),
+    );
     let starting = terminal.clone();
     let slow = tokio::spawn(async move { starting.start("slow start", None).await });
     until(|| terminal.replay().contains("> slow start"), 5_000, "the slow command begun").await;

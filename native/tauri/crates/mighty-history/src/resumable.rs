@@ -467,7 +467,16 @@ fn claude(query: &ResumableSessionQuery, budget: &mut i64, cancel: &dyn Cancel) 
         }
     }
     walk(candidates, query, cancel, false, |candidate, known| {
-        claude_session(&candidate.path, &candidate.id, candidate.modified, &mut folder, known, query.include_automated, query.head_only, budget)
+        claude_session(
+            &candidate.path,
+            &candidate.id,
+            candidate.modified,
+            &mut folder,
+            known,
+            query.include_automated,
+            query.head_only,
+            budget,
+        )
     })
 }
 
@@ -555,7 +564,16 @@ fn codex(query: &ResumableSessionQuery, budget: &mut i64, cancel: &dyn Cancel) -
         .filter(|c| wire::identifier(&c.id))
         .collect();
     walk(candidates, query, cancel, true, |candidate, known| {
-        codex_session(&candidate.path, &candidate.id, candidate.modified, &mut folder, known, query.include_automated, query.head_only, budget)
+        codex_session(
+            &candidate.path,
+            &candidate.id,
+            candidate.modified,
+            &mut folder,
+            known,
+            query.include_automated,
+            query.head_only,
+            budget,
+        )
     })
 }
 
@@ -747,7 +765,16 @@ fn pi_listing(query: &ResumableSessionQuery, budget: &mut i64, cancel: &dyn Canc
         }
     }
     walk(candidates, query, cancel, false, |candidate, known| {
-        pi_session(&candidate.path, &candidate.id, candidate.modified, &mut workspace, known, query.include_automated, query.head_only, budget)
+        pi_session(
+            &candidate.path,
+            &candidate.id,
+            candidate.modified,
+            &mut workspace,
+            known,
+            query.include_automated,
+            query.head_only,
+            budget,
+        )
     })
 }
 

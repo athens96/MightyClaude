@@ -105,8 +105,11 @@ pub fn read_only(path: &Path, sql: &str, columns: usize, parameters: &[String]) 
         name.push(suffix);
         std::fs::symlink_metadata(std::path::PathBuf::from(name)).is_ok()
     };
-    let modes =
-        if beside("-wal") || beside("-shm") { ["mode=ro&readonly_shm=1", "immutable=1"] } else { ["immutable=1", "mode=ro&readonly_shm=1"] };
+    let modes = if beside("-wal") || beside("-shm") {
+        ["mode=ro&readonly_shm=1", "immutable=1"]
+    } else {
+        ["immutable=1", "mode=ro&readonly_shm=1"]
+    };
     for mode in modes {
         if let Some(rows) = uri(path, mode).and_then(|uri| query(&uri, sql, columns, parameters)) {
             return Some(rows);
