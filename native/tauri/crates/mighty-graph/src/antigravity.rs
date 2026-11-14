@@ -27,6 +27,9 @@ fn integer(value: &Value, key: &str) -> Option<i64> {
     mighty_core::json::integer(value, key)
 }
 
+/// How many tool calls of one sub-agent wait for their results at once (S-L9).
+pub const MAXIMUM_PENDING_CALLS: usize = 256;
+
 /// C# `AntigravityChildRecord`: one Antigravity sub-agent's own conversation, read as it grows — its parent's instructions, its messages
 /// and tool calls, what it sent back (`send_message`) and its usage. Snapshots carry only the entries changed since the previous one, as
 /// Codex's session records do. Tool results are shown for commands and failures only; file contents are never copied. A sub-agent that
@@ -158,8 +161,16 @@ impl AntigravityChildRecord {
         let content = text(step, "content");
         match kind {
             "SYSTEM_MESSAGE" if records::message(content, &self.subagent.parent).is_none() => {
-                // A helper it started reported back: the same assignment goes on.
-                let Some(reported) = self.started.iter().find(|helper| records::message(content, helper).is_some()).cloned() else {
+                // A helper it started reported back: the same assignment goes on. The senders are read once, then only a helper among them
+                // is looked for (S-L9).
+                let senders = records::senders(content);
+                let Some(reported) = self
+                    .started
+                    .iter()
+                    .filter(|helper| senders.contains(&helper.to_ascii_lowercase()))
+                    .find(|helper| records::message(content, helper).is_some())
+                    .cloned()
+                else {
                     return;
                 };
                 self.waiting.remove(&reported.to_lowercase());
@@ -194,7 +205,10 @@ impl AntigravityChildRecord {
                     let args = call.get("args").cloned();
                     let id = self.key(&format!("{key}:{position}"));
                     self.activity(&id, name, args.as_ref(), "running", &stamp, None);
-                    self.calls.push((id.clone(), name.to_string(), args.clone()));
+                    // At most so many calls wait for their results (S-L9); results come in order, so one past them finds none.
+                    if self.calls.len() < MAXIMUM_PENDING_CALLS {
+                        self.calls.push((id.clone(), name.to_string(), args.clone()));
+                    }
                     ids.push(id);
                     // What it sends its parent is its answer to the assignment.
                     if name == "send_message"
@@ -250,6 +264,10 @@ impl AntigravityChildRecord {
                     for (offset, id) in records::spawned_conversations(content).into_iter().enumerate() {
                         let spec = specs.get(offset);
                         if !self.started.contains(&id) {
+                            // No more helpers than the diagram has nodes (S-L9): one past them is neither waited for nor followed.
+                            if self.started.len() >= MAXIMUM_NODES {
+                                continue;
+                            }
                             self.started.push(id.clone());
                         }
                         self.waiting.insert(id.to_lowercase());
