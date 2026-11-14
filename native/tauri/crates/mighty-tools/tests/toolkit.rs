@@ -721,7 +721,7 @@ async fn the_toolkit_executor_fails_a_step_that_cannot_start() {
     let failed = executor.run(&["npm".into(), "install".into(), "-g".into(), "x".into()]).await;
     assert_eq!(failed, CommandOutput::failure("out E404", 3), "a failing step keeps its output and code");
     let request = processes.spawned().last().cloned().unwrap();
-    assert!(request.program == PathBuf::from(&resolved) && request.args == ["install", "-g", "x"] && request.cwd == cwd);
+    assert!(request.program.as_os_str() == resolved.as_str() && request.args == ["install", "-g", "x"] && request.cwd == cwd);
     assert_eq!(request.env.get("NoDefaultCurrentDirectoryInExePath").map(String::as_str), Some("1"));
     assert_eq!(request.env.get("PATH").map(String::as_str), Some("C:\\tools"), "the CLI environment the PATH was searched in");
     assert_eq!(executor.run(&[]).await, CommandOutput::success(), "an empty argv runs nothing");

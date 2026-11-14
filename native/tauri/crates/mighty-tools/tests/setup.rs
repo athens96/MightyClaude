@@ -113,13 +113,16 @@ fn runtime(id: &str, name: &str, available: bool, version: Option<&str>) -> Prov
     }
 }
 
-/// Versions by full path (ignoring case, as Windows compares paths), with every path asked recorded.
+/// Versions by full path (ignoring case, as Windows compares paths), with every path asked recorded. The checks over real folders
+/// read through Windows' own finder, so off Windows nothing uses it.
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Clone, Default)]
 struct Versions {
     known: Arc<Mutex<HashMap<String, Option<String>>>>,
     asked: Arc<Mutex<Vec<String>>>,
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 impl Versions {
     fn set(&self, path: &Path, version: Option<&str>) {
         self.known.lock().unwrap().insert(path.to_string_lossy().to_lowercase(), version.map(str::to_string));
@@ -1005,10 +1008,13 @@ fn antigravity_the_model_list_labels_and_install_setup_rows() {
 
 // ── the screen (MainWindow.Setup.cs, MainWindow.SetupSmoke.cs) ────────────────────────────────────────────────────────────
 
+/// What a window was asked to open: the argv, the folder, the environment.
+type Opened = (Vec<String>, PathBuf, BTreeMap<String, String>);
+
 /// A window that records what it would have opened.
 #[derive(Default)]
 struct RecordingWindow {
-    opened: Mutex<Vec<(Vec<String>, PathBuf, BTreeMap<String, String>)>>,
+    opened: Mutex<Vec<Opened>>,
     refuse: Mutex<Option<String>>,
 }
 

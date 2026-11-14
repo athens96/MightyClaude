@@ -195,10 +195,10 @@ impl StatusLineRefresher {
             state.closed = true;
             state.generation += 1;
             if !state.running {
-                let _ = self.stopped.send(true);
+                self.stopped.send_replace(true);
             }
         }
-        let _ = self.shutdown.send(true);
+        self.shutdown.send_replace(true);
     }
 
     /// Ends after [`close`](Self::close), once the command running then has released its child.
@@ -275,7 +275,7 @@ impl StatusLineRefresher {
             let mut state = self.state();
             if state.closed {
                 state.running = false;
-                let _ = self.stopped.send(true);
+                self.stopped.send_replace(true);
                 return;
             }
             if generation != state.generation {
