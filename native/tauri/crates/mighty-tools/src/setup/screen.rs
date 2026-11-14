@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use mighty_platform::console::{TerminalLaunch, TerminalLauncher};
 use mighty_platform::{ProcessHost, SetupFiles, ShellEnvironment};
-use mighty_run::model::{ProviderRuntime, RuntimeInfo};
+use mighty_run::model::ProviderRuntime;
 use mighty_run::strings;
 
 use crate::setup::catalog::{SetupCatalog, SetupItem, SetupPlatform};
@@ -526,10 +526,17 @@ impl SetupScreen {
     }
 
     /// C# `SetupItemForMissingCli`: the setup item for an agent pane's provider when its CLI is missing on this PC, so the blocked
-    /// line can offer to install it. A remote pane's CLI is on its host; an old Claude is no missing CLI (it gets the update).
-    pub fn item_for_missing_cli(&mut self, kind: &str, provider: &str, remote: bool, runtime: Option<&RuntimeInfo>) -> Option<String> {
+    /// line can offer to install it. A remote pane's CLI is on its host; an old Claude is no missing CLI (it gets the update). `runtime`
+    /// is each provider's runtime as last read (C#'s `runtime.Providers`), None before the first read.
+    pub fn item_for_missing_cli(
+        &mut self,
+        kind: &str,
+        provider: &str,
+        remote: bool,
+        runtime: Option<&[ProviderRuntime]>,
+    ) -> Option<String> {
         let runtime = runtime?;
-        if kind != "claude" || remote || runtime.providers.iter().any(|p| p.id == provider && p.version.is_some()) {
+        if kind != "claude" || remote || runtime.iter().any(|p| p.id == provider && p.version.is_some()) {
             return None;
         }
         self.load_catalog()?.items.iter().find(|item| item.provider() == Some(provider)).map(|item| item.id.clone())

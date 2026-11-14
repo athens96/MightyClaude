@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use mighty_platform::fake::RecordingTerminalLauncher;
 use mighty_platform::setup::FakeSetupFiles;
 use mighty_platform::{PrefsStore, SetupFiles};
-use mighty_run::model::{ModelCatalog, ProviderCapabilities, ProviderRuntime, RuntimeInfo};
+use mighty_run::model::{ModelCatalog, ProviderCapabilities, ProviderRuntime};
 use mighty_run::strings;
 use mighty_tools::setup::catalog::{self, CatalogError, SetupCatalog, SetupGroup, SetupPlatform, SetupProbe, SetupRecipe};
 use mighty_tools::setup::components;
@@ -1061,20 +1061,11 @@ fn setup_screen_over_the_smokes_fixed_probes() {
     );
     assert!(screen.run.is_none() && screen.terminals_opened == 0 && window.opened().is_empty(), "cancelledWithoutTerminal");
     // A pane whose CLI is missing offers its install; an old Claude does not, and a shell never.
-    let mut runtime = RuntimeInfo {
-        platform: "win32".into(),
-        app_version: "1.0.0".into(),
-        claude_available: false,
-        claude_version: None,
-        model_catalog: None,
-        providers: vec![runtime("gemini", "Antigravity CLI", false, None), runtime("claude", "Claude Code", false, Some("2.0.0"))],
-        mods: None,
-    };
+    let runtime = vec![runtime("gemini", "Antigravity CLI", false, None), runtime("claude", "Claude Code", false, Some("2.0.0"))];
     assert_eq!(screen.item_for_missing_cli("claude", "gemini", false, Some(&runtime)).as_deref(), Some("agy"));
     assert_eq!(screen.item_for_missing_cli("shell", "gemini", false, Some(&runtime)), None);
     assert_eq!(screen.item_for_missing_cli("claude", "claude", false, Some(&runtime)), None, "an old Claude gets its update");
     assert_eq!(screen.item_for_missing_cli("claude", "gemini", true, Some(&runtime)), None, "a remote pane's CLI is on its host");
-    runtime.providers.clear();
     assert_eq!(screen.item_for_missing_cli("claude", "codex", false, None), None, "no runtime read yet offers nothing");
     common::remove(&local);
 }
