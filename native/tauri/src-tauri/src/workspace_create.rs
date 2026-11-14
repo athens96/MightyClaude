@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use mighty_core::locale::Locale;
@@ -28,11 +28,11 @@ use crate::methods::{flag, text};
 const KEPT_ERROR_CHARS: usize = 65_536;
 
 /// C# `DelegationGit.Executable`: git on PATH (each folder trimmed of blanks and quotes, a full path, `git.exe` on Windows), the
-/// first found kept for the app's run.
+/// first found kept while it is still there; looked for again at every call until one is (git installed while the app runs counts).
 pub fn git_executable() -> Option<PathBuf> {
     static FOUND: Mutex<Option<PathBuf>> = Mutex::new(None);
     let mut found = FOUND.lock().unwrap_or_else(|p| p.into_inner());
-    if found.is_none() {
+    if found.as_ref().is_none_or(|git| !git.is_file()) {
         let name = if cfg!(windows) { "git.exe" } else { "git" };
         let path = std::env::var_os("PATH")?;
         *found = std::env::split_paths(&path)
@@ -429,12 +429,69 @@ pub async fn delete_folder(path: &Path) {
 
 // ── the host's methods ──
 
+/// A Git sheet's clone that runs: its job (a cancel stops it) and where its answer goes.
+struct Running {
+    job: Arc<CloneJob>,
+    answer: watch::Receiver<Option<Value>>,
+}
+
+/// What a `gitCreate` for a sheet does now.
+enum Turn {
+    /// A clone runs in it: its answer is this call's too.
+    Wait(watch::Receiver<Option<Value>>),
+    /// Its clone ended done and the sheet is still open (its page loaded again before it heard): the same answer.
+    Answer(Value),
+    /// Nothing runs: this call clones.
+    Start,
+}
+
+/// The Git sheets' clones (C# `gitJobs`): one at a time in each sheet, and the answer of one that ended done kept while its sheet
+/// is open, so a page that loaded again during the clone gets it by asking again (its own call's answer went to the page before).
+#[derive(Default)]
+struct Clones {
+    running: HashMap<u64, Running>,
+    done: HashMap<u64, Value>,
+}
+
+impl Clones {
+    fn turn(&self, dialog: u64) -> Turn {
+        match (self.running.get(&dialog), self.done.get(&dialog)) {
+            (Some(running), _) => Turn::Wait(running.answer.clone()),
+            (None, Some(answer)) => Turn::Answer(answer.clone()),
+            (None, None) => Turn::Start,
+        }
+    }
+
+    fn start(&mut self, dialog: u64, job: Arc<CloneJob>) -> watch::Sender<Option<Value>> {
+        let (sender, answer) = watch::channel(None);
+        self.running.insert(dialog, Running { job, answer });
+        sender
+    }
+
+    /// The clone ended with `answer`; a done one is kept while its sheet is `open`.
+    fn finish(&mut self, dialog: u64, answer: &Value, open: bool) {
+        self.running.remove(&dialog);
+        if open && answer.get("outcome").and_then(Value::as_str) == Some("done") {
+            self.done.insert(dialog, answer.clone());
+        }
+    }
+
+    fn job(&self, dialog: u64) -> Option<Arc<CloneJob>> {
+        self.running.get(&dialog).map(|running| running.job.clone())
+    }
+
+    /// The sheet is gone: its kept answer goes (a clone still running is cancelled by the caller and ends as `finish` says).
+    fn forget(&mut self, dialog: u64) {
+        self.done.remove(&dialog);
+    }
+}
+
 /// The create sheets' state (C# `gitJobs`, `gitProbeCancel`).
 #[derive(Default)]
 struct Create {
-    jobs: Mutex<HashMap<u64, Arc<CloneJob>>>,
+    clones: Mutex<Clones>,
     probe: Mutex<Option<Cancel>>,
-    git: OnceLock<Arc<GitTool>>,
+    git: Mutex<Option<Arc<GitTool>>>,
 }
 
 fn create(host: &Host) -> Arc<Create> {
@@ -445,8 +502,19 @@ fn create(host: &Host) -> Arc<Create> {
     host.app.state::<Arc<Create>>().inner().clone()
 }
 
+/// The git tool for git as it is found now ([`git_executable`] at every call): the one kept is used again while it runs that git, so
+/// git installed or removed while the app runs is seen at the next press.
 fn git(host: &Host) -> Arc<GitTool> {
-    create(host).git.get_or_init(|| Arc::new(GitTool::new(host.processes.clone(), git_executable()))).clone()
+    let state = create(host);
+    let mut kept = state.git.lock().unwrap_or_else(|p| p.into_inner());
+    tool_for(&mut kept, host.processes.clone(), git_executable())
+}
+
+fn tool_for(kept: &mut Option<Arc<GitTool>>, processes: Arc<dyn ProcessHost>, found: Option<PathBuf>) -> Arc<GitTool> {
+    match kept.as_ref() {
+        Some(tool) if tool.executable() == found.as_deref() => tool.clone(),
+        _ => kept.insert(Arc::new(GitTool::new(processes, found))).clone(),
+    }
 }
 
 /// C# `CheckCreate` (Windows' name rules on every OS, as C#).
@@ -494,9 +562,13 @@ pub async fn show(host: &Arc<Host>, kind: &str) -> Result<(), String> {
             "labels": labels(git_sheet, &l), "location": location_default(host),
         }));
         let result = answer.await.unwrap_or(Value::Null);
-        // A sheet gone without its answer leaves no clone or check behind.
-        if let Some(job) = state.jobs.lock().unwrap_or_else(|p| p.into_inner()).get(&id) {
-            job.cancel();
+        // A sheet gone without its answer leaves no clone or check behind, nor a kept answer.
+        {
+            let mut clones = state.clones.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some(job) = clones.job(id) {
+                job.cancel();
+            }
+            clones.forget(id);
         }
         if let Some(probe) = state.probe.lock().unwrap_or_else(|p| p.into_inner()).as_ref() {
             probe.cancel();
@@ -523,6 +595,33 @@ pub async fn show(host: &Arc<Host>, kind: &str) -> Result<(), String> {
         host.view().error = notice;
     }
     Ok(())
+}
+
+/// How a `gitCreate` begins.
+enum Begin {
+    /// Its answer at once: a kept one, or the check's refusal.
+    Answer(Value),
+    /// The running clone's answer, once it ends.
+    Wait(watch::Receiver<Option<Value>>),
+    /// This call's clone, registered: its job, its folder and where its answer goes.
+    Started { job: Arc<CloneJob>, target: String, sender: watch::Sender<Option<Value>> },
+}
+
+/// What the sheet's clones say for a press, its clone registered under the same lock when one starts (no two at once).
+fn begin_clone(state: &Create, dialog: u64, args: &Value, locale: &Locale) -> Begin {
+    let mut clones = state.clones.lock().unwrap_or_else(|p| p.into_inner());
+    match clones.turn(dialog) {
+        Turn::Answer(answer) => return Begin::Answer(answer),
+        Turn::Wait(answer) => return Begin::Wait(answer),
+        Turn::Start => {}
+    }
+    let found = check(text(args, "location").unwrap_or(""), text(args, "name").unwrap_or(""), locale);
+    if !found.can_create() {
+        return Begin::Answer(without_nulls(json!({"outcome": "failed", "message": found.message})));
+    }
+    let job = Arc::new(CloneJob::new(text(args, "url").unwrap_or(""), PathBuf::from(&found.target)));
+    let sender = clones.start(dialog, job.clone());
+    Begin::Started { job, target: found.target, sender }
 }
 
 /// The `gitProgress` push of a clone in the sheet `dialog`.
@@ -588,7 +687,8 @@ pub fn register(methods: &mut Registry) {
         })
     });
     methods.add("gitCreate", |host: Arc<Host>, args| async move {
-        // Only for a Git sheet that is open, one clone at a time in it: a second press answers `busy` and the first clone runs on.
+        // Only for a Git sheet that is open, one clone at a time in it: a second press (a page that loaded again during the clone)
+        // gets the running clone's answer, or the answer of the one that ended done while the page was away.
         let Some(dialog) = args.get("dialogId").and_then(Value::as_f64).filter(|id| id.is_finite() && *id >= 0.0).map(|id| id as u64)
         else {
             return Ok(Value::Null);
@@ -597,31 +697,33 @@ pub fn register(methods: &mut Registry) {
             return Ok(Value::Null);
         }
         let state = create(&host);
-        if state.jobs.lock().unwrap_or_else(|p| p.into_inner()).contains_key(&dialog) {
-            return Ok(json!({"outcome": "busy"}));
-        }
-        let found = check(text(&args, "location").unwrap_or(""), text(&args, "name").unwrap_or(""), &host.locale);
-        if !found.can_create() {
-            return Ok(without_nulls(json!({"outcome": "failed", "message": found.message})));
-        }
+        let (job, target, sender) = match begin_clone(&state, dialog, &args, &host.locale) {
+            Begin::Answer(answer) => return Ok(answer),
+            Begin::Wait(mut answer) => {
+                let answer = answer.wait_for(Option::is_some).await.ok().and_then(|answer| answer.clone());
+                return Ok(answer.unwrap_or(Value::Null));
+            }
+            Begin::Started { job, target, sender } => (job, target, sender),
+        };
         push_progress(&host, dialog, &CloneProgress::new("starting", 0, 0.0));
-        let job = Arc::new(CloneJob::new(text(&args, "url").unwrap_or(""), PathBuf::from(&found.target)));
-        state.jobs.lock().unwrap_or_else(|p| p.into_inner()).insert(dialog, job.clone());
         let reporter = host.clone();
         let result = job.run(&git(&host), &host.locale, move |step| push_progress(&reporter, dialog, &step)).await;
-        state.jobs.lock().unwrap_or_else(|p| p.into_inner()).remove(&dialog);
         let message = match result.kind {
             Some(kind) => Some(rules::error_message(kind, result.message.as_deref(), &host.locale)),
             None => result.message,
         };
-        Ok(without_nulls(json!({
+        let answer = without_nulls(json!({
             "outcome": result.outcome, "kind": result.kind, "message": message,
-            "path": (result.outcome == "done").then_some(found.target),
-        })))
+            "path": (result.outcome == "done").then_some(target),
+        }));
+        let open = dialogs::of(&host).is_open(dialog);
+        state.clones.lock().unwrap_or_else(|p| p.into_inner()).finish(dialog, &answer, open);
+        let _ = sender.send(Some(answer.clone()));
+        Ok(answer)
     });
     methods.add("gitCreateCancel", |host: Arc<Host>, args| async move {
         if let Some(dialog) = args.get("dialogId").and_then(Value::as_f64).filter(|id| id.is_finite() && *id >= 0.0)
-            && let Some(job) = create(&host).jobs.lock().unwrap_or_else(|p| p.into_inner()).get(&(dialog as u64))
+            && let Some(job) = create(&host).clones.lock().unwrap_or_else(|p| p.into_inner()).job(dialog as u64)
         {
             job.cancel();
         }
@@ -632,6 +734,49 @@ pub fn register(methods: &mut Registry) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// git as found now: the kept tool while it runs that git, a new one when git appeared or went (a missing git is never kept for
+    /// the app's run).
+    #[test]
+    fn the_git_tool_follows_git_as_it_is_found() {
+        let processes: Arc<dyn ProcessHost> = Arc::new(mighty_platform::unsupported::Unsupported);
+        let mut kept = None;
+        let missing = tool_for(&mut kept, processes.clone(), None);
+        assert!(missing.executable().is_none());
+        let found = tool_for(&mut kept, processes.clone(), Some(PathBuf::from(r"C:\Git\cmd\git.exe")));
+        assert_eq!(found.executable(), Some(Path::new(r"C:\Git\cmd\git.exe")), "git installed while the app runs is seen");
+        assert!(Arc::ptr_eq(&found, &tool_for(&mut kept, processes.clone(), Some(PathBuf::from(r"C:\Git\cmd\git.exe")))), "kept");
+        assert!(tool_for(&mut kept, processes, None).executable().is_none(), "git gone is seen too");
+    }
+
+    /// A page that loaded again during a clone asks again: while the clone runs it waits for that clone's answer, after it ended done
+    /// (its sheet still open) it gets the same answer; a failed one leaves the next press to clone again; a closed sheet keeps nothing.
+    #[tokio::test]
+    async fn a_clone_answers_a_page_that_loaded_again() {
+        let mut clones = Clones::default();
+        assert!(matches!(clones.turn(7), Turn::Start));
+        let job = Arc::new(CloneJob::new("https://example.com/a.git", PathBuf::from(r"C:\work\a")));
+        let sender = clones.start(7, job.clone());
+        assert!(clones.job(7).is_some_and(|running| Arc::ptr_eq(&running, &job)), "a cancel reaches the running clone");
+        let Turn::Wait(mut waiting) = clones.turn(7) else { panic!("a clone runs") };
+        let done = json!({"outcome": "done", "path": r"C:\work\a"});
+        clones.finish(7, &done, true);
+        let _ = sender.send(Some(done.clone()));
+        assert_eq!(
+            waiting.wait_for(Option::is_some).await.unwrap().clone(),
+            Some(done.clone()),
+            "the second press hears the first's answer"
+        );
+        assert!(matches!(clones.turn(7), Turn::Answer(answer) if answer == done), "and so does a press after it ended");
+        clones.forget(7);
+        assert!(matches!(clones.turn(7), Turn::Start), "the sheet gone, nothing is kept");
+        let _ = clones.start(8, job.clone());
+        clones.finish(8, &json!({"outcome": "failed", "kind": "notFound"}), true);
+        assert!(matches!(clones.turn(8), Turn::Start), "after a failure the next press clones again");
+        let _ = clones.start(9, job);
+        clones.finish(9, &done, false);
+        assert!(matches!(clones.turn(9), Turn::Start), "a done clone of a sheet already closed is not kept");
+    }
 
     #[test]
     fn git_messages_are_its_text_or_its_exit() {
