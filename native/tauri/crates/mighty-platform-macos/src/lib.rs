@@ -147,6 +147,36 @@ mod imp {
         Arc::new(Unsupported)
     }
 
+    /// A command in a terminal window of its own: not yet on the Mac, which signs in in its own terminal pane (W6).
+    pub fn terminal_launcher() -> Arc<dyn mighty_platform::TerminalLauncher> {
+        Arc::new(Unsupported)
+    }
+
+    /// The installed font families (`NSFontManager`): not yet on the Mac (W6).
+    pub fn font_catalog() -> Arc<dyn mighty_platform::FontCatalog> {
+        Arc::new(Unsupported)
+    }
+
+    /// The user's long time format: not yet on the Mac (W6).
+    pub fn long_time(_at: std::time::SystemTime) -> Option<String> {
+        None
+    }
+
+    /// The completion notification (`UNUserNotificationCenter`): not yet on the Mac (W6).
+    pub fn notifier() -> Arc<dyn mighty_platform::Notifier> {
+        Arc::new(Unsupported)
+    }
+
+    /// Nothing to register before notifying: not yet on the Mac (W6).
+    pub fn register_notifications() -> std::result::Result<(), String> {
+        Err("unsupported on this platform: Notifier.register".into())
+    }
+
+    /// The HTTPS GET of the account usage's direct lookup: not yet on the Mac (W6).
+    pub fn https_get() -> Arc<dyn mighty_platform::HttpsGet> {
+        Arc::new(Unsupported)
+    }
+
     /// Each copy of the command `name` along the environment's PATH (M/AppStore+AskTargets.swift reads the login shell's PATH): an
     /// executable file of that name in each folder, once.
     pub fn cli_copies(name: &str, environment: &std::collections::BTreeMap<String, String>) -> Vec<String> {

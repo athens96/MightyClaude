@@ -5,6 +5,7 @@
 //! registration, a WebView2 folder or local data with the installed C# app. It must become the real one before this ships.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod accounts;
 mod antigravity;
 mod args;
 mod ask;
@@ -20,18 +21,30 @@ mod logfile;
 mod methods;
 mod mighty;
 mod models;
+mod native;
+mod notifications;
 mod panes;
 mod platform;
+mod plugins;
 mod runs;
+mod settings;
+mod setup;
 mod smoke;
+mod smoke_accounts;
 mod smoke_acp;
 mod smoke_files;
 mod smoke_frame;
 mod smoke_history;
 mod smoke_runs;
+mod smoke_settings;
+mod smoke_setup;
 mod smoke_terminal;
+mod smoke_updates;
+mod status_line;
 mod surface;
 mod terminal;
+mod updates;
+mod usage;
 mod workmap;
 mod workspace_create;
 
@@ -193,6 +206,7 @@ fn main() {
     let theme = snapshot.theme().to_string();
     let mut parts = Some((state, banner, log, smoke));
     let debugging_port = options.remote_debugging_port;
+    let native_dump = options.native_dump.clone();
     // The smoke's stand-in Claude records what it was sent beside the smoke's logs.
     let fake_claude = options.smoke_fake_cli.clone().map(|binary| runs::FakeClaude {
         binary,
@@ -235,7 +249,11 @@ fn main() {
             smoke::smoke_surface,
             smoke_runs::smoke_step,
             smoke_terminal::smoke_terminal,
-            smoke_history::smoke_history
+            smoke_history::smoke_history,
+            smoke_settings::smoke_settings,
+            smoke_setup::smoke_setup,
+            smoke_accounts::smoke_accounts,
+            smoke_updates::smoke_updates
         ])
         // HTML previews' folders, each under a host of its own, for the page's sandboxed frame (files.rs).
         .register_asynchronous_uri_scheme_protocol(files::PROTOCOL, files::protocol)
@@ -254,6 +272,8 @@ fn main() {
                 smoke,
                 methods::registry(),
             );
+            // The native forms' pushes also to `--native-dump`'s file (native.rs).
+            native::configure(&host, native_dump.clone());
             // The files pane's state and the file originals, which the run engine keeps through it (files.rs).
             files::start(&host, originals_dir.clone());
             workmap::configure(&host, workmap_folders.clone());
@@ -298,8 +318,20 @@ fn main() {
             let (inbound, mut calls) = tokio::sync::mpsc::unbounded_channel::<Value>();
             app.manage(Inbound(inbound));
             app.manage(host.clone());
+            // C# `BeginAutomaticUpdates`: the automatic updates' 60 s tick from the start (updates.rs, W6-D).
+            let _ = updates::of(&host);
             // The user's settings outside the state (the text setting: frame.rs).
             app.manage(platform.prefs.clone());
+            // W6's ports: the terminal window, the font families, the HTTPS GET (platform.rs; a smoke's fakes).
+            app.manage(platform::ports(host.smoke.is_some()));
+            // The pseudo consoles, for a CLI's hidden background sign-in (accounts.rs, W6-C).
+            app.manage(platform.ptys.clone());
+            // The app's folders, for the toolkit's store (settings/tools.rs, W6-B).
+            app.manage(platform.paths.clone());
+            // Completion notifications: registered with the OS only with --allow-state-write, never in a smoke (notifications.rs).
+            if host.smoke.is_none() {
+                notifications::start(&host);
+            }
             let dispatcher = host.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(message) = calls.recv().await {
@@ -390,8 +422,13 @@ fn main() {
             if let Some(host) = app.try_state::<Arc<Host>>() {
                 // The model lists read and reconcile nothing more (C# `modelRefreshes?.Shutdown()`, before the last save).
                 models::shutdown(&host);
+                // The accounts' sign-ins and reads let go, and the account usage's pending reads cancelled (accounts.rs, usage.rs, W6-C).
+                accounts::shutdown(&host);
+                tauri::async_runtime::block_on(usage::shutdown(&host));
                 // Every terminal closed first (C# CloseTerminalsAsync), the wait bounded.
                 terminal::close_all(app);
+                // The CLI updates and plugin operations cancelled, the wait bounded (updates.rs, W6-D).
+                updates::shutdown(&host);
                 // The last save (C# DesktopService.DisposeAsync), written only with --allow-state-write.
                 host.close();
                 host.write_unimplemented();

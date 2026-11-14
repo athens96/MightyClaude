@@ -14,11 +14,14 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 pub mod clipboard;
+pub mod console;
 pub mod environment;
 mod error;
 pub mod fake;
 pub mod files;
 pub mod firewall;
+pub mod fonts;
+pub mod http;
 pub mod notify;
 pub mod pairing;
 pub mod paths;
@@ -27,15 +30,19 @@ pub mod process;
 pub mod profile;
 pub mod pty;
 pub mod secrets;
+pub mod setup;
 pub mod surface;
 pub mod unsupported;
 pub mod update;
 
 pub use clipboard::Clipboard;
+pub use console::{TerminalLaunch, TerminalLauncher, TerminalWindow};
 pub use environment::{CliEnvironment, EnvironmentSource, ShellEnvironment};
 pub use error::{PlatformError, Result};
 pub use files::{ClipboardImage, Desktop, FileHandles, FilePorts, PathProbe, PdfPage, PdfRaster, SaveDialog, SaveRequest};
 pub use firewall::{Firewall, FirewallChange, FirewallRule};
+pub use fonts::{FontCatalog, FontFamily};
+pub use http::{HttpsGet, HttpsRequest, HttpsResponse};
 pub use notify::{ActivationHandler, Notification, Notifier};
 pub use pairing::{PairedDevice, PairingIdentity, PairingStore, PushRegistration};
 pub use paths::{AppPaths, Paths};
@@ -46,6 +53,7 @@ pub use profile::{
 };
 pub use pty::{PtyControl, PtyHost, PtyRequest, PtySession, PtySize, TerminalInput};
 pub use secrets::SecretVault;
+pub use setup::SetupFiles;
 pub use surface::{
     BrowserEvent, BrowserListener, BrowserOptions, BrowserSurface, DeviceRect, Drawing, LogicalRect, NativeSurface, PetWindow,
     SurfaceFactory, SurfaceKind, SurfaceState, TerminalOptions, TerminalSurface,

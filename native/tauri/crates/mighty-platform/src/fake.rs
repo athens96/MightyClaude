@@ -425,6 +425,85 @@ impl Clipboard for MemoryClipboard {
     }
 }
 
+// ---- terminal windows, fonts, https ----------------------------------------------------------------------------------------
+
+/// A terminal launcher that opens no window: it records each launch (the smoke's launches are counted, never run); each window it
+/// answers has ended with 0. `refuse` makes every later open fail as a command that cannot start.
+#[derive(Default)]
+pub struct RecordingTerminalLauncher {
+    opened: Mutex<Vec<TerminalLaunch>>,
+    refuse: Mutex<bool>,
+}
+
+impl RecordingTerminalLauncher {
+    pub fn opened(&self) -> Vec<TerminalLaunch> {
+        lock(&self.opened).clone()
+    }
+    pub fn refuse(&self) {
+        *lock(&self.refuse) = true;
+    }
+}
+
+/// A window of [`RecordingTerminalLauncher`]: the console host's, ended at once with 0.
+struct EndedWindow;
+
+impl TerminalWindow for EndedWindow {
+    fn holds_command(&self) -> bool {
+        true
+    }
+    fn wait(&self) -> BoxFuture<'_, Result<i32>> {
+        Box::pin(async { Ok(0) })
+    }
+}
+
+impl TerminalLauncher for RecordingTerminalLauncher {
+    fn open(&self, launch: TerminalLaunch) -> Result<Box<dyn TerminalWindow>> {
+        if launch.argv.first().is_none_or(String::is_empty) {
+            return Err(PlatformError::Invalid("a command is required".into()));
+        }
+        if *lock(&self.refuse) {
+            return Err(PlatformError::Refused("the terminal did not start".into()));
+        }
+        lock(&self.opened).push(launch);
+        Ok(Box::new(EndedWindow))
+    }
+}
+
+/// Font families given by the test.
+#[derive(Default)]
+pub struct FakeFonts(pub Vec<FontFamily>);
+
+impl FontCatalog for FakeFonts {
+    fn families(&self) -> Result<Vec<FontFamily>> {
+        Ok(self.0.clone())
+    }
+}
+
+/// An HTTPS GET that reaches no network: it records each request with its body limit and answers the next scripted response (none
+/// left: a refusal).
+#[derive(Default)]
+pub struct RecordingHttps {
+    requests: Mutex<Vec<(HttpsRequest, usize)>>,
+    responses: Mutex<VecDeque<HttpsResponse>>,
+}
+
+impl RecordingHttps {
+    pub fn answer(&self, response: HttpsResponse) {
+        lock(&self.responses).push_back(response);
+    }
+    pub fn requests(&self) -> Vec<(HttpsRequest, usize)> {
+        lock(&self.requests).clone()
+    }
+}
+
+impl HttpsGet for RecordingHttps {
+    fn get(&self, request: HttpsRequest, max_body: usize) -> BoxFuture<'_, Result<HttpsResponse>> {
+        lock(&self.requests).push((request, max_body));
+        let next = lock(&self.responses).pop_front();
+        Box::pin(async move { next.ok_or_else(|| PlatformError::Refused("no scripted response".into())) })
+    }
+}
+
 // ---- notifications, firewall, updates --------------------------------------------------------------------------------------
 
 #[derive(Default)]
@@ -763,6 +842,34 @@ impl SurfaceFactory for FakeSurfaces {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The W6 fakes keep their ports' contracts: an empty command opens nothing; a launch is recorded, never run; an HTTPS GET answers
+    /// its script and then refuses, every request recorded.
+    #[tokio::test]
+    async fn the_terminal_and_https_fakes_record_and_never_reach_out() {
+        let terminals = RecordingTerminalLauncher::default();
+        assert!(terminals.open(TerminalLaunch::default()).is_err());
+        let launch = TerminalLaunch { argv: vec!["claude".into(), "/login".into()], ..TerminalLaunch::default() };
+        let window = terminals.open(launch.clone()).unwrap();
+        assert!(window.holds_command());
+        assert_eq!(window.wait().await.unwrap(), 0);
+        assert_eq!(terminals.opened(), vec![launch.clone()]);
+        terminals.refuse();
+        assert!(terminals.open(launch).is_err() && terminals.opened().len() == 1);
+        let https = RecordingHttps::default();
+        https.answer(HttpsResponse { status: 200, body: "{}".into(), ..HttpsResponse::default() });
+        let request = HttpsRequest {
+            url: "https://api.anthropic.com/api/oauth/usage".into(),
+            headers: vec![("Authorization".into(), "Bearer secret-token".into())],
+            timeout: std::time::Duration::from_secs(10),
+        };
+        assert_eq!(https.get(request.clone(), 1 << 20).await.unwrap().status, 200);
+        assert!(https.get(request.clone(), 1 << 20).await.is_err(), "nothing scripted: refused, no network");
+        assert_eq!(https.requests(), vec![(request.clone(), 1 << 20), (request.clone(), 1 << 20)]);
+        assert!(!format!("{request:?}").contains("secret-token"), "a request's Debug names its headers, never their values");
+        let fonts = FakeFonts(vec![FontFamily { name: "Cascadia Mono".into(), monospaced: true }]);
+        assert_eq!(fonts.families().unwrap().len(), 1);
+    }
 
     /// A fake browser's reload loads its page again and its listener hears it (it once waited on its own state's lock for ever); run
     /// on a thread of its own, so a wait fails the check instead of hanging it.

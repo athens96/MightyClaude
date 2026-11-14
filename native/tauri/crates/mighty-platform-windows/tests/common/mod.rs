@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use mighty_platform::SpawnRequest;
@@ -12,8 +13,11 @@ use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_I
 
 /// A new empty folder of this test's own (C# `Verification.Temp`).
 pub fn temp(name: &str) -> PathBuf {
+    // The count keeps two checks of one name apart when they read the same clock (tests run in parallel).
+    static NEXT: AtomicU64 = AtomicU64::new(0);
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let path = std::env::temp_dir().join(format!("mighty-platform-test-{name}-{}-{nanos}", std::process::id()));
+    let count = NEXT.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("mighty-platform-test-{name}-{}-{nanos}-{count}", std::process::id()));
     std::fs::create_dir_all(&path).unwrap();
     path
 }

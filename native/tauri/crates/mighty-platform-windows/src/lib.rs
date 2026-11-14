@@ -16,6 +16,8 @@ mod clipboard;
 #[cfg(windows)]
 pub mod command;
 #[cfg(windows)]
+pub mod console;
+#[cfg(windows)]
 pub mod discovery;
 #[cfg(windows)]
 mod dpapi;
@@ -24,11 +26,19 @@ pub mod environment;
 #[cfg(windows)]
 pub mod files;
 #[cfg(windows)]
+pub mod fonts;
+#[cfg(windows)]
+pub mod http;
+#[cfg(windows)]
+pub mod notify;
+#[cfg(windows)]
 mod prefs;
 #[cfg(windows)]
 mod process;
 #[cfg(windows)]
 pub mod pty;
+#[cfg(windows)]
+pub mod setup_files;
 #[cfg(windows)]
 pub mod setup_probe;
 #[cfg(windows)]
@@ -58,14 +68,17 @@ mod imp {
     pub use crate::browser::{WebviewSurfaces, runtime_version as browser_runtime};
     pub use crate::cli::{CliRunResult, CliRunner};
     pub use crate::clipboard::WindowsClipboard;
+    pub use crate::console::WindowsTerminalLauncher;
     pub use crate::dpapi::{DpapiVault, FOLDER as REMOTE_KEYS_FOLDER, file_name as remote_key_file_name};
     pub use crate::environment::{CliEnvironmentSnapshot, WindowsShellEnvironment};
     pub use crate::files::{
         WindowsDesktop, WindowsFileHandles, WindowsPathProbe, WindowsPdf, decimal_separator, file_ports, path_probe, short_date_time,
     };
+    pub use crate::fonts::{DirectWriteFonts, font_catalog};
     pub use crate::prefs::RegistryPrefs;
     pub use crate::process::{KILLED_EXIT_CODE, WindowsProcessHost};
     pub use crate::pty::WindowsPtyHost;
+    pub use crate::setup_files::WindowsSetupFiles;
     pub use crate::variables::Variables;
     pub use crate::webview2_install::{download_bootstrapper, is_microsoft_signed, run_installer};
 
@@ -124,16 +137,21 @@ mod imp {
             (written > 0).then(|| String::from_utf16_lossy(&buffer[..written as usize - 1]))
         };
         let separator = read(LOCALE_STHOUSAND)?;
-        let mut sizes: Vec<usize> = read(LOCALE_SGROUPING)?.split(';').map(|size| size.trim().parse().ok()).collect::<Option<_>>()?;
+        Some((separator, group_sizes(&read(LOCALE_SGROUPING)?)?))
+    }
+
+    /// `LOCALE_SGROUPING` as .NET's `NumberGroupSizes`: a trailing 0 repeats the size before it (dropped), without one the grouping
+    /// stops after the sizes given (a 0 added).
+    fn group_sizes(grouping: &str) -> Option<Vec<usize>> {
+        let mut sizes: Vec<usize> = grouping.split(';').map(|size| size.trim().parse().ok()).collect::<Option<_>>()?;
         match sizes.last() {
-            // A trailing 0 repeats the size before it, as .NET reads it; without one the grouping stops after the sizes given.
             Some(0) if sizes.len() > 1 => {
                 sizes.pop();
             }
             Some(_) => sizes.push(0),
             None => return None,
         }
-        Some((separator, sizes))
+        Some(sizes)
     }
 
     /// Every port for this run.
@@ -165,6 +183,51 @@ mod imp {
         Arc::new(WindowsClipboard)
     }
 
+    /// A command in a terminal window of its own that outlives the app (C# `CliAccountTerminal`): Windows Terminal, else the console
+    /// host (W6: sign-ins, the setup screen's install).
+    pub fn terminal_launcher() -> Arc<dyn mighty_platform::TerminalLauncher> {
+        Arc::new(WindowsTerminalLauncher)
+    }
+
+    /// C# `ToLocalTime().ToString("T", CultureInfo.CurrentCulture)`: the user's long time format (`GetTimeFormatEx` with no flags) of a
+    /// moment in the local zone; None when Windows does not say.
+    pub fn long_time(at: std::time::SystemTime) -> Option<String> {
+        use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
+        use windows_sys::Win32::Globalization::GetTimeFormatEx;
+        use windows_sys::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime};
+        let since = at.duration_since(std::time::SystemTime::UNIX_EPOCH).ok()?;
+        let ticks = since.as_nanos() / 100 + 116_444_736_000_000_000;
+        let file_time = FILETIME { dwLowDateTime: ticks as u32, dwHighDateTime: (ticks >> 32) as u32 };
+        // SAFETY: plain structures the calls write.
+        let (mut utc, mut local): (SYSTEMTIME, SYSTEMTIME) = unsafe { (std::mem::zeroed(), std::mem::zeroed()) };
+        // SAFETY: valid pointers to the structures above; a null zone is the current one.
+        if unsafe { FileTimeToSystemTime(&file_time, &mut utc) } == 0
+            || unsafe { SystemTimeToTzSpecificLocalTime(std::ptr::null(), &utc, &mut local) } == 0
+        {
+            return None;
+        }
+        let mut time = [0u16; 128];
+        // SAFETY: a null locale is the user's default; the buffer and its length in units.
+        let length = unsafe { GetTimeFormatEx(std::ptr::null(), 0, &local, std::ptr::null(), time.as_mut_ptr(), time.len() as i32) };
+        (length > 1).then(|| String::from_utf16_lossy(&time[..length as usize - 1]))
+    }
+
+    /// The completion toast (`mighty_platform::Notifier`, C# `WindowsAppNotifier`).
+    pub fn notifier() -> Arc<dyn mighty_platform::Notifier> {
+        Arc::new(crate::notify::ToastNotifier::default())
+    }
+
+    /// Registers the app's AUMID for its toasts (HKCU; the host calls it only with `--allow-state-write`).
+    pub fn register_notifications() -> std::result::Result<(), String> {
+        crate::notify::register().map_err(|e| e.to_string())
+    }
+
+    /// The account usage's HTTPS GET (`mighty_platform::HttpsGet`): WinHTTP (http.rs: system proxy, redirects, cookies and automatic
+    /// logon off, the body only for a 2xx). Which URLs may be asked is the caller's guard (mighty-accounts' `usage::guard`).
+    pub fn https_get() -> Arc<dyn mighty_platform::HttpsGet> {
+        Arc::new(crate::http::WinHttpGet)
+    }
+
     /// Each copy of the command `name` this PC has (C# `SetupProber.Executables`): along the environment's PATH with PATHEXT, then
     /// in the installers' folders.
     pub fn cli_copies(name: &str, environment: &std::collections::BTreeMap<String, String>) -> Vec<String> {
@@ -181,6 +244,16 @@ mod imp {
             let (separator, sizes) = number_grouping().expect("Windows names the user's number format");
             assert!(separator.encode_utf16().count() <= 4, "a separator, not a sentence: {separator:?}");
             assert!(!sizes.is_empty() && sizes.iter().all(|size| *size <= 9), "group sizes {sizes:?}");
+        }
+
+        /// Review L7: the grouping read as .NET reads it — "3;0" is [3], India's "3;2;0" [3, 2], "3" alone [3, 0], words none.
+        #[test]
+        fn the_grouping_reads_as_dotnet_reads_it() {
+            assert_eq!(group_sizes("3;0"), Some(vec![3]));
+            assert_eq!(group_sizes("3;2;0"), Some(vec![3, 2]));
+            assert_eq!(group_sizes("3"), Some(vec![3, 0]));
+            assert_eq!(group_sizes("0"), Some(vec![0, 0]));
+            assert_eq!(group_sizes("3;x"), None);
         }
 
         /// Only a folder is explored (a file of the same name is never handed to the shell).

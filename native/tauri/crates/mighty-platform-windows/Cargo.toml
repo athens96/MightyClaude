@@ -26,22 +26,28 @@ sha2 = "0.10"
 tauri = { workspace = true, features = ["unstable"] }
 tokio = { workspace = true, features = ["sync", "net", "rt", "time", "io-util", "macros"] }
 webview2-com = "0.38"
-# Data_Pdf, Foundation, Storage_Streams, Win32_System_WinRT: a PDF's first page (files.rs, W4).
+# Data_Pdf, Foundation, Storage_Streams, Win32_System_WinRT: a PDF's first page (files.rs, W4). Data_Xml_Dom, UI_Notifications: the
+# completion toast (notify.rs, W6); Win32_Graphics_DirectWrite: the installed font families (fonts.rs, W6).
 windows = { version = "0.61", features = [
     "Data_Pdf",
+    "Data_Xml_Dom",
     "Foundation",
     "Storage_Streams",
+    "UI_Notifications",
     "Win32_Foundation",
+    "Win32_Graphics_DirectWrite",
     "Win32_Graphics_Gdi",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_WinRT",
     "Win32_UI_WindowsAndMessaging",
 ] }
+# Win32_Networking_WinHttp: the HTTPS GET (http.rs, W6).
 windows-sys = { version = "0.61", features = [
     "Wdk_System_Threading",
     "Win32_Foundation",
     "Win32_Globalization",
+    "Win32_Networking_WinHttp",
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_Security_Cryptography",

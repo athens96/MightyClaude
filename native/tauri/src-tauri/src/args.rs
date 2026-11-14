@@ -11,6 +11,8 @@
 //! `--smoke-fake-cli <exe>`       the smoke's Claude is mighty-run's stand-in CLI (`mighty-fake-cli --replay-cli`), every other
 //!                                provider missing; the smoke then runs its composer, cards and Mighty steps against it
 //! `--smoke-real-claude`          the smoke sends one real request with the installed `claude` CLI and waits for its answer
+//! `--native-dump <file>`         every `native` and `text` push written to the file as sent, one per line (native.rs; the parity
+//!                                capture's Rust side, plan W6 §1.8)
 
 use std::path::PathBuf;
 
@@ -25,6 +27,7 @@ pub struct Options {
     pub allow_state_write: bool,
     pub smoke_fake_cli: Option<PathBuf>,
     pub smoke_real_claude: bool,
+    pub native_dump: Option<PathBuf>,
 }
 
 fn absolute(flag: &str, value: Option<String>) -> Result<PathBuf, String> {
@@ -48,6 +51,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Options, String> 
             "--smoke-real-claude" => options.smoke_real_claude = true,
             "--smoke-out" => options.smoke_out = Some(absolute("--smoke-out", args.next())?),
             "--log-dir" => options.log_dir = Some(absolute("--log-dir", args.next())?),
+            "--native-dump" => options.native_dump = Some(absolute("--native-dump", args.next())?),
             "--remote-debugging-port" => {
                 let port = args.next().and_then(|p| p.parse().ok()).ok_or("--remote-debugging-port needs a port number.")?;
                 options.remote_debugging_port = Some(port);
@@ -97,5 +101,8 @@ mod tests {
         assert!(parsed(&["--smoke-test", "--profile", root, "--smoke-fake-cli", fake]).unwrap().smoke_fake_cli.is_some());
         assert!(parsed(&["--smoke-test", "--profile", root, "--smoke-fake-cli", fake, "--smoke-real-claude"]).is_err());
         assert!(parsed(&["--smoke-test", "--profile", root, "--smoke-real-claude"]).unwrap().smoke_real_claude);
+        let dump = if cfg!(windows) { "C:\\d\\native.jsonl" } else { "/d/native.jsonl" };
+        assert!(parsed(&["--native-dump", dump]).unwrap().native_dump.is_some());
+        assert!(parsed(&["--native-dump", "native.jsonl"]).is_err(), "the dump's path is absolute");
     }
 }

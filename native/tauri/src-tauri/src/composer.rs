@@ -278,6 +278,78 @@ async fn submit(host: &Arc<Host>, id: &str) -> Result<SubmitReceipt, String> {
 
 /// C# `ReceiveQueueRunEvent` (MainWindow.QueuedComposer.cs:156): a run's status settles what waited behind it — a stop cancels it
 /// (the transcript says how many), an error holds it, an end drains it. True when the queue should drain now.
+/// C# `PaneView.CustomModel` (MainWindow.cs:986-993, dialog D1): the model id typed in a styled sheet, refused with its note until it
+/// is a model name (`custom_model::accept`, the composer's `ChangeModel` rule), then the pane's model; nothing while the pane runs.
+pub fn open_custom_model(host: &Arc<Host>, id: String) {
+    use mighty_native::surface::{DialogButton, DialogResult, DialogSpec};
+    use mighty_native::ui::{Content, El, Local, Wrapping};
+    let dialog = host.view().snapshot.session(&id).and_then(|pane| mighty_composer::custom_model::dialog(pane, &host.locale));
+    let Some(dialog) = dialog else { return };
+    let (typed, note) = (Local::new(dialog.value.clone()), Local::new(String::new()));
+    let (field_text, note_text, header) = (typed.clone(), note.clone(), dialog.header.clone());
+    let mut spec = DialogSpec::new(dialog.title.clone(), move |_| {
+        let into = field_text.clone();
+        let field = El::text_box(field_text.get()).header(header.clone()).on_text(move |words| into.set(words));
+        let mut validation = El::text_block(note_text.get());
+        if let Some(text) = validation.text_mut() {
+            text.wrapping = Wrapping::Wrap;
+        }
+        Content::El(Box::new(El::stack(false, mighty_core::design_tokens::metrics::SPACING_SM, vec![field, validation])))
+    })
+    .styled(None, None);
+    spec.primary = Some(DialogButton::new(dialog.select.clone()));
+    spec.close = Some(dialog.cancel.clone());
+    let (checked, locale) = (typed.clone(), host.locale);
+    spec.accept = Some(Box::new(move |answer| {
+        if answer != DialogResult::Primary {
+            return true;
+        }
+        match mighty_composer::custom_model::accept(&checked.get(), &locale) {
+            Ok(_) => true,
+            Err(words) => {
+                note.set(words);
+                false
+            }
+        }
+    }));
+    let host = host.clone();
+    tauri::async_runtime::spawn(async move {
+        if crate::native::show_dialog(&host, spec).await != DialogResult::Primary {
+            return;
+        }
+        let Ok(model) = mighty_composer::custom_model::accept(&typed.get(), &host.locale) else { return };
+        let _ = crate::frame::act(&host, async {
+            let mut view = host.view();
+            change_model(&host, &mut view, &id, &model)
+        })
+        .await;
+    });
+}
+
+/// `sessionInfo{paneId}` (C# `WebSessionInfo`, MainWindow.WebShell.Composer.cs:499-538): the session info popover's rows, made by
+/// mighty-composer's `session_info` from the pane, its workspace and the model list as the CLI has it.
+pub fn session_info(host: &Arc<Host>, pane: Option<&str>) -> crate::host::Reply {
+    let mut view = host.view();
+    let id = ensure(&mut view, pane)?;
+    let pane = session(&view, &id)?;
+    let workspace = view.snapshot.workspace(pane.workspace_id()).cloned();
+    let catalog = host.runs().map(|r| r.catalog_of(pane.provider())).unwrap_or_else(|| mighty_run::providers::fallback(pane.provider()));
+    let models: Vec<_> = catalog.models.iter().map(|m| m.label_option()).collect();
+    let elapsed = pane.run_timing.as_ref().filter(|t| t.is_valid()).map(|t| mighty_run::timing::label(t, None));
+    let grouping = crate::platform::number_grouping();
+    let decimal = crate::platform::decimal_separator();
+    Ok(mighty_composer::session_info::session_info(&mighty_composer::session_info::Inputs {
+        locale: host.locale,
+        pane: &pane,
+        workspace: workspace.as_ref(),
+        models: &models,
+        elapsed,
+        grouping: grouping.as_ref(),
+        decimal: decimal.as_deref(),
+        long_time: &crate::platform::long_time,
+    }))
+}
+
 pub fn run_event(view: &mut View, event: &RunEvent) -> bool {
     let id = event.session_id.as_str();
     view.mighty.dirty(id);
@@ -313,11 +385,16 @@ pub fn drain_queue(host: Arc<Host>, id: String) {
                     return;
                 }
                 let status = view.snapshot.session(&id).map(|s| s.status().to_string()).unwrap_or_default();
+                // C# `StartNextQueuedInput`: an update of the pane's CLI holds a queue already draining (updates.rs, W6-D).
+                let held = view.snapshot.session(&id).is_some_and(|pane| {
+                    crate::updates::holds(&host, &view.snapshot, pane)
+                        || crate::updates::manual_block(&host, &view.snapshot, pane).is_some()
+                });
                 let Ok(ui) = panes::ui(&mut view, &id) else { return };
                 if ui.queue.items().is_empty() {
                     return;
                 }
-                if status == "running" || status == "error" || ui.view.starting || ui.view.queue_starting || running(&host, &id) {
+                if status == "running" || status == "error" || ui.view.starting || ui.view.queue_starting || running(&host, &id) || held {
                     continue;
                 }
                 ui.view.queue_starting = true;
@@ -609,8 +686,15 @@ fn run_menu_action(host: &Arc<Host>, view: &mut View, id: &str, action: MenuActi
         MenuAction::NewConversation => {
             reset_conversation(host, view, id)?;
         }
-        // The page draws the run settings itself; rename, plugins, the custom model dialog and styles are later stages' (README).
-        MenuAction::RunSettings | MenuAction::Rename | MenuAction::OpenPlugins(_) | MenuAction::CustomModel | MenuAction::Style(_) => {}
+        // The model menu's "enter id" row (C# `CustomModel`, dialog D1), on its own task: the dialog waits for its answer.
+        MenuAction::CustomModel => open_custom_model(host, id.to_string()),
+        // The plugin browser (plugins.rs, W6-D).
+        MenuAction::OpenPlugins(provider) => {
+            let (host, provider) = (host.clone(), provider.clone());
+            tauri::async_runtime::spawn(async move { crate::plugins::open(&host, &provider).await });
+        }
+        // The page draws the run settings itself; rename and styles are later stages' (README).
+        MenuAction::RunSettings | MenuAction::Rename | MenuAction::Style(_) => {}
     }
     Ok(())
 }
@@ -675,8 +759,17 @@ fn slash_action(host: &Arc<Host>, view: &mut View, id: &str, action: SlashComman
         }
         // The pane's rename sheet (frame.rs); it answers on its own while the typed command clears.
         SlashCommandAction::Rename => crate::frame::start_rename_session(host, id.to_string()),
-        // Usage, Settings and plugins open screens of a later stage (W6).
-        SlashCommandAction::ShowUsage | SlashCommandAction::OpenSettings | SlashCommandAction::OpenPlugins => return Ok(false),
+        // C# `PerformSlashAction`: Settings (settings/mod.rs) and the pane's plugin browser (plugins.rs, W6-D), each on its own task.
+        SlashCommandAction::OpenSettings => {
+            let host = host.clone();
+            tauri::async_runtime::spawn(async move { crate::settings::open(&host, None) });
+        }
+        SlashCommandAction::OpenPlugins => {
+            let (host, provider) = (host.clone(), session(view, id)?.provider().to_string());
+            tauri::async_runtime::spawn(async move { crate::plugins::open(&host, &provider).await });
+        }
+        // `ShowContext`: the session info popover, which the page opens itself (`sessionInfo`).
+        SlashCommandAction::ShowUsage => return Ok(false),
     }
     Ok(true)
 }
@@ -824,8 +917,18 @@ pub fn register(methods: &mut Registry) {
         ensure(&mut host.view(), pane_id(&args))?;
         Ok(json!([]))
     });
-    // Setup's install for a missing CLI is W6's screen.
-    methods.add("installCli", |_host: Arc<Host>, _args| async move { Ok(Value::Null) });
+    // C# `installCli`: the setup screen on the item that installs the pane's missing CLI (setup.rs, W6-B).
+    methods.add("installCli", |host: Arc<Host>, args| async move {
+        let item = {
+            let view = host.view();
+            let pane = pane_id(&args).and_then(|id| view.snapshot.session(id)).cloned();
+            pane.and_then(|pane| crate::setup::item_for_missing_cli(&host, &view.snapshot, &pane))
+        };
+        if let Some(item) = item {
+            crate::setup::open(&host, Some(&item));
+        }
+        Ok(Value::Null)
+    });
     methods.add("pickAttachments", |host: Arc<Host>, args| async move {
         let id = ensure(&mut host.view(), pane_id(&args))?;
         let picker = host.clone();
@@ -1014,14 +1117,20 @@ pub fn register(methods: &mut Registry) {
     });
     // The composer's status-line toggle of a Claude pane: an app-wide preference.
     methods.add("composerToggle", |host: Arc<Host>, args| async move {
-        let mut view = host.view();
-        if text(&args, "which") == Some("statusLine") {
+        if text(&args, "which") != Some("statusLine") {
+            return Ok(Value::Null);
+        }
+        let enabled = {
+            let mut view = host.view();
             let enabled = !view.snapshot.status_line_enabled;
             view.update(|state| state.status_line_enabled = enabled)?;
             for pane in view.panes.values_mut() {
                 pane.dirty = true;
             }
-        }
+            enabled
+        };
+        // C# `SetStatusLineEnabled`: each pane's status line read again at once (status_line.rs, W6-B).
+        crate::status_line::set_enabled(&host, enabled);
         Ok(Value::Null)
     });
     methods.add("newConversation", |host: Arc<Host>, args| async move {

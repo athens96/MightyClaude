@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use mighty_platform::{Platform, Result, SurfaceFactory};
+use mighty_platform::{FontCatalog, HttpsGet, Platform, Result, SurfaceFactory, TerminalLauncher};
 
 #[cfg(windows)]
 use mighty_platform_windows as os;
@@ -29,6 +29,58 @@ pub fn surfaces(window: tauri::Window) -> Arc<dyn SurfaceFactory> {
 /// The system clipboard's text (a terminal's copy and paste).
 pub fn clipboard() -> Arc<dyn mighty_platform::Clipboard> {
     os::clipboard()
+}
+
+/// W6's ports, managed by the app (`host.app.state::<Ports>()`): a terminal window that outlives the app (sign-ins, the setup
+/// screen's install), the installed font families (Settings › 글자) and the account usage's HTTPS GET. A smoke gets the recording
+/// fakes for the two that reach outside the app (no window opens, no request leaves), and the real font list, which only reads.
+#[allow(dead_code, reason = "the W6 parts read them: W6-B and W6-C the terminal window, W6-C the HTTPS GET")]
+pub struct Ports {
+    pub terminals: Arc<dyn TerminalLauncher>,
+    pub fonts: Arc<dyn FontCatalog>,
+    pub https: Arc<dyn HttpsGet>,
+    /// The completion notification (a smoke's records them: no toast shows).
+    pub notifier: Arc<dyn mighty_platform::Notifier>,
+}
+
+pub fn ports(smoke: bool) -> Ports {
+    if smoke {
+        Ports {
+            terminals: Arc::new(mighty_platform::fake::RecordingTerminalLauncher::default()),
+            fonts: os::font_catalog(),
+            https: Arc::new(mighty_platform::fake::RecordingHttps::default()),
+            notifier: Arc::new(mighty_platform::fake::RecordingNotifier::default()),
+        }
+    } else {
+        Ports { terminals: os::terminal_launcher(), fonts: os::font_catalog(), https: os::https_get(), notifier: os::notifier() }
+    }
+}
+
+/// C# `DateTimeOffset.TryParse(updatedAt) … ToLocalTime().ToString("T", CurrentCulture)`: a reported time in the user's long time
+/// format (the session info popover's "received"); none when it does not read or the OS does not say.
+pub fn long_time(at: &str) -> Option<String> {
+    let parsed = chrono::DateTime::parse_from_rfc3339(at).ok()?;
+    let system = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(u64::try_from(parsed.timestamp_millis()).ok()?);
+    os::long_time(system)
+}
+
+/// The setup screen's files port (setup.rs, W6-B): the script folder and its ACL, and whether the app runs elevated (Windows'
+/// `WindowsSetupFiles`; the Mac `Unsupported`).
+#[cfg(windows)]
+#[allow(dead_code, reason = "setup.rs's files_port (W6-B) switches to it at integration")]
+pub fn setup_files() -> Arc<dyn mighty_platform::SetupFiles> {
+    Arc::new(os::WindowsSetupFiles)
+}
+
+#[cfg(target_os = "macos")]
+#[allow(dead_code, reason = "setup.rs's files_port (W6-B) switches to it at integration")]
+pub fn setup_files() -> Arc<dyn mighty_platform::SetupFiles> {
+    Arc::new(mighty_platform::unsupported::Unsupported)
+}
+
+/// Registers the app for its notifications with the OS (Windows: the AUMID under HKCU); the caller decides whether it may write.
+pub fn register_notifications() -> std::result::Result<(), String> {
+    os::register_notifications()
 }
 
 /// An http(s) or mailto address opened with the user's default handler (C# `Process.Start` with `UseShellExecute`).

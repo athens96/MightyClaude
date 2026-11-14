@@ -1949,6 +1949,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "mighty-accounts"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "mighty-core",
+ "mighty-native",
+ "mighty-platform",
+ "mighty-platform-windows",
+ "mighty-run",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "mighty-composer"
 version = "0.1.0"
 dependencies = [
@@ -2041,6 +2060,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mighty-native"
+version = "0.1.0"
+dependencies = [
+ "indexmap 2.14.2",
+ "mighty-core",
+ "serde_json",
+]
+
+[[package]]
 name = "mighty-platform"
 version = "0.1.0"
 dependencies = [
@@ -2115,6 +2143,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "mighty-tools"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "indexmap 2.14.2",
+ "mighty-composer",
+ "mighty-core",
+ "mighty-native",
+ "mighty-platform",
+ "mighty-platform-windows",
+ "mighty-run",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "mighty-updates"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "mighty-composer",
+ "mighty-core",
+ "mighty-native",
+ "mighty-platform",
+ "mighty-platform-windows",
+ "mighty-run",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "mighty-workmap"
 version = "0.1.0"
 dependencies = [
@@ -2139,16 +2206,20 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "indexmap 2.14.2",
+ "mighty-accounts",
  "mighty-composer",
  "mighty-core",
  "mighty-files",
  "mighty-graph",
  "mighty-history",
+ "mighty-native",
  "mighty-platform",
  "mighty-platform-macos",
  "mighty-platform-windows",
  "mighty-run",
  "mighty-terminal",
+ "mighty-tools",
+ "mighty-updates",
  "mighty-workmap",
  "serde",
  "serde_json",

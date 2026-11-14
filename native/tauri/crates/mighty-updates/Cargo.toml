@@ -1,0 +1,35 @@
+[package]
+name = "mighty-updates"
+version = "0.1.0"
+description = "Mighty Code's CLI updates, automatic updates and plugins (W6-D: C# CliUpdateService, CliUpdateCoordinator, CliAutoUpdateSchedule, CliUpdateStrings, ClaudePlugins, ClaudePluginReader, ClaudePluginPresentation, CodexPluginReader, CodexPluginStrings, PluginOperations, PluginAutoUpdates, PluginStrings), with no Tauri dependency and no OS code."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+# The checks' stand-in CLI (claude, codex, winget, node with npm's script), relaunched by the tests as mighty-run's
+# `mighty-fake-cli` is: std only, so it builds on every OS. Not tests/fake/main.rs: Cargo would also take that as a test target.
+[[bin]]
+name = "mighty-updates-fake"
+path = "tests/fake/cli.rs"
+test = false
+doc = false
+
+[dependencies]
+mighty-core.workspace = true
+mighty-native.workspace = true
+mighty-platform.workspace = true
+mighty-run.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+regex.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt", "macros", "io-util"] }
+tokio-util = "0.7"
+
+[dev-dependencies]
+mighty-composer.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt", "rt-multi-thread", "macros", "io-util"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+mighty-platform-windows.workspace = true

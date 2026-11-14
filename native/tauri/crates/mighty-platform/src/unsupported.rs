@@ -131,6 +131,24 @@ impl SurfaceFactory for Unsupported {
     }
 }
 
+impl TerminalLauncher for Unsupported {
+    fn open(&self, _launch: TerminalLaunch) -> Result<Box<dyn TerminalWindow>> {
+        no("TerminalLauncher", "open")
+    }
+}
+
+impl FontCatalog for Unsupported {
+    fn families(&self) -> Result<Vec<FontFamily>> {
+        no("FontCatalog", "families")
+    }
+}
+
+impl HttpsGet for Unsupported {
+    fn get(&self, _request: HttpsRequest, _max_body: usize) -> BoxFuture<'_, Result<HttpsResponse>> {
+        Box::pin(async { no("HttpsGet", "get") })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,6 +156,10 @@ mod tests {
     #[tokio::test]
     async fn every_operation_is_a_typed_refusal() {
         let port = Unsupported;
+        assert!(TerminalLauncher::open(&port, TerminalLaunch::default()).err().is_some_and(|e| e.is_unsupported()));
+        assert!(port.families().unwrap_err().is_unsupported());
+        let request = HttpsRequest { url: "https://api.anthropic.com/".into(), headers: vec![], timeout: std::time::Duration::ZERO };
+        assert!(HttpsGet::get(&port, request, 0).await.unwrap_err().is_unsupported());
         assert!(SecretVault::save(&port, "id", "x").unwrap_err().is_unsupported());
         assert_eq!(SecretVault::load(&port, "id"), None);
         assert!(PrefsStore::get(&port, "k").unwrap_err().is_unsupported());
