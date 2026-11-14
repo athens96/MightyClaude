@@ -443,7 +443,7 @@ fn the_sinks_read_runs_without_the_sink_and_what_it_read_is_merged_on_its_return
     assert!(read_file(&sink.build_run(true).unwrap()), "the sub-agent's first steps are merged");
     let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
     use std::io::Write;
-    write!(file, "{}\n", lines[2..].join("\n")).unwrap();
+    writeln!(file, "{}", lines[2..].join("\n")).unwrap();
     drop(file);
     write_transcript(&home, GRANDCHILD, &grandchild_lines(), "");
     let read = sink.read_children(&sources, true).expect("the closing read, with the same watcher");
