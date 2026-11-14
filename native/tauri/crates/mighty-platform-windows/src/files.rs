@@ -21,6 +21,44 @@ fn wide(text: &OsStr) -> Vec<u16> {
     text.encode_wide().chain(std::iter::once(0)).collect()
 }
 
+/// `MAX_PATH`: a path this long (in UTF-16 units, its NUL not counted) no longer reaches a plain Win32 call.
+const MAX_PATH: usize = 260;
+
+/// A path as a Win32 call takes it past `MAX_PATH`: one of 260 units or more gets `\\?\` (`\\?\UNC\` for a share), which lifts the
+/// limit; a shorter one, or one Windows would still have to normalize (`.`, `..`, `/`), is left as it is, as the shell's own calls
+/// expect it.
+fn long_path(path: &Path) -> std::ffi::OsString {
+    use std::path::{Component, Prefix};
+    let text = path.as_os_str();
+    let plain = !text.to_string_lossy().contains('/') && path.components().all(|c| !matches!(c, Component::CurDir | Component::ParentDir));
+    if text.encode_wide().count() < MAX_PATH || !plain {
+        return text.to_owned();
+    }
+    match path.components().next() {
+        Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::Disk(_)) => {
+            let mut long = std::ffi::OsString::from(r"\\?\");
+            long.push(text);
+            long
+        }
+        Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::UNC(..)) => {
+            let units: Vec<u16> = r"\\?\UNC\".encode_utf16().chain(text.encode_wide().skip(2)).collect();
+            std::ffi::OsString::from_wide(&units)
+        }
+        _ => text.to_owned(),
+    }
+}
+
+/// A shell call's failure: a Win32 error wrapped as an HRESULT (`FACILITY_WIN32`, `0x8007xxxx`) is that error; any other HRESULT is
+/// said as one (its value is no Win32 error number).
+fn shell_error(result: i32) -> PlatformError {
+    let code = result as u32;
+    if code & 0xFFFF_0000 == 0x8007_0000 {
+        PlatformError::Io(std::io::Error::from_raw_os_error((code & 0xFFFF) as i32))
+    } else {
+        PlatformError::Refused(format!("the shell refused (HRESULT 0x{code:08X})"))
+    }
+}
+
 /// C# `WindowsFileHandles.FinalPath`: `GetFinalPathNameByHandleW` with `\\?\UNC\` written `\\` and `\\?\` taken off.
 fn final_path(handle: HANDLE) -> Option<PathBuf> {
     let mut buffer = vec![0u16; 32_768];
@@ -56,7 +94,7 @@ impl FileHandles for WindowsFileHandles {
 
     /// C# `FinalDirectoryPath`: the folder opened with backup semantics (so a folder handle exists), no access asked, every share.
     fn final_directory_path(&self, path: &Path) -> Option<PathBuf> {
-        let name = wide(path.as_os_str());
+        let name = wide(&long_path(path));
         // SAFETY: a NUL-terminated path; the handle is closed below.
         let handle = unsafe {
             CreateFileW(
@@ -167,14 +205,140 @@ fn in_apartment<T: Send>(work: impl FnOnce() -> T + Send) -> Option<T> {
     })
 }
 
-/// Whether Windows counts the file's type as one that can run code (`AssocIsDangerous`: .exe, .bat, .lnk, .js, ?? or `PATHEXT`
-/// names it; such a file is never opened, as Windows' launcher refuses them.
+/// File types whose content runs as code whatever opens them on a given computer: Excel loads an `.xll` add-in, Explorer runs a
+/// `.search-ms` query against a remote share, a theme pack sets the cursors and sounds it carries, and the rest go to a runtime or a
+/// launcher where one is installed (Java, Python, ClickOnce, WPF's PresentationHost, the troubleshooter, Remote Desktop).
+const CODE_TYPES: [&str; 18] = [
+    ".jar",
+    ".application",
+    ".appref-ms",
+    ".xbap",
+    ".xll",
+    ".diagcab",
+    ".rdp",
+    ".theme",
+    ".themepack",
+    ".deskthemepack",
+    ".search-ms",
+    ".searchconnector-ms",
+    ".library-ms",
+    ".settingcontent-ms",
+    ".py",
+    ".pyw",
+    ".pyz",
+    ".pyzw",
+];
+
+/// The programs that run what they are handed as code (interpreters, script hosts, launchers, a remote session), by file name
+/// without its extension: a type Windows hands to one of these is never opened, whatever its extension.
+const LAUNCHERS: [&str; 26] = [
+    "java",
+    "javaw",
+    "javaws",
+    "py",
+    "pyw",
+    "python",
+    "pythonw",
+    "python3",
+    "node",
+    "wscript",
+    "cscript",
+    "mshta",
+    "rundll32",
+    "msdt",
+    "powershell",
+    "powershell_ise",
+    "pwsh",
+    "cmd",
+    "presentationhost",
+    "dfsvc",
+    "dfshim",
+    "mstsc",
+    "regedit",
+    "regsvr32",
+    "msiexec",
+    "wusa",
+];
+
+/// The program a handler names: a command line's program (quoted, else up to the first `.exe`/`.dll` that ends a word, else up to the
+/// first blank) or a path as it is, by its file name without the extension, in lower case.
+fn handler_program(handler: &str) -> String {
+    let handler = handler.trim();
+    let program = match handler.strip_prefix('"') {
+        Some(rest) => rest.split('"').next().unwrap_or(""),
+        None => {
+            let lower = handler.to_ascii_lowercase();
+            let ends = [".exe", ".dll"].iter().filter_map(|suffix| {
+                lower
+                    .match_indices(suffix)
+                    .map(|(at, _)| at + suffix.len())
+                    .find(|end| lower[*end..].is_empty() || lower[*end..].starts_with(' '))
+            });
+            match ends.min() {
+                Some(end) => &handler[..end],
+                None => handler.split(' ').next().unwrap_or(""),
+            }
+        }
+    };
+    Path::new(program).file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default()
+}
+
+/// Whether opening a file of type `extension` (with its dot) with `handlers` (what Windows says opens it: its open verb's program and
+/// command line) would run code: a type in [`CODE_TYPES`], or a handler in [`LAUNCHERS`].
+pub fn opens_as_code(extension: &str, handlers: &[String]) -> bool {
+    CODE_TYPES.iter().any(|t| t.eq_ignore_ascii_case(extension))
+        || handlers.iter().any(|h| LAUNCHERS.contains(&handler_program(h).as_str()))
+}
+
+/// What Windows says opens a file of type `extension`: `AssocQueryStringW`'s executable and command line, for the `open` verb (which
+/// the open asks for) and the type's default one, as the user's choices say. Empty when it says nothing.
+pub fn handlers(extension: &str) -> Vec<String> {
+    use windows_sys::Win32::UI::Shell::{ASSOCF_NOTRUNCATE, ASSOCSTR, ASSOCSTR_COMMAND, ASSOCSTR_EXECUTABLE, AssocQueryStringW};
+    let extension = wide(OsStr::new(extension));
+    let open = wide(OsStr::new("open"));
+    let query = |what: ASSOCSTR, verb: *const u16| {
+        let mut buffer = vec![0u16; 4096];
+        let mut length = buffer.len() as u32;
+        // SAFETY: NUL-terminated strings and a buffer of the length given; the length comes back with its NUL counted.
+        let result = unsafe { AssocQueryStringW(ASSOCF_NOTRUNCATE, what, extension.as_ptr(), verb, buffer.as_mut_ptr(), &mut length) };
+        (result == 0 && length > 1).then(|| String::from_utf16_lossy(&buffer[..length as usize - 1]))
+    };
+    // The association's COM objects want an apartment.
+    in_apartment(|| {
+        [
+            (ASSOCSTR_EXECUTABLE, open.as_ptr()),
+            (ASSOCSTR_COMMAND, open.as_ptr()),
+            (ASSOCSTR_EXECUTABLE, std::ptr::null()),
+            (ASSOCSTR_COMMAND, std::ptr::null()),
+        ]
+        .into_iter()
+        .filter_map(|(what, verb)| query(what, verb))
+        .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// The type a file opens as: its name's last extension once the trailing dots and blanks Windows drops are gone (`a.jar.` opens as a
+/// `.jar`), with its dot.
+fn file_type(path: &Path) -> Option<String> {
+    let name = path.file_name()?.to_string_lossy().trim_end_matches(['.', ' ']).to_string();
+    let (stem, extension) = name.rsplit_once('.')?;
+    (!stem.is_empty() || !extension.is_empty()).then(|| format!(".{extension}"))
+}
+
+/// Whether opening the file with its default app could run code; such a file is never opened. C#'s `Launcher.LaunchFileAsync` refuses
+/// "file types that contain executable code, for example .exe, .msi, and .js" (its documentation; it takes no list); here that is a
+/// type Windows calls dangerous (`AssocIsDangerous`: .exe, .bat, .lnk, .js, .msc, .url …), a type `PATHEXT` names, a type in
+/// [`CODE_TYPES`], or one whose handler is in [`LAUNCHERS`] ([`handlers`], so a `.jar` with Java installed, a `.py` with Python, a
+/// `.rdp`, `.xbap`, `.application` or `.themepack` are refused, which the launcher opens).
 pub fn runs_code(path: &Path) -> bool {
-    let Some(extension) = path.extension().map(|e| format!(".{}", e.to_string_lossy())) else { return false };
+    let Some(extension) = file_type(path) else { return false };
     let listed = std::env::var("PATHEXT").unwrap_or_default().split(';').any(|e| !e.is_empty() && e.eq_ignore_ascii_case(&extension));
     let name = wide(OsStr::new(&extension));
     // SAFETY: a NUL-terminated extension.
-    listed || unsafe { windows_sys::Win32::UI::Shell::AssocIsDangerous(name.as_ptr()) } != 0
+    listed
+        || unsafe { windows_sys::Win32::UI::Shell::AssocIsDangerous(name.as_ptr()) } != 0
+        || opens_as_code(&extension, &handlers(&extension))
 }
 
 /// The shell's file actions.
@@ -185,7 +349,7 @@ impl Desktop for WindowsDesktop {
     /// `SHOpenFolderAndSelectItems` (what `explorer.exe /select` does, without a child process of the app).
     fn reveal(&self, path: &Path) -> Result<()> {
         use windows_sys::Win32::UI::Shell::{ILFree, SHOpenFolderAndSelectItems, SHParseDisplayName};
-        let name = wide(path.as_os_str());
+        let name = wide(&long_path(path));
         let outcome = in_apartment(move || {
             let mut item = std::ptr::null_mut();
             // SAFETY: a NUL-terminated path; the item list is freed below.
@@ -200,7 +364,7 @@ impl Desktop for WindowsDesktop {
         });
         match outcome {
             Some(result) if result >= 0 => Ok(()),
-            Some(result) => Err(PlatformError::Io(std::io::Error::from_raw_os_error(result))),
+            Some(result) => Err(shell_error(result)),
             None => Err(PlatformError::Refused("the shell call panicked".into())),
         }
     }
@@ -212,7 +376,7 @@ impl Desktop for WindowsDesktop {
         if runs_code(path) || !path.is_file() {
             return Ok(false);
         }
-        let (verb, file) = (wide(OsStr::new("open")), wide(path.as_os_str()));
+        let (verb, file) = (wide(OsStr::new("open")), wide(&long_path(path)));
         let opened = in_apartment(move || {
             // SAFETY: an all-zero SHELLEXECUTEINFOW is its documented empty value.
             let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
@@ -232,7 +396,8 @@ impl Desktop for WindowsDesktop {
     fn copy_image(&self, image: &ClipboardImage) -> Result<()> {
         let dib = dib_v5(image);
         let png = image.png.clone();
-        let outcome = in_apartment(move || clipboard::put(&dib, &png));
+        let owner = clipboard::main_window();
+        let outcome = in_apartment(move || clipboard::put(owner, &dib, &png));
         match outcome {
             Some(Ok(())) => Ok(()),
             Some(Err(error)) => Err(PlatformError::Io(error)),
@@ -305,12 +470,38 @@ mod clipboard {
         }
     }
 
-    pub fn put(dib: &[u8], png: &[u8]) -> std::io::Result<()> {
+    /// The app's main window, as a number (a window handle is not `Send`): a visible top-level window of this process that no other
+    /// window owns; 0 in a process with none (the checks).
+    pub fn main_window() -> isize {
+        use windows_sys::Win32::Foundation::{HWND, LPARAM};
+        use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GW_OWNER, GetWindow, GetWindowThreadProcessId, IsWindowVisible};
+        unsafe extern "system" fn each(window: HWND, found: LPARAM) -> windows_sys::core::BOOL {
+            let mut process = 0u32;
+            // SAFETY: a window EnumWindows handed over; `found` is the isize below, alive across EnumWindows.
+            unsafe {
+                GetWindowThreadProcessId(window, &mut process);
+                if process == GetCurrentProcessId() && IsWindowVisible(window) != 0 && GetWindow(window, GW_OWNER).is_null() {
+                    *(found as *mut isize) = window as isize;
+                    return 0;
+                }
+            }
+            1
+        }
+        let mut found = 0isize;
+        // SAFETY: the callback writes only `found`, which outlives the call.
+        unsafe { EnumWindows(Some(each), &mut found as *mut isize as LPARAM) };
+        found
+    }
+
+    /// Both formats put on the clipboard, opened by `owner` (the app's main window, which the clipboard then names as its owner; with
+    /// none, `EmptyClipboard` leaves the clipboard ownerless, which its documentation says `SetClipboardData` may refuse).
+    pub fn put(owner: isize, dib: &[u8], png: &[u8]) -> std::io::Result<()> {
         // The clipboard may be held a moment by another app: tried a few times.
         let mut opened = false;
         for _ in 0..10 {
-            // SAFETY: no owner window, as many apps open it.
-            if unsafe { OpenClipboard(std::ptr::null_mut()) } != 0 {
+            // SAFETY: the app's own window, or none.
+            if unsafe { OpenClipboard(owner as windows_sys::Win32::Foundation::HWND) } != 0 {
                 opened = true;
                 break;
             }
@@ -426,6 +617,122 @@ mod tests {
         for name in ["notes.txt", "photo.png", "page.html", "data.json", "README.md", "noextension"] {
             assert!(!runs_code(Path::new(name)), "{name}");
         }
+    }
+
+    /// The types that run code through a general app or a runtime are refused whatever this computer has installed, also when Windows
+    /// would drop a trailing dot or blank from the name.
+    #[test]
+    fn types_that_run_through_a_runtime_or_launcher_are_refused() {
+        for name in [
+            "a.jar",
+            "a.application",
+            "a.xbap",
+            "a.xll",
+            "a.diagcab",
+            "a.rdp",
+            "a.themepack",
+            "a.search-ms",
+            "a.searchConnector-ms",
+            "a.py",
+            "a.PYW",
+            "a.jar.",
+            "a.jar ",
+            "setup.exe. .",
+        ] {
+            assert!(runs_code(Path::new(name)), "{name}");
+        }
+    }
+
+    /// The decision on its own: a type in the list, or a handler that is an interpreter or launcher (its path or its command line,
+    /// quoted or not), runs code; a document's viewer does not.
+    #[test]
+    fn handlers_that_are_interpreters_or_launchers_run_code() {
+        let handlers = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(handler_program(r#""C:\Program Files\Java\bin\javaw.exe" -jar "%1" %*"#), "javaw");
+        assert_eq!(handler_program(r"C:\Program Files\Eclipse Adoptium\jdk-21\bin\javaw.exe"), "javaw");
+        assert_eq!(handler_program(r#"C:\Windows\system32\msdt.exe /cab "%1""#), "msdt");
+        assert_eq!(handler_program(r"C:\Windows\system32\rundll32.exe C:\Windows\system32\themecpl.dll,OpenThemeAction %1"), "rundll32");
+        assert_eq!(handler_program(r"C:\Windows\System32\dfshim.dll"), "dfshim");
+        assert_eq!(handler_program(r#"regedit.exe "%1""#), "regedit");
+        assert_eq!(handler_program(r#""%1" %*"#), "%1");
+        assert!(opens_as_code(".anything", &handlers(&[r"C:\Python312\py.exe", r#""C:\Python312\py.exe" "%1" %*"#])));
+        assert!(opens_as_code(".mjs", &handlers(&[r#"C:\Program Files\nodejs\node.exe "%1""#])));
+        assert!(opens_as_code(
+            ".x",
+            &handlers(&[
+                r"C:\Windows\System32\dfshim.dll",
+                r#""C:\Windows\System32\rundll32.exe" "C:\Windows\System32\dfshim.dll",ShOpenVerbApplication %1"#
+            ])
+        ));
+        assert!(
+            opens_as_code(".XLL", &handlers(&[r"C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE"])),
+            "listed whatever opens it"
+        );
+        assert!(!opens_as_code(".xlsx", &handlers(&[r"C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE"])));
+        assert!(!opens_as_code(".txt", &handlers(&[r"C:\Windows\system32\NOTEPAD.EXE", r"C:\Windows\system32\NOTEPAD.EXE %1"])));
+        assert!(!opens_as_code(".png", &handlers(&[r#""C:\Program Files\BandiView\BandiView.exe" "%1""#])));
+        assert!(!opens_as_code(".md", &[]), "a type nothing opens is the launcher's to refuse or not");
+    }
+
+    /// With this computer's own associations: where a type's handler is an interpreter or launcher, the handler alone refuses it (the
+    /// list aside); the documents this computer opens are still opened.
+    #[test]
+    fn real_associations_refuse_launchers_and_keep_documents() {
+        for (extension, program) in [
+            (".rdp", "mstsc"),
+            (".diagcab", "msdt"),
+            (".xbap", "presentationhost"),
+            (".application", "rundll32"),
+            (".themepack", "rundll32"),
+            (".jar", "javaw"),
+            (".py", "py"),
+            (".vbs", "wscript"),
+        ] {
+            let found = handlers(extension);
+            if found.iter().any(|h| handler_program(h) == program) {
+                assert!(opens_as_code(".unlisted", &found), "{extension} opens with {program}: {found:?}");
+            } else {
+                eprintln!("  ({extension} does not open with {program} here: {found:?})");
+            }
+        }
+        assert!(!handlers(".txt").is_empty(), "Windows says what opens a .txt");
+        for document in ["a.txt", "a.png", "a.jpg", "a.pdf", "a.html", "a.md", "a.json", "a.csv", "a.docx", "a.xlsx", "a.zip", "a.log"] {
+            assert!(
+                !runs_code(Path::new(document)),
+                "{document} opens as a document: {:?}",
+                handlers(&file_type(Path::new(document)).unwrap())
+            );
+        }
+    }
+
+    /// A Win32 error carried in an HRESULT reads as that error; any other HRESULT is said as one.
+    #[test]
+    fn shell_failures_say_what_failed() {
+        match shell_error(0x8007_0002u32 as i32) {
+            PlatformError::Io(error) => assert_eq!(error.raw_os_error(), Some(2)),
+            other => panic!("{other:?}"),
+        }
+        let other = shell_error(0x8000_4005u32 as i32).to_string();
+        assert!(other.contains("0x80004005"), "{other}");
+    }
+
+    /// A folder past MAX_PATH is reached through `\\?\`; a short path is left as it is.
+    #[test]
+    fn long_paths_reach_win32() {
+        assert_eq!(long_path(Path::new(r"C:\short")), OsStr::new(r"C:\short"));
+        let long = format!(r"C:\{}", "a".repeat(300));
+        assert_eq!(long_path(Path::new(&long)), OsStr::new(&format!(r"\\?\{long}")));
+        let share = format!(r"\\server\share\{}", "b".repeat(300));
+        assert_eq!(long_path(Path::new(&share)), OsStr::new(&format!(r"\\?\UNC\server\share\{}", "b".repeat(300))));
+        let relative = format!(r"C:\{}\..\x", "c".repeat(300));
+        assert_eq!(long_path(Path::new(&relative)), OsStr::new(&relative), "a path Windows must normalize is left to it");
+        let root = std::env::temp_dir().join(format!("mighty-long-{}", std::process::id()));
+        let folder = (0..6).fold(root.clone(), |path, n| path.join(format!("{n}-{}", "d".repeat(50))));
+        std::fs::create_dir_all(&folder).unwrap();
+        assert!(folder.as_os_str().len() >= MAX_PATH);
+        let final_folder = WindowsFileHandles.final_directory_path(&folder);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(final_folder.is_some_and(|f| f.ends_with(folder.file_name().unwrap())), "a folder past MAX_PATH has its final path");
     }
 
     /// The DIB is a 124-byte V5 header and the rows bottom first, BGRA.
