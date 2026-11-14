@@ -74,7 +74,7 @@ mod imp {
     pub use crate::files::{
         WindowsDesktop, WindowsFileHandles, WindowsPathProbe, WindowsPdf, decimal_separator, file_ports, path_probe, short_date_time,
     };
-    pub use crate::fonts::font_catalog;
+    pub use crate::fonts::{DirectWriteFonts, font_catalog};
     pub use crate::prefs::RegistryPrefs;
     pub use crate::process::{KILLED_EXIT_CODE, WindowsProcessHost};
     pub use crate::pty::WindowsPtyHost;
@@ -182,6 +182,39 @@ mod imp {
     /// host (W6: sign-ins, the setup screen's install).
     pub fn terminal_launcher() -> Arc<dyn mighty_platform::TerminalLauncher> {
         Arc::new(WindowsTerminalLauncher)
+    }
+
+    /// C# `ToLocalTime().ToString("T", CultureInfo.CurrentCulture)`: the user's long time format (`GetTimeFormatEx` with no flags) of a
+    /// moment in the local zone; None when Windows does not say.
+    pub fn long_time(at: std::time::SystemTime) -> Option<String> {
+        use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
+        use windows_sys::Win32::Globalization::GetTimeFormatEx;
+        use windows_sys::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime};
+        let since = at.duration_since(std::time::SystemTime::UNIX_EPOCH).ok()?;
+        let ticks = since.as_nanos() / 100 + 116_444_736_000_000_000;
+        let file_time = FILETIME { dwLowDateTime: ticks as u32, dwHighDateTime: (ticks >> 32) as u32 };
+        // SAFETY: plain structures the calls write.
+        let (mut utc, mut local): (SYSTEMTIME, SYSTEMTIME) = unsafe { (std::mem::zeroed(), std::mem::zeroed()) };
+        // SAFETY: valid pointers to the structures above; a null zone is the current one.
+        if unsafe { FileTimeToSystemTime(&file_time, &mut utc) } == 0
+            || unsafe { SystemTimeToTzSpecificLocalTime(std::ptr::null(), &utc, &mut local) } == 0
+        {
+            return None;
+        }
+        let mut time = [0u16; 128];
+        // SAFETY: a null locale is the user's default; the buffer and its length in units.
+        let length = unsafe { GetTimeFormatEx(std::ptr::null(), 0, &local, std::ptr::null(), time.as_mut_ptr(), time.len() as i32) };
+        (length > 1).then(|| String::from_utf16_lossy(&time[..length as usize - 1]))
+    }
+
+    /// The completion toast (`mighty_platform::Notifier`, C# `WindowsAppNotifier`).
+    pub fn notifier() -> Arc<dyn mighty_platform::Notifier> {
+        Arc::new(crate::notify::ToastNotifier::default())
+    }
+
+    /// Registers the app's AUMID for its toasts (HKCU; the host calls it only with `--allow-state-write`).
+    pub fn register_notifications() -> std::result::Result<(), String> {
+        crate::notify::register().map_err(|e| e.to_string())
     }
 
     /// The account usage's HTTPS GET (`mighty_platform::HttpsGet`). W6-C swaps in its WinHTTP GET (http.rs: system proxy, redirects,

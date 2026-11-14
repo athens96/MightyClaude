@@ -1,5 +1,7 @@
 //! The app's settings in the registry, `HKCU\Software\MightyCode` (C# `DelegationSwitch`, `SetupProbe`, `TextAppearance`):
-//! REG_DWORD / REG_QWORD as numbers, REG_SZ / REG_EXPAND_SZ as text (unexpanded). Reads only for now: writing is W6's (settings).
+//! REG_DWORD / REG_QWORD as numbers, REG_SZ / REG_EXPAND_SZ as text (unexpanded); written as C# writes them (`RegistryKey.SetValue`:
+//! a number as REG_DWORD when it fits 32 bits, else REG_QWORD; text as REG_SZ; a switch as DWORD 0/1). The host writes only with
+//! `--allow-state-write`: the key is shared with the installed C# app.
 
 use std::ffi::c_void;
 use std::os::windows::ffi::OsStrExt;
@@ -7,7 +9,8 @@ use std::os::windows::ffi::OsStrExt;
 use mighty_platform::{PlatformError, PrefValue, PrefsStore, Result};
 use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA};
 use windows_sys::Win32::System::Registry::{
-    HKEY_CURRENT_USER, REG_DWORD, REG_EXPAND_SZ, REG_QWORD, REG_SZ, RRF_NOEXPAND, RRF_RT_ANY, RegGetValueW,
+    HKEY_CURRENT_USER, REG_DWORD, REG_EXPAND_SZ, REG_QWORD, REG_SZ, RRF_NOEXPAND, RRF_RT_ANY, RegDeleteKeyValueW, RegGetValueW,
+    RegSetKeyValueW,
 };
 
 /// The app's key under HKEY_CURRENT_USER.
@@ -84,12 +87,38 @@ impl PrefsStore for RegistryPrefs {
         Ok(self.raw(key)?.map(|(kind, bytes)| decode(kind, &bytes)))
     }
 
-    fn set(&self, _key: &str, _value: PrefValue) -> Result<()> {
-        Err(PlatformError::unsupported("PrefsStore", "set"))
+    /// C# `key.SetValue(name, value)` under `CreateSubKey(key)` (the key made when it is missing).
+    fn set(&self, key: &str, value: PrefValue) -> Result<()> {
+        let (kind, bytes) = match value {
+            PrefValue::Int(number) => match i32::try_from(number) {
+                Ok(small) => (REG_DWORD, small.to_le_bytes().to_vec()),
+                Err(_) => (REG_QWORD, number.to_le_bytes().to_vec()),
+            },
+            PrefValue::Bool(on) => (REG_DWORD, u32::from(on).to_le_bytes().to_vec()),
+            PrefValue::Text(text) => (REG_SZ, text.encode_utf16().chain(std::iter::once(0)).flat_map(u16::to_le_bytes).collect()),
+            PrefValue::Other => return Err(PlatformError::Invalid("a value of no settable kind".into())),
+        };
+        let (path, name) = (wide(&self.key), wide(key));
+        // SAFETY: NUL-terminated strings and a byte buffer of the given length.
+        let status = unsafe {
+            RegSetKeyValueW(HKEY_CURRENT_USER, path.as_ptr(), name.as_ptr(), kind, bytes.as_ptr() as *const c_void, bytes.len() as u32)
+        };
+        if status == 0 {
+            Ok(())
+        } else {
+            Err(PlatformError::Refused(format!("registry: {}", std::io::Error::from_raw_os_error(status as i32))))
+        }
     }
 
-    fn remove(&self, _key: &str) -> Result<()> {
-        Err(PlatformError::unsupported("PrefsStore", "remove"))
+    /// C# `key.DeleteValue(name, throwOnMissingValue: false)`: a missing value or key is no error.
+    fn remove(&self, key: &str) -> Result<()> {
+        let (path, name) = (wide(&self.key), wide(key));
+        // SAFETY: NUL-terminated strings.
+        let status = unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, path.as_ptr(), name.as_ptr()) };
+        match status {
+            0 | ERROR_FILE_NOT_FOUND => Ok(()),
+            code => Err(PlatformError::Refused(format!("registry: {}", std::io::Error::from_raw_os_error(code as i32)))),
+        }
     }
 }
 
@@ -123,7 +152,18 @@ mod tests {
         assert_eq!(prefs.get("textFontFamily").unwrap(), Some(PrefValue::Text("Pretendard".into())));
         assert_eq!(prefs.get("blob").unwrap(), Some(PrefValue::Other));
         assert_eq!(prefs.get("missing").unwrap(), None);
-        assert!(prefs.set("x", PrefValue::Int(1)).unwrap_err().is_unsupported());
+        prefs.set("textScale", PrefValue::Text("1.1".into())).unwrap();
+        prefs.set("number", PrefValue::Int(7)).unwrap();
+        prefs.set("huge", PrefValue::Int(1 << 40)).unwrap();
+        prefs.set("delegation.enabled", PrefValue::Bool(true)).unwrap();
+        assert_eq!(prefs.get("textScale").unwrap(), Some(PrefValue::Text("1.1".into())));
+        assert_eq!(prefs.get("number").unwrap(), Some(PrefValue::Int(7)), "a small number is a DWORD");
+        assert_eq!(prefs.get("huge").unwrap(), Some(PrefValue::Int(1 << 40)), "a big one a QWORD");
+        assert_eq!(prefs.get("delegation.enabled").unwrap(), Some(PrefValue::Int(1)), "a switch is DWORD 1");
+        prefs.remove("textScale").unwrap();
+        prefs.remove("textScale").unwrap();
+        assert_eq!(prefs.get("textScale").unwrap(), None, "removed, and removing again is no error");
+        assert!(prefs.set("x", PrefValue::Other).is_err());
         let key = wide(&key);
         // SAFETY: a NUL-terminated key name under HKCU that only this test made.
         unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, key.as_ptr()) };

@@ -39,6 +39,47 @@ pub fn normalized_family(family: Option<&str>) -> Option<String> {
     (!trimmed.is_empty() && !trimmed.chars().any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'))).then(|| trimmed.to_string())
 }
 
+/// `KnownCodeFamilies`: the monospaced families the code picker offers even when the OS does not call them fixed-pitch.
+pub const KNOWN_CODE_FAMILIES: [&str; 21] = [
+    "Menlo",
+    "Monaco",
+    "SF Mono",
+    "JetBrains Mono",
+    "D2Coding",
+    "D2Coding ligature",
+    "Courier",
+    "Courier New",
+    "Andale Mono",
+    "PT Mono",
+    "Fira Code",
+    "Fira Mono",
+    "Source Code Pro",
+    "Cascadia Code",
+    "Cascadia Mono",
+    "IBM Plex Mono",
+    "Hack",
+    "Inconsolata",
+    "Roboto Mono",
+    "Ubuntu Mono",
+    "Consolas",
+];
+
+/// `CodeFamilies`: the families the code picker offers, in the order given: fixed-pitch ones and the known monospaced ones, without
+/// hidden (`@` vertical, `.` system) or repeated names (compared without regard to case).
+pub fn code_families<'a>(fonts: impl IntoIterator<Item = (&'a str, bool)>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    fonts
+        .into_iter()
+        .filter(|(family, fixed)| {
+            !family.is_empty()
+                && !family.starts_with(['.', '@'])
+                && (*fixed || KNOWN_CODE_FAMILIES.iter().any(|known| known.eq_ignore_ascii_case(family)))
+                && seen.insert(family.to_lowercase())
+        })
+        .map(|(family, _)| family.to_string())
+        .collect()
+}
+
 /// `Normalized`: the nearest step (the first of two as near); anything unreadable is 1.
 pub fn normalized(value: f64) -> f64 {
     if !value.is_finite() || value <= 0.0 {
@@ -110,6 +151,34 @@ impl TextAppearance {
         TextAppearance::new(value, family, transcript_family, code_family)
     }
 
+    pub fn with_family(&self, family: Option<&str>) -> TextAppearance {
+        TextAppearance { family: normalized_family(family), ..self.clone() }
+    }
+
+    pub fn with_transcript_family(&self, family: Option<&str>) -> TextAppearance {
+        TextAppearance { transcript_family: normalized_family(family), ..self.clone() }
+    }
+
+    pub fn with_code_family(&self, family: Option<&str>) -> TextAppearance {
+        TextAppearance { code_family: normalized_family(family), ..self.clone() }
+    }
+
+    /// `Percent`: the scale as a whole percent (rounded half away from zero).
+    pub fn percent(&self) -> i64 {
+        (self.scale * 100.0).round() as i64
+    }
+
+    /// `ToValues`: the values to write, by the settings store's names; none removes the value, so the standard setting stores
+    /// nothing. The scale is the invariant round-trip text (`"1.1"`).
+    pub fn to_values(&self) -> [(&'static str, Option<String>); 4] {
+        [
+            (SCALE_KEY, (self.scale != 1.0).then(|| crate::json::format_double(self.scale))),
+            (FAMILY_KEY, self.family.clone()),
+            (TRANSCRIPT_FAMILY_KEY, self.transcript_family.clone()),
+            (CODE_FAMILY_KEY, self.code_family.clone()),
+        ]
+    }
+
     /// The page's `text` push (`PushWebText`): `{kind:'text', scale, family, transcriptFamily, codeFamily}`, nulls left out.
     pub fn push(&self) -> serde_json::Value {
         let mut push = serde_json::json!({"kind": "text", "scale": self.scale});
@@ -160,6 +229,54 @@ mod tests {
         let large = TextAppearance::new(1.5, None, None, None);
         assert_eq!((large.size(11.0), large.terminal_size()), (16.5, 18.0), "150% of 11 and of the terminal's 12");
         assert_eq!(TextAppearance::new(0.85, None, None, None).size(10.0), 8.5);
+    }
+
+    /// Verification.cs:1276 "text appearance: the conversation follows the interface font and code offers monospaced families".
+    #[test]
+    fn the_conversation_follows_the_interface_until_it_has_its_own() {
+        assert_eq!(TextAppearance::new(1.0, Some("Malgun Gothic"), None, None).resolved_transcript_family(), Some("Malgun Gothic"));
+        assert_eq!(TextAppearance::new(1.0, Some("Malgun Gothic"), Some("Georgia"), None).resolved_transcript_family(), Some("Georgia"));
+        assert_eq!(TextAppearance::default().resolved_transcript_family(), None);
+        let families = code_families([
+            ("Arial", false),
+            ("Consolas", true),
+            ("D2Coding", false),
+            ("@MS Gothic", true),
+            (".Hidden", true),
+            ("Consolas", true),
+            ("Lucida Console", true),
+            ("Segoe UI", false),
+        ]);
+        assert_eq!(families, vec!["Consolas", "D2Coding", "Lucida Console"]);
+    }
+
+    /// Verification.cs:1278 "text appearance: registry values round-trip and the standard setting stores nothing".
+    #[test]
+    fn the_registry_values_round_trip_and_the_standard_stores_nothing() {
+        let standard = TextAppearance::default().to_values();
+        assert!(standard.iter().all(|(_, value)| value.is_none()), "the standard setting writes nothing");
+        assert_eq!(standard.map(|(name, _)| name), ["textScale", "textFontFamily", "textTranscriptFontFamily", "textCodeFontFamily"]);
+        for text in [
+            TextAppearance::new(1.1, Some("Malgun Gothic"), None, Some("D2Coding")),
+            TextAppearance::new(0.85, None, None, None),
+            TextAppearance::new(1.0, None, Some("Georgia"), None),
+            TextAppearance::new(1.5, Some("A"), Some("B"), Some("C")),
+        ] {
+            let [scale, family, transcript, code] = text.to_values().map(|(_, value)| value);
+            let back = TextAppearance::from_values(scale.map(Stored::Text), family.as_deref(), transcript.as_deref(), code.as_deref());
+            assert_eq!(back, text);
+        }
+        assert!(TextAppearance::from_values(None, None, None, None).is_standard());
+        assert!(TextAppearance::from_values(Some(Stored::Text("big".into())), None, None, Some("")).is_standard());
+        assert_eq!(TextAppearance::from_values(Some(Stored::Text(" 1.2 ".into())), None, None, None).scale, 1.2);
+        assert_eq!(TextAppearance::from_values(Some(Stored::Number(90)), None, None, None).scale, 0.9);
+        assert_eq!(TextAppearance::from_values(Some(Stored::Text("110".into())), None, None, None).scale, 1.1);
+        assert_eq!(TextAppearance::new(1.1, None, None, None).percent(), 110);
+        let each = TextAppearance::new(1.2, Some("x"), None, None);
+        assert_eq!(each.with_family(None).family, None);
+        assert_eq!(each.with_transcript_family(Some(" ")).transcript_family, None);
+        assert_eq!(each.with_code_family(Some("Consolas")).code_family.as_deref(), Some("Consolas"));
+        assert_eq!(each.with_family(Some("  Segoe Print ")).family.as_deref(), Some("Segoe Print"));
     }
 
     #[test]

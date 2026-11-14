@@ -157,6 +157,21 @@ mod imp {
         Arc::new(Unsupported)
     }
 
+    /// The user's long time format: not yet on the Mac (W6).
+    pub fn long_time(_at: std::time::SystemTime) -> Option<String> {
+        None
+    }
+
+    /// The completion notification (`UNUserNotificationCenter`): not yet on the Mac (W6).
+    pub fn notifier() -> Arc<dyn mighty_platform::Notifier> {
+        Arc::new(Unsupported)
+    }
+
+    /// Nothing to register before notifying: not yet on the Mac (W6).
+    pub fn register_notifications() -> std::result::Result<(), String> {
+        Err("unsupported on this platform: Notifier.register".into())
+    }
+
     /// The HTTPS GET of the account usage's direct lookup: not yet on the Mac (W6).
     pub fn https_get() -> Arc<dyn mighty_platform::HttpsGet> {
         Arc::new(Unsupported)
