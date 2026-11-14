@@ -446,7 +446,8 @@ async fn fake_cli_receives_attachment_bytes_and_staging_is_removed() {
         mighty_run::attachments::make("source.cs", b"attachment-fixture-contents").unwrap(),
     ];
     let events = Events::default();
-    // pi, Antigravity and the ACP agents are read through their own channels and streams (W5): their runs are refused until then.
+    // pi takes its attachments in its own channel (tests/pi.rs, PiVerification); Antigravity and the ACP agents are read through
+    // their own channels and streams (W5): their runs are refused until then.
     for provider in
         mighty_core::wire::PROVIDERS.iter().copied().filter(|p| !matches!(*p, "pi" | "gemini") && !mighty_run::providers::is_acp(p))
     {
@@ -791,10 +792,10 @@ async fn a_panic_in_a_run_ends_it_and_frees_its_pane() {
     common::remove_when_free(&directory).await;
 }
 
-/// pi and Antigravity are read by streams of their own (W5): until then their runs are refused with the reason, as the ACP agents'
-/// are, instead of launching a CLI whose answer would never be read.
+/// Antigravity is read by a stream of its own (W5): until then its runs are refused with the reason, as the ACP agents' are, instead
+/// of launching a CLI whose answer would never be read. (pi runs: tests/pi.rs.)
 #[tokio::test(flavor = "multi_thread")]
-async fn pi_and_antigravity_runs_are_refused_until_their_streams() {
+async fn antigravity_runs_are_refused_until_its_stream() {
     common::korean();
     let directory = common::temp("refused");
     let workspace = workspace(&directory);
@@ -802,15 +803,14 @@ async fn pi_and_antigravity_runs_are_refused_until_their_streams() {
     let catalog = common::fake_catalog(&["--fake-cli", "codex", &record.to_string_lossy()]);
     let events = Events::default();
     let manager = RunManager::new(catalog, RunManagerOptions::new("", resolve(&workspace), events.emit()));
-    for provider in ["pi", "gemini"] {
-        let refused = manager.start_reached(request(provider, &workspace, "claude", "hello").with_provider(provider)).await;
-        let name = mighty_run::providers::name(provider);
-        assert!(
-            matches!(&refused, Err(error) if error.message().starts_with(name) && error.message().contains("does not read yet")),
-            "{provider}: {refused:?}"
-        );
-        assert_eq!(events.last_status(provider).as_deref(), Some("error"), "{provider} ends in an error");
-    }
+    let provider = "gemini";
+    let refused = manager.start_reached(request(provider, &workspace, "claude", "hello").with_provider(provider)).await;
+    let name = mighty_run::providers::name(provider);
+    assert!(
+        matches!(&refused, Err(error) if error.message().starts_with(name) && error.message().contains("does not read yet")),
+        "{provider}: {refused:?}"
+    );
+    assert_eq!(events.last_status(provider).as_deref(), Some("error"), "{provider} ends in an error");
     manager.dispose().await;
     assert!(!suffixed(&record, ".args").exists(), "no CLI was launched");
     common::remove_when_free(&directory).await;

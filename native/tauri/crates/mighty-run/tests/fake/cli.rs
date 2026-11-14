@@ -3,12 +3,15 @@
 //!
 //! - `--fake-cli <provider> <record> [args…]`: records its arguments in `<record>.args` (a JSON array) and plays C#'s fake: with
 //!   `--permission-prompt-tool` Claude's stdio control protocol (the handshake, one tool request, the plan, resumed-agent and
-//!   background fixtures); with `app-server` or `--safe-mode` the model-list sessions; otherwise reads stdin to its end into
-//!   `<record>.prompt` and answers as Codex's exec (or agy) would.
+//!   background fixtures); with `app-server` or `--safe-mode` the model-list sessions; as `pi`, `pi --mode rpc` answering from
+//!   `--pi-fixture <recording>` (`--pi-hang`, `--pi-steer`); otherwise reads stdin to its end into `<record>.prompt` and answers as
+//!   Codex's exec (or agy) would.
 //! - `--model-list-cli <provider> <state> [args…]`: each CLI's model-list read, answered with the real CLI's recorded output
 //!   (native/contracts/fixtures/model-list-*) for its verified arguments, refused otherwise.
 //! - `--replay-cli <recording> <record> [args…]`: Claude with host prompts that asks one tool permission and one plan, records the
 //!   answers, then replays the recording (native/contracts/fixtures/<recording>.jsonl) and ends once its input closes.
+//! - `--codex-approval-fixture [args…]`: Codex's `app-server` for one approval turn (CodexApprovalVerification.cs:141 `FakeCliAsync`):
+//!   the handshake, one command approval that must be accepted, the answer, the turn's end, then stdin must end.
 
 use std::fs::OpenOptions;
 use std::io::{BufRead, Read, Write};
@@ -55,6 +58,7 @@ fn main() {
         Some("--fake-cli") if args.len() >= 3 => fake_cli(&args[1], &args[2], &args[3..]),
         Some("--model-list-cli") if args.len() >= 3 => model_list_cli(&args[1], &args[2], &args[3..]),
         Some("--replay-cli") if args.len() >= 3 => replay_cli(&args[1], &args[2], &args[3..]),
+        Some("--codex-approval-fixture") => codex_approval_fixture(&args[1..]),
         // C# `--long-child <pid file>`: a shell pane's command that writes its id and runs until it is stopped.
         Some("--long-child") if args.len() >= 2 => {
             let _ = std::fs::write(&args[1], std::process::id().to_string());
@@ -70,6 +74,10 @@ fn main() {
 fn fake_cli(provider: &str, record: &str, args: &[String]) {
     let _ = std::fs::write(format!("{record}.args"), serde_json::to_string(args).unwrap_or_default());
     let has = |flag: &str| args.iter().any(|a| a == flag);
+    if provider == "pi" && !has("--version") {
+        fake_pi(record, args);
+        return;
+    }
     if has("--version") {
         say("2.1.271");
         return;
@@ -147,6 +155,93 @@ fn fake_cli(provider: &str, record: &str, args: &[String]) {
     if has("--fail-run") {
         std::process::exit(2);
     }
+}
+
+/// A pi that answers on stdin as `pi --mode rpc` does, from a fixture (`--pi-fixture <file>`), and exits when stdin ends
+/// (PiVerification.cs:360 `FakeAsync`): `get_state` answered with the first line; a prompt with the next three, then (after
+/// `--pi-hang`'s minute, or the steer `--pi-steer` reads) the rest; with `--pi-dialogs` (the app's smoke) it waits for the answer to
+/// each dialog it shows (`extension_ui_request` but `notify`) as pi does. Every line it reads is kept in `<record>.stdin`.
+fn fake_pi(record: &str, args: &[String]) {
+    let has = |flag: &str| args.iter().any(|a| a == flag);
+    let path = args.iter().position(|a| a == "--pi-fixture").and_then(|at| args.get(at + 1)).cloned().unwrap_or_default();
+    let fixture: Vec<String> = std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .split('\n')
+        .map(|line| line.trim_end_matches('\r').to_string())
+        .filter(|line| !line.is_empty())
+        .collect();
+    let stdin = format!("{record}.stdin");
+    while let Some(line) = read_line() {
+        append(&stdin, &format!("{line}\n"));
+        if line.contains("\"get_state\"") {
+            if let Some(first) = fixture.first() {
+                say(first);
+            }
+        } else if line.contains("\"prompt\"") {
+            for output in fixture.iter().skip(1).take(3) {
+                say(output);
+            }
+            if has("--pi-hang") {
+                std::thread::sleep(Duration::from_secs(60));
+            }
+            if has("--pi-steer")
+                && let Some(steer) = read_line()
+            {
+                append(&stdin, &format!("{steer}\n"));
+            }
+            for output in fixture.iter().skip(4) {
+                say(output);
+                let asks = output.contains("\"extension_ui_request\"") && !output.contains("\"method\":\"notify\"");
+                if has("--pi-dialogs")
+                    && asks
+                    && let Some(answer) = read_line()
+                {
+                    append(
+                        &stdin,
+                        &format!(
+                            "{answer}
+"
+                        ),
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// C#'s check fails the fixture with an exception (a non-zero exit).
+fn check(value: bool, message: &str) {
+    if !value {
+        eprintln!("{message}");
+        std::process::exit(1);
+    }
+}
+
+/// Codex's `app-server` for one approval turn (CodexApprovalVerification.cs:141 `FakeCliAsync`).
+fn codex_approval_fixture(args: &[String]) {
+    check(args.iter().any(|a| a == "app-server") && !args.iter().any(|a| a == "exec"), "Fixture expected app-server arguments.");
+    let read = || -> Value {
+        let Some(line) = read_line() else {
+            eprintln!("unexpected stdin EOF");
+            std::process::exit(1);
+        };
+        serde_json::from_str(&line).unwrap_or(Value::Null)
+    };
+    let initialize = read();
+    check(text(&initialize, "method") == Some("initialize"), "first frame is initialize");
+    say(&json!({"id": initialize["id"], "result": {}}).to_string());
+    check(text(&read(), "method") == Some("initialized"), "client acknowledges initialization");
+    let thread = read();
+    say(&json!({"id": thread["id"], "result": {"thread": {"id": "thread-1"}}}).to_string());
+    let turn = read();
+    check(turn["params"]["approvalPolicy"] == "on-request", "actual turn carries approval policy");
+    say(&json!({"id": turn["id"], "result": {"turn": {"id": "turn-1"}}}).to_string());
+    say(&json!({"id": 40, "method": "item/commandExecution/requestApproval", "params": {"threadId": "thread-1", "turnId": "turn-1", "itemId": "cmd-1", "command": "fixture command", "cwd": "C:\\work"}}).to_string());
+    check(read()["result"]["decision"] == "accept", "explicit single-call response arrives");
+    say(&json!({"method": "item/completed", "params": {"threadId": "thread-1", "turnId": "turn-1", "item": {"id": "result", "type": "agentMessage", "text": "fixture complete"}}}).to_string());
+    say(&json!({"method": "turn/completed", "params": {"threadId": "thread-1", "turn": {"id": "turn-1", "status": "completed"}}})
+        .to_string());
+    check(read_line().is_none(), "stdin ends only after turn completion");
 }
 
 fn base64(bytes: &[u8]) -> String {

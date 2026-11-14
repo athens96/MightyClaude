@@ -2,11 +2,15 @@
 //! events. A run starts (`Begin`), its process is found, launched with its arguments and environment through the platform's
 //! `ProcessHost`, read line by line (`ExecuteAsync`), steered (`TrySteer`), answered (permissions, plans, questions) and stopped
 //! (`Stop`, 10 s). Its timers are C#'s: the graph published every second, a Claude run's input closed after 120 s of silence once
-//! the request answered and no background task runs (`BackgroundIdleClose`), the permission handshake given 15 s.
+//! the request answered and no background task runs (`BackgroundIdleClose`), the permission handshake given 15 s (Claude's, and a
+//! Codex `onRequest` run's app-server turn: `CodexApprovalChannel`, whose approvals are the pane's tool-permission requests).
 //!
-//! Until their stages: Codex's approval channel (`onRequest`), the ACP agents (opencode, Hermes), pi's RPC and dialogs and
-//! Antigravity's stream are W5 — a run of opencode, Hermes, pi or Antigravity, or a Codex run in `onRequest`, is refused with the
-//! reason (pi and Antigravity are read through the parser's `ProviderStream` once W5 plugs it in). A sharing host's PowerShell
+//! pi (`pi --mode rpc`) reads `get_state` and the prompt and keeps its stdin for a steer until its turn ended and it went quiet for
+//! a second (`ClosePiWhenIdle`); its extensions' dialogs are the pane's question cards (`PiDialogChannel`), a deadline pi gives one
+//! closing its card when it passes.
+//!
+//! Until their stages: the ACP agents (opencode, Hermes) and Antigravity's stream are W5 — a run of opencode, Hermes or Antigravity
+//! is refused with the reason (Antigravity is read through the parser's `ProviderStream` once W5 plugs it in). A sharing host's PowerShell
 //! commands are W8. The Agent IO / delegation binding (W7) plugs in through [`RunBinding`]; the file originals (W4) through
 //! [`FileOriginals`].
 
@@ -27,6 +31,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::activity;
 use crate::attachments::StagedAttachments;
+use crate::codex_approval::{self, CodexApprovalChannel, CodexHooks};
 use crate::failure;
 use crate::graph::{GraphFactory, GraphSink, GraphStart};
 use crate::lines::{Lines, Next};
@@ -36,6 +41,7 @@ use crate::mods::{Connection, ModBridge, ModMetadata};
 use crate::parser::{ImageStore, OutputParser, ParserHooks, maximum_line_bytes};
 use crate::permissions::{ChannelHooks, ClaudePermissionChannel, ProviderInput, ToolPermissionRequest};
 use crate::phase_models;
+use crate::pi_dialogs::{PiDialogChannel, PiDialogHooks};
 use crate::plan_mode::{BackgroundTaskTracker, PlanDecision, TodoProgressTracker, work};
 use crate::presentation::strings as copy;
 use crate::providers::{self, ProviderCatalog};
@@ -63,6 +69,10 @@ pub type BindingFactory = Arc<dyn Fn(&StartRunRequest, &Workspace) -> Option<Run
 /// run works in, and what an Edit, Write or MultiEdit result said (the parser's `FileOriginalHook` arguments).
 pub type FileOriginals = Arc<dyn Fn(&str, &str, &str, &str, &str, &Value) + Send + Sync>;
 
+/// Whether pi keeps the record of a session (C# `PiAgent.SessionFile(id, workspacePath, home, environment) is not null`, mighty-history's
+/// `pi::session_file`): the session id, the folder the run works in and the CLI's environment.
+pub type PiSessions = Arc<dyn Fn(&str, &str, &BTreeMap<String, String>) -> bool + Send + Sync>;
+
 /// `RunManager`'s constructor arguments and settable properties.
 #[derive(Clone)]
 pub struct RunManagerOptions {
@@ -79,6 +89,9 @@ pub struct RunManagerOptions {
     pub background_idle_close: Duration,
     pub binding: Option<BindingFactory>,
     pub file_originals: Option<FileOriginals>,
+    /// pi exits on a session it cannot find (one that never got an answer is not written): a run asked to continue a session this
+    /// says pi has no record of starts a new one. None keeps every resume as asked.
+    pub pi_sessions: Option<PiSessions>,
 }
 
 impl RunManagerOptions {
@@ -94,6 +107,7 @@ impl RunManagerOptions {
             background_idle_close: Duration::from_secs(120),
             binding: None,
             file_originals: None,
+            pi_sessions: None,
         }
     }
 }
@@ -170,6 +184,12 @@ struct Run {
     input: Mutex<Option<Arc<InputPipe>>>,
     input_gate: Mutex<()>,
     permissions: Mutex<Option<Arc<ClaudePermissionChannel>>>,
+    /// A Codex run in `onRequest`: the app-server channel its stdio carries.
+    codex: Mutex<Option<Arc<CodexApprovalChannel>>>,
+    /// A pi run's extension dialogs (its `ask_user` tool among them) as the pane's question card.
+    pi_dialogs: Mutex<Option<Arc<PiDialogChannel>>>,
+    /// pi's stdin was closed after its turn ended (or never opened): no steer follows.
+    pi_input_closed: AtomicBool,
     parser: Mutex<Option<Arc<OutputParser>>>,
     tracker: Mutex<Option<SharedSink>>,
     redact: Mutex<Option<Redact>>,
@@ -207,6 +227,25 @@ impl Run {
 
     fn channel(&self) -> Option<Arc<ClaudePermissionChannel>> {
         lock(&self.permissions).clone()
+    }
+
+    fn codex(&self) -> Option<Arc<CodexApprovalChannel>> {
+        lock(&self.codex).clone()
+    }
+
+    fn pi_dialogs(&self) -> Option<Arc<PiDialogChannel>> {
+        lock(&self.pi_dialogs).clone()
+    }
+
+    /// pi's stdin while it is open (C#'s writes under `InputGate`: never after the run's end or the close after its turn).
+    fn pi_write(&self, text: &str) {
+        let _gate = lock(&self.input_gate);
+        if self.finished.load(Ordering::SeqCst) || self.pi_input_closed.load(Ordering::SeqCst) {
+            return;
+        }
+        if let Some(input) = lock(&self.input).as_ref() {
+            let _ = input.write(text);
+        }
     }
 }
 
@@ -306,8 +345,10 @@ impl RunManager {
     /// (a stop finds it from now on) and its task started. The [`Admitted`] waits for the process when the request asks for that.
     pub fn admit(&self, value: StartRunRequest, awaited: bool) -> Result<Admitted> {
         let request = value.validate()?;
-        if request.provider == "codex" && request.settings().permission_mode == "onRequest" {
-            // CodexApprovalChannel is W5: until then a run that needs it has no surface to answer it, as C# says without one.
+        if request.provider == "codex"
+            && request.settings().permission_mode == "onRequest"
+            && self.inner.options.permission_requested.is_none()
+        {
             return Err(RunError::State("Codex approval requests require a local approval surface.".into()));
         }
         let receiver;
@@ -334,6 +375,9 @@ impl RunManager {
                 input: Mutex::new(None),
                 input_gate: Mutex::new(()),
                 permissions: Mutex::new(None),
+                codex: Mutex::new(None),
+                pi_dialogs: Mutex::new(None),
+                pi_input_closed: AtomicBool::new(false),
                 parser: Mutex::new(None),
                 tracker: Mutex::new(None),
                 redact: Mutex::new(None),
@@ -371,15 +415,40 @@ impl RunManager {
     /// `RespondToToolPermission`: 이번만 허용 / 거부 for one waiting request of one run.
     pub fn respond_to_tool_permission(&self, session_id: &str, request_id: &str, allow: bool) -> Result<()> {
         let Some(run) = self.run(session_id) else { return Err(RunError::State(copy::already_settled())) };
+        if let Some(codex) = run.codex() {
+            return codex.respond(request_id, allow);
+        }
+        if let Some(dialogs) = run.pi_dialogs() {
+            return dialogs.respond(request_id, allow);
+        }
         match run.channel() {
             Some(channel) => channel.respond(request_id, allow),
             None => Err(RunError::State(copy::already_settled())),
         }
     }
 
-    /// `TrySteerAsync`: a follow-up joins a running Claude turn's open stdin (after the request's result it opens a new turn).
+    /// `TrySteerAsync`: a follow-up joins a running Claude turn's open stdin (after the request's result it opens a new turn); pi takes
+    /// it as a `steer` command while its turn is open (read after the current tool calls, before the next model call).
     pub fn try_steer(&self, session_id: &str, text: &str) -> bool {
         let Some(run) = self.run(session_id) else { return false };
+        if run.request.provider == "pi" {
+            let _gate = lock(&run.input_gate);
+            let open = lock(&run.parser).as_ref().is_some_and(|parser| parser.pi_turn_open());
+            if run.finalizing.load(Ordering::SeqCst)
+                || run.finished.load(Ordering::SeqCst)
+                || run.cancel.is_cancelled()
+                || run.pi_input_closed.load(Ordering::SeqCst)
+                || !open
+                || lock(&run.child).is_none()
+            {
+                return false;
+            }
+            let written = lock(&run.input).as_ref().is_some_and(|input| input.write(&ProviderInput::pi_steer(text)).is_ok());
+            if written {
+                run.touch();
+            }
+            return written;
+        }
         if run.finalizing.load(Ordering::SeqCst)
             || run.finished.load(Ordering::SeqCst)
             || run.cancel.is_cancelled()
@@ -439,7 +508,7 @@ impl RunManager {
         answer
     }
 
-    /// `AnswerQuestionnaire`: Claude's AskUserQuestion answered.
+    /// `AnswerQuestionnaire`: Claude's AskUserQuestion, or a pi extension's dialog, answered.
     pub fn answer_questionnaire(
         &self,
         session_id: &str,
@@ -448,11 +517,13 @@ impl RunManager {
     ) -> Result<()> {
         let gone = || RunError::State(copy::already_settled());
         let run = self.run(session_id).ok_or_else(gone)?;
-        if run.finalizing.load(Ordering::SeqCst)
-            || run.finished.load(Ordering::SeqCst)
-            || run.cancel.is_cancelled()
-            || run.request.provider != "claude"
-        {
+        if run.finalizing.load(Ordering::SeqCst) || run.finished.load(Ordering::SeqCst) || run.cancel.is_cancelled() {
+            return Err(gone());
+        }
+        if let Some(dialogs) = run.pi_dialogs() {
+            return dialogs.answer_questions(request_id, answers);
+        }
+        if run.request.provider != "claude" {
             return Err(gone());
         }
         run.channel().ok_or_else(gone)?.answer_questions(request_id, answers)
@@ -536,6 +607,8 @@ struct Exec {
     background: Mutex<BackgroundTaskTracker>,
     plan_gate: Mutex<()>,
     todo_run_id: Option<String>,
+    /// The CLI's environment the run started with, once read: where `ReadChildren` finds the CLI's own files.
+    children: Mutex<Option<BTreeMap<String, String>>>,
     emit: Emit,
 }
 
@@ -671,6 +744,14 @@ impl Exec {
         if let Some(channel) = channel {
             channel.cancel_all();
         }
+        let codex = lock(&run.codex).take();
+        if let Some(codex) = codex {
+            codex.cancel_all();
+        }
+        let dialogs = lock(&run.pi_dialogs).take();
+        if let Some(dialogs) = dialogs {
+            dialogs.cancel_all();
+        }
         let child = lock(&run.child).take();
         if let Some(child) = child {
             let _ = child.close().await;
@@ -706,6 +787,44 @@ impl Exec {
         *lock(&run.tracker) = tracker.clone();
         let parser = Arc::new(OutputParser::new(&provider, &run.activity_id, Self::parser_hooks(&inner, &run, tracker.clone())));
         *lock(&run.parser) = Some(parser.clone());
+        // pi's dialogs reach the pane's question card where a pane can answer it; a headless run cancels them.
+        if provider == "pi"
+            && request.kind != "shell"
+            && let Some(permission) = inner.options.permission_requested.clone()
+        {
+            let (write_run, emit_run, timer_run) = (run.clone(), run.clone(), run.clone());
+            let row = Arc::downgrade(&parser);
+            let (warning_run, warning_emit) = (run.clone(), emit.clone());
+            let dialogs = Arc::new(PiDialogChannel::new(
+                &request.session_id,
+                PiDialogHooks {
+                    write: Arc::new(move |text| write_run.pi_write(text)),
+                    emit: Arc::new(move |value| {
+                        if !emit_run.finished.load(Ordering::SeqCst) {
+                            permission(value);
+                        }
+                    }),
+                    activity: Arc::new(move |value, state| {
+                        if let Some(parser) = row.upgrade() {
+                            parser.permission_activity(value, state);
+                        }
+                    }),
+                    warning: Arc::new(move |message| Exec::log(&warning_run, &warning_emit, "system", message)),
+                    // pi answers a dialog with a deadline itself when it passes: the card goes then too.
+                    timer: Some(Arc::new(move |id: &str, seconds: f64| {
+                        let (run, id) = (timer_run.clone(), id.to_string());
+                        tokio::spawn(async move {
+                            tokio::time::sleep(Duration::from_secs_f64(seconds.min(86_400.0))).await;
+                            if let Some(dialogs) = run.pi_dialogs() {
+                                dialogs.timed_out(&id);
+                            }
+                        });
+                    })),
+                },
+            ));
+            *lock(&run.pi_dialogs) = Some(dialogs.clone());
+            parser.set_pi_dialogs(Some(dialogs));
+        }
         let todo_run_id = match &tracker {
             Some(tracker) => Some(lock(tracker).run_id()),
             None => request.graph_run_id.clone().filter(|id| wire::identifier(id)),
@@ -722,6 +841,7 @@ impl Exec {
             background: Mutex::new(BackgroundTaskTracker::new(None)),
             plan_gate: Mutex::new(()),
             todo_run_id,
+            children: Mutex::new(None),
             emit: emit.clone(),
         });
         let reopened = exec.clone();
@@ -762,6 +882,15 @@ impl Exec {
         if let Some(channel) = channel {
             channel.cancel_all();
         }
+        let codex = lock(&run.codex).take();
+        if let Some(codex) = codex {
+            codex.cancel_all();
+        }
+        let dialogs = lock(&run.pi_dialogs).take();
+        if let Some(dialogs) = dialogs {
+            dialogs.cancel_all();
+        }
+        exec.parser.set_pi_dialogs(None);
         if let Some(connection) = mod_connection {
             connection.dispose();
         }
@@ -829,6 +958,10 @@ impl Exec {
             }),
             images: if run.request.kind == "shell" { None } else { inner.options.images.clone() },
             file_original,
+            pi_reply: (run.request.provider == "pi").then(|| {
+                let reply_run = run.clone();
+                Arc::new(move |text: &str| reply_run.pi_write(text)) as crate::parser::PiReplyHook
+            }),
         }
     }
 
@@ -888,6 +1021,18 @@ impl Exec {
         true
     }
 
+    /// `PublishGraph(readChildren: true)`'s first step: the run's sub-agents read from the CLI's own files while it is current.
+    fn read_children(&self) {
+        let _gate = lock(&self.graph_gate);
+        if self.run.finalizing.load(Ordering::SeqCst) || self.run.finished.load(Ordering::SeqCst) {
+            return;
+        }
+        let environment = lock(&self.children).clone();
+        if let (Some(tracker), Some(environment)) = (&self.tracker, environment) {
+            lock(tracker).read_children(&environment, false);
+        }
+    }
+
     /// `Finish`: the run's last events — background work that never reported an end, the rows still open, the turn, the graph,
     /// and its status (with "authentication" when an error is a lost sign-in).
     fn finish(&self, state: &str) {
@@ -914,8 +1059,12 @@ impl Exec {
             };
             Self::activity(run, &self.emit, &activity::make(&run.activity_id, &request.provider, "turn", state, &summary));
         }
+        let environment = lock(&self.children).clone();
         if let Some(tracker) = &self.tracker {
             let mut sink = lock(tracker);
+            if let Some(environment) = &environment {
+                sink.read_children(environment, true);
+            }
             sink.finish(state);
             if let Some(graph_run) = sink.build_run(false) {
                 (self.emit)(RunEvent { graph_run: Some(graph_run), ..RunEvent::new(&request.session_id, "graph_run") });
@@ -926,7 +1075,9 @@ impl Exec {
         }
         let _node = lock(&run.node_gate);
         run.finished.store(true, Ordering::SeqCst);
-        let authentication = state == "error" && run.authentication_failure.load(Ordering::SeqCst);
+        // pi's sign-in failure is read from its RPC stream, where a later message or a retry clears it.
+        let authentication =
+            state == "error" && (run.authentication_failure.load(Ordering::SeqCst) || self.parser.authentication_failure());
         (self.emit)(RunEvent::state(&request.session_id, state, authentication.then_some("authentication")));
     }
 
@@ -1045,6 +1196,7 @@ impl Exec {
         let inner = self.inner.clone();
         let mut request = run.request.clone();
         let provider = request.provider.clone();
+        let codex_approvals = provider == "codex" && request.settings().permission_mode == "onRequest";
         // The request's diagram block appears the moment the run starts, before the workspace, the CLI or the environment is found.
         if self.tracker.is_some() {
             self.graph_dirty.store(true, Ordering::SeqCst);
@@ -1071,6 +1223,9 @@ impl Exec {
             _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
         }
         let mut environment = providers.quiet_environment();
+        if request.kind != "shell" {
+            *lock(&self.children) = Some(environment.clone());
+        }
         if self.tracker.is_some() {
             let exec = self.clone();
             *graph_task = Some(tokio::spawn(async move {
@@ -1079,6 +1234,7 @@ impl Exec {
                         _ = tokio::time::sleep(Duration::from_secs(1)) => {}
                         _ = exec.graph_stop.cancelled() => return,
                     }
+                    exec.read_children();
                     if !exec.publish_graph() {
                         return;
                     }
@@ -1097,9 +1253,9 @@ impl Exec {
                     providers::name(&provider)
                 )));
             }
-            if matches!(provider.as_str(), "pi" | "gemini") {
-                // pi's RPC and Antigravity's stream are read by the parser's ProviderStream (W5): without it the run's answer would
-                // never reach the pane, so it is refused as the ACP agents are.
+            if provider == "gemini" {
+                // Antigravity's stream is read by the parser's ProviderStream (W5): without it the run's answer would never reach the
+                // pane, so it is refused as the ACP agents are.
                 return Err(Failure::Error(format!(
                     "{} runs through its own stream, which this build does not read yet.",
                     providers::name(&provider)
@@ -1112,6 +1268,9 @@ impl Exec {
             let command = command
                 .ok_or_else(|| Failure::Error(strings::get_with("run.error.cliNotInstalled", &[("name", providers::name(&provider))])))?;
             self.cancelled()?;
+            if codex_approvals && !providers::supports_codex_approvals(command.version.as_deref()) {
+                return Err(Failure::Error("Codex approval requests require stable Codex CLI 0.153.4 or later.".into()));
+            }
             let settings = request.settings();
             if settings.effort != "default" || phase_models::main_effort(&request).is_some() {
                 let runtime = providers.get_runtime(false, Some(&workspace_path)).await;
@@ -1179,9 +1338,18 @@ impl Exec {
             if provider == "pi" && staged.is_none() {
                 input = ProviderInput::pi_startup(&input, &[]);
             }
-            let mut arguments = match staged.as_ref() {
-                Some(staged) => staged.arguments_for(&request, &inner.options.plugin_directory)?,
-                None => providers::arguments(&request, &inner.options.plugin_directory, None)?,
+            // pi exits on a session it cannot find (one that never got an answer is not written): such a pane starts a new session.
+            let mut launch = request.clone();
+            if provider == "pi"
+                && let (Some(resume), Some(sessions)) = (&request.resume_id, &inner.options.pi_sessions)
+                && !sessions(resume, &workspace_path, &environment)
+            {
+                launch.resume_id = None;
+            }
+            // An approval run's pictures go in its turn (`localImage`), not as `--image`.
+            let mut arguments = match staged.as_ref().filter(|_| !codex_approvals) {
+                Some(staged) => staged.arguments_for(&launch, &inner.options.plugin_directory)?,
+                None => providers::arguments(&launch, &inner.options.plugin_directory, None)?,
             };
             if matches!(provider.as_str(), "claude" | "codex")
                 && let Some(factory) = &inner.options.binding
@@ -1259,6 +1427,47 @@ impl Exec {
             let channel = ClaudePermissionChannel::new(&request.session_id, &prompt, hooks, &request.settings().permission_mode);
             *lock(&run.permissions) = Some(Arc::new(channel));
         }
+        if codex_approvals {
+            let images: Vec<String> = staged
+                .as_ref()
+                .map(|staged| {
+                    let pictures = staged.files.iter().filter(|(attachment, _)| attachment.media_type.starts_with("image/"));
+                    pictures.map(|(_, path)| path.to_string_lossy().into_owned()).collect()
+                })
+                .unwrap_or_default();
+            let (write_run, write_pipe) = (run.clone(), pipe.clone());
+            let consumer = Arc::downgrade(self);
+            let emit_run = run.clone();
+            let permission = inner.options.permission_requested.clone();
+            let parser = self.parser.clone();
+            let (warning_run, warning_emit) = (run.clone(), self.emit.clone());
+            let (fail_run, fail_emit) = (run.clone(), self.emit.clone());
+            let completed_pipe = pipe.clone();
+            let hooks = CodexHooks {
+                write: Arc::new(move |text| {
+                    if !write_run.finished.load(Ordering::SeqCst) {
+                        let _ = write_pipe.write(text);
+                    }
+                }),
+                consume: Arc::new(move |line| {
+                    if let Some(exec) = consumer.upgrade() {
+                        exec.consume(line);
+                    }
+                }),
+                emit: Arc::new(move |value| {
+                    if !emit_run.finished.load(Ordering::SeqCst)
+                        && let Some(sink) = &permission
+                    {
+                        sink(value);
+                    }
+                }),
+                activity: Arc::new(move |value, state| parser.permission_activity(value, state)),
+                warning: Arc::new(move |message| Exec::log(&warning_run, &warning_emit, "system", message)),
+                fail: Arc::new(move |message| Exec::fail_protocol(&fail_run, &fail_emit, message)),
+                completed: Arc::new(move || completed_pipe.close()),
+            };
+            *lock(&run.codex) = Some(Arc::new(CodexApprovalChannel::new(&request, &workspace_path, &input, images, hooks)));
+        }
         (self.emit)(RunEvent::state(&request.session_id, "running", None));
         if request.kind != "shell" {
             let summary = strings::get_with("run.activity.running", &[("name", providers::name(&provider))]);
@@ -1267,7 +1476,13 @@ impl Exec {
         if self.tracker.is_some() {
             self.publish_graph();
         }
-        let line_limit = if request.kind == "shell" { 1024 * 1024 } else { maximum_line_bytes(&provider) };
+        let line_limit = if request.kind == "shell" {
+            1024 * 1024
+        } else if codex_approvals {
+            codex_approval::MAXIMUM_FRAME_BYTES
+        } else {
+            maximum_line_bytes(&provider)
+        };
         let output = tokio::spawn(Self::pump_output(self.clone(), child.stdout.take(), line_limit));
         let error = tokio::spawn(Self::pump_error(self.clone(), child.stderr.take()));
         if interactive {
@@ -1312,13 +1527,30 @@ impl Exec {
                     channel.initialization_timed_out();
                 }
             });
+        } else if let Some(codex) = run.codex() {
+            // The channel writes the request itself, once its thread and turn are open; a turn not started in 15 s fails closed.
+            codex.start();
+            let exec = self.clone();
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(15)) => {}
+                    _ = exec.run.cancel.cancelled() => return,
+                }
+                if !exec.run.finished.load(Ordering::SeqCst)
+                    && let Some(codex) = exec.run.codex()
+                {
+                    codex.initialization_timed_out();
+                }
+            });
         } else {
             if request.kind != "shell" {
                 let first = if provider == "gemini" { ProviderInput::antigravity_user_message(&input) } else { input.clone() };
                 let _ = pipe.write(&first);
             }
-            // pi reads get_state and the prompt, then keeps reading for a steer (its close after the turn is W5's pi stream).
-            if provider != "pi" {
+            // pi reads get_state and the prompt, then keeps reading for a steer: stdin stays open until its turn ended and went quiet.
+            if provider == "pi" {
+                tokio::spawn(Self::close_pi_when_idle(self.clone()));
+            } else {
                 pipe.close();
             }
         }
@@ -1345,19 +1577,45 @@ impl Exec {
             _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
         }
         self.parser.flush();
+        let codex = run.codex();
+        if let Some(codex) = &codex {
+            codex.flush();
+        }
         self.close_channel();
         if mod_connection.as_ref().is_some_and(|c| c.received() == 0) {
             Self::log(&run, &self.emit, "system", &strings::get("run.warning.noModEvents"));
         }
         let state = if run.plan_cancelled.load(Ordering::SeqCst) {
             "stopped"
-        } else if code == 0 && !self.parser.failed() && !run.protocol_failed.load(Ordering::SeqCst) {
+        } else if code == 0
+            && !self.parser.failed()
+            && !run.protocol_failed.load(Ordering::SeqCst)
+            && (!codex_approvals || codex.is_some_and(|c| c.turn_completed()))
+        {
             "completed"
         } else {
             "error"
         };
         self.finish(state);
         Ok(())
+    }
+
+    /// `ClosePiWhenIdle`: closes a pi run's stdin (pi then exits) once its turn is over and it has been silent for a second:
+    /// compaction and an automatic retry come right after `agent_end`.
+    async fn close_pi_when_idle(exec: Arc<Exec>) {
+        let run = &exec.run;
+        while !run.finished.load(Ordering::SeqCst) && !run.cancel.is_cancelled() {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            if !exec.parser.pi_turn_ended() || exec.parser.pi_turn_open() || lock(&run.last_output).elapsed() < Duration::from_secs(1) {
+                continue;
+            }
+            let _gate = lock(&run.input_gate);
+            run.pi_input_closed.store(true, Ordering::SeqCst);
+            if let Some(input) = lock(&run.input).as_ref() {
+                input.close();
+            }
+            return;
+        }
     }
 
     async fn pump_output(exec: Arc<Exec>, reader: Option<ChildReader>, limit: usize) {
@@ -1377,6 +1635,10 @@ impl Exec {
                     }
                     if request.kind == "shell" {
                         Self::log(&exec.run, &exec.emit, "output", &line);
+                        continue;
+                    }
+                    if let Some(codex) = exec.run.codex() {
+                        codex.receive(&line);
                         continue;
                     }
                     if let Some(channel) = exec.run.channel()

@@ -11,8 +11,10 @@
 //! | `PhaseModelPreferences.cs`, `PhaseModelRouting.cs`, `PhaseModelSection.cs` (its data; W6 draws the screen) | [`phase_models`], [`phase_routing`], [`phase_section`] |
 //! | `ModelSettingsFileStore.cs`, `OmcAgentCatalog.cs` | [`model_settings`] |
 //! | `ToolPermissions.cs`, `ToolPermissionPresentation.cs`, `ToolPermissionStrings.cs` | [`permissions`], [`presentation`] |
+//! | `CodexApprovalChannel.cs` | [`codex_approval`] |
 //! | `UserQuestionnaire.cs`, `QuestionnaireProgress.cs`, `AgentQuestions.cs` | [`questionnaire`] |
-//! | `OutputParser.cs` (Claude), `ClaudeStream` | [`parser`], [`stream`] |
+//! | `OutputParser.cs` (Claude, Codex, pi), `ClaudeStream` | [`parser`], [`stream`] |
+//! | `PiDialogChannel.cs` | [`pi_dialogs`] |
 //! | `AgentActivity.cs` (`ActivitySupport`, `MetadataJson`) | [`activity`], [`meta`] |
 //! | `SessionUsage.cs`, `AgentRunTiming.cs` | [`usage`], [`timing`] |
 //! | `AgentHandback.cs`, `ClaudeResume.cs`, `RunLogText.cs`, `ContextCompaction.cs`, `BedrockSettings.RuntimeFailureGuidance`, `CliAuthFailure` | [`handback`], [`resume`], [`run_log`], [`compaction`], [`failure`] |
@@ -26,6 +28,7 @@ pub mod activity;
 pub mod apply;
 pub mod attachments;
 pub mod background_output;
+pub mod codex_approval;
 pub mod compaction;
 pub mod failure;
 pub mod flow_steps;
@@ -45,6 +48,7 @@ pub mod permissions;
 pub mod phase_models;
 pub mod phase_routing;
 pub mod phase_section;
+pub mod pi_dialogs;
 pub mod plan_mode;
 pub mod presentation;
 pub mod providers;

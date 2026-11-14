@@ -473,7 +473,9 @@ impl Smoke {
             Mode::Page => return false,
             Mode::FakeClaude => crate::smoke_runs::FAKE_PROBE
                 .replace("__TYPED__", crate::smoke_runs::FAKE_REQUEST)
-                .replace("__STOP__", crate::smoke_runs::STOP_REQUEST),
+                .replace("__STOP__", crate::smoke_runs::STOP_REQUEST)
+                .replace("__PI_PANE__", crate::smoke_runs::PI_PANE)
+                .replace("__PI__", crate::smoke_runs::PI_REQUEST),
             Mode::RealClaude => crate::smoke_runs::REAL_PROBE.replace("__TYPED__", crate::smoke_runs::REAL_REQUEST),
         };
         let pane = match crate::smoke_runs::add_pane(host) {
@@ -674,6 +676,15 @@ impl Smoke {
                     yes("stepsDrawn") && text("stepsCount") == "1/3" && text("stepsStates") == "done,current,pending" && yes("stepsHidden")
                 );
                 checks["stopRun"] = json!(yes("stopPermission") && yes("stopped") && yes("stopCardGone"));
+                checks["piQuestionCard"] = json!(
+                    yes("piAvailable")
+                        && text("piOutcome") == "started"
+                        && text("piQuestion") == "What is your favorite color?"
+                        && text("piAnswer") == "Red"
+                        && matches!(text("piStatus"), "completed" | "idle")
+                        && text("piReply") == "Your favorite color is red."
+                        && yes("piCardGone")
+                );
             }
             Mode::RealClaude => {
                 let empty = json!({"error": "the real request did not report"});

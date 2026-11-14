@@ -30,7 +30,7 @@ use mighty_core::{normalize, time, wire};
 use serde_json::Value;
 
 pub use claude::report;
-pub use codex::{CodexAgentState, CodexCollaborationItem, codex_usage};
+pub use codex::{CodexAgentState, CodexCollaborationItem, codex_key, codex_usage};
 
 use crate::labels;
 use crate::node::{self, ExecutionGraphNode, MAXIMUM_ACTIVITY_GENERATION, MAXIMUM_ENTRIES, MAXIMUM_NODES};

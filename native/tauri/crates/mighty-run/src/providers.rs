@@ -5,9 +5,9 @@
 //! The last list each CLI gave is kept ([`crate::kept_lists`], C# `KeptModelLists`): in memory, and in the storage folder when the
 //! catalog has one ([`ProviderCatalog::with_storage`], C#'s `storageDirectory`), so a restart still has it.
 //!
-//! Deviations, until their stages: Hermes's model picker (`HermesAgent.CachedCatalog`) and pi's shipped question extension
-//! (`AgentFiles`) are W5 — Hermes lists only its own default here, and pi runs without the `ask_user` tool unless
-//! [`set_agent_files`] names the folder that holds it.
+//! Deviations, until their stages: Hermes's model picker (`HermesAgent.CachedCatalog`) is W5 — Hermes lists only its own default
+//! here. The agents' shipped files (`AgentFiles`: pi's `ask_user` extension) are looked up in `Agents` beside the executable, or in
+//! the folder [`set_agent_files`] names (the app names the repository's own in a development build).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};

@@ -1,7 +1,9 @@
 //! The run engine in the app: one [`RunService`] (the run half of C# `DesktopService`) for every pane, with mighty-graph's tracker
 //! plugged into its runner (`mighty_graph::TrackerFactory`: each request's graph run published every second and at its end, with the
-//! notice runs its background work opened), the picture cache (`AgentImageCache`) and the CLIs' catalogue (`ProviderCatalog`), whose
-//! readings the composer's pills and menus show.
+//! notice runs its background work opened, and a Codex run's sub-agents read live from its session files through mighty-history's
+//! `CodexSessionWatcher`), the picture cache (`AgentImageCache`) and the CLIs' catalogue (`ProviderCatalog`), whose readings the
+//! composer's pills and menus show. pi runs load the app's `ask_user` extension (`agents_directory`) and start a new session when pi
+//! has no record of the one asked for (mighty-history's `pi::session_file`).
 //!
 //! The service owns the state from here on: every change the host makes goes through it (`View::update` → `RunService::update`), and
 //! each [`ServiceEvent`] it hands back is applied to the page's copy by [`Host::service_event`] (host.rs), which pushes `event` and
@@ -15,6 +17,7 @@ use mighty_composer::images::{AgentImageCache, AgentImageError, CacheError};
 use mighty_composer::runtime as composer_runtime;
 use mighty_core::model::{AgentImageRef, AppSnapshot, RegisteredModelEntry, RunSession, Workspace};
 use mighty_graph::TrackerFactory;
+use mighty_history::{codex_sessions, history};
 use mighty_platform::{ProcessHost, ShellEnvironment};
 use mighty_run::model::{CliCommand, ModelCatalog, ProviderRuntime};
 use mighty_run::parser::{ImageError, ImageStore};
@@ -27,7 +30,8 @@ use crate::host::Host;
 const IMAGE_CACHE_BYTES: u64 = 200 * 1_048_576;
 
 /// The smoke's stand-in Claude (mighty-run's `mighty-fake-cli --replay-cli`): asks one Bash permission and one plan, then replays a
-/// recording. Every other provider is missing.
+/// recording; and its stand-in pi (`--fake-cli pi … --pi-fixture pi-rpc-question.jsonl --pi-dialogs`), which asks one question through
+/// the app's `ask_user` tool. Every other provider is missing.
 #[derive(Debug, Clone)]
 pub struct FakeClaude {
     pub binary: PathBuf,
@@ -82,6 +86,24 @@ pub fn plugin_directory() -> String {
     }
 }
 
+/// The agents' files the app ships (C# `AgentFiles`: the Mac bundle's Resources/Agents, which the C# build copies next to its exe as
+/// `Agents`; pi's `ask_user` extension among them): beside the exe when they were put there, else the repository's own (a development
+/// build).
+pub fn agents_directory() -> PathBuf {
+    let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join("Agents")));
+    match beside.filter(|dir| dir.is_dir()) {
+        Some(dir) => dir,
+        None => Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("macos")
+            .join("Sources")
+            .join("MightyCore")
+            .join("Resources")
+            .join("Agents"),
+    }
+}
+
 impl Runs {
     /// The service over the loaded state, its events pumped into the host, and the CLIs read once in the background.
     pub fn start(
@@ -103,8 +125,24 @@ impl Runs {
                 vec!["--replay-cli".into(), fake.recording.clone(), fake.record.to_string_lossy().into_owned()],
                 Some("2.1.322"),
             );
+            let pi = CliCommand::new(
+                fake.binary.to_string_lossy().into_owned(),
+                vec![
+                    "--fake-cli".into(),
+                    "pi".into(),
+                    format!("{}-pi", fake.record.to_string_lossy()),
+                    "--pi-fixture".into(),
+                    crate::smoke_runs::pi_fixture().to_string_lossy().into_owned(),
+                    "--pi-dialogs".into(),
+                ],
+                Some("0.70.2"),
+            );
             let finder: Finder = Arc::new(move |provider: String| {
-                let found = (provider == "claude").then(|| command.clone());
+                let found = match provider.as_str() {
+                    "claude" => Some(command.clone()),
+                    "pi" => Some(pi.clone()),
+                    _ => None,
+                };
                 Box::pin(async move { found })
             });
             finder
@@ -115,8 +153,17 @@ impl Runs {
         let store: Arc<dyn ImageStore> = Arc::new(CacheStore(images.clone()));
         // A Claude run's Edit, Write and MultiEdit results keep the files' originals (files.rs, C# FileOriginalStore).
         let originals = crate::files::originals_hook(&host.app);
+        providers::set_agent_files(Some(agents_directory()));
+        // The CLIs' own records are read, never written: a Codex run's session files, pi's session list.
+        let home = history::user_home();
+        let pi_home = home.clone();
         let configure: Configure = Box::new(move |options| {
-            options.graph = Some(Arc::new(TrackerFactory::new()));
+            options.graph =
+                Some(Arc::new(TrackerFactory { codex_sessions: Some(codex_sessions::watcher_factory(home)), ..TrackerFactory::default() }));
+            options.pi_sessions = Some(Arc::new(move |id, workspace, environment| {
+                let environment: HashMap<String, String> = environment.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                mighty_history::pi::session_file(id, workspace, &pi_home, &environment).is_some()
+            }));
             options.images = Some(store);
             options.file_originals = originals;
         });
