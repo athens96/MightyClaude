@@ -191,17 +191,25 @@ fn send(request: &HttpsRequest, max_body: usize) -> Result<HttpsResponse> {
     Ok(HttpsResponse { status: status as u16, body: String::from_utf8_lossy(&body).into_owned(), retry_after, redirect_location })
 }
 
-/// Sends `request` on a blocking thread and gives its answer; a body past `max_body` bytes is refused (`TooLarge`).
+/// Sends `request` on a blocking thread and gives its answer; a body past `max_body` bytes is refused (`TooLarge`). The whole request
+/// ends within its timeout, as C#'s `HttpClient.Timeout` bounds it, not each WinHTTP phase in turn.
 pub async fn get(request: HttpsRequest, max_body: usize) -> Result<HttpsResponse> {
     validate(&request)?;
-    match tokio::task::spawn_blocking(move || send(&request, max_body)).await {
-        Ok(answer) => answer,
-        Err(_) => Err(PlatformError::Io(std::io::Error::other("the HTTPS request's thread ended"))),
+    let timeout = request.timeout;
+    within(timeout, move || send(&request, max_body)).await
+}
+
+/// `work` on a blocking thread, its answer given up on once `timeout` passes (the thread itself ends with WinHTTP's phase timeouts).
+async fn within<T: Send + 'static>(timeout: Duration, work: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
+    match tokio::time::timeout(timeout.max(Duration::from_millis(1)), tokio::task::spawn_blocking(work)).await {
+        Ok(Ok(answer)) => answer,
+        Ok(Err(_)) => Err(PlatformError::Io(std::io::Error::other("the HTTPS request's thread ended"))),
+        Err(_) => Err(PlatformError::TimedOut("the HTTPS request")),
     }
 }
 
 /// An `https://host[/path?query]` URL as its host and its path and query; anything else (another scheme or port, user info, a
-/// fragment, no host) refused.
+/// fragment, no host, a host name of anything but ASCII letters, digits, dots and hyphens) refused.
 fn split(url: &str) -> Result<(String, String)> {
     let refused = || PlatformError::Invalid("only an https://host/path address is asked".into());
     let rest = url.strip_prefix("https://").ok_or_else(refused)?;
@@ -210,10 +218,12 @@ fn split(url: &str) -> Result<(String, String)> {
         Some(at) => (&rest[..at], format!("/{}", &rest[at..])),
         None => (rest, "/".to_string()),
     };
-    if host.is_empty() || host.contains([':', '@']) || path.contains('#') {
+    let host = host.to_ascii_lowercase();
+    let named = !host.is_empty() && host.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-');
+    if !named || path.contains('#') {
         return Err(refused());
     }
-    Ok((host.to_ascii_lowercase(), path))
+    Ok((host, path))
 }
 
 /// mighty-platform's `HttpsGet` on Windows: [`get`] for an `https://` URL on port 443.
@@ -277,8 +287,30 @@ mod tests {
             "https://api.anthropic.com/x#frag",
             "https:///x",
             "ftp://x/y",
+            // Review C12: a host name of ASCII letters, digits, dots and hyphens only.
+            "https://api.anthropic.com\\evil.test/x",
+            "https://api.anthropic.com%2Fevil.test/x",
+            "https://api anthropic.com/x",
+            "https://[::1]/x",
+            "https://\u{0430}pi.anthropic.com/x",
+            "https://api.anthropic.com\u{0}/x",
         ] {
             assert!(split(bad).is_err(), "{bad}");
         }
+        assert_eq!(split("https://xn--bcher-kva.example/x").unwrap().0, "xn--bcher-kva.example", "a punycode name is a name");
+    }
+
+    /// Review C11: the whole request is given up on once its timeout passes, however long the blocking side would take.
+    #[tokio::test]
+    async fn the_whole_request_ends_within_its_timeout() {
+        let started = std::time::Instant::now();
+        let answer = within(Duration::from_millis(50), || {
+            std::thread::sleep(Duration::from_millis(1500));
+            Ok(())
+        })
+        .await;
+        assert!(matches!(answer, Err(PlatformError::TimedOut(_))), "{answer:?}");
+        assert!(started.elapsed() < Duration::from_secs(1), "given up on at the timeout");
+        assert_eq!(within(Duration::from_secs(5), || Ok(7)).await.unwrap(), 7);
     }
 }
