@@ -55,7 +55,7 @@ fn image_url(data: Option<Vec<u8>>, media_type: &str) -> Option<String> {
 }
 
 /// `WebMightyModel(session)`: the pane's projection with what this host has of its sources.
-fn projection(host: &Host, view: &mut View, pane: &RunSession) -> Option<MightyProjection> {
+fn projection(host: &Host, view: &mut View, pane: &Arc<RunSession>) -> Option<MightyProjection> {
     let id = pane.id().to_string();
     let root = root_of(view, pane);
     let requests = panes::requests(host, &id);

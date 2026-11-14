@@ -2,6 +2,7 @@
 //! with the profile, dropped when the pane closes. The rules live here; the host only runs the file work off the page's thread.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use mighty_core::graph::MightyGraphRun;
 use mighty_core::locale::Locale;
@@ -45,7 +46,9 @@ pub const MAXIMUM_BYTES: i64 = 8 * 1_048_576;
 
 #[derive(Debug, Clone)]
 pub struct SessionHistoryState {
-    pub runs: Vec<MightyGraphRun>,
+    /// Oldest first. Shared: every projection of the pane takes it without copying a run; a change copies it only while a projection
+    /// still holds the list it took.
+    pub runs: Arc<Vec<MightyGraphRun>>,
     pub phase: Phase,
     pub file: Option<SessionHistoryFile>,
     pub end: Option<i64>,
@@ -61,7 +64,7 @@ pub struct SessionHistoryState {
 impl Default for SessionHistoryState {
     fn default() -> Self {
         SessionHistoryState {
-            runs: vec![],
+            runs: Arc::default(),
             phase: Phase::Idle,
             file: None,
             end: None,
@@ -144,7 +147,7 @@ impl SessionHistoryState {
         for original in previous[start..stop].iter().filter(|r| !known.contains(r.id())) {
             let mut run = original.clone();
             mighty_core::normalize::apply_provider(&mut run, provider);
-            self.runs.push(run);
+            Arc::make_mut(&mut self.runs).push(run);
         }
         self.anchor_run_id = Some(first.id().to_string());
         if self.pinned_run_id.is_none() {
@@ -160,7 +163,7 @@ impl SessionHistoryState {
         let mut dropped = false;
         while !self.runs.is_empty() && (self.runs.len() > MAXIMUM_RUNS || bytes > MAXIMUM_BYTES) {
             bytes -= mighty_graph::support::live_history_bytes(&self.runs[..1]);
-            self.runs.remove(0);
+            Arc::make_mut(&mut self.runs).remove(0);
             dropped = true;
         }
         if dropped || self.runs.len() >= MAXIMUM_RUNS {
@@ -210,8 +213,8 @@ impl SessionHistoryState {
             Ok(chunk) => {
                 let known: HashSet<String> = self.runs.iter().map(|r| r.id().to_string()).collect();
                 let mut runs: Vec<MightyGraphRun> = chunk.runs.into_iter().filter(|r| !known.contains(r.id())).collect();
-                runs.append(&mut self.runs);
-                self.runs = runs;
+                runs.extend(Arc::unwrap_or_clone(std::mem::take(&mut self.runs)));
+                self.runs = Arc::new(runs);
                 self.file = Some(chunk.file);
                 self.end = Some(chunk.end);
                 self.phase =

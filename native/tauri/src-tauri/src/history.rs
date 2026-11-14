@@ -30,11 +30,12 @@ use tauri::Manager;
 use crate::host::{Host, Registry, View, lock};
 use crate::methods::{flag, text};
 
-/// One pane's loaded history (C# `graphHistory`, `graphHistoryRetained`, `graphHistoryLoad`).
+/// One pane's loaded history (C# `graphHistory`, `graphHistoryRetained`, `graphHistoryLoad`): the pane's record as the last projection
+/// saw it stands for its retained runs (shared, never copied).
 #[derive(Default)]
 struct PaneHistory {
     state: SessionHistoryState,
-    retained: Vec<MightyGraphRun>,
+    retained: Option<Arc<RunSession>>,
     load: Option<Arc<AtomicBool>>,
 }
 
@@ -103,8 +104,9 @@ impl History {
 
 /// `GraphHistoryRuns(pane, retained)` and the history block (`WebMightyModel`): the loaded runs that still attach above the retained
 /// ones (a trim moves the runs it drops into the history; history from another session is not shown), and the block's words while the
-/// pane has a record to read. Panes that left the state let their history go (`ForgetGraphHistory`).
-pub fn older(host: &Host, view: &View, pane: &RunSession) -> (Vec<MightyGraphRun>, Option<WebMightyHistory>) {
+/// pane has a record to read. Panes that left the state let their history go (`ForgetGraphHistory`). Each projection takes the runs
+/// shared: none is copied, and a pane record that did not change is not followed again.
+pub fn older(host: &Host, view: &View, pane: &Arc<RunSession>) -> (Arc<Vec<MightyGraphRun>>, Option<WebMightyHistory>) {
     let history = of(host);
     let mut panes = lock(&history.panes);
     let alive: HashSet<&str> = view.snapshot.sessions().iter().map(|s| s.id()).collect();
@@ -117,12 +119,14 @@ pub fn older(host: &Host, view: &View, pane: &RunSession) -> (Vec<MightyGraphRun
     });
     let retained = pane.graph_runs();
     let entry = panes.entry(pane.id().to_string()).or_default();
-    let previous = std::mem::take(&mut entry.retained);
-    entry.state.follow(&previous, retained, pane.resume_id.as_deref(), pane.provider());
-    entry.retained = retained.to_vec();
+    if !entry.retained.as_ref().is_some_and(|seen| Arc::ptr_eq(seen, pane)) {
+        let previous = entry.retained.replace(pane.clone());
+        let before = previous.as_ref().map_or(&[][..], |p| p.graph_runs());
+        entry.state.follow(before, retained, pane.resume_id.as_deref(), pane.provider());
+    }
     let first = retained.first().map(|r| r.id());
     let connects = entry.state.connects(first, pane.resume_id.as_deref());
-    let runs = if connects { entry.state.runs.clone() } else { vec![] };
+    let runs = if connects { entry.state.runs.clone() } else { Arc::default() };
     let block = shows_history_block(pane.provider(), retained, pane.resume_id.as_deref()).then(|| {
         let fresh = SessionHistoryState::new();
         let state = if connects { &entry.state } else { &fresh };
@@ -135,15 +139,15 @@ pub fn older(host: &Host, view: &View, pane: &RunSession) -> (Vec<MightyGraphRun
     (runs, block)
 }
 
-/// The older runs a pane holds now (for `mightyImages` and a block's size), without following a trim.
-pub fn loaded(host: &Host, pane: &RunSession) -> Vec<MightyGraphRun> {
+/// The older runs a pane holds now (for `mightyImages` and a block's size), without following a trim; shared, not copied.
+pub fn loaded(host: &Host, pane: &RunSession) -> Arc<Vec<MightyGraphRun>> {
     let history = of(host);
     let panes = lock(&history.panes);
     match panes.get(pane.id()) {
         Some(entry) if entry.state.connects(pane.graph_runs().first().map(|r| r.id()), pane.resume_id.as_deref()) => {
             entry.state.runs.clone()
         }
-        _ => vec![],
+        _ => Arc::default(),
     }
 }
 

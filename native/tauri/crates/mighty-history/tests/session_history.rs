@@ -559,6 +559,26 @@ fn session_history_loaded_runs_stay_bounded_and_follow_a_trim() {
     check(trimmed.runs.is_empty(), "resuming another session drops what no longer connects");
 }
 
+/// Every projection of a pane takes its loaded runs (W4 review C2): they are shared, never copied run by run, a pane record whose
+/// first run did not change leaves them as they are, and a change made while a projection still holds the list leaves that list whole.
+#[test]
+fn session_history_a_projection_takes_the_loaded_runs_without_copying_them() {
+    let file = SessionHistoryFile { path: "/r".into(), created: 1 };
+    let mut state = SessionHistoryState::new();
+    state.begin(Some("c"), Some("s"), None, &SessionHistoryRequest::new("claude", "s", "/w"));
+    let generation = state.generation;
+    state.finish(Ok(SessionHistoryChunk { runs: vec![run("record-1"), run("record-2")], file, end: 5, reached_start: false }), generation);
+    let shown = state.runs.clone();
+    check(Arc::ptr_eq(&shown, &state.runs), "a projection shares the list");
+    state.follow(&[run("c")], &[run("c")], Some("s"), "claude");
+    check(Arc::ptr_eq(&shown, &state.runs), "the same first run: nothing followed, nothing copied");
+    state.follow(&[run("a"), run("c")], &[run("c")], Some("s"), "claude");
+    check(inputs(&shown) == ["record-1", "record-2"], "the list a projection holds is not changed under it");
+    drop(shown);
+    let again = state.runs.clone();
+    check(Arc::strong_count(&again) == 2, "only the state and this projection hold the runs");
+}
+
 /// SessionHistoryVerification.cs:384 `TheLayoutStacksLoadedRequestsAboveWithoutMovingTheRetainedOne`.
 #[test]
 fn session_history_the_layout_stacks_loaded_requests_above_without_moving_the_retained_one() {
