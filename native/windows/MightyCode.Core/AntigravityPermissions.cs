@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -23,10 +24,22 @@ public sealed record AntigravityDeniedAction([property: JsonConverter(typeof(Ant
     public static readonly IReadOnlyList<string> Kinds = ["command", "url", "file", "other"];
     /// <summary>A kind this app does not know reads as other.</summary>
     public static string KindOf(string? value) => value is not null && Kinds.Contains(value) ? value : "other";
+    /// <summary>
+    /// The verdict on <c>Rule</c> worked out once, when the card was made from agy's stream on this computer
+    /// (<see cref="AntigravityRuleSafety.Verdict"/>), so drawing the card never asks the disk again; null for a card read from elsewhere.
+    /// Not sent: a host's card is judged by its text here (<see cref="AntigravityRuleSafety.TextVerdict"/>), and an allow is judged again where its rules go.
+    /// </summary>
+    [JsonIgnore] public AntigravityRuleVerdict? KnownVerdict { get; init; }
+    /// <summary>What may be done with its rule: refused when it has none.</summary>
+    [JsonIgnore] public AntigravityRuleVerdict RuleVerdict => Rule is not { } rule ? AntigravityRuleVerdict.Refused : KnownVerdict ?? AntigravityRuleSafety.TextVerdict(rule);
     /// <summary>Its rule may be allowed only for the follow-up run (<see cref="AntigravityRuleSafety"/>).</summary>
-    [JsonIgnore] public bool OnceOnly => Rule is { } rule && AntigravityRuleSafety.Verdict(rule) == AntigravityRuleVerdict.Once;
-    /// <summary>Why it may be allowed only once; null when it may be kept (or has no rule).</summary>
-    [JsonIgnore] public AntigravityOnceReason? OnceOnlyReason => OnceOnly && Rule is { } rule ? AntigravityRuleSafety.OnceReasonOf(rule) : null;
+    [JsonIgnore] public bool OnceOnly => RuleVerdict == AntigravityRuleVerdict.Once;
+    /// <summary>Why it may be allowed only once; null when it may be kept (or has no rule), or when only its characters keep it once.</summary>
+    [JsonIgnore] public AntigravityOnceReason? OnceOnlyReason => OnceOnly && Rule is { } rule && AntigravityRuleSafety.Parts(rule) is { } parts ? AntigravityRuleSafety.CommandReason(parts.Argument) : null;
+    /// <summary>The same action: what it says, whatever verdict it carries.</summary>
+    public bool Equals(AntigravityDeniedAction? other) =>
+        other is not null && Kind == other.Kind && Action == other.Action && DisplayName == other.DisplayName && Target == other.Target && Rule == other.Rule;
+    public override int GetHashCode() => HashCode.Combine(Kind, Action, DisplayName, Target, Rule);
 }
 
 /// <summary>Reads an action's kind as the Mac's decoder does: a string, and one it does not know is <c>other</c>.</summary>
@@ -48,11 +61,13 @@ public sealed record AntigravityPermissionRequest(string Id, string RunId, IRead
     public static AntigravityPermissionRequest Make(string runId, IReadOnlyList<AntigravityDeniedAction> actions) =>
         new("agy-" + Guid.NewGuid().ToString("D"), runId, actions, DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture));
     /// <summary>The rules an allow adds, once each, in order (never one <see cref="AntigravityRuleSafety"/> refuses).</summary>
-    [JsonIgnore] public IReadOnlyList<string> Rules => Actions.Select(a => a.Rule).OfType<string>().Where(rule => AntigravityRuleSafety.Verdict(rule) != AntigravityRuleVerdict.Refused).Distinct(StringComparer.Ordinal).ToList();
+    [JsonIgnore] public IReadOnlyList<string> Rules => Allowed.Select(a => a.Rule!).Distinct(StringComparer.Ordinal).ToList();
+    /// <summary>The actions an allow adds a rule for, by the verdicts kept on them.</summary>
+    private IEnumerable<AntigravityDeniedAction> Allowed => Actions.Where(a => a.RuleVerdict != AntigravityRuleVerdict.Refused);
     /// <summary>At least one action can be allowed with a rule.</summary>
-    [JsonIgnore] public bool CanAllow => Rules.Count > 0;
+    [JsonIgnore] public bool CanAllow => Allowed.Any();
     /// <summary>항상 허용 is offered: every rule may be kept (none chains, pipes, redirects or runs a destructive command).</summary>
-    [JsonIgnore] public bool CanAllowAlways => CanAllow && Rules.All(rule => AntigravityRuleSafety.Verdict(rule) == AntigravityRuleVerdict.Always);
+    [JsonIgnore] public bool CanAllowAlways => CanAllow && Allowed.All(a => a.RuleVerdict == AntigravityRuleVerdict.Always);
     /// <summary>What the transcript line and the continuation name: the targets, else agy's names.</summary>
     [JsonIgnore] public IReadOnlyList<string> Names => Actions.Select(a => a.Target ?? a.DisplayName).ToList();
 }
@@ -93,8 +108,8 @@ public enum AntigravityOnceReason { Risky, Interpreter, AgyFolder }
 /// Which rules an allow may add (M/MightyCore/AntigravityPermissions.swift AntigravityRuleSafety). agy's rules are prefixes (probed on agy
 /// 1.4.5: command(echo hi) allows "echo hi there", write_file(&lt;folder&gt;) everything in it, command(*) every command) and a temporary
 /// one applies to every agy run on the computer while it is in place, so they are kept narrow: a closed mapping from tool to permission,
-/// no wildcard, no whole disk, no parenthesis, and a command that chains, pipes, redirects or runs one of a closed list of destructive
-/// programs only once.
+/// no wildcard, no whole disk, no parenthesis, a file rule only for a plain local path, a URL rule only for a plain host, and a command
+/// that chains, pipes, redirects, runs one of a closed list of destructive programs or is more than plain ASCII only once.
 /// </summary>
 public static class AntigravityRuleSafety
 {
@@ -109,11 +124,11 @@ public static class AntigravityRuleSafety
     };
     /// <summary>The permissions a rule may name.</summary>
     public static readonly IReadOnlySet<string> Permissions = ToolPermissions.Values.ToHashSet(StringComparer.Ordinal);
-    /// <summary>Programs that destroy data, escalate or end processes (by name in lower case, without a folder or .exe); mkfs… too.</summary>
+    /// <summary>Programs that destroy data, escalate or end processes (by name in lower case, without a folder or .exe), PowerShell's aliases for them too (ri, spps); mkfs… too.</summary>
     public static readonly IReadOnlySet<string> DestructivePrograms = new HashSet<string>(StringComparer.Ordinal)
     {
         "rm", "rmdir", "unlink", "shred", "dd", "sudo", "su", "doas", "kill", "killall", "pkill", "shutdown", "reboot", "halt", "poweroff", "eval",
-        "del", "erase", "rd", "format", "remove-item", "taskkill", "stop-process", "stop-computer", "restart-computer",
+        "del", "erase", "rd", "format", "remove-item", "taskkill", "stop-process", "stop-computer", "restart-computer", "ri", "spps",
     };
     /// <summary>Why a rule may be allowed only once, checked in this order; null for a rule that may be kept or is refused.</summary>
     public static AntigravityOnceReason? OnceReasonOf(string rule, IReadOnlyList<string>? protectedFolders = null) =>
@@ -133,11 +148,12 @@ public static class AntigravityRuleSafety
     };
     /// <summary>Interpreters whose first argument is their program: once whatever follows.</summary>
     public static readonly IReadOnlySet<string> ProgramFirst = new HashSet<string>(StringComparer.Ordinal) { "awk", "gawk" };
-    /// <summary>Programs that run the command after them: once whatever follows.</summary>
+    /// <summary>Programs that run the command (or the code) after them, PowerShell's among them: once whatever follows.</summary>
     public static readonly IReadOnlySet<string> Wrappers = new HashSet<string>(StringComparer.Ordinal)
     {
         "env", "xargs", "nohup", "time", "timeout", "nice", "watch", "exec", "eval", "source", ".", "npx", "bunx", "uvx", "pipx",
         "command", "builtin", "caffeinate", "arch", "stdbuf", "wsl", "setsid", "script",
+        "iex", "invoke-expression", "saps", "start-process", "start", "icm", "invoke-command",
     };
     /// <summary>Options that only print an interpreter's version or help.</summary>
     public static readonly IReadOnlySet<string> InfoFlags = new HashSet<string>(StringComparer.Ordinal) { "--version", "-v", "-version", "--help", "-h", "-help", "-?", "/?" };
@@ -199,7 +215,7 @@ public static class AntigravityRuleSafety
 
     /// <summary>
     /// The folders no file rule may reach into or above: agy's own %USERPROFILE%\.gemini (an always rule there would let agy rewrite its
-    /// own permissions) and the app's data folder with its ledger, each as written and with its links resolved.
+    /// own permissions) and the app's data folder with its ledger, each as written and as the file system names it (<see cref="ResolvedPath"/>).
     /// </summary>
     public static IReadOnlyList<string> ProtectedFolders()
     {
@@ -211,17 +227,34 @@ public static class AntigravityRuleSafety
     }
 
     /// <summary>
-    /// <paramref name="protectedFolders"/>: the folders file rules keep out of, compared as written (the shared cases); null uses this
-    /// computer's (<see cref="ProtectedFolders"/>). <paramref name="resolvingLinks"/> (by default when null) also checks the rule's path
-    /// with its links resolved.
+    /// What may be done with <paramref name="rule"/> on this computer. A file rule's path must be a plain local path (<see cref="PlainLocalPath"/>),
+    /// read as text before anything on disk is asked for it. <paramref name="protectedFolders"/>: the folders file rules keep out of, compared
+    /// as written (the shared cases); null uses this computer's (<see cref="ProtectedFolders"/>). <paramref name="resolvingLinks"/> (by
+    /// default when null) also checks the rule's path as the file system names it, and refuses one that cannot be read so.
     /// </summary>
-    public static AntigravityRuleVerdict Verdict(string rule, IReadOnlyList<string>? protectedFolders = null, bool? resolvingLinks = null)
+    public static AntigravityRuleVerdict Verdict(string rule, IReadOnlyList<string>? protectedFolders = null, bool? resolvingLinks = null) =>
+        Judge(rule, protectedFolders, resolvingLinks ?? protectedFolders is null, PlainLocalPath);
+
+    /// <summary>
+    /// A rule another computer's card names (a host's), judged by its text alone: a file rule's path is either platform's plain local path,
+    /// nothing on this computer's disk is asked and none of its folders applies. The host judged the rule on its own computer, and judges the
+    /// allow's rules again before it adds them.
+    /// </summary>
+    public static AntigravityRuleVerdict TextVerdict(string rule) => Judge(rule, [], false, path => WindowsDrivePath(path) || RootedPath(path));
+
+    private static AntigravityRuleVerdict Judge(string rule, IReadOnlyList<string>? protectedFolders, bool resolvingLinks, Func<string, bool> plainPath)
     {
         if (Parts(rule) is not { } parts || !Permissions.Contains(parts.Name) || RefusedArgument(parts.Argument)) return AntigravityRuleVerdict.Refused;
         if (parts.Name is "write_file" or "read_file")
         {
+            // Text first: a UNC or device path is never handed to the file system (it would connect to the host it names).
+            if (!plainPath(parts.Argument)) return AntigravityRuleVerdict.Refused;
             var paths = new List<string> { parts.Argument };
-            if ((resolvingLinks ?? protectedFolders is null) && ResolvedPath(parts.Argument) is { } resolved && resolved != parts.Argument) paths.Add(resolved);
+            if (resolvingLinks)
+            {
+                if (ResolvedPath(parts.Argument) is not { } resolved) return AntigravityRuleVerdict.Refused;
+                if (resolved != parts.Argument) paths.Add(resolved);
+            }
             var guarded = (protectedFolders ?? ProtectedFolders()).Select(NormalizedPath).OfType<string>().ToList();
             foreach (var path in paths)
             {
@@ -229,9 +262,51 @@ public static class AntigravityRuleSafety
                 if (guarded.Any(folder => Within(normalized, folder) || Within(folder, normalized))) return AntigravityRuleVerdict.Refused;
             }
         }
-        // A risky command, a shell or interpreter running code, or one that names agy's own folder may run once, never for good.
-        return parts.Name == "command" && CommandReason(parts.Argument) is not null ? AntigravityRuleVerdict.Once : AntigravityRuleVerdict.Always;
+        if (parts.Name == "read_url" && !PlainUrlAuthority(parts.Argument)) return AntigravityRuleVerdict.Refused;
+        // A risky command, a shell or interpreter running code, one that names agy's own folder, or any line beyond plain ASCII may run
+        // once, never for good: a kept rule is a prefix, and quotes, $, ~, \, % and the like let other commands match it.
+        if (parts.Name != "command") return AntigravityRuleVerdict.Always;
+        return CommandReason(parts.Argument) is null && PlainCommandLine(parts.Argument) ? AntigravityRuleVerdict.Always : AntigravityRuleVerdict.Once;
     }
+
+    /// <summary>
+    /// A path a file rule may name on this computer, read as text before anything on disk is asked (a UNC name makes Windows connect to its
+    /// host and send the user's NetNTLM hash, and an unreachable one stalls for 21 s): on Windows <see cref="WindowsDrivePath"/> on a fixed
+    /// drive (GetDriveTypeW: no removable, network or CD drive), elsewhere <see cref="RootedPath"/>.
+    /// </summary>
+    internal static bool PlainLocalPath(string path) => OperatingSystem.IsWindows() ? WindowsDrivePath(path) && FixedDrive(path[0]) : RootedPath(path);
+    /// <summary>
+    /// <c>X:\…</c> or <c>X:/…</c> (an ASCII letter) with no further colon (no stream, such as <c>::$INDEX_ALLOCATION</c>) and no <c>~</c>
+    /// (no 8.3 name such as <c>GEMINI~1</c>): never <c>\\host\share</c>, <c>\\?\</c>, <c>\\.\</c>, <c>//?/</c> or a path relative to a drive.
+    /// </summary>
+    internal static bool WindowsDrivePath(string path) =>
+        path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && (path[2] is '\\' or '/') && path.IndexOf(':', 2) < 0 && !path.Contains('~');
+    /// <summary>A Mac (Unix) path from the root, <c>/…</c>, that does not start with <c>//</c>.</summary>
+    internal static bool RootedPath(string path) => path.StartsWith('/') && !path.StartsWith("//", StringComparison.Ordinal);
+
+    private const uint DriveFixed = 3;
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern uint GetDriveTypeW(string root);
+    private static bool FixedDrive(char letter) => OperatingSystem.IsWindows() && GetDriveTypeW(char.ToUpperInvariant(letter) + @":\") == DriveFixed;
+
+    /// <summary>
+    /// A URL rule's authority (after <c>scheme://</c>, else from the start, up to the first <c>/</c>, <c>?</c> or <c>#</c>) is a plain host: no
+    /// <c>\</c>, <c>@</c>, <c>%</c>, whitespace or anything beyond ASCII, and not empty after a scheme. A WHATWG parser reads
+    /// <c>https://evil.example\@docs.python.org/x</c> as evil.example, which the card would have shown as docs.python.org.
+    /// </summary>
+    internal static bool PlainUrlAuthority(string value)
+    {
+        var scheme = UrlScheme.Match(value);
+        var start = scheme.Success ? scheme.Length : 0;
+        var end = value.IndexOfAny(['/', '?', '#'], start);
+        if (end < 0) end = value.Length;
+        if (scheme.Success && end == start) return false;
+        for (var at = start; at < end; at++) if (value[at] is '\\' or '@' or '%' or <= ' ' or >= '\u007F') return false;
+        return true;
+    }
+    private static readonly Regex UrlScheme = new(@"\A[A-Za-z][A-Za-z0-9+.\-]*://", RegexOptions.CultureInvariant);
+
+    /// <summary>Every character is one a kept command rule may hold: ASCII letters and digits, space and <c>._/:=@+,-</c>.</summary>
+    internal static bool PlainCommandLine(string command) => command.All(c => char.IsAsciiLetterOrDigit(c) || " ._/:=@+,-".Contains(c));
 
     /// <summary>An absolute path, compared without case, \ as /, . and .. taken out and no trailing slash; null when it is not absolute (/…, C:\…).</summary>
     internal static string? NormalizedPath(string path)
@@ -252,31 +327,68 @@ public static class AntigravityRuleSafety
     /// <summary><paramref name="path"/> is <paramref name="folder"/> or inside it.</summary>
     internal static bool Within(string path, string folder) => path == folder || path.StartsWith(folder.EndsWith('/') ? folder : folder + "/", StringComparison.Ordinal);
 
-    /// <summary>The path with every link along it resolved, as far as it exists; null when it is not absolute or cannot be read.</summary>
+    /// <summary>
+    /// The path with every link along it resolved as far as it exists, and on Windows that part as the file system names it
+    /// (GetFinalPathNameByHandleW: its case, long names for 8.3 ones, no trailing dots or spaces), the rest as written. A link is read, never
+    /// followed: where it leads must itself be a plain local path (<see cref="PlainLocalPath"/>) before anything there is asked, so a link to
+    /// <c>\\host\share</c> is never opened. Null when the path is not a plain local one, a link leads to one that is not, or it cannot be read.
+    /// </summary>
     internal static string? ResolvedPath(string path)
     {
         try
         {
-            if (!Path.IsPathFullyQualified(path)) return null;
-            var full = Path.GetFullPath(path);
-            var root = Path.GetPathRoot(full)!;
-            var current = root;
-            foreach (var part in full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+            if (!PlainLocalPath(path)) return null;
+            static (string Root, IEnumerable<string> Parts) Split(string value)
             {
-                current = Path.Combine(current, part);
-                FileSystemInfo info = Directory.Exists(current) ? new DirectoryInfo(current) : new FileInfo(current);
-                if (info.Exists && info.LinkTarget is not null && info.ResolveLinkTarget(true) is { } target) current = target.FullName;
+                var full = Path.GetFullPath(value);
+                var root = Path.GetPathRoot(full)!;
+                return (root, full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries));
             }
-            return current;
+            var (current, first) = Split(path);
+            var parts = new Queue<string>(first);
+            var hops = 0;
+            while (parts.TryPeek(out var part))
+            {
+                var next = Path.Combine(current, part);
+                FileSystemInfo info = Directory.Exists(next) ? new DirectoryInfo(next) : new FileInfo(next);
+                if (!info.Exists) break;
+                parts.Dequeue();
+                if (info.LinkTarget is null) { current = next; continue; }
+                if (++hops > 40 || info.ResolveLinkTarget(false) is not { } target) return null;
+                var leads = WithoutDevicePrefix(target.FullName);
+                if (!PlainLocalPath(leads)) return null;
+                // The target is walked from its own root: a link to a link, or a link under one, is read the same way.
+                var (root, rest) = Split(leads);
+                current = root; parts = new Queue<string>(rest.Concat(parts));
+            }
+            if (OperatingSystem.IsWindows())
+            {
+                var final = WorkspaceFiles.WindowsFileHandles.FinalDirectoryPath(current);
+                if (final is null || !(final.Length >= 3 && char.IsAsciiLetter(final[0]) && final[1] == ':' && final[2] == '\\')) return null;
+                current = final;
+            }
+            return parts.Count == 0 ? current : Path.Combine([current, .. parts]);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return null; }
     }
 
-    /// <summary>Empty, the whole disk or home (/, ~, C:\), a wildcard, a parenthesis or a control character.</summary>
+    /// <summary>A link's target as Windows may write it (<c>\\?\C:\…</c>, <c>\??\C:\…</c>) as a drive path; <c>\\?\UNC\…</c> and anything else as it is.</summary>
+    private static string WithoutDevicePrefix(string path) =>
+        (path.StartsWith(@"\\?\", StringComparison.Ordinal) || path.StartsWith(@"\??\", StringComparison.Ordinal)) && path.Length >= 7 && char.IsAsciiLetter(path[4]) && path[5] == ':' && path[6] == '\\'
+            ? path[4..] : path;
+
+    /// <summary>
+    /// Whitespace other than space and tab (U+0085, U+00A0, U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000) and the format and
+    /// bidi characters that hide or reorder what a rule shows (U+200B–U+200F, U+202A–U+202E, U+2066–U+2069, U+FEFF).
+    /// </summary>
+    internal static bool HiddenCharacter(char c) =>
+        c is '\u0085' or '\u00A0' or '\u1680' or (>= '\u2000' and <= '\u200F') or (>= '\u2028' and <= '\u202F') or '\u205F' or (>= '\u2066' and <= '\u2069') or '\u3000' or '\uFEFF';
+
+    /// <summary>Empty, the whole disk or home (/, ~, C:\), a wildcard, a parenthesis, a control character or a hidden one (<see cref="HiddenCharacter"/>).</summary>
     internal static bool RefusedArgument(string argument)
     {
         if (argument.Contains('*') || argument.Contains('(') || argument.Contains(')')) return true;
-        if (argument.Any(c => c < 0x20 || c == 0x7F)) return true;
+        if (argument.Any(c => c < 0x20 || c == 0x7F || HiddenCharacter(c))) return true;
         var core = argument.Trim(' ', '\t').TrimEnd('/', '\\').Trim(' ', '\t');
         if (core.Length == 0 || core == "~") return true;
         return core.Length == 2 && core[1] == ':' && char.IsAsciiLetter(core[0]);
@@ -363,7 +475,7 @@ public sealed class AntigravityDenialCollector
             }
             // A refusal the steps did not show (agy reports each permission once).
             var covered = result.Select(a => a.Action).ToHashSet(StringComparer.Ordinal);
-            foreach (var row in reported.Where(row => !covered.Contains(row.Action))) Add(new(Kind(row.Action, row.Action), row.Action, row.Name));
+            foreach (var row in reported.Where(row => !covered.Contains(row.Action))) Add(new(Kind(row.Action, row.Action), row.Action, row.Name) { KnownVerdict = AntigravityRuleVerdict.Refused });
             return result;
         }
         finally { steps.Clear(); order.Clear(); }
@@ -395,17 +507,18 @@ public sealed class AntigravityDenialCollector
         if (permission == "command")
         {
             var line = Parameter("CommandLine", "Command", "command");
-            var rule = line is null ? null : "command(" + line + ")";
-            return new("command", "command", tool, line, rule is not null && AntigravityRuleSafety.Verdict(rule) != AntigravityRuleVerdict.Refused ? rule : null);
+            // Judged once, here, and kept on the action: the card is drawn from it and never asks again.
+            var verdict = line is null ? AntigravityRuleVerdict.Refused : AntigravityRuleSafety.Verdict("command(" + line + ")");
+            return new("command", "command", tool, line, verdict != AntigravityRuleVerdict.Refused ? "command(" + line + ")" : null) { KnownVerdict = verdict };
         }
         if (permission is not null && NamedRule(message) is { } named && AntigravityRuleSafety.Parts(named) is { } parts && parts.Name == permission
-            && AntigravityRuleSafety.Verdict(named) != AntigravityRuleVerdict.Refused)
+            && AntigravityRuleSafety.Verdict(named) is var judged and not AntigravityRuleVerdict.Refused)
         {
             var name = parts.Name; var target = parts.Argument;
             var kind = Kind(name, tool);
             // A URL rule names a domain; show the domain, as the rule does.
             if (kind == "url" && Host(target) is { Length: > 0 } host) target = host;
-            return new(kind, name, tool, target, named);
+            return new(kind, name, tool, target, named) { KnownVerdict = judged };
         }
         var plain = Kind(permission ?? tool, tool);
         var shown = plain switch
@@ -415,7 +528,7 @@ public sealed class AntigravityDenialCollector
             "command" => Parameter("CommandLine"),
             _ => null,
         };
-        return new(plain, permission ?? tool, tool, shown);
+        return new(plain, permission ?? tool, tool, shown) { KnownVerdict = AntigravityRuleVerdict.Refused };
     }
 
     /// <summary>The rule a denial names: the text after "denied permission for " up to the end of its line, when it is a whole <c>name(…)</c> rule.</summary>
@@ -431,17 +544,78 @@ public sealed class AntigravityDenialCollector
         return AntigravityAllowGrant.ValidRule(rule) ? rule : null;
     }
 
-    /// <summary>The host of an absolute URL as written (scheme://[user@]host[:port]/…); null for anything else, a bare domain included.</summary>
+    /// <summary>
+    /// The host a WHATWG URL parser reads from an absolute URL of a special scheme (http, https, ws, wss, ftp), as such a parser gives it: lower
+    /// case, an IPv4 address in any of its spellings (2130706433, 0x7f.1) in dotted decimal, an IPv6 one without its brackets. Null for anything
+    /// else: a bare domain, another scheme, an authority that is no plain host (<see cref="AntigravityRuleSafety.PlainUrlAuthority"/>), or a
+    /// host or port such a parser refuses. The card then shows what agy wrote.
+    /// </summary>
     internal static string? Host(string value)
     {
-        var match = Regex.Match(value, @"\A[A-Za-z][A-Za-z0-9+.\-]*://([^/?#]*)", RegexOptions.CultureInvariant);
-        if (!match.Success) return null;
-        var authority = match.Groups[1].Value;
-        if (authority.LastIndexOf('@') is var user and >= 0) authority = authority[(user + 1)..];
-        if (authority.StartsWith('[')) { var close = authority.IndexOf(']'); return close > 1 ? authority[1..close] : null; }
-        var colon = authority.IndexOf(':');
-        var host = colon >= 0 ? authority[..colon] : authority;
-        return host.Length > 0 ? host : null;
+        var match = Regex.Match(value, @"\A([A-Za-z][A-Za-z0-9+.\-]*)://([^/?#]*)", RegexOptions.CultureInvariant);
+        if (!match.Success || !AntigravityRuleSafety.PlainUrlAuthority(value)) return null;
+        if (match.Groups[1].Value.ToLowerInvariant() is not ("http" or "https" or "ws" or "wss" or "ftp")) return null;
+        var authority = match.Groups[2].Value;
+        string host, port;
+        var bracketed = authority.StartsWith('[');
+        if (bracketed)
+        {
+            var close = authority.IndexOf(']');
+            if (close < 2 || !authority[1..close].All(c => char.IsAsciiHexDigit(c) || c is ':' or '.')) return null;
+            host = authority[1..close].ToLowerInvariant(); port = authority[(close + 1)..];
+            if (port.Length > 0 && port[0] != ':') return null;
+        }
+        else
+        {
+            var colon = authority.IndexOf(':');
+            host = (colon >= 0 ? authority[..colon] : authority).ToLowerInvariant(); port = colon >= 0 ? authority[colon..] : "";
+        }
+        if (port.Length > 1 && (!port[1..].All(char.IsAsciiDigit) || port[1..].TrimStart('0') is var digits && (digits.Length > 5 || digits.Length > 0 && int.Parse(digits, CultureInfo.InvariantCulture) > 65_535))) return null;
+        if (bracketed) return host;
+        if (host.Length == 0 || host.Any(c => c is '<' or '>' or '[' or ']' or '^' or '|')) return null;
+        return EndsInANumber(host) ? IPv4(host) : host;
+    }
+
+    /// <summary>WHATWG's "ends in a number": the last label (a trailing dot aside) is decimal digits, or a number IPv4 reads (0x…).</summary>
+    private static bool EndsInANumber(string host)
+    {
+        var labels = host.Split('.').ToList();
+        if (labels[^1].Length == 0) { if (labels.Count == 1) return false; labels.RemoveAt(labels.Count - 1); }
+        var last = labels[^1];
+        return last.Length > 0 && (last.All(char.IsAsciiDigit) || IPv4Number(last) is not null);
+    }
+
+    /// <summary>One part of an IPv4 address as WHATWG reads it: 0x… hexadecimal, 0… octal, else decimal; an empty part after 0x is 0.</summary>
+    private static ulong? IPv4Number(string part)
+    {
+        if (part.Length == 0) return null;
+        var radix = 10;
+        if (part.Length >= 2 && part[0] == '0' && part[1] is 'x' or 'X') { part = part[2..]; radix = 16; }
+        else if (part.Length >= 2 && part[0] == '0') { part = part[1..]; radix = 8; }
+        if (part.Length == 0) return 0;
+        ulong value = 0;
+        foreach (var c in part)
+        {
+            var digit = c is >= '0' and <= '9' ? c - '0' : c is >= 'a' and <= 'f' ? c - 'a' + 10 : c is >= 'A' and <= 'F' ? c - 'A' + 10 : 99;
+            if (digit >= radix) return null;
+            value = value * (ulong)radix + (ulong)digit;
+            if (value > uint.MaxValue) value = (ulong)uint.MaxValue + 1;
+        }
+        return value;
+    }
+
+    /// <summary>WHATWG's IPv4 parser, serialized in dotted decimal; null where it fails.</summary>
+    private static string? IPv4(string host)
+    {
+        var parts = host.Split('.').ToList();
+        if (parts[^1].Length == 0 && parts.Count > 1) parts.RemoveAt(parts.Count - 1);
+        if (parts.Count > 4) return null;
+        var numbers = new List<ulong>();
+        foreach (var part in parts) { if (IPv4Number(part) is not { } number) return null; numbers.Add(number); }
+        if (numbers.Take(numbers.Count - 1).Any(n => n > 255) || numbers[^1] >= 1UL << (8 * (5 - numbers.Count))) return null;
+        var address = numbers[^1];
+        for (var at = 0; at < numbers.Count - 1; at++) address += numbers[at] << (8 * (3 - at));
+        return string.Join('.', Enumerable.Range(0, 4).Select(at => ((address >> (8 * (3 - at))) & 0xFF).ToString(CultureInfo.InvariantCulture)));
     }
 
     /// <summary>The first <paramref name="count"/> characters, never cutting a surrogate pair.</summary>

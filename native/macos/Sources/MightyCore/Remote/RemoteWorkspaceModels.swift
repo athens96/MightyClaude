@@ -282,13 +282,15 @@ enum RemoteWorkspaceValidation {
     }
 
     /// An Antigravity card from the host: ids, at most 16 actions, bounded
-    /// text, and only well-formed rules `AntigravityRuleSafety` does not refuse.
+    /// text, and only well-formed rules `AntigravityRuleSafety.textVerdict`
+    /// does not refuse (by their text: nothing on this Mac's disk is asked
+    /// for a host's path).
     static func antigravityCard(_ card: AntigravityPermissionRequest) -> Bool {
         CoreValidation.identifier(card.id) && CoreValidation.identifier(card.runId) && !card.actions.isEmpty && card.actions.count <= AntigravityPermissionRequest.maximumActions
             && card.actions.allSatisfy { action in
                 !action.action.isEmpty && action.action.utf8.count <= 128 && !action.displayName.isEmpty && action.displayName.utf8.count <= 128
                     && (action.target?.utf8.count ?? 0) <= AntigravityAllowGrant.maximumRuleBytes
-                    && (action.rule.map { AntigravityAllowGrant.validRule($0) && AntigravityRuleSafety.verdict($0) != .refused } ?? true)
+                    && (action.rule.map { AntigravityAllowGrant.validRule($0) && AntigravityRuleSafety.textVerdict($0) != .refused } ?? true)
             }
     }
 

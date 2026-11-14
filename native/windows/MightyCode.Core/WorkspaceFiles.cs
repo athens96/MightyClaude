@@ -302,7 +302,7 @@ public static class WorkspaceFiles
     }
 
     /// <summary>Win32 handle queries: the kind of an open handle and the path it really points at.</summary>
-    private static class WindowsFileHandles
+    internal static class WindowsFileHandles
     {
         internal const uint FileTypeDisk = 1;
         [DllImport("kernel32.dll", SetLastError = true)] private static extern uint GetFileType(SafeFileHandle handle);

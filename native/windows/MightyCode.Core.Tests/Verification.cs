@@ -642,6 +642,9 @@ internal static class Verification
         await Test("antigravity cards: two turns in one run give two cards and nothing carries over", AntigravityPermissionVerification.TwoTurnsInOneRunGiveTwoCardsAndNothingCarriesOver);
         await Test("antigravity cards: rules are well formed or absent", AntigravityPermissionVerification.RulesAreWellFormedOrAbsent);
         await Test("antigravity cards: which rules a card may offer follows the shared cases", AntigravityPermissionVerification.WhichRulesACardMayOfferFollowsTheSharedCases);
+        await Test("antigravity cards: a file rule names only a plain local path, asking nothing on disk for another", AntigravityPermissionVerification.AFileRuleNamesOnlyAPlainLocalPath);
+        await Test("antigravity cards: an alias of a protected folder is refused", AntigravityPermissionVerification.AnAliasOfAProtectedFolderIsRefused);
+        await Test("antigravity cards: a command rule is kept only for a plain ASCII line", AntigravityPermissionVerification.ACommandRuleIsKeptOnlyForAPlainAsciiLine);
         await Test("antigravity cards: settings edits change only the allow list, byte for byte", AntigravityPermissionVerification.SettingsEditsChangeOnlyTheAllowList);
         await Test("antigravity cards: settings of an unexpected shape are refused", AntigravityPermissionVerification.SettingsThatAreNotTheExpectedShapeAreRefused);
         await Test("antigravity cards: a temporary rule is added, recorded and taken out leaving every other byte", AntigravityPermissionVerification.ATemporaryRuleIsAddedRecordedAndTakenOutLeavingEveryOtherByte);

@@ -26,13 +26,33 @@ public struct AntigravityDeniedAction: Codable, Sendable, Equatable {
     /// The `permissions.allow` rule that allows exactly this; nil when none is
     /// known (the card then says to change the permission mode instead).
     public var rule: String?
-    public init(kind: Kind, action: String, displayName: String, target: String? = nil, rule: String? = nil) {
-        self.kind = kind; self.action = action; self.displayName = displayName; self.target = target; self.rule = rule
+    /// The verdict on `rule` worked out once, when the card was made from agy's
+    /// stream on this Mac (`AntigravityRuleSafety.verdict`), so drawing the card
+    /// never asks the disk again; nil for a card read from elsewhere. Not sent: a
+    /// host's card is judged by its text here (`AntigravityRuleSafety.textVerdict`),
+    /// and an allow is judged again where its rules go.
+    public var knownVerdict: AntigravityRuleSafety.Verdict? = nil
+    enum CodingKeys: String, CodingKey { case kind, action, displayName, target, rule }
+    public init(kind: Kind, action: String, displayName: String, target: String? = nil, rule: String? = nil, knownVerdict: AntigravityRuleSafety.Verdict? = nil) {
+        self.kind = kind; self.action = action; self.displayName = displayName; self.target = target; self.rule = rule; self.knownVerdict = knownVerdict
+    }
+    /// What may be done with its rule: refused when it has none.
+    public var ruleVerdict: AntigravityRuleSafety.Verdict {
+        guard let rule else { return .refused }
+        return knownVerdict ?? AntigravityRuleSafety.textVerdict(rule)
     }
     /// Its rule may be allowed only for the follow-up run (`AntigravityRuleSafety`).
-    public var onceOnly: Bool { rule.map { AntigravityRuleSafety.verdict($0) == .once } ?? false }
-    /// Why it may be allowed only once; nil when it may be kept (or has no rule).
-    public var onceOnlyReason: AntigravityRuleSafety.OnceReason? { onceOnly ? rule.flatMap { AntigravityRuleSafety.onceReason($0) } : nil }
+    public var onceOnly: Bool { ruleVerdict == .once }
+    /// Why it may be allowed only once; nil when it may be kept (or has no rule),
+    /// or when only its characters keep it once.
+    public var onceOnlyReason: AntigravityRuleSafety.OnceReason? {
+        guard onceOnly, let rule, let (_, argument) = AntigravityRuleSafety.parts(rule) else { return nil }
+        return AntigravityRuleSafety.commandReason(argument)
+    }
+    /// The same action: what it says, whatever verdict it carries.
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.kind == rhs.kind && lhs.action == rhs.action && lhs.displayName == rhs.displayName && lhs.target == rhs.target && lhs.rule == rhs.rule
+    }
 }
 
 /// The card one Antigravity turn leaves: what it was refused, together.
@@ -51,13 +71,15 @@ public struct AntigravityPermissionRequest: Codable, Sendable, Equatable, Identi
     /// The rules an allow adds, once each, in order (never one `AntigravityRuleSafety` refuses).
     public var rules: [String] {
         var seen = Set<String>()
-        return actions.compactMap(\.rule).filter { AntigravityRuleSafety.verdict($0) != .refused && seen.insert($0).inserted }
+        return allowed.compactMap(\.rule).filter { seen.insert($0).inserted }
     }
+    /// The actions an allow adds a rule for, by the verdicts kept on them.
+    private var allowed: [AntigravityDeniedAction] { actions.filter { $0.ruleVerdict != .refused } }
     /// At least one action can be allowed with a rule.
-    public var canAllow: Bool { !rules.isEmpty }
+    public var canAllow: Bool { !allowed.isEmpty }
     /// "항상 허용" is offered: every rule may be kept (none chains, pipes,
     /// redirects or runs a destructive command).
-    public var canAllowAlways: Bool { canAllow && rules.allSatisfy { AntigravityRuleSafety.verdict($0) == .always } }
+    public var canAllowAlways: Bool { canAllow && allowed.allSatisfy { $0.ruleVerdict == .always } }
     /// What the transcript line and the continuation name: the targets, else agy's names.
     public var names: [String] { actions.map { $0.target ?? $0.displayName } }
 }
@@ -97,8 +119,10 @@ public struct AntigravityAllowGrant: Codable, Sendable, Equatable {
 /// everything in it, `command(*)` every command) and a temporary one applies
 /// to every agy run on the computer while it is in place, so they are kept
 /// narrow: a closed mapping from tool to permission, no wildcard, no whole
-/// disk, no parenthesis, and a command that chains, pipes, redirects or
-/// runs one of a closed list of destructive programs only once.
+/// disk, no parenthesis, a file rule only for a plain local path, a URL rule
+/// only for a plain host, and a command that chains, pipes, redirects, runs
+/// one of a closed list of destructive programs or is more than plain ASCII
+/// only once.
 public enum AntigravityRuleSafety {
     public enum Verdict: String, Sendable, Codable, CaseIterable {
         /// Never offered or added.
@@ -120,10 +144,11 @@ public enum AntigravityRuleSafety {
     /// The permissions a rule may name.
     public static let permissions: Set<String> = Set(toolPermissions.values)
     /// Programs that destroy data, escalate or end processes (compared by
-    /// their name in lower case, without a folder or `.exe`); `mkfs…` too.
+    /// their name in lower case, without a folder or `.exe`), PowerShell's
+    /// aliases for them too (`ri`, `spps`); `mkfs…` too.
     public static let destructivePrograms: Set<String> = [
         "rm", "rmdir", "unlink", "shred", "dd", "sudo", "su", "doas", "kill", "killall", "pkill", "shutdown", "reboot", "halt", "poweroff", "eval",
-        "del", "erase", "rd", "format", "remove-item", "taskkill", "stop-process", "stop-computer", "restart-computer",
+        "del", "erase", "rd", "format", "remove-item", "taskkill", "stop-process", "stop-computer", "restart-computer", "ri", "spps",
     ]
     /// Why a command rule may be allowed only once.
     public enum OnceReason: String, Sendable, Codable, CaseIterable {
@@ -155,10 +180,12 @@ public enum AntigravityRuleSafety {
     ]
     /// Interpreters whose first argument is their program: once whatever follows.
     public static let programFirst: Set<String> = ["awk", "gawk"]
-    /// Programs that run the command after them: once whatever follows.
+    /// Programs that run the command (or the code) after them, PowerShell's
+    /// among them: once whatever follows.
     public static let wrappers: Set<String> = [
         "env", "xargs", "nohup", "time", "timeout", "nice", "watch", "exec", "eval", "source", ".", "npx", "bunx", "uvx", "pipx",
         "command", "builtin", "caffeinate", "arch", "stdbuf", "wsl", "setsid", "script",
+        "iex", "invoke-expression", "saps", "start-process", "start", "icm", "invoke-command",
     ]
     /// Options that only print an interpreter's version or help.
     public static let infoFlags: Set<String> = ["--version", "-v", "-version", "--help", "-h", "-help", "-?", "/?"]
@@ -222,15 +249,11 @@ public enum AntigravityRuleSafety {
 
     /// The folders no file rule may reach into or above: agy's own `~/.gemini`
     /// (an always rule there would let agy rewrite its own permissions) and
-    /// the app's data folder with its ledger, each as written and with its
-    /// symbolic links resolved.
+    /// the app's data folder with its ledger, each as written, with its
+    /// symbolic links resolved and as the file system names it (`resolvedPath`).
     public static func protectedFolders() -> [String] {
         var folders: [String] = []
-        func add(_ url: URL) {
-            folders.append(url.path)
-            let resolved = url.resolvingSymlinksInPath().path
-            if resolved != url.path { folders.append(resolved) }
-        }
+        func add(_ url: URL) { folders.append(contentsOf: spellings(url.path)) }
         add(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".gemini", isDirectory: true))
         if let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             add(support.appendingPathComponent("MightyCode", isDirectory: true))
@@ -239,17 +262,43 @@ public enum AntigravityRuleSafety {
         return folders
     }
 
-    /// `protectedFolders`: the folders file rules keep out of, compared as
-    /// written (the shared cases); nil uses this computer's
-    /// (`protectedFolders()`). `resolvingLinks` (by default when nil) also
-    /// checks the rule's path with its symbolic links resolved.
+    /// A path as written, with its symbolic links resolved (`resolvingSymlinksInPath`)
+    /// and as the file system names it (`resolvedPath`), each once.
+    static func spellings(_ path: String) -> [String] {
+        var all = [path]
+        for other in [URL(fileURLWithPath: path).resolvingSymlinksInPath().path, resolvedPath(path)].compactMap({ $0 }) where !all.contains(other) { all.append(other) }
+        return all
+    }
+
+    /// What may be done with `rule` on this Mac. A file rule's path must be a
+    /// plain local path (`plainLocalPath`), read as text before anything on
+    /// disk is asked for it. `protectedFolders`: the folders file rules keep
+    /// out of, compared as written (the shared cases); nil uses this
+    /// computer's (`protectedFolders()`). `resolvingLinks` (by default when
+    /// nil) also checks the rule's path as the file system names it, and
+    /// refuses one that cannot be read so.
     public static func verdict(_ rule: String, protectedFolders folders: [String]? = nil, resolvingLinks: Bool? = nil) -> Verdict {
+        judge(rule, protectedFolders: folders, resolvingLinks: resolvingLinks ?? (folders == nil), plainPath: plainLocalPath)
+    }
+
+    /// A rule another computer's card names (a host's), judged by its text
+    /// alone: a file rule's path is either platform's plain local path,
+    /// nothing on this Mac's disk is asked and none of its folders applies.
+    /// The host judged the rule on its own computer, and judges the allow's
+    /// rules again before it adds them.
+    public static func textVerdict(_ rule: String) -> Verdict {
+        judge(rule, protectedFolders: [], resolvingLinks: false, plainPath: { windowsDrivePath($0) || rootedPath($0) })
+    }
+
+    private static func judge(_ rule: String, protectedFolders folders: [String]?, resolvingLinks: Bool, plainPath: (String) -> Bool) -> Verdict {
         guard let (name, argument) = parts(rule), permissions.contains(name), !refusedArgument(argument) else { return .refused }
         if name == "write_file" || name == "read_file" {
+            // Text first: a path that is no plain local one is never handed to the file system.
+            guard plainPath(argument) else { return .refused }
             var paths = [argument]
-            if resolvingLinks ?? (folders == nil), argument.hasPrefix("/") {
-                let resolved = URL(fileURLWithPath: argument).resolvingSymlinksInPath().path
-                if resolved != argument { paths.append(resolved) }
+            if resolvingLinks {
+                guard resolvedPath(argument) != nil else { return .refused }
+                paths = spellings(argument)
             }
             let guarded = (folders ?? protectedFolders()).compactMap(normalizedPath)
             for path in paths {
@@ -257,8 +306,96 @@ public enum AntigravityRuleSafety {
                 if guarded.contains(where: { within(normalized, $0) || within($0, normalized) }) { return .refused }
             }
         }
-        // A risky command, a shell or interpreter running code, or one that names agy's own folder may run once, never for good.
-        return name == "command" && commandReason(argument) != nil ? .once : .always
+        if name == "read_url", !plainURLAuthority(argument) { return .refused }
+        // A risky command, a shell or interpreter running code, one that names agy's own folder, or any line beyond plain ASCII may run
+        // once, never for good: a kept rule is a prefix, and quotes, $, ~, \, % and the like let other commands match it.
+        guard name == "command" else { return .always }
+        return commandReason(argument) == nil && plainCommandLine(argument) ? .always : .once
+    }
+
+    /// A path a file rule may name on this Mac, read as text before anything
+    /// on disk is asked: `rootedPath`. (On Windows, `windowsDrivePath` on a
+    /// fixed drive: a UNC name would make Windows connect to its host.)
+    static func plainLocalPath(_ path: String) -> Bool { rootedPath(path) }
+    /// `X:\…` or `X:/…` (an ASCII letter) with no further colon (no stream,
+    /// such as `::$INDEX_ALLOCATION`) and no `~` (no 8.3 name such as
+    /// `GEMINI~1`): never `\\host\share`, `\\?\`, `\\.\`, `//?/` or a path
+    /// relative to a drive.
+    static func windowsDrivePath(_ path: String) -> Bool {
+        let scalars = Array(path.unicodeScalars)
+        guard scalars.count >= 3, isASCIILetter(scalars[0]), scalars[1] == ":", scalars[2] == "\\" || scalars[2] == "/" else { return false }
+        return !scalars.dropFirst(2).contains(":") && !scalars.contains("~")
+    }
+    /// A Mac (Unix) path from the root, `/…`, that does not start with `//`.
+    static func rootedPath(_ path: String) -> Bool {
+        let scalars = Array(path.unicodeScalars.prefix(2))
+        return scalars.first == "/" && !(scalars.count == 2 && scalars[1] == "/")
+    }
+    private static func isASCIILetter(_ scalar: Unicode.Scalar) -> Bool { ("A"..."Z").contains(scalar) || ("a"..."z").contains(scalar) }
+    private static func isASCIIDigit(_ scalar: Unicode.Scalar) -> Bool { ("0"..."9").contains(scalar) }
+
+    /// The path as the file system names it: the longest part that exists
+    /// through `realpath(3)` (its links resolved, its case and Unicode form as
+    /// stored), the rest as written; nil when it is no plain local path or
+    /// cannot be read.
+    static func resolvedPath(_ path: String) -> String? {
+        guard plainLocalPath(path) else { return nil }
+        var head = path, tail: [String] = []
+        while true {
+            if let real = realpath(head, nil) {
+                defer { free(real) }
+                let base = String(cString: real)
+                return tail.isEmpty ? base : tail.reversed().reduce(base) { ($0 as NSString).appendingPathComponent($1) }
+            }
+            let parent = (head as NSString).deletingLastPathComponent
+            guard !parent.isEmpty, parent != head else { return nil }
+            tail.append((head as NSString).lastPathComponent)
+            head = parent
+        }
+    }
+
+    /// The scalars a URL's `scheme://` takes at its start, or nil when it has none.
+    static func schemeLength(_ scalars: [Unicode.Scalar]) -> Int? {
+        guard let first = scalars.first, isASCIILetter(first) else { return nil }
+        var at = 1
+        while at < scalars.count, isASCIILetter(scalars[at]) || isASCIIDigit(scalars[at]) || scalars[at] == "+" || scalars[at] == "." || scalars[at] == "-" { at += 1 }
+        guard at + 3 <= scalars.count, scalars[at] == ":", scalars[at + 1] == "/", scalars[at + 2] == "/" else { return nil }
+        return at + 3
+    }
+    /// The end of the authority that starts at `start`: the first `/`, `?` or `#`.
+    static func authorityEnd(_ scalars: [Unicode.Scalar], from start: Int) -> Int {
+        var end = start
+        while end < scalars.count, scalars[end] != "/", scalars[end] != "?", scalars[end] != "#" { end += 1 }
+        return end
+    }
+    /// A URL rule's authority (after `scheme://`, else from the start, up to
+    /// the first `/`, `?` or `#`) is a plain host: no `\`, `@`, `%`,
+    /// whitespace or anything beyond ASCII, and not empty after a scheme. A
+    /// WHATWG parser reads `https://evil.example\@docs.python.org/x` as
+    /// evil.example, which the card would have shown as docs.python.org.
+    static func plainURLAuthority(_ value: String) -> Bool {
+        let scalars = Array(value.unicodeScalars)
+        let scheme = schemeLength(scalars)
+        let start = scheme ?? 0, end = authorityEnd(scalars, from: start)
+        if scheme != nil, end == start { return false }
+        return scalars[start..<end].allSatisfy { $0 != "\\" && $0 != "@" && $0 != "%" && $0.value > 0x20 && $0.value < 0x7F }
+    }
+
+    /// Every character is one a kept command rule may hold: ASCII letters and
+    /// digits, space and `._/:=@+,-`.
+    static func plainCommandLine(_ command: String) -> Bool {
+        command.unicodeScalars.allSatisfy { isASCIILetter($0) || isASCIIDigit($0) || " ._/:=@+,-".unicodeScalars.contains($0) }
+    }
+
+    /// Whitespace other than space and tab (U+0085, U+00A0, U+1680,
+    /// U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000) and the format
+    /// and bidi characters that hide or reorder what a rule shows
+    /// (U+200B–U+200F, U+202A–U+202E, U+2066–U+2069, U+FEFF).
+    static func hiddenCharacter(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x85, 0xA0, 0x1680, 0x2000...0x200F, 0x2028...0x202F, 0x205F, 0x2066...0x2069, 0x3000, 0xFEFF: return true
+        default: return false
+        }
     }
 
     /// An absolute path, compared without case, `\\` as `/`, `.` and `..` taken
@@ -281,10 +418,10 @@ public enum AntigravityRuleSafety {
         path == folder || path.hasPrefix(folder.hasSuffix("/") ? folder : folder + "/")
     }
 
-    /// Empty, the whole disk or home (`/`, `~`, `C:\`), a wildcard, a parenthesis or a control character.
+    /// Empty, the whole disk or home (`/`, `~`, `C:\`), a wildcard, a parenthesis, a control character or a hidden one (`hiddenCharacter`).
     static func refusedArgument(_ argument: String) -> Bool {
         if argument.contains("*") || argument.contains("(") || argument.contains(")") { return true }
-        if argument.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) { return true }
+        if argument.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F || hiddenCharacter($0) }) { return true }
         var core = argument.trimmingCharacters(in: .whitespaces)
         while let last = core.last, last == "/" || last == "\\" { core.removeLast() }
         core = core.trimmingCharacters(in: .whitespaces)
@@ -397,26 +534,103 @@ public struct AntigravityDenialCollector: Sendable {
         let permission = AntigravityRuleSafety.toolPermissions[tool]
         if permission == "command" {
             let line = parameter(["CommandLine", "Command", "command"])
-            let rule = line.map { "command(\($0))" }.flatMap { AntigravityRuleSafety.verdict($0) == .refused ? nil : $0 }
-            return AntigravityDeniedAction(kind: .command, action: "command", displayName: tool, target: line, rule: rule)
+            // Judged once, here, and kept on the action: the card is drawn from it and never asks again.
+            let verdict = line.map { AntigravityRuleSafety.verdict("command(\($0))") } ?? .refused
+            return AntigravityDeniedAction(kind: .command, action: "command", displayName: tool, target: line, rule: verdict == .refused ? nil : line.map { "command(\($0))" }, knownVerdict: verdict)
         }
         if let permission, let rule = namedRule(message), let (name, argument) = AntigravityRuleSafety.parts(rule), name == permission,
-           AntigravityRuleSafety.verdict(rule) != .refused {
+           case let judged = AntigravityRuleSafety.verdict(rule), judged != .refused {
             var target = argument
             let kind = Self.kind(action: name, tool: tool)
             // A URL rule names a domain; show the domain, as the rule does.
-            if kind == .url, let host = URL(string: target)?.host, !host.isEmpty { target = host }
-            return AntigravityDeniedAction(kind: kind, action: name, displayName: tool, target: target, rule: rule)
+            if kind == .url, let host = Self.host(target), !host.isEmpty { target = host }
+            return AntigravityDeniedAction(kind: kind, action: name, displayName: tool, target: target, rule: rule, knownVerdict: judged)
         }
         let kind = Self.kind(action: permission ?? tool, tool: tool)
         var target: String?
         switch kind {
-        case .url: target = parameter(["Url", "URL", "url"]).map { URL(string: $0)?.host ?? $0 }
+        case .url: target = parameter(["Url", "URL", "url"]).map { Self.host($0) ?? $0 }
         case .file: target = parameter(["Path", "TargetFile", "AbsolutePath", "path"])
         case .command: target = parameter(["CommandLine"])
         case .other: target = nil
         }
-        return AntigravityDeniedAction(kind: kind, action: permission ?? tool, displayName: tool, target: target)
+        return AntigravityDeniedAction(kind: kind, action: permission ?? tool, displayName: tool, target: target, knownVerdict: .refused)
+    }
+
+    /// The host a WHATWG URL parser reads from an absolute URL of a special
+    /// scheme (http, https, ws, wss, ftp), as such a parser gives it: lower
+    /// case, an IPv4 address in any of its spellings (2130706433, 0x7f.1) in
+    /// dotted decimal, an IPv6 one without its brackets. nil for anything
+    /// else: a bare domain, another scheme, an authority that is no plain host
+    /// (`AntigravityRuleSafety.plainURLAuthority`), or a host or port such a
+    /// parser refuses. The card then shows what agy wrote.
+    static func host(_ value: String) -> String? {
+        let scalars = Array(value.unicodeScalars)
+        guard let start = AntigravityRuleSafety.schemeLength(scalars), AntigravityRuleSafety.plainURLAuthority(value) else { return nil }
+        let scheme = String(String.UnicodeScalarView(scalars[..<(start - 3)])).lowercased()
+        guard ["http", "https", "ws", "wss", "ftp"].contains(scheme) else { return nil }
+        // Plain ASCII from here (plainURLAuthority).
+        let authority = String(String.UnicodeScalarView(scalars[start..<AntigravityRuleSafety.authorityEnd(scalars, from: start)]))
+        let host: String, port: Substring
+        let bracketed = authority.hasPrefix("[")
+        if bracketed {
+            guard let close = authority.firstIndex(of: "]") else { return nil }
+            let inner = authority[authority.index(after: authority.startIndex)..<close]
+            guard !inner.isEmpty, inner.allSatisfy({ $0.isHexDigit || $0 == ":" || $0 == "." }) else { return nil }
+            host = inner.lowercased(); port = authority[authority.index(after: close)...]
+            guard port.isEmpty || port.first == ":" else { return nil }
+        } else if let colon = authority.firstIndex(of: ":") {
+            host = authority[..<colon].lowercased(); port = authority[colon...]
+        } else {
+            host = authority.lowercased(); port = ""
+        }
+        if port.count > 1 {
+            let digits = port.dropFirst()
+            guard digits.allSatisfy({ ("0"..."9").contains($0) }) else { return nil }
+            let significant = digits.drop { $0 == "0" }
+            guard significant.count <= 5, significant.isEmpty || Int(significant)! <= 65_535 else { return nil }
+        }
+        if bracketed { return host }
+        guard !host.isEmpty, !host.contains(where: { "<>[]^|".contains($0) }) else { return nil }
+        return endsInANumber(host) ? ipv4(host) : host
+    }
+
+    /// WHATWG's "ends in a number": the last label (a trailing dot aside) is
+    /// decimal digits, or a number IPv4 reads (0x…).
+    private static func endsInANumber(_ host: String) -> Bool {
+        var labels = host.split(separator: ".", omittingEmptySubsequences: false)
+        if labels.last?.isEmpty == true { if labels.count == 1 { return false }; labels.removeLast() }
+        guard let last = labels.last, !last.isEmpty else { return false }
+        return last.allSatisfy { ("0"..."9").contains($0) } || ipv4Number(last) != nil
+    }
+
+    /// One part of an IPv4 address as WHATWG reads it: 0x… hexadecimal, 0…
+    /// octal, else decimal; an empty part after 0x is 0.
+    private static func ipv4Number(_ input: Substring) -> UInt64? {
+        guard !input.isEmpty else { return nil }
+        var part = input, radix: UInt64 = 10
+        if part.count >= 2, part.first == "0", let second = part.dropFirst().first, second == "x" || second == "X" { part = part.dropFirst(2); radix = 16 }
+        else if part.count >= 2, part.first == "0" { part = part.dropFirst(); radix = 8 }
+        if part.isEmpty { return 0 }
+        var value: UInt64 = 0
+        for character in part {
+            guard character.isASCII, let digit = character.hexDigitValue.map(UInt64.init), digit < radix else { return nil }
+            value = min(value * radix + digit, UInt64(UInt32.max) + 1)
+        }
+        return value
+    }
+
+    /// WHATWG's IPv4 parser, serialized in dotted decimal; nil where it fails.
+    private static func ipv4(_ host: String) -> String? {
+        var parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        if parts.last?.isEmpty == true, parts.count > 1 { parts.removeLast() }
+        guard parts.count <= 4 else { return nil }
+        var numbers: [UInt64] = []
+        for part in parts { guard let number = ipv4Number(part) else { return nil }; numbers.append(number) }
+        guard let last = numbers.last, !numbers.dropLast().contains(where: { $0 > 255 }), last < UInt64(1) << UInt64(8 * (5 - numbers.count)) else { return nil }
+        var address = last
+        for (index, number) in numbers.dropLast().enumerated() { address += number << UInt64(8 * (3 - index)) }
+        return (0..<4).map { String((address >> UInt64(8 * (3 - $0))) & 0xFF) }.joined(separator: ".")
     }
 
     /// The rule a denial names: the text after "denied permission for " up to
@@ -973,7 +1187,7 @@ public actor AntigravityRuleLeases {
     private func ownFolders() -> [String] {
         var urls = [settingsURL.deletingLastPathComponent().deletingLastPathComponent()]
         if let ledgerURL { urls.append(ledgerURL.deletingLastPathComponent()) }
-        return urls.flatMap { [$0.path, $0.resolvingSymlinksInPath().path] }
+        return urls.flatMap { AntigravityRuleSafety.spellings($0.path) }
     }
 
     // MARK: Removing

@@ -48,7 +48,9 @@ internal static class AntigravityPermissionVerification
         foreach (var stream in Fixture.Value["streams"]!.AsArray())
         {
             var name = stream!["name"]!.GetValue<string>();
-            var expected = stream["actions"].Deserialize<List<AntigravityDeniedAction>>(Wire.Json)!;
+            // A turn recorded on the Mac names Mac paths, which are no plain local paths here: what this computer's card shows instead.
+            var here = OperatingSystem.IsWindows() && stream["windows"] is { } windows ? windows : stream;
+            var expected = here["actions"].Deserialize<List<AntigravityDeniedAction>>(Wire.Json)!;
             var (logs, cards) = Parse(Lines(stream));
             if (expected.Count == 0)
             {
@@ -58,7 +60,9 @@ internal static class AntigravityPermissionVerification
             Check(cards.Count == 1, name + ": one card");
             var card = cards[0];
             Check(card.Actions.SequenceEqual(expected), name + ": the fixture's actions, got " + JsonSerializer.Serialize(card.Actions, Wire.Json));
-            Check(card.CanAllowAlways == stream["canAllowAlways"]!.GetValue<bool>(), name + ": 항상 허용 offered or not");
+            Check(card.CanAllowAlways == here["canAllowAlways"]!.GetValue<bool>(), name + ": 항상 허용 offered or not");
+            // The verdicts were worked out once, as the card was made, and are kept on it.
+            Check(card.Actions.All(a => a.KnownVerdict is { } known && known == (a.Rule is { } rule ? AntigravityRuleSafety.Verdict(rule) : AntigravityRuleVerdict.Refused)), name + ": each action keeps its verdict");
             Check(card.RunId == "run-1" && card.Id.StartsWith("agy-", StringComparison.Ordinal) && Wire.Identifier(card.Id), name + ": the card's ids");
             // One short transcript line, not the old how-to notice.
             var notices = logs.Where(l => l.Kind == "system" && l.Text.Contains("Antigravity declined", StringComparison.Ordinal)).ToList();
@@ -98,13 +102,22 @@ internal static class AntigravityPermissionVerification
     internal static Task WhichRulesACardMayOfferFollowsTheSharedCases()
     {
         var context = Fixture.Value["rules"]!["context"]!["protected"]!.AsArray().Select(f => f!.GetValue<string>()).ToList();
+        var platform = OperatingSystem.IsWindows() ? "windows" : "mac";
         foreach (var item in Fixture.Value["rules"]!["cases"]!.AsArray())
         {
-            var rule = item!["rule"]!.GetValue<string>(); var verdict = item["verdict"]!.GetValue<string>();
+            // A case of the other platform names a path that is no plain local path here.
+            var rule = item!["rule"]!.GetValue<string>(); var here = item["platform"]?.GetValue<string>() is not { } only || only == platform;
+            var verdict = here ? item["verdict"]!.GetValue<string>() : "refused";
             var got = AntigravityRuleSafety.Verdict(rule, context);
             Check(got.ToString().Equals(verdict, StringComparison.OrdinalIgnoreCase), rule + ": " + verdict + ", got " + got);
             var reason = AntigravityRuleSafety.OnceReasonOf(rule, context);
-            Check(string.Equals(reason?.ToString(), item["reason"]?.GetValue<string>(), StringComparison.OrdinalIgnoreCase), rule + ": reason " + item["reason"] + ", got " + reason);
+            Check(string.Equals(reason?.ToString(), here ? item["reason"]?.GetValue<string>() : null, StringComparison.OrdinalIgnoreCase), rule + ": reason " + item["reason"] + ", got " + reason);
+        }
+        // The host a card shows for a URL is the one a WHATWG parser reads.
+        foreach (var item in Fixture.Value["rules"]!["hosts"]!.AsArray())
+        {
+            var url = item!["url"]!.GetValue<string>(); var host = item["host"]?.GetValue<string>(); var got = AntigravityDenialCollector.Host(url);
+            Check(got == host, url + ": host " + (host ?? "none") + ", got " + (got ?? "none"));
         }
         var tools = Fixture.Value["tools"]!;
         var map = tools["map"]!.AsObject().ToDictionary(p => p.Key, p => p.Value!.GetValue<string>());
@@ -113,6 +126,113 @@ internal static class AntigravityPermissionVerification
         // A grant carries no refused rule, and only rules that may be kept are kept for good.
         Check(!Grant("agy-1", true, "command(*)").IsValid, "command(*) is no grant");
         Check(Grant("agy-1", false, "command(echo hi && date)") is { IsValid: true, KeepsOnlyAllowedRules: false } && Grant("agy-1", true, "command(echo hi && date)").KeepsOnlyAllowedRules, "a chained command only once");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// S-H1 (M/Tests/MightyCoreTests/AntigravityPermissionTests.swift aFileRuleNamesOnlyAPlainLocalPath): a file rule is offered only for a
+    /// plain local path, read as text first, so nothing on disk is asked for a UNC name (Windows would connect to its host, send the user's
+    /// NetNTLM hash and stall 21 s on one that does not answer). The card keeps the verdicts worked out as it was made; a host's card is judged by its text.
+    /// </summary>
+    internal static Task AFileRuleNamesOnlyAPlainLocalPath()
+    {
+        // 192.0.2.1 is TEST-NET-1: asking the disk for it would stall for seconds.
+        foreach (var path in new[] { @"\\192.0.2.1\share\x.txt", @"\\?\UNC\192.0.2.1\share\x.txt", "//192.0.2.1/share/x.txt" })
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            Check(AntigravityRuleSafety.Verdict("read_file(" + path + ")") == AntigravityRuleVerdict.Refused && AntigravityRuleSafety.ResolvedPath(path) is null, path + " is refused");
+            Check(watch.ElapsedMilliseconds < 2_000, path + " is refused without asking the network: " + watch.ElapsedMilliseconds + " ms");
+        }
+        if (OperatingSystem.IsWindows())
+        {
+            // A drive that is not a fixed one (here: none at all) gets no rule.
+            var used = DriveInfo.GetDrives().Select(d => char.ToUpperInvariant(d.Name[0])).ToHashSet();
+            var free = Enumerable.Range('D', 23).Select(c => (char)c).First(c => !used.Contains(c));
+            Check(AntigravityRuleSafety.Verdict("write_file(" + free + @":\project\a.txt)") == AntigravityRuleVerdict.Refused, "a drive that is not fixed");
+            Check(AntigravityRuleSafety.Verdict(@"write_file(C:\mighty-no-such-folder\a.txt)") == AntigravityRuleVerdict.Always, "a fixed drive's path");
+        }
+        // What the card shows and offers is the verdict kept on it, never worked out again while it is drawn.
+        var kept = new AntigravityDeniedAction("command", "command", "RunCommand", "echo hi", "command(echo hi)") { KnownVerdict = AntigravityRuleVerdict.Once };
+        var card = AntigravityPermissionRequest.Make("run-1", [kept]);
+        Check(kept.OnceOnly && card.CanAllow && !card.CanAllowAlways && kept == kept with { KnownVerdict = null }, "the kept verdict decides, and is no part of what the action says");
+        Check(!AntigravityPermissionRequest.Make("run-1", [kept with { KnownVerdict = AntigravityRuleVerdict.Refused }]).CanAllow, "a kept refusal offers nothing");
+        // A host's card (read from the wire, no verdict kept) is judged by its text: either platform's plain path, no folder of this computer's.
+        var read = JsonSerializer.Deserialize<AntigravityPermissionRequest>("{\"id\":\"agy-1\",\"runId\":\"run-1\",\"actions\":[" +
+            "{\"kind\":\"file\",\"action\":\"write_file\",\"displayName\":\"WriteFile\",\"target\":\"/Users/me/project/a.txt\",\"rule\":\"write_file(/Users/me/project/a.txt)\"}," +
+            "{\"kind\":\"file\",\"action\":\"write_file\",\"displayName\":\"WriteFile\",\"target\":\"C:\\\\Users\\\\me\\\\a.txt\",\"rule\":\"write_file(C:\\\\Users\\\\me\\\\a.txt)\"}]}", Wire.Json)!;
+        Check(read.Actions.All(a => a.KnownVerdict is null) && read.CanAllowAlways && RemoteWorkspaceValidation.AntigravityCard(read), "a host's card of either platform");
+        Check(AntigravityRuleSafety.TextVerdict(@"write_file(\\attacker\share\x)") == AntigravityRuleVerdict.Refused && AntigravityRuleSafety.TextVerdict("write_file(//attacker/share/x)") == AntigravityRuleVerdict.Refused
+            && !RemoteWorkspaceValidation.AntigravityCard(read with { Actions = [new("file", "write_file", "WriteFile", "x", @"write_file(\\attacker\share\x)")] }), "a host's UNC rule is refused by its text");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// S-H2 (AntigravityPermissionTests.swift anAliasOfAProtectedFolderIsRefused): another name for agy's folder or the app's data is refused
+    /// as the folder itself: trailing dots, case, a junction, and a protected folder reached through a junction, compared by the path the file
+    /// system gives the longest existing part (GetFinalPathNameByHandleW); device, UNC, stream and 8.3 spellings never get that far (the shared cases).
+    /// </summary>
+    internal static async Task AnAliasOfAProtectedFolderIsRefused()
+    {
+        using var folder = new Folder(); folder.Make(Real);
+        var leases = folder.Leases();
+        var gemini = Path.Combine(folder.Root, ".gemini");
+        string? Refused(string rule) => Kind(() => leases.Apply(Grant("agy-1", true, rule)));
+        Check(Refused("write_file(" + Path.Combine(folder.Root, ".GEMINI", "antigravity-cli") + ")") == "badRule", "agy's folder in other case");
+        // Windows drops a segment's one trailing dot, and the trailing spaces of the last segment.
+        if (OperatingSystem.IsWindows())
+            foreach (var alias in new[] { Path.Combine(folder.Root, ".gemini.", "antigravity-cli", "settings.json"), Path.Combine(folder.Root, ".gemini  ") })
+                Check(Refused("write_file(" + alias + ")") == "badRule", "an alias of agy's folder: " + alias);
+        if (OperatingSystem.IsWindows())
+        {
+            static void Junction(string link, string target)
+            {
+                using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe") { ArgumentList = { "/d", "/c", "mklink", "/J", link, target }, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true })!;
+                process.WaitForExit();
+                if (!Directory.Exists(link)) throw new InvalidOperationException("mklink /J failed");
+            }
+            var junction = Path.Combine(folder.Root, "junction"); var named = Path.Combine(folder.Root, "named");
+            var saved = AntigravityRuleSafety.AppDataFolder;
+            try
+            {
+                Junction(junction, gemini);
+                Check(Refused("write_file(" + Path.Combine(junction, "antigravity-cli", "settings.json") + ")") == "badRule", "through a junction");
+                Check(AntigravityRuleSafety.ResolvedPath(Path.Combine(junction, "antigravity-cli")) is { } through && AntigravityRuleSafety.NormalizedPath(through) == AntigravityRuleSafety.NormalizedPath(Path.Combine(gemini, "antigravity-cli")), "a junction resolves to its target's drive path");
+                // The app's data folder named through a junction: the folder it leads to is protected too.
+                var data = Path.Combine(folder.Root, "data"); Directory.CreateDirectory(data);
+                Junction(named, data);
+                AntigravityRuleSafety.AppDataFolder = named;
+                Check(AntigravityRuleSafety.Verdict("write_file(" + Path.Combine(data, "antigravity-temporary-rules.json") + ")") == AntigravityRuleVerdict.Refused, "the data folder a junction names");
+            }
+            finally
+            {
+                AntigravityRuleSafety.AppDataFolder = saved;
+                // A junction goes by itself (a recursive delete of its folder is refused).
+                foreach (var link in new[] { junction, named }) if (Directory.Exists(link)) Directory.Delete(link);
+            }
+        }
+        Check(folder.Text() == Real, "nothing was added");
+        // A file beside them is still fine.
+        var lease = leases.Apply(Grant("agy-2", true, "write_file(" + Path.Combine(folder.Root, "project", "a.txt") + ")"))!;
+        leases.Release(lease); await leases.Settled();
+    }
+
+    /// <summary>
+    /// S-M1 (AntigravityPermissionTests.swift aCommandRuleIsKeptOnlyForAPlainAsciiLine): every hidden character (whitespace other than space and
+    /// tab, format and bidi characters) refuses a rule, and only a plain ASCII line may be kept; the shared cases hold the bypasses.
+    /// </summary>
+    internal static Task ACommandRuleIsKeptOnlyForAPlainAsciiLine()
+    {
+        var hidden = new[] { 0x85, 0xA0, 0x1680, 0x2028, 0x2029, 0x205F, 0x3000, 0xFEFF }.Concat(Enumerable.Range(0x2000, 16)).Concat(Enumerable.Range(0x202A, 6)).Concat(Enumerable.Range(0x2066, 4)).ToList();
+        foreach (var code in hidden)
+            Check(AntigravityRuleSafety.Verdict("command(echo" + (char)code + "hi)") == AntigravityRuleVerdict.Refused, "U+" + code.ToString("X4") + " refuses the rule");
+        foreach (var code in Enumerable.Range(0x21, 0x5E).Where(c => c is not ('*' or '(' or ')')))
+        {
+            var verdict = AntigravityRuleSafety.Verdict("command(echo " + (char)code + ")");
+            var plain = char.IsAsciiLetterOrDigit((char)code) || "._/:=@+,-".Contains((char)code);
+            Check(verdict == (plain ? AntigravityRuleVerdict.Always : AntigravityRuleVerdict.Once), "echo " + (char)code + ": " + verdict);
+        }
+        Check(AntigravityRuleSafety.Verdict("command(echo h\u00e9)") == AntigravityRuleVerdict.Once && new AntigravityDeniedAction("command", "command", "RunCommand", "echo 'hi'", "command(echo 'hi')").OnceOnlyReason is null,
+            "beyond ASCII once, without a reason (the card says the general words)");
         return Task.CompletedTask;
     }
 

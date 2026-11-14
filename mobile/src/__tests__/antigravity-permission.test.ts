@@ -37,7 +37,7 @@ const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
 };
 /** The recorded curl card: its piped command may be allowed only once. */
 const card = fixture.mobile.permission;
-/** The recorded `date +%Y` card: 항상 허용 is offered. */
+/** The recorded `echo alpha` card (oneDeniedOneRan): 항상 허용 is offered. */
 const plainCard = fixture.mobile.permissionPlain.permission;
 
 /** A card no rule can allow: the host says `canAllow: false` and no action carries a rule. */

@@ -17,9 +17,10 @@ struct AntigravityPermissionTests {
         struct Refused: Decodable { let name: String; let before: String; let error: String }
         struct NewFile: Decodable { let add: [String]; let after: String; let created: [String] }
         struct Settings: Decodable { let newFile: NewFile; let edits: [Edit]; let refused: [Refused] }
-        struct RuleCase: Decodable { let rule: String; let verdict: String; let reason: String? }
+        struct RuleCase: Decodable { let rule: String; let verdict: String; let reason: String?; let platform: String? }
         struct Context: Decodable { let protected: [String] }
-        struct Rules: Decodable { let cases: [RuleCase]; let context: Context }
+        struct HostCase: Decodable { let url: String; let host: String? }
+        struct Rules: Decodable { let cases: [RuleCase]; let context: Context; let hosts: [HostCase] }
         struct Tools: Decodable { let map: [String: String]; let unmapped: [String] }
         let streams: [Stream]
         let settings: Settings
@@ -71,6 +72,8 @@ struct AntigravityPermissionTests {
                 let card = try #require(recorder.cards.first)
                 #expect(card.actions == stream.actions, "\(stream.name)")
                 #expect(card.canAllowAlways == stream.canAllowAlways, "\(stream.name) always")
+                // The verdicts were worked out once, as the card was made, and are kept on it.
+                #expect(card.actions.allSatisfy { $0.knownVerdict != nil && $0.knownVerdict == ($0.rule.map { AntigravityRuleSafety.verdict($0) } ?? .refused) }, "\(stream.name) keeps each verdict")
                 #expect(card.runId == "run-1" && card.id.hasPrefix("agy-") && CoreValidation.identifier(card.id))
                 // One short transcript line, not the old how-to notice.
                 let notices = recorder.logs.filter { $0.0 == "system" && $0.1.contains("Antigravity declined") }
@@ -118,9 +121,13 @@ struct AntigravityPermissionTests {
 
     @Test func whichRulesACardMayOfferFollowsTheSharedCases() {
         for item in Self.fixture.rules.cases {
-            #expect(AntigravityRuleSafety.verdict(item.rule, protectedFolders: Self.fixture.rules.context.protected).rawValue == item.verdict, "\(item.rule)")
-            #expect(AntigravityRuleSafety.onceReason(item.rule, protectedFolders: Self.fixture.rules.context.protected)?.rawValue == item.reason, "\(item.rule) reason")
+            // A case of the other platform names a path that is no plain local path here.
+            let here = item.platform == nil || item.platform == "mac"
+            #expect(AntigravityRuleSafety.verdict(item.rule, protectedFolders: Self.fixture.rules.context.protected).rawValue == (here ? item.verdict : "refused"), "\(item.rule)")
+            #expect(AntigravityRuleSafety.onceReason(item.rule, protectedFolders: Self.fixture.rules.context.protected)?.rawValue == (here ? item.reason : nil), "\(item.rule) reason")
         }
+        // The host a card shows for a URL is the one a WHATWG parser reads.
+        for item in Self.fixture.rules.hosts { #expect(AntigravityDenialCollector.host(item.url) == item.host, "\(item.url)") }
         #expect(AntigravityRuleSafety.toolPermissions == Self.fixture.tools.map)
         for tool in Self.fixture.tools.unmapped { #expect(AntigravityRuleSafety.toolPermissions[tool] == nil, "\(tool)") }
         // A grant carries no refused rule, and only rules that may be kept are kept for good.
@@ -128,6 +135,70 @@ struct AntigravityPermissionTests {
         let chained = AntigravityAllowGrant(requestId: "agy-1", rules: ["command(echo hi && date)"], temporary: false)
         #expect(chained.isValid && !chained.keepsOnlyAllowedRules)
         #expect(AntigravityAllowGrant(requestId: "agy-1", rules: ["command(echo hi && date)"], temporary: true).keepsOnlyAllowedRules)
+    }
+
+    /// S-H1 (Windows AntigravityPermissionVerification.AFileRuleNamesOnlyAPlainLocalPath): a file rule is
+    /// offered only for a plain local path, read as text first, so nothing on disk is asked for any other
+    /// name. The card keeps the verdicts worked out as it was made; a host's card is judged by its text.
+    @Test func aFileRuleNamesOnlyAPlainLocalPath() throws {
+        for path in ["\\\\192.0.2.1\\share\\x.txt", "\\\\?\\UNC\\192.0.2.1\\share\\x.txt", "//192.0.2.1/share/x.txt"] {
+            #expect(AntigravityRuleSafety.verdict("read_file(\(path))") == .refused && AntigravityRuleSafety.resolvedPath(path) == nil, "\(path)")
+        }
+        // What the card shows and offers is the verdict kept on it, never worked out again while it is drawn.
+        let kept = AntigravityDeniedAction(kind: .command, action: "command", displayName: "RunCommand", target: "echo hi", rule: "command(echo hi)", knownVerdict: .once)
+        let card = AntigravityPermissionRequest(runId: "run-1", actions: [kept])
+        var unjudged = kept; unjudged.knownVerdict = nil
+        #expect(kept.onceOnly && card.canAllow && !card.canAllowAlways && kept == unjudged)
+        var refused = kept; refused.knownVerdict = .refused
+        #expect(!AntigravityPermissionRequest(runId: "run-1", actions: [refused]).canAllow)
+        // A host's card (read from the wire, no verdict kept) is judged by its text: either platform's plain path, no folder of this Mac's.
+        let json = #"{"id":"agy-1","runId":"run-1","actions":[{"kind":"file","action":"write_file","displayName":"WriteFile","target":"/Users/me/project/a.txt","rule":"write_file(/Users/me/project/a.txt)"},{"kind":"file","action":"write_file","displayName":"WriteFile","target":"C:\\Users\\me\\a.txt","rule":"write_file(C:\\Users\\me\\a.txt)"}]}"#
+        let read = try JSONDecoder().decode(AntigravityPermissionRequest.self, from: Data(json.utf8))
+        #expect(read.actions.allSatisfy { $0.knownVerdict == nil } && read.canAllowAlways && RemoteWorkspaceValidation.antigravityCard(read))
+        #expect(AntigravityRuleSafety.textVerdict("write_file(\\\\attacker\\share\\x)") == .refused && AntigravityRuleSafety.textVerdict("write_file(//attacker/share/x)") == .refused)
+        var forged = read
+        forged.actions = [AntigravityDeniedAction(kind: .file, action: "write_file", displayName: "WriteFile", target: "x", rule: "write_file(\\\\attacker\\share\\x)")]
+        #expect(!RemoteWorkspaceValidation.antigravityCard(forged))
+    }
+
+    /// S-H2 (Windows AnAliasOfAProtectedFolderIsRefused): another name for agy's folder or the app's data is
+    /// refused as the folder itself, compared by the path the file system gives the longest existing part
+    /// (`realpath`); device, UNC, stream and 8.3 spellings never get that far (the shared cases).
+    @Test func anAliasOfAProtectedFolderIsRefused() async throws {
+        let folder = Folder(); defer { folder.cleanup() }
+        try folder.make(Self.real)
+        let leases = folder.leases()
+        do { _ = try await leases.apply(AntigravityAllowGrant(requestId: "agy-1", rules: ["write_file(\(folder.root.path)/.GEMINI/antigravity-cli)"], temporary: true)); Issue.record("allowed another case") }
+        catch { #expect(Self.errorName(error) == "badRule") }
+        // A protected folder named through a link: the folder it leads to is protected too.
+        let data = folder.root.appendingPathComponent("data")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        let named = folder.root.appendingPathComponent("named")
+        try FileManager.default.createSymbolicLink(at: named, withDestinationURL: data)
+        #expect(AntigravityRuleSafety.verdict("write_file(\(data.path)/antigravity-temporary-rules.json)", protectedFolders: AntigravityRuleSafety.spellings(named.path), resolvingLinks: true) == .refused)
+        #expect(AntigravityRuleSafety.resolvedPath("\(named.path)/x") == AntigravityRuleSafety.resolvedPath("\(data.path)/x"))
+        #expect(folder.text() == Self.real)
+        // A file beside them is still fine.
+        let lease = try #require(try await leases.apply(AntigravityAllowGrant(requestId: "agy-2", rules: ["write_file(\(folder.root.path)/project/a.txt)"], temporary: true)))
+        await leases.release(lease); await leases.settled()
+    }
+
+    /// S-M1 (Windows ACommandRuleIsKeptOnlyForAPlainAsciiLine): every hidden character (whitespace other
+    /// than space and tab, format and bidi characters) refuses a rule, and only a plain ASCII line may be
+    /// kept; the shared cases hold the bypasses.
+    @Test func aCommandRuleIsKeptOnlyForAPlainAsciiLine() {
+        let hidden: [UInt32] = [0x85, 0xA0, 0x1680, 0x2028, 0x2029, 0x205F, 0x3000, 0xFEFF] + Array(0x2000...0x200F) + Array(0x202A...0x202F) + Array(0x2066...0x2069)
+        for code in hidden {
+            let character = Character(Unicode.Scalar(code)!)
+            #expect(AntigravityRuleSafety.verdict("command(echo\(character)hi)") == .refused, "U+\(String(code, radix: 16))")
+        }
+        for code in UInt32(0x21)...UInt32(0x7E) where ![0x2A, 0x28, 0x29].contains(code) {
+            let character = Character(Unicode.Scalar(code)!)
+            let plain = character.isLetter || character.isNumber || "._/:=@+,-".contains(character)
+            #expect(AntigravityRuleSafety.verdict("command(echo \(character))") == (plain ? .always : .once), "echo \(character)")
+        }
+        #expect(AntigravityRuleSafety.verdict("command(echo h\u{e9})") == .once)
+        #expect(AntigravityDeniedAction(kind: .command, action: "command", displayName: "RunCommand", target: "echo 'hi'", rule: "command(echo 'hi')").onceOnlyReason == nil)
     }
 
     @Test func aQueuedItemKeepsItsRecordedModeWhenItsStylePlansEveryRequest() {
