@@ -354,8 +354,9 @@ public static class AntigravityRuleSafety
                 if (!info.Exists) break;
                 parts.Dequeue();
                 if (info.LinkTarget is null) { current = next; continue; }
+                // A target written as a device or UNC path (\\?\…, \\host\…, //…) is no plain local path either.
                 if (++hops > 40 || info.ResolveLinkTarget(false) is not { } target) return null;
-                var leads = WithoutDevicePrefix(target.FullName);
+                var leads = target.FullName;
                 if (!PlainLocalPath(leads)) return null;
                 // The target is walked from its own root: a link to a link, or a link under one, is read the same way.
                 var (root, rest) = Split(leads);
@@ -364,18 +365,13 @@ public static class AntigravityRuleSafety
             if (OperatingSystem.IsWindows())
             {
                 var final = WorkspaceFiles.WindowsFileHandles.FinalDirectoryPath(current);
-                if (final is null || !(final.Length >= 3 && char.IsAsciiLetter(final[0]) && final[1] == ':' && final[2] == '\\')) return null;
+                if (final is null || !PlainLocalPath(final)) return null;
                 current = final;
             }
             return parts.Count == 0 ? current : Path.Combine([current, .. parts]);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return null; }
     }
-
-    /// <summary>A link's target as Windows may write it (<c>\\?\C:\…</c>, <c>\??\C:\…</c>) as a drive path; <c>\\?\UNC\…</c> and anything else as it is.</summary>
-    private static string WithoutDevicePrefix(string path) =>
-        (path.StartsWith(@"\\?\", StringComparison.Ordinal) || path.StartsWith(@"\??\", StringComparison.Ordinal)) && path.Length >= 7 && char.IsAsciiLetter(path[4]) && path[5] == ':' && path[6] == '\\'
-            ? path[4..] : path;
 
     /// <summary>
     /// Whitespace other than space and tab (U+0085, U+00A0, U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000) and the format and
