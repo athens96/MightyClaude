@@ -326,6 +326,8 @@ fn main() {
             app.manage(platform::ports(host.smoke.is_some()));
             // The pseudo consoles, for a CLI's hidden background sign-in (accounts.rs, W6-C).
             app.manage(platform.ptys.clone());
+            // The app's folders, for the toolkit's store (settings/tools.rs, W6-B).
+            app.manage(platform.paths.clone());
             // Completion notifications: registered with the OS only with --allow-state-write, never in a smoke (notifications.rs).
             if host.smoke.is_none() {
                 notifications::start(&host);

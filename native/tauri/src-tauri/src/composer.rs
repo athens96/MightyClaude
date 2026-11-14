@@ -1115,14 +1115,20 @@ pub fn register(methods: &mut Registry) {
     });
     // The composer's status-line toggle of a Claude pane: an app-wide preference.
     methods.add("composerToggle", |host: Arc<Host>, args| async move {
-        let mut view = host.view();
-        if text(&args, "which") == Some("statusLine") {
+        if text(&args, "which") != Some("statusLine") {
+            return Ok(Value::Null);
+        }
+        let enabled = {
+            let mut view = host.view();
             let enabled = !view.snapshot.status_line_enabled;
             view.update(|state| state.status_line_enabled = enabled)?;
             for pane in view.panes.values_mut() {
                 pane.dirty = true;
             }
-        }
+            enabled
+        };
+        // C# `SetStatusLineEnabled`: each pane's status line read again at once (status_line.rs, W6-B).
+        crate::status_line::set_enabled(&host, enabled);
         Ok(Value::Null)
     });
     methods.add("newConversation", |host: Arc<Host>, args| async move {

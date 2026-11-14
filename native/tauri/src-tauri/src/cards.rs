@@ -173,7 +173,9 @@ pub fn register(methods: &mut Registry) {
     });
     // The status line's trust question is W6's: with no workspace command waiting for trust, there is nothing to answer (C# returns).
     methods.add("statusLineTrust", |host: Arc<Host>, args| async move {
-        ensure(&mut host.view(), text(&args, "paneId"))?;
+        let id = ensure(&mut host.view(), text(&args, "paneId"))?;
+        // The status line card's Allow / Not now (status_line.rs, W6-B: C# `StatusLineTrust`).
+        crate::status_line::trust_answer(&host, &id, flag(&args, "allow"))?;
         Ok(Value::Null)
     });
 }

@@ -64,6 +64,20 @@ pub fn long_time(at: &str) -> Option<String> {
     os::long_time(system)
 }
 
+/// The setup screen's files port (setup.rs, W6-B): the script folder and its ACL, and whether the app runs elevated (Windows'
+/// `WindowsSetupFiles`; the Mac `Unsupported`).
+#[cfg(windows)]
+#[allow(dead_code, reason = "setup.rs's files_port (W6-B) switches to it at integration")]
+pub fn setup_files() -> Arc<dyn mighty_platform::SetupFiles> {
+    Arc::new(os::WindowsSetupFiles)
+}
+
+#[cfg(target_os = "macos")]
+#[allow(dead_code, reason = "setup.rs's files_port (W6-B) switches to it at integration")]
+pub fn setup_files() -> Arc<dyn mighty_platform::SetupFiles> {
+    Arc::new(mighty_platform::unsupported::Unsupported)
+}
+
 /// Registers the app for its notifications with the OS (Windows: the AUMID under HKCU); the caller decides whether it may write.
 pub fn register_notifications() -> std::result::Result<(), String> {
     os::register_notifications()
