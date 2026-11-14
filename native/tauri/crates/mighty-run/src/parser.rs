@@ -109,7 +109,7 @@ pub fn image_entry_text(count: usize, source: &str) -> String {
     }
 }
 
-/// The frames of an agent this parser does not read itself (the ACP agents: W5), handed the parser's sinks.
+/// The frames of an agent this parser does not read itself, handed the parser's sinks.
 pub trait ProviderStream: Send {
     fn frame(&mut self, root: &Value, sinks: &mut StreamSinks<'_>);
 }

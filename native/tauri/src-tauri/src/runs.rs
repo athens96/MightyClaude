@@ -91,16 +91,16 @@ fn hermes_session(environment: &std::collections::BTreeMap<String, String>, sess
     )
 }
 
-/// A Hermes pane's run ended (C# `RefreshModelsAfterHermesRun`): the folder whose model list is read again, so the models its session
-/// offered are in the menu. None for anything else, and in a smoke (which asks no CLI).
-fn hermes_run_ended(host: &Host, event: &ServiceEvent) -> Option<Option<String>> {
+/// A Hermes pane's run ended (C# `RefreshModelsAfterHermesRun`): the pane whose model list is read again, so the models its session
+/// offered are in the menu. None for anything else.
+fn hermes_run_ended(host: &Host, event: &ServiceEvent) -> Option<String> {
     let ServiceEvent::Run { event, .. } = event else { return None };
-    if host.smoke.is_some() || event.kind != "status" || !matches!(event.status.as_deref(), Some("completed" | "error" | "stopped")) {
+    if event.kind != "status" || !matches!(event.status.as_deref(), Some("completed" | "error" | "stopped")) {
         return None;
     }
     let view = host.view();
-    let pane = view.snapshot.session(&event.session_id).filter(|s| s.kind() == "claude" && s.provider() == "hermes")?;
-    Some(view.snapshot.workspace(pane.workspace_id()).filter(|w| w.remote.is_none()).map(|w| w.path().to_string()))
+    view.snapshot.session(&event.session_id).filter(|s| s.kind() == "claude" && s.provider() == "hermes")?;
+    Some(event.session_id.clone())
 }
 
 /// The mighty-bridge plugin the Claude runs load (C#: `mods/mighty-bridge` copied next to the app as `claude-mods`): beside the exe
@@ -253,14 +253,10 @@ impl Runs {
             while let Some(event) = events.recv().await {
                 let hermes = hermes_run_ended(&pump, &event);
                 pump.service_event(event);
-                if let Some(folder) = hermes {
-                    let host = pump.clone();
-                    tauri::async_runtime::spawn(async move {
-                        if let Some(runs) = host.runs().cloned() {
-                            runs.refresh("hermes", folder.as_deref()).await;
-                            host.panes_changed();
-                        }
-                    });
+                // C# `RefreshModels(sessionId, invalidate: true)` through the model lists' own refresh (models.rs), which reconciles the
+                // pane with the new list and asks no CLI in a smoke.
+                if let Some(id) = hermes {
+                    crate::models::refresh(&pump, &pump.view().snapshot, &id, true);
                 }
             }
         });
