@@ -906,10 +906,13 @@ pub fn register(methods: &mut Registry) {
             let home = dirs_home();
             slash::commands(&provider, root.as_deref().map(std::path::Path::new), &home, &slash::DiskFiles, &locale)
         })
-        .await
-        .unwrap_or_default();
-        // The scan is the catalogue the "send to" switch reads too (ask.rs, C# `SetSlashCatalog`).
-        crate::ask::set_catalog(&host, pane.provider(), path.as_deref(), scanned.clone());
+        .await;
+        // The scan is the catalogue the "send to" switch reads too (ask.rs, C# `SetSlashCatalog`); a scan that panicked is no catalogue,
+        // so the one in hand, and a saved "send to" choice it stands for, stay.
+        if let Ok(scanned) = &scanned {
+            crate::ask::set_catalog(&host, pane.provider(), path.as_deref(), scanned.clone());
+        }
+        let scanned = scanned.unwrap_or_default();
         let view = host.view();
         Ok(with_menu_inputs(&host, &view, &pane, |i| serde_json::to_value(menus::slash_catalog(i, &scanned)).unwrap_or(Value::Null)))
     });
