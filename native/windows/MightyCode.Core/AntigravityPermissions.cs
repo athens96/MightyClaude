@@ -1384,9 +1384,28 @@ public sealed class AntigravityRuleLeases
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
         {
-            try { File.Delete(temporary); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { }
+            if (AfterFailedReplace(ex, temporary, target)) return;
             throw AntigravitySettingsException.Of("writeFailed", SettingsPath, ex.Message);
         }
+    }
+
+    private const int UnableToMoveReplacement = 1176, UnableToMoveReplacement2 = 1177;
+    /// <summary>
+    /// What a failed save leaves, as ReplaceFileW says: ERROR_UNABLE_TO_MOVE_REPLACEMENT (1176) has taken the settings away and kept the
+    /// temporary, now their only copy, so the temporary is moved into their place (true when that worked); ERROR_UNABLE_TO_MOVE_REPLACEMENT_2
+    /// (1177) leaves both where they are; any other failure left the settings as they were, and the temporary goes. The temporary is never
+    /// deleted after a 1176 or 1177.
+    /// </summary>
+    internal static bool AfterFailedReplace(Exception error, string temporary, string target)
+    {
+        var code = error is IOException && (error.HResult & 0xFFFF0000) == 0x80070000 ? error.HResult & 0xFFFF : 0;
+        if (code == UnableToMoveReplacement)
+        {
+            try { File.Move(temporary, target); return true; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+        }
+        if (code != UnableToMoveReplacement2) { try { File.Delete(temporary); } catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { } }
+        return false;
     }
 
     private Ledger? ReadLedger()

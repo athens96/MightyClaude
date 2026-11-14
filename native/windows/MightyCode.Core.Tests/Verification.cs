@@ -654,6 +654,7 @@ internal static class Verification
         await Test("antigravity cards: no file rule reaches agy's own folder or the app's data", AntigravityPermissionVerification.NoFileRuleReachesAgysOwnFolderOrTheAppsData);
         await Test("antigravity cards: a missing file is created with the rule alone and goes with it", AntigravityPermissionVerification.AMissingFileIsCreatedWithTheRuleAloneAndGoesWithIt);
         await Test("antigravity cards: a failed removal is tried again and kept in the ledger until it works", AntigravityPermissionVerification.AFailedRemovalIsTriedAgainAndKeptInTheLedgerUntilItWorks);
+        await Test("antigravity cards: a failed replace never deletes the only copy", AntigravityPermissionVerification.AFailedReplaceNeverDeletesTheOnlyCopy);
         await Test("antigravity cards: a rule agy writes back is taken out again", AntigravityPermissionVerification.ARuleAgyWritesBackIsTakenOutAgain);
         await Test("antigravity cards: after quit nothing is added and a link to nothing is left alone", AntigravityPermissionVerification.AfterQuitNothingIsAddedAndALinkToNothingIsLeftAlone);
         await Test("antigravity cards: a continuation that cannot start brings its card back with the reason", AntigravityPermissionVerification.AContinuationThatCannotStartBringsItsCardBack);

@@ -457,6 +457,26 @@ internal static class AntigravityPermissionVerification
         Check(folder.Text() == Real && !File.Exists(folder.Ledger), "a later try went through");
     }
 
+    /// <summary>
+    /// S-L4: File.Replace failing with ERROR_UNABLE_TO_MOVE_REPLACEMENT (1176) has taken the settings away, so the temporary (their only copy)
+    /// takes their place; with ERROR_UNABLE_TO_MOVE_REPLACEMENT_2 (1177) both stay; any other failure removes only the temporary.
+    /// </summary>
+    internal static Task AFailedReplaceNeverDeletesTheOnlyCopy()
+    {
+        using var folder = new Folder(); folder.Make(null);
+        var target = folder.SettingsPath; var temporary = target + ".mighty.tmp";
+        static IOException Failure(int code) => new("ReplaceFileW failed", unchecked((int)0x80070000) | code);
+        File.WriteAllText(temporary, "new");
+        Check(AntigravityRuleLeases.AfterFailedReplace(Failure(1176), temporary, target) && File.ReadAllText(target) == "new" && !File.Exists(temporary), "1176: the temporary takes the settings' place");
+        File.WriteAllText(temporary, "newer");
+        Check(!AntigravityRuleLeases.AfterFailedReplace(Failure(1177), temporary, target) && File.ReadAllText(temporary) == "newer" && File.ReadAllText(target) == "new", "1177: both stay");
+        Check(!AntigravityRuleLeases.AfterFailedReplace(Failure(1176), temporary, target) && File.ReadAllText(temporary) == "newer" && File.ReadAllText(target) == "new", "1176 that cannot move it either: the temporary stays");
+        Check(!AntigravityRuleLeases.AfterFailedReplace(Failure(32), temporary, target) && !File.Exists(temporary) && File.ReadAllText(target) == "new", "a sharing violation: only the temporary goes");
+        File.WriteAllText(temporary, "newest");
+        Check(!AntigravityRuleLeases.AfterFailedReplace(new UnauthorizedAccessException(), temporary, target) && !File.Exists(temporary) && File.ReadAllText(target) == "new", "access denied: only the temporary goes");
+        return Task.CompletedTask;
+    }
+
     internal static async Task ARuleAgyWritesBackIsTakenOutAgain()
     {
         using var folder = new Folder(); folder.Make(Real);
