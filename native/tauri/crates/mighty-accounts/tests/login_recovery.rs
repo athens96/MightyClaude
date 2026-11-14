@@ -272,6 +272,12 @@ async fn wait_requires_fresh_success_when_already_signed_in() {
     // Cancelling is dropping the wait: once dropped it reads nothing more.
     let polls = Arc::new(AtomicUsize::new(0));
     let task = tokio::spawn(login_wait(|| true, || None, signed_in(polls.clone()), None, None, Some(ms(1))));
+    for _ in 0..500 {
+        if polls.load(Ordering::SeqCst) > 0 {
+            break;
+        }
+        tokio::time::sleep(ms(10)).await;
+    }
     tokio::time::sleep(ms(20)).await;
     task.abort();
     let seen = polls.load(Ordering::SeqCst);
