@@ -89,6 +89,33 @@ pub fn message(content: Option<&str>, sender: &str) -> Option<String> {
     (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
+/// The ids (at most 128 bytes) that follow each `sender=` in `content` up to the next space, in ASCII lower case, read in one pass
+/// (S-L9): a watcher looks up which of its helpers spoke here instead of searching the whole text once per helper.
+pub fn senders(content: Option<&str>) -> std::collections::HashSet<String> {
+    const MARKER: &[u8] = b"sender=";
+    let mut found = std::collections::HashSet::new();
+    let Some(content) = content else { return found };
+    let bytes = content.as_bytes();
+    // The first space at or after the id being read: ids start further on each time, so it only moves forward.
+    let mut space = 0;
+    for at in 0..bytes.len().saturating_sub(MARKER.len() - 1) {
+        if !bytes[at..at + MARKER.len()].eq_ignore_ascii_case(MARKER) {
+            continue;
+        }
+        let start = at + MARKER.len();
+        if space < start {
+            space = start;
+            while space < bytes.len() && bytes[space] != b' ' {
+                space += 1;
+            }
+        }
+        if space < bytes.len() && space - start <= 128 {
+            found.insert(String::from_utf8_lossy(&bytes[start..space]).to_ascii_lowercase());
+        }
+    }
+    found
+}
+
 /// The first 65,536 UTF-16 units of `content` (C#'s `content[..65_536]`), a pair cut in two read as U+FFFD.
 fn first_units(content: &str) -> String {
     if content.len() <= 65_536 {
@@ -242,5 +269,22 @@ mod tests {
         let long = format!("Created At: x\n{}", "a".repeat(70_000));
         assert_eq!(tool_text(Some(&long)).map(|t| t.len()), Some(65_536 - "Created At: x\n".len()));
         assert_eq!(tool_text(Some("Created At: x\nCompleted At: y\n\n")), None);
+    }
+
+    /// S-L9: the senders a message names are read in one pass, whatever case they are written in; an id with no space after it, or longer
+    /// than any conversation's, is none; a text of nothing but markers is read in linear time.
+    #[test]
+    fn the_senders_are_read_in_one_pass() {
+        let content = "[Message] sender=ABC-1 content=done SENDER=def content=x xsender=ghi  sender=open";
+        let senders = senders(Some(content));
+        assert_eq!(senders, ["abc-1", "def", "ghi"].iter().map(|s| s.to_string()).collect(), "{senders:?}");
+        assert!(message(Some(content), "abc-1").is_some() && senders.contains("abc-1"), "agrees with the message it finds");
+        let long = format!("sender={} ", "a".repeat(200));
+        assert!(super::senders(Some(&long)).is_empty(), "an id longer than any conversation's");
+        let markers = format!("{} ", "sender=".repeat(300_000));
+        let started = std::time::Instant::now();
+        let found = super::senders(Some(&markers));
+        assert!(found.len() <= 19 && started.elapsed() < std::time::Duration::from_secs(5), "{} ids", found.len());
+        assert!(super::senders(None).is_empty());
     }
 }

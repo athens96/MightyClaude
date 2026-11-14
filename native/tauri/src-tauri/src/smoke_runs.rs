@@ -238,14 +238,18 @@ fn add_pi_pane(host: &Host) -> Result<(), String> {
     Ok(())
 }
 
-/// The Antigravity pane in the run steps' workspace, made the active one, and the smoke's own agy settings written as they start.
-fn add_agy_pane(host: &Host) -> Result<(), String> {
-    if let Some(settings) = agy_settings(host) {
-        if let Some(folder) = settings.parent() {
-            std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
-        }
-        std::fs::write(&settings, AGY_SETTINGS).map_err(|e| e.to_string())?;
+/// The Antigravity pane in the run steps' workspace, made the active one, and the smoke's own agy settings written as they start — only
+/// the stand-in's file, and only while the run service points at it (C3): a smoke with the real CLI never writes agy's settings.
+fn add_agy_pane(host: &Host, smoke: &crate::smoke::Smoke) -> Result<(), String> {
+    let settings =
+        smoke.fake_record().map(|record| crate::runs::fake_agy_settings(record)).ok_or("the Antigravity step needs the stand-in CLI")?;
+    if agy_settings(host).as_deref() != Some(settings.as_path()) {
+        return Err("the run service's agy settings are not the stand-in's".into());
     }
+    if let Some(folder) = settings.parent() {
+        std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&settings, AGY_SETTINGS).map_err(|e| e.to_string())?;
     let mut view = host.view();
     let mut state: Value = serde_json::from_str(&view.snapshot.to_json()).map_err(|e| e.to_string())?;
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
@@ -348,7 +352,7 @@ pub fn smoke_step(step: String, host: tauri::State<'_, Arc<Host>>) -> Result<Val
         "piState" => Ok(pi_state(&host, smoke)),
         "steps" => set_steps(&host, true).map(|_| Value::Null),
         "clearSteps" => set_steps(&host, false).map(|_| Value::Null),
-        "agyPane" => add_agy_pane(&host).map(|_| Value::Null),
+        "agyPane" => add_agy_pane(&host, smoke).map(|_| Value::Null),
         "agyState" => {
             let available = host.runs().and_then(|r| r.runtime("gemini")).is_some_and(|r| r.available);
             let settings = agy_settings(&host).and_then(|path| std::fs::read_to_string(path).ok());

@@ -46,9 +46,14 @@ pub struct FakeClaude {
 impl FakeClaude {
     /// The smoke's own agy settings (never the user's): beside the fake's record.
     pub fn agy_settings(&self) -> PathBuf {
-        let folder = self.record.parent().map(Path::to_path_buf).unwrap_or_default();
-        folder.join("agy-home").join(".gemini").join("antigravity-cli").join("settings.json")
+        fake_agy_settings(&self.record)
     }
+}
+
+/// The stand-in agy's settings for the fake's record `record`: `<record's folder>\agy-home\.gemini\antigravity-cli\settings.json`.
+pub fn fake_agy_settings(record: &Path) -> PathBuf {
+    let folder = record.parent().map(Path::to_path_buf).unwrap_or_default();
+    folder.join("agy-home").join(".gemini").join("antigravity-cli").join("settings.json")
 }
 
 pub struct Runs {
@@ -221,9 +226,8 @@ impl Runs {
         // The CLIs' own records are read, never written: a Codex run's session files, pi's session list.
         let home = history::user_home();
         let pi_home = home.clone();
-        // Temporary Antigravity rules a crash left in agy's settings go first (C# `InitializeAsync`, M/AppStore.swift:433-434).
-        let leftovers = antigravity.clone();
-        std::thread::spawn(move || leftovers.remove_leftovers());
+        // Temporary Antigravity rules a crash left in agy's settings go first (C# `InitializeAsync`, M/AppStore.swift:433-434): the run
+        // service takes them out as it starts and no agy run starts before (C2).
         let configure: Configure = Box::new(move |options| {
             options.graph =
                 Some(Arc::new(TrackerFactory { codex_sessions: Some(codex_sessions::watcher_factory(home)), ..TrackerFactory::default() }));

@@ -5,7 +5,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use mighty_core::graph::GraphTokenUsage;
+use mighty_core::graph::{GraphTokenUsage, MightyGraphAgent, MightyGraphRun};
 use mighty_core::locale::Locale;
 use mighty_core::model::AgentActivity;
 use mighty_graph::ExecutionGraphNode;
@@ -14,6 +14,12 @@ use mighty_graph::tracker::{AntigravitySubagent, ExecutionGraphTracker};
 use mighty_run::antigravity::records;
 use mighty_run::parser::{OutputParser, ParserHooks};
 use serde_json::{Value, json};
+
+/// C# `.Single()`: the run's one sub-agent (a second one fails the check).
+fn single(run: &MightyGraphRun) -> MightyGraphAgent {
+    assert_eq!(run.agents().len(), 1, "one sub-agent");
+    run.agents()[0].clone()
+}
 
 const PARENT: &str = "aaaaaaaa-0000-4000-8000-000000000001";
 const CHILD: &str = "aaaaaaaa-0000-4000-8000-000000000002";
@@ -208,11 +214,12 @@ fn a_run_draws_the_request_its_subagents_work_and_the_latest_answer() {
     let records = run.response_records.clone().unwrap_or_default();
     assert!(
         records.len() == 3
-            && records.iter().flatten().all(|r| r.model.as_deref() == Some("gemini-3.8-flash-low") && !r.marked_as_configured),
+            && records
+                .iter()
+                .all(|r| r.as_ref().is_some_and(|r| r.model.as_deref() == Some("gemini-3.8-flash-low") && !r.marked_as_configured)),
         "per-response records name agy's model: {records:?}"
     );
-    let agent = &run.agents()[0];
-    assert!(run.agents().len() == 1, "one sub-agent");
+    let agent = &single(&run);
     assert!(
         agent.parent_id.is_none()
             && agent.title() == "File Reader (research)"
@@ -289,16 +296,16 @@ fn a_subagent_waiting_for_its_helper_is_not_done_until_it_answers() {
     }
     graph.antigravity_session(&waiting);
     graph.antigravity_session(&done);
-    assert_eq!(graph.build_run(true).unwrap().agents()[0].status(), "completed", "completed first");
+    assert_eq!(single(&graph.build_run(true).unwrap()).status(), "completed", "completed first");
     record.consume(&json_of(&line(6, "SYSTEM", "SYSTEM_MESSAGE", "DONE", 3, json!({"content": message(GRANDCHILD, "One more thing.")}))));
     let continuing = record.take().unwrap();
     assert!(continuing.state == "running" && continuing.turns == 1, "the same assignment goes on");
     graph.antigravity_session(&continuing);
-    let agent = graph.build_run(true).unwrap().agents()[0].clone();
+    let agent = single(&graph.build_run(true).unwrap());
     assert!(agent.status() == "running" && agent.activity_generation.unwrap_or(0) == 0, "running again without a new generation");
     record.consume(&json_of(&line(7, "MODEL", "PLANNER_RESPONSE", "DONE", 3, json!({"content": "Updated."}))));
     graph.antigravity_session(&record.take().unwrap());
-    let updated = graph.build_run(true).unwrap().agents()[0].clone();
+    let updated = single(&graph.build_run(true).unwrap());
     assert!(
         updated.status() == "completed" && updated.entries().iter().any(|e| e.kind() == "assistant" && e.text() == "Updated."),
         "and done again"
@@ -306,7 +313,7 @@ fn a_subagent_waiting_for_its_helper_is_not_done_until_it_answers() {
     // A new instruction from the parent reopens a settled sub-agent and keeps its answer.
     record.consume(&json_of(&line(8, "SYSTEM", "SYSTEM_MESSAGE", "DONE", 4, json!({"content": message(PARENT, "Now read b.txt")}))));
     graph.antigravity_session(&record.take().unwrap());
-    let reopened = graph.build_run(true).unwrap().agents()[0].clone();
+    let reopened = single(&graph.build_run(true).unwrap());
     assert!(
         reopened.status() == "running"
             && reopened.activity_generation == Some(1)
@@ -329,6 +336,44 @@ fn write_transcript(home: &std::path::Path, conversation: &str, lines: &[String]
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, lines.join("\n") + "\n" + trailing).unwrap();
     path
+}
+
+/// S-L9: a sub-agent follows and waits for no more helpers than a diagram has nodes; a helper among many that reports back is found by its
+/// sender (read once from the message, not looked for once per helper), and one past the limit is neither handed out nor waited for.
+#[test]
+fn a_sub_agent_starts_no_more_helpers_than_a_diagram_holds() {
+    let helper = |index: usize| format!("bbbbbbbb-0000-4000-8000-{index:012}");
+    let limit = mighty_graph::node::MAXIMUM_NODES;
+    let mut record = AntigravityChildRecord::new(
+        AntigravitySubagent { conversation: CHILD.into(), parent: PARENT.into(), title: None, prompt: None },
+        "agy-run",
+    );
+    record.consume(&json_of(&line(0, "SYSTEM", "SYSTEM_MESSAGE", "DONE", 1, json!({"content": message(PARENT, "Fan out")}))));
+    let mut step = 1;
+    for index in 0..limit + 2 {
+        let starts = call("invoke_subagent", json!({"Subagents": [{"Role": "Helper", "TypeName": "research", "Prompt": "Help"}]}));
+        record.consume(&json_of(&line(step, "MODEL", "PLANNER_RESPONSE", "DONE", 1, json!({"tool_calls": [starts]}))));
+        record.consume(&json_of(&line(step + 1, "MODEL", "GENERIC", "DONE", 1, json!({"content": spawned(&helper(index))}))));
+        step += 2;
+    }
+    let handed = record.take_spawned();
+    assert_eq!(handed.len(), limit, "the helpers past the limit are not followed");
+    record.consume(&json_of(&line(step, "MODEL", "PLANNER_RESPONSE", "DONE", 2, json!({"content": "Waiting for my helpers."}))));
+    assert_eq!(record.take().unwrap().state, "running", "waiting for its helpers");
+    // The last helper it follows reports back among a crowd of senders it never started.
+    let crowd: String = (0..2_000).map(|i| format!("sender=cccccccc-0000-4000-8000-{i:012} ")).collect();
+    let reported = format!("{crowd}{}", message(&helper(limit - 1), "Done."));
+    record.consume(&json_of(&line(step + 1, "SYSTEM", "SYSTEM_MESSAGE", "DONE", 3, json!({"content": reported}))));
+    // One past the limit reporting back changes nothing.
+    record.consume(&json_of(&line(
+        step + 2,
+        "SYSTEM",
+        "SYSTEM_MESSAGE",
+        "DONE",
+        3,
+        json!({"content": message(&helper(limit), "Me too.")}),
+    )));
+    assert!(record.take().is_none_or(|snapshot| snapshot.state == "running"), "still waiting for the others");
 }
 
 /// AntigravityVerification.cs:419 `TheWatcherFollowsGrowingTranscriptsAndNestedSubagents`.

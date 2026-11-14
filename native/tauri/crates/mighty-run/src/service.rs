@@ -93,12 +93,19 @@ pub trait RemoteRunner: Send + Sync {
 struct Route {
     started: bool,
     cancelled: bool,
+    /// Which start this route is (C10): the temporary Antigravity rules it holds are released only by its own end.
+    holder: u64,
 }
 
 struct State {
     snapshot: AppSnapshot,
     routes: HashMap<String, Route>,
     closing: bool,
+}
+
+/// What a service the host gave no Antigravity settings has (C5): leases that refuse every grant.
+fn refusing_rules() -> AntigravityRuleLeases {
+    AntigravityRuleLeases::refusing(&AntigravityRuleLeases::default_settings_path(None))
 }
 
 struct Shared {
@@ -110,13 +117,16 @@ struct Shared {
     antigravity: Mutex<antigravity::Desk>,
     /// agy's settings (`AntigravityRules`), set once the runner's options are made.
     antigravity_rules: OnceLock<AntigravityRuleLeases>,
+    /// True once the leftovers a crash left in agy's settings are out (C# `InitializeAsync` awaits `RemoveLeftovers`): no agy run starts
+    /// before (C2).
+    leftovers_removed: tokio::sync::watch::Receiver<bool>,
 }
 
 impl Shared {
-    /// `AntigravityRules`: the ones the host gave (`RunManagerOptions::antigravity_rules`), else the user's own settings without a ledger.
+    /// `AntigravityRules`: the ones the host gave (`RunManagerOptions::antigravity_rules`), else leases that refuse every grant (C5): no
+    /// rule ever lands in the user's real settings without a ledger.
     fn rules(&self) -> &AntigravityRuleLeases {
-        self.antigravity_rules
-            .get_or_init(|| AntigravityRuleLeases::new(&AntigravityRuleLeases::default_settings_path(None), None, None, None))
+        self.antigravity_rules.get_or_init(refusing_rules)
     }
 
     fn send(&self, event: ServiceEvent) {
@@ -209,12 +219,14 @@ impl RunService {
         options: RunServiceOptions,
     ) -> (RunService, mpsc::UnboundedReceiver<ServiceEvent>) {
         let (events, receiver) = mpsc::unbounded_channel();
+        let (leftovers_done, leftovers_removed) = tokio::sync::watch::channel(false);
         let shared = Arc::new(Shared {
             state: Mutex::new(State { snapshot, routes: HashMap::new(), closing: false }),
             events,
             pending: Mutex::new(HashMap::new()),
             antigravity: Mutex::new(antigravity::Desk::default()),
             antigravity_rules: OnceLock::new(),
+            leftovers_removed,
         });
         let resolver = shared.clone();
         let resolve: crate::manager::ResolveWorkspace = Arc::new(move |id: String| {
@@ -231,9 +243,11 @@ impl RunService {
         if let Some(configure) = options.configure {
             configure(&mut manager_options);
         }
-        if let Some(rules) = manager_options.antigravity_rules.clone() {
-            let _ = shared.antigravity_rules.set(rules);
-        }
+        // The runner judges a card's file rules with the same leases (C5: refusing ones when the host gave none).
+        let rules =
+            shared.antigravity_rules.get_or_init(|| manager_options.antigravity_rules.clone().unwrap_or_else(refusing_rules)).clone();
+        manager_options.antigravity_rules = Some(rules.clone());
+        antigravity::remove_leftovers(rules, leftovers_done);
         let manager = RunManager::new(providers, manager_options);
         (RunService { shared, manager, remote: options.remote, admitting: options.admitting }, receiver)
     }
@@ -405,7 +419,7 @@ impl RunService {
             if state.routes.contains_key(&request.session_id) {
                 return Err(RunError::State(strings::get("run.error.alreadyRunning")));
             }
-            state.routes.insert(request.session_id.clone(), Route::default());
+            state.routes.insert(request.session_id.clone(), Route { holder: antigravity::next_holder(), ..Route::default() });
             let title_input = if request.antigravity_grant.is_some() { "" } else { title_from.unwrap_or(&request.input) };
             let now = DateTimeOffset::now();
             for session in state.snapshot.sessions_mut().iter_mut() {

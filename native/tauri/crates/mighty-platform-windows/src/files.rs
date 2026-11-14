@@ -13,8 +13,8 @@ use std::time::SystemTime;
 use mighty_platform::{ClipboardImage, Desktop, FileHandles, FilePorts, PdfPage, PdfRaster, PlatformError, Result};
 use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, HANDLE, INVALID_HANDLE_VALUE, SYSTEMTIME};
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TYPE_DISK, GetFileType,
-    GetFinalPathNameByHandleW, OPEN_EXISTING,
+    CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TYPE_DISK, GetDriveTypeW,
+    GetFileType, GetFinalPathNameByHandleW, OPEN_EXISTING,
 };
 
 fn wide(text: &OsStr) -> Vec<u16> {
@@ -539,6 +539,59 @@ mod clipboard {
 }
 
 /// The files ports of Windows.
+/// `DRIVE_FIXED`, what `GetDriveTypeW` says of a fixed disk.
+const DRIVE_FIXED: u32 = 3;
+
+/// A link's target as Windows may write it (`\\?\C:\…`, `\??\C:\…`) as a drive path; `\\?\UNC\…` and any other device name as it is
+/// (C# `AntigravityRuleSafety.WithoutDevicePrefix`).
+fn without_device_prefix(target: PathBuf) -> PathBuf {
+    let text = target.to_string_lossy();
+    let bytes = text.as_bytes();
+    let device = text.starts_with(r"\\?\") || text.starts_with(r"\??\");
+    if device && bytes.len() >= 7 && bytes[4].is_ascii_alphabetic() && bytes[5] == b':' && bytes[6] == b'\\' {
+        return PathBuf::from(&text[4..]);
+    }
+    target
+}
+
+/// What the Antigravity rule safety asks the disk (mighty-platform `PathProbe`; C# `AntigravityRuleSafety`'s `GetDriveTypeW`,
+/// `ResolveLinkTarget` and `FinalDirectoryPath`), only ever for a path that is already a plain local one.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WindowsPathProbe;
+
+impl mighty_platform::PathProbe for WindowsPathProbe {
+    fn checks_paths(&self) -> bool {
+        true
+    }
+
+    fn fixed_drive(&self, letter: char) -> bool {
+        if !letter.is_ascii_alphabetic() {
+            return false;
+        }
+        let root = wide(OsStr::new(&format!("{}:\\", letter.to_ascii_uppercase())));
+        // SAFETY: a NUL-terminated root path.
+        unsafe { GetDriveTypeW(root.as_ptr()) == DRIVE_FIXED }
+    }
+
+    /// A symbolic link or a junction (both name-surrogate reparse points, which std's `is_symlink` reports), read, never followed.
+    fn link_target(&self, path: &Path) -> Option<PathBuf> {
+        let meta = std::fs::symlink_metadata(path).ok()?;
+        if !meta.file_type().is_symlink() {
+            return None;
+        }
+        std::fs::read_link(path).ok().map(without_device_prefix)
+    }
+
+    fn final_path(&self, path: &Path) -> Option<PathBuf> {
+        WindowsFileHandles.final_directory_path(path)
+    }
+}
+
+/// The Antigravity rule safety's disk questions on Windows.
+pub fn path_probe() -> std::sync::Arc<dyn mighty_platform::PathProbe> {
+    std::sync::Arc::new(WindowsPathProbe)
+}
+
 pub fn file_ports() -> FilePorts {
     FilePorts {
         handles: std::sync::Arc::new(WindowsFileHandles),

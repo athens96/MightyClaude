@@ -100,6 +100,34 @@ mod imp {
         mighty_platform::FilePorts::unsupported()
     }
 
+    /// What the Antigravity rule safety asks the disk (mighty-platform `PathProbe`, Swift `AntigravityRuleSafety`): a link read
+    /// without following it, what the file system calls a path (`realpath`); the Mac has no drive letters.
+    pub struct MacPathProbe;
+
+    impl mighty_platform::PathProbe for MacPathProbe {
+        fn checks_paths(&self) -> bool {
+            true
+        }
+        fn fixed_drive(&self, _letter: char) -> bool {
+            false
+        }
+        fn link_target(&self, path: &std::path::Path) -> Option<PathBuf> {
+            let meta = std::fs::symlink_metadata(path).ok()?;
+            if !meta.file_type().is_symlink() {
+                return None;
+            }
+            std::fs::read_link(path).ok()
+        }
+        fn final_path(&self, path: &std::path::Path) -> Option<PathBuf> {
+            std::fs::canonicalize(path).ok()
+        }
+    }
+
+    /// The Antigravity rule safety's disk questions on the Mac.
+    pub fn path_probe() -> Arc<dyn mighty_platform::PathProbe> {
+        Arc::new(MacPathProbe)
+    }
+
     /// The user's short date and time: not yet on the Mac.
     pub fn short_date_time(_at: std::time::SystemTime) -> Option<String> {
         None

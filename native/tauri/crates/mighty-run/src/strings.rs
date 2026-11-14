@@ -40,9 +40,12 @@ pub fn locale() -> Locale {
         return Locale::new(language);
     }
     let preferred: Vec<String> = sys_locale::get_locales().collect();
-    let language = locale::chosen_language("system", &preferred);
-    set_language(language);
-    Locale::new(language)
+    let system = locale::chosen_language("system", &preferred);
+    // The OS's languages only while nothing chose one: a language set meanwhile (the host's, a check's) is never overwritten.
+    match LANGUAGE.write() {
+        Ok(mut current) => Locale::new(current.get_or_insert(system)),
+        Err(_) => Locale::new(system),
+    }
 }
 
 /// `Locale.Get(key)`.

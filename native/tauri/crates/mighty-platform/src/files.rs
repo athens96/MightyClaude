@@ -25,6 +25,41 @@ pub trait FileHandles: Send + Sync {
     fn final_directory_path(&self, path: &Path) -> Option<PathBuf>;
 }
 
+/// What the Antigravity rule safety asks the disk about a path agy named (C# `AntigravityRuleSafety.ResolvedPath`, its
+/// `GetDriveTypeW` and `GetFinalPathNameByHandleW`), and only once the path passed the text check (a plain local path: `X:\…` on
+/// Windows, `/…` on the Mac), so a UNC or device name never reaches it. An OS that cannot ask says so ([`PathProbe::checks_paths`]
+/// false): no file rule is offered or added then, as nothing could check it.
+pub trait PathProbe: Send + Sync {
+    /// Whether this OS's disk can be asked; when false the other methods are not called.
+    fn checks_paths(&self) -> bool;
+    /// The drive `letter` is a fixed disk (`GetDriveTypeW("X:\\") == DRIVE_FIXED`), not a removable, network or CD drive; an OS
+    /// without drive letters says false.
+    fn fixed_drive(&self, letter: char) -> bool;
+    /// The link at `path` read without following it (a symbolic link, or a junction on Windows): its target as written, a `\\?\` or
+    /// `\??\` before a drive taken off (`\\?\UNC\…` and other device names left as they are); None when `path` is no link or cannot
+    /// be read.
+    fn link_target(&self, path: &Path) -> Option<PathBuf>;
+    /// What the file system calls the file or folder at `path` (Windows: `GetFinalPathNameByHandleW` with `\\?\` taken off and
+    /// `\\?\UNC\` written `\\`: its case, long names for 8.3 ones, no trailing dots or spaces, links followed; the Mac: `realpath`);
+    /// None when it does not exist or cannot be opened.
+    fn final_path(&self, path: &Path) -> Option<PathBuf>;
+}
+
+impl PathProbe for crate::unsupported::Unsupported {
+    fn checks_paths(&self) -> bool {
+        false
+    }
+    fn fixed_drive(&self, _letter: char) -> bool {
+        false
+    }
+    fn link_target(&self, _path: &Path) -> Option<PathBuf> {
+        None
+    }
+    fn final_path(&self, _path: &Path) -> Option<PathBuf> {
+        None
+    }
+}
+
 /// A PDF's first page: its size in points and, when the caller gave it a size, the page drawn as a PNG of that many pixels.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PdfPage {
@@ -177,6 +212,50 @@ pub mod fake {
         }
         fn final_directory_path(&self, path: &Path) -> Option<PathBuf> {
             Some(lock(&self.final_directory).clone().unwrap_or_else(|| path.to_path_buf()))
+        }
+    }
+
+    /// One thing a [`RecordingPathProbe`] was asked.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum PathProbeCall {
+        FixedDrive(char),
+        LinkTarget(PathBuf),
+        FinalPath(PathBuf),
+    }
+
+    /// A disk as a test sets it up, recording every question: the fixed drives (by upper-case letter; empty: every drive is fixed),
+    /// the links (a path and where it leads) and the final paths of what exists (a path and what the file system calls it; a path
+    /// not listed does not exist). `cannot` makes it an OS that cannot ask.
+    #[derive(Debug, Default)]
+    pub struct RecordingPathProbe {
+        pub cannot: bool,
+        pub fixed: Vec<char>,
+        pub links: Vec<(PathBuf, PathBuf)>,
+        pub finals: Vec<(PathBuf, PathBuf)>,
+        pub calls: Mutex<Vec<PathProbeCall>>,
+    }
+
+    impl RecordingPathProbe {
+        pub fn calls(&self) -> Vec<PathProbeCall> {
+            lock(&self.calls).clone()
+        }
+    }
+
+    impl PathProbe for RecordingPathProbe {
+        fn checks_paths(&self) -> bool {
+            !self.cannot
+        }
+        fn fixed_drive(&self, letter: char) -> bool {
+            lock(&self.calls).push(PathProbeCall::FixedDrive(letter));
+            self.fixed.is_empty() || self.fixed.contains(&letter.to_ascii_uppercase())
+        }
+        fn link_target(&self, path: &Path) -> Option<PathBuf> {
+            lock(&self.calls).push(PathProbeCall::LinkTarget(path.to_path_buf()));
+            self.links.iter().find(|(link, _)| link == path).map(|(_, target)| target.clone())
+        }
+        fn final_path(&self, path: &Path) -> Option<PathBuf> {
+            lock(&self.calls).push(PathProbeCall::FinalPath(path.to_path_buf()));
+            self.finals.iter().find(|(at, _)| at == path).map(|(_, named)| named.clone())
         }
     }
 

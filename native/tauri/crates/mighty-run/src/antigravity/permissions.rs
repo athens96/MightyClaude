@@ -3,17 +3,20 @@
 //! how a turn's refusals are collected from agy's stream (`AntigravityDenialCollector`), the cards of every pane
 //! (`AntigravityPermissionBoard`) and what an answer does (`AntigravityPermissionFlow`).
 
-use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::ffi::OsString;
+use std::path::{Component, Path, PathBuf};
 use std::sync::{LazyLock, RwLock};
 
 use mighty_core::json::{self, JsonOut, Obj, R, Wire};
-use mighty_core::{normalize, wire};
+use mighty_core::wire;
+use mighty_platform::PathProbe;
 use regex::Regex;
 use serde_json::Value;
 
 use crate::activity;
 use crate::meta;
+use crate::os;
 use crate::strings;
 
 // ── the records ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -23,14 +26,31 @@ use crate::strings;
 /// execute_url, mcp) or the tool's own name; `display_name` agy's name for it (RunCommand, WriteFile), else the tool's; `target` the
 /// command line, domain or path when agy said; `rule` the `permissions.allow` rule that allows exactly this, none when no rule can (the
 /// card then says to change the permission mode instead).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct DeniedAction {
     pub kind: String,
     pub action: String,
     pub display_name: String,
     pub target: Option<String>,
     pub rule: Option<String>,
+    /// C# `KnownVerdict`: the verdict on `rule` worked out once, when the card was made from agy's stream on this computer (the parser's
+    /// [`verdict`] by the rule's text, then [`judged`]'s disk checks off the parser's thread), so drawing or answering the card never asks
+    /// the disk again; None for a card read from elsewhere, judged by its text ([`text_verdict`]). Not sent, and no part of what the
+    /// action says (equality ignores it).
+    pub verdict: Option<RuleVerdict>,
 }
+
+impl PartialEq for DeniedAction {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+            && self.action == other.action
+            && self.display_name == other.display_name
+            && self.target == other.target
+            && self.rule == other.rule
+    }
+}
+
+impl Eq for DeniedAction {}
 
 /// `AntigravityDeniedAction.Kinds`.
 pub const KINDS: [&str; 4] = ["command", "url", "file", "other"];
@@ -51,20 +71,30 @@ impl DeniedAction {
             display_name: display_name.into(),
             target: target.map(str::to_string),
             rule: rule.map(str::to_string),
+            verdict: None,
+        }
+    }
+
+    /// `RuleVerdict`: what may be done with its rule — the verdict kept on it, else its rule's text's; refused when it has none.
+    pub fn rule_verdict(&self) -> RuleVerdict {
+        match &self.rule {
+            None => RuleVerdict::Refused,
+            Some(rule) => self.verdict.unwrap_or_else(|| text_verdict(rule)),
         }
     }
 
     /// `OnceOnly`: its rule may be allowed only for the follow-up run (`AntigravityRuleSafety`).
     pub fn once_only(&self) -> bool {
-        self.rule.as_deref().is_some_and(|rule| verdict(rule, None, None) == RuleVerdict::Once)
+        self.rule_verdict() == RuleVerdict::Once
     }
 
-    /// `OnceOnlyReason`: why it may be allowed only once; None when it may be kept (or has no rule).
+    /// `OnceOnlyReason`: why it may be allowed only once; None when it may be kept (or has no rule), or when only its characters keep it
+    /// once (the card then says the general words).
     pub fn once_only_reason(&self) -> Option<OnceReason> {
-        match &self.rule {
-            Some(rule) if self.once_only() => once_reason_of(rule, None),
-            _ => None,
+        if !self.once_only() {
+            return None;
         }
+        self.rule.as_deref().and_then(parts).and_then(|(_, argument)| command_reason(argument))
     }
 }
 
@@ -84,6 +114,7 @@ impl Wire for DeniedAction {
             display_name: json::opt_string(o.get("displayName"))?.unwrap_or_default(),
             target: json::opt_string(o.get("target"))?,
             rule: json::opt_string(o.get("rule"))?,
+            verdict: None,
         })
     }
 
@@ -122,11 +153,16 @@ impl PermissionRequest {
         }
     }
 
+    /// `Allowed`: the actions an allow adds a rule for, by the verdicts kept on them.
+    fn allowed(&self) -> impl Iterator<Item = &DeniedAction> {
+        self.actions.iter().filter(|a| a.rule_verdict() != RuleVerdict::Refused)
+    }
+
     /// `Rules`: the rules an allow adds, once each, in order (never one `AntigravityRuleSafety` refuses).
     pub fn rules(&self) -> Vec<String> {
         let mut rules: Vec<String> = Vec::new();
-        for rule in self.actions.iter().filter_map(|a| a.rule.as_deref()) {
-            if verdict(rule, None, None) != RuleVerdict::Refused && !rules.iter().any(|r| r == rule) {
+        for rule in self.allowed().filter_map(|a| a.rule.as_deref()) {
+            if !rules.iter().any(|r| r == rule) {
                 rules.push(rule.to_string());
             }
         }
@@ -135,13 +171,13 @@ impl PermissionRequest {
 
     /// `CanAllow`: at least one action can be allowed with a rule.
     pub fn can_allow(&self) -> bool {
-        !self.rules().is_empty()
+        self.allowed().next().is_some()
     }
 
-    /// `CanAllowAlways`: 항상 허용 is offered — every rule may be kept (none chains, pipes, redirects or runs a destructive command).
+    /// `CanAllowAlways`: 항상 허용 is offered — every rule may be kept (none chains, pipes, redirects, runs a destructive command or is
+    /// more than plain ASCII).
     pub fn can_allow_always(&self) -> bool {
-        let rules = self.rules();
-        !rules.is_empty() && rules.iter().all(|rule| verdict(rule, None, None) == RuleVerdict::Always)
+        self.can_allow() && self.allowed().all(|a| a.rule_verdict() == RuleVerdict::Always)
     }
 
     /// `Names`: what the transcript line and the continuation name — the targets, else agy's names.
@@ -231,17 +267,17 @@ impl AllowGrant {
         AllowGrant { request_id: request_id.into(), rules: rules.iter().map(|r| r.to_string()).collect(), temporary }
     }
 
-    /// `IsValid`: well formed, and no rule `AntigravityRuleSafety` refuses; whether it may be kept for good is
-    /// [`AllowGrant::keeps_only_allowed_rules`].
+    /// `IsValid`: well formed, and no rule `AntigravityRuleSafety` refuses by its text on this computer ([`verdict`]); whether it may be
+    /// kept for good is [`AllowGrant::keeps_only_allowed_rules`]. Where the rules go, their disk is asked too ([`checked_verdict`]).
     pub fn is_valid(&self) -> bool {
         wire::identifier(&self.request_id)
             && (1..=MAXIMUM_ACTIONS).contains(&self.rules.len())
-            && self.rules.iter().all(|rule| valid_rule(rule) && verdict(rule, None, None) != RuleVerdict::Refused)
+            && self.rules.iter().all(|rule| valid_rule(rule) && verdict(rule, None) != RuleVerdict::Refused)
     }
 
     /// `KeepsOnlyAllowedRules`: a temporary grant, or one whose every rule may be kept.
     pub fn keeps_only_allowed_rules(&self) -> bool {
-        self.temporary || self.rules.iter().all(|rule| verdict(rule, None, None) == RuleVerdict::Always)
+        self.temporary || self.rules.iter().all(|rule| verdict(rule, None) == RuleVerdict::Always)
     }
 
     /// `Same`.
@@ -284,7 +320,8 @@ impl Wire for AllowGrant {
 }
 
 /// C# `RemoteWorkspaceValidation.AntigravityCard` (M/Remote/RemoteWorkspaceModels.swift antigravityCard): ids, at most 16 actions,
-/// bounded text, and only well-formed rules [`verdict`] does not refuse — what a run event's card must be.
+/// bounded text, and only well-formed rules the action's verdict does not refuse (the one kept on it, else its text's: a host's card) —
+/// what a run event's card must be.
 pub fn valid_card(card: &PermissionRequest) -> bool {
     wire::identifier(&card.id)
         && wire::identifier(&card.run_id)
@@ -295,7 +332,7 @@ pub fn valid_card(card: &PermissionRequest) -> bool {
                 && !action.display_name.is_empty()
                 && action.display_name.len() <= 128
                 && action.target.as_deref().unwrap_or("").len() <= MAXIMUM_RULE_BYTES
-                && action.rule.as_deref().is_none_or(|rule| valid_rule(rule) && verdict(rule, None, None) != RuleVerdict::Refused)
+                && action.rule.as_deref().is_none_or(|rule| valid_rule(rule) && action.rule_verdict() != RuleVerdict::Refused)
         })
 }
 
@@ -369,9 +406,9 @@ pub fn is_permission(name: &str) -> bool {
     TOOL_PERMISSIONS.iter().any(|(_, permission)| *permission == name)
 }
 
-/// `DestructivePrograms`: programs that destroy data, escalate or end processes (by name in lower case, without a folder or .exe); mkfs…
-/// too.
-pub const DESTRUCTIVE_PROGRAMS: [&str; 25] = [
+/// `DestructivePrograms`: programs that destroy data, escalate or end processes (by name in lower case, without a folder or .exe),
+/// PowerShell's aliases for them too (`ri`, `spps`); mkfs… too.
+pub const DESTRUCTIVE_PROGRAMS: [&str; 27] = [
     "rm",
     "rmdir",
     "unlink",
@@ -397,6 +434,8 @@ pub const DESTRUCTIVE_PROGRAMS: [&str; 25] = [
     "stop-process",
     "stop-computer",
     "restart-computer",
+    "ri",
+    "spps",
 ];
 
 /// `Interpreters`: shells and interpreters, once alone or with an inline-code flag.
@@ -430,8 +469,8 @@ pub const INTERPRETERS: [&str; 24] = [
 /// `ProgramFirst`: interpreters whose first argument is their program, once whatever follows.
 pub const PROGRAM_FIRST: [&str; 2] = ["awk", "gawk"];
 
-/// `Wrappers`: programs that run the command after them, once whatever follows.
-pub const WRAPPERS: [&str; 23] = [
+/// `Wrappers`: programs that run the command (or the code) after them, PowerShell's among them, once whatever follows.
+pub const WRAPPERS: [&str; 30] = [
     "env",
     "xargs",
     "nohup",
@@ -455,6 +494,13 @@ pub const WRAPPERS: [&str; 23] = [
     "wsl",
     "setsid",
     "script",
+    "iex",
+    "invoke-expression",
+    "saps",
+    "start-process",
+    "start",
+    "icm",
+    "invoke-command",
 ];
 
 /// `InfoFlags`: options that only print an interpreter's version or help.
@@ -478,7 +524,7 @@ fn trim_quotes(word: &str) -> &str {
 /// `OnceReasonOf`: why a rule may be allowed only once, checked in this order; None for a rule that may be kept or is refused.
 /// `protected_folders`: the folders file rules keep out of (None: this computer's, [`protected_folders`]).
 pub fn once_reason_of(rule: &str, protected_folders: Option<&[String]>) -> Option<OnceReason> {
-    if verdict(rule, protected_folders, None) != RuleVerdict::Once {
+    if verdict(rule, protected_folders) != RuleVerdict::Once {
         return None;
     }
     parts(rule).and_then(|(_, argument)| command_reason(argument))
@@ -568,17 +614,18 @@ pub fn parts(rule: &str) -> Option<(&str, &str)> {
     Some((&rule[..open], &rule[open + 1..rule.len() - 1]))
 }
 
-static APP_DATA_FOLDER: RwLock<Option<PathBuf>> = RwLock::new(None);
+static APP_FOLDERS: RwLock<Vec<PathBuf>> = RwLock::new(Vec::new());
 
-/// `AppDataFolder`: the app's data folder (where the ledger lives); the desktop service sets it. No file rule may reach into it or above
-/// it.
-pub fn app_data_folder() -> Option<PathBuf> {
-    APP_DATA_FOLDER.read().ok().and_then(|folder| folder.clone())
+/// `AppDataFolder`: the app's own folders — its data folder (where the ledger lives with `--allow-state-write`) and this machine's local
+/// folder for it (the ledger otherwise, the browser's data, the file originals); the host sets them. No file rule may reach into them or
+/// above them.
+pub fn app_folders() -> Vec<PathBuf> {
+    APP_FOLDERS.read().map(|folders| folders.clone()).unwrap_or_default()
 }
 
-pub fn set_app_data_folder(folder: Option<PathBuf>) {
-    if let Ok(mut current) = APP_DATA_FOLDER.write() {
-        *current = folder;
+pub fn set_app_folders(folders: Vec<PathBuf>) {
+    if let Ok(mut current) = APP_FOLDERS.write() {
+        *current = folders.into_iter().filter(|folder| !folder.as_os_str().is_empty()).collect();
     }
 }
 
@@ -588,63 +635,294 @@ pub fn user_profile() -> Option<PathBuf> {
 }
 
 /// `ProtectedFolders`: the folders no file rule may reach into or above — agy's own `%USERPROFILE%\.gemini` (an always rule there would
-/// let agy rewrite its own permissions) and the app's data folder with its ledger, each as written and with its links resolved.
+/// let agy rewrite its own permissions) and the app's own folders with its ledger ([`app_folders`]), as written: nothing here asks the
+/// disk. [`checked_verdict`] also compares them as the file system names them.
 pub fn protected_folders() -> Vec<String> {
     let mut folders = vec![];
-    let mut add = |path: &Path| {
-        let written = path.to_string_lossy().into_owned();
-        let resolved = resolved_path(&written);
-        folders.push(written.clone());
-        if let Some(resolved) = resolved.filter(|r| *r != written) {
-            folders.push(resolved);
-        }
-    };
     if let Some(home) = user_profile() {
-        add(&home.join(".gemini"));
+        folders.push(home.join(".gemini").to_string_lossy().into_owned());
     }
-    if let Some(app) = app_data_folder().filter(|a| !a.as_os_str().is_empty()) {
-        add(&app);
-    }
+    folders.extend(app_folders().iter().map(|folder| folder.to_string_lossy().into_owned()));
     folders
 }
 
-/// `Verdict(rule, protectedFolders, resolvingLinks)`. `protected_folders`: the folders file rules keep out of, compared as written (the
-/// shared cases); None uses this computer's ([`protected_folders`]). `resolving_links` (by default when None: when `protected_folders`
-/// is None) also checks the rule's path with its links resolved.
-pub fn verdict(rule: &str, protected_folders: Option<&[String]>, resolving_links: Option<bool>) -> RuleVerdict {
+/// The permissions whose rule names a path.
+fn file_permission(name: &str) -> bool {
+    name == "write_file" || name == "read_file"
+}
+
+/// `WindowsDrivePath`: `X:\…` or `X:/…` (an ASCII letter, a colon, a separator) with no further colon (no stream, such as
+/// `::$INDEX_ALLOCATION`) and no `~` (no 8.3 name, such as `GEMINI~1`): never `\\host\share`, `\\?\`, `\\.\`, `//?/` or a path relative
+/// to a drive.
+pub fn windows_drive_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
+        && !path[2..].contains(':')
+        && !path.contains('~')
+}
+
+/// `RootedPath`: a Mac (Unix) path from the root, `/…`, that does not start with `//`.
+pub fn rooted_path(path: &str) -> bool {
+    path.starts_with('/') && !path.starts_with("//")
+}
+
+/// `PlainLocalPath` as text (S-H1), read before anything on disk is asked for the path (a UNC name makes Windows connect to its host and
+/// send the user's NetNTLM hash, and an unreachable one stalls for 21 s): [`windows_drive_path`] where paths follow Windows, else
+/// [`rooted_path`]. On Windows its drive must also be a fixed one, which [`checked_verdict`] asks.
+pub fn plain_local_path(path: &str, windows: bool) -> bool {
+    if windows { windows_drive_path(path) } else { rooted_path(path) }
+}
+
+static URL_SCHEME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\A[A-Za-z][A-Za-z0-9+.\-]*://").expect("regex"));
+
+/// `PlainUrlAuthority` (S-M2): a URL rule's authority (after `scheme://`, else from the start, up to the first `/`, `?` or `#`) is a plain
+/// host — no `\`, `@`, `%`, whitespace, control character or anything beyond ASCII, and not empty after a scheme. A WHATWG parser reads
+/// `https://evil.example\@docs.python.org/x` as evil.example, which the card would have shown as docs.python.org.
+pub fn plain_url_authority(value: &str) -> bool {
+    let start = URL_SCHEME.find(value).map_or(0, |scheme| scheme.end());
+    let end = value[start..].find(['/', '?', '#']).map_or(value.len(), |at| start + at);
+    if start > 0 && end == start {
+        return false;
+    }
+    value[start..end].chars().all(|c| !matches!(c, '\\' | '@' | '%') && c > ' ' && c < '\u{7F}')
+}
+
+/// `PlainCommandLine` (S-M1): every character is one a kept command rule may hold — ASCII letters and digits, space and `._/:=@+,-`.
+pub fn plain_command_line(command: &str) -> bool {
+    command.chars().all(|c| c.is_ascii_alphanumeric() || " ._/:=@+,-".contains(c))
+}
+
+/// `HiddenCharacter` (S-M1): whitespace other than space and tab (U+0085, U+00A0, U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F,
+/// U+3000; the control characters among it are refused anyway) and the format and bidi characters that hide or reorder what a rule shows
+/// (U+200B–U+200F, U+202A–U+202E, U+2066–U+2069, U+FEFF).
+pub fn hidden_character(c: char) -> bool {
+    (c.is_whitespace() && c != ' ' && c != '\t')
+        || matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
+}
+
+/// `Verdict(rule, protectedFolders)`: what may be done with `rule` on this computer, read from its text alone — nothing here asks the disk,
+/// so the parser and the page may call it. A file rule's path must be a plain local path in this computer's form ([`plain_local_path`])
+/// outside the protected folders, compared as written: `protected_folders` (the shared cases), None this computer's
+/// ([`protected_folders`]). A file rule it lets through is asked of the disk before a card offers it and again before it is added
+/// ([`checked_verdict`]).
+pub fn verdict(rule: &str, protected_folders: Option<&[String]>) -> RuleVerdict {
+    let windows = os::windows();
+    let computed;
+    let folders = match protected_folders {
+        Some(folders) => folders,
+        None => {
+            computed = self::protected_folders();
+            &computed
+        }
+    };
+    judge(rule, folders, &|path| plain_local_path(path, windows))
+}
+
+/// `TextVerdict`: a rule another computer's card names (a host's), judged by its text alone — a file rule's path is either platform's
+/// plain local path, nothing on this computer's disk is asked and none of its folders applies. The host judged the rule on its own
+/// computer, and judges the allow's rules again before it adds them.
+pub fn text_verdict(rule: &str) -> RuleVerdict {
+    judge(rule, &[], &|path| windows_drive_path(path) || rooted_path(path))
+}
+
+/// `Judge`: the rule's text against `folders` (as written), its path plain when `plain` says so.
+fn judge(rule: &str, folders: &[String], plain: &dyn Fn(&str) -> bool) -> RuleVerdict {
     let Some((name, argument)) = parts(rule) else { return RuleVerdict::Refused };
     if !is_permission(name) || refused_argument(argument) {
         return RuleVerdict::Refused;
     }
-    if name == "write_file" || name == "read_file" {
-        let mut paths = vec![argument.to_string()];
-        if resolving_links.unwrap_or(protected_folders.is_none())
-            && let Some(resolved) = resolved_path(argument).filter(|r| r != argument)
-        {
-            paths.push(resolved);
+    if file_permission(name) {
+        // Text first: a UNC or device path is never handed to the file system (it would connect to the host it names).
+        if !plain(argument) {
+            return RuleVerdict::Refused;
         }
-        let computed;
-        let folders = match protected_folders {
-            Some(folders) => folders,
-            None => {
-                computed = self::protected_folders();
-                &computed
-            }
-        };
-        let guarded: Vec<String> = folders.iter().filter_map(|f| normalized_path(f)).collect();
-        for path in &paths {
-            let Some(normalized) = normalized_path(path) else { return RuleVerdict::Refused };
-            if guarded.iter().any(|folder| within(&normalized, folder) || within(folder, &normalized)) {
-                return RuleVerdict::Refused;
-            }
+        let Some(normalized) = normalized_path(argument) else { return RuleVerdict::Refused };
+        if guarded(&[normalized], folders.iter().filter_map(|folder| normalized_path(folder)).collect()) {
+            return RuleVerdict::Refused;
         }
     }
-    // A risky command, a shell or interpreter running code, or one that names agy's own folder may run once, never for good.
-    if name == "command" && command_reason(argument).is_some() { RuleVerdict::Once } else { RuleVerdict::Always }
+    if name == "read_url" && !plain_url_authority(argument) {
+        return RuleVerdict::Refused;
+    }
+    // A risky command, a shell or interpreter running code, one that names agy's own folder, or any line beyond plain ASCII may run
+    // once, never for good: a kept rule is a prefix, and quotes, $, ~, \, % and the like let other commands match it.
+    if name != "command" {
+        return RuleVerdict::Always;
+    }
+    if command_reason(argument).is_none() && plain_command_line(argument) { RuleVerdict::Always } else { RuleVerdict::Once }
 }
 
-/// `NormalizedPath`: an absolute path compared without case, `\` as `/`, `.` and `..` taken out and no trailing slash; None when it is
-/// not absolute (`/…`, `C:\…`).
+/// One of `paths` is one of `folders`, inside one or above one.
+fn guarded(paths: &[String], folders: Vec<String>) -> bool {
+    paths.iter().any(|path| folders.iter().any(|folder| within(path, folder) || within(folder, path)))
+}
+
+/// `Verdict` with this computer's disk asked (S-H1, S-H2), on a blocking thread — never the parser's or the page's. [`verdict`] first, by
+/// the rule's text, against this computer's protected folders and `extra_folders` (the leases' settings folder and ledger folder); then a
+/// file rule's path must be on a fixed drive (Windows), and it is compared with every protected folder as written, with the links along
+/// it read, and as the file system names the longest part of it that exists ([`disk_forms`], the folders likewise). A link that leads
+/// anywhere but a local path refuses the rule, and nothing there is asked. A probe that cannot ask refuses every file rule.
+pub fn checked_verdict(rule: &str, probe: &dyn PathProbe, extra_folders: &[String]) -> RuleVerdict {
+    let mut folders = protected_folders();
+    folders.extend(extra_folders.iter().cloned());
+    let text = verdict(rule, Some(&folders));
+    let Some((name, argument)) = parts(rule) else { return RuleVerdict::Refused };
+    if text == RuleVerdict::Refused || !file_permission(name) {
+        return text;
+    }
+    if !probe.checks_paths() {
+        return RuleVerdict::Refused;
+    }
+    let windows = os::windows();
+    let local =
+        |path: &str| plain_local_path(path, windows) && (!windows || path.chars().next().is_some_and(|letter| probe.fixed_drive(letter)));
+    if !local(argument) {
+        return RuleVerdict::Refused;
+    }
+    let Some(forms) = disk_forms(argument, probe, &local) else { return RuleVerdict::Refused };
+    let mut paths = vec![];
+    for form in std::iter::once(argument.to_string()).chain(forms) {
+        let Some(normalized) = normalized_path(&form) else { return RuleVerdict::Refused };
+        paths.push(normalized);
+    }
+    let mut guarded_forms: Vec<String> = vec![];
+    for folder in &folders {
+        guarded_forms.extend(normalized_path(folder));
+        // A folder that is no local path is compared as written only: nothing of it is asked.
+        if local(folder)
+            && let Some(more) = disk_forms(folder, probe, &local)
+        {
+            guarded_forms.extend(more.iter().filter_map(|form| normalized_path(form)));
+        }
+    }
+    if guarded(&paths, guarded_forms) { RuleVerdict::Refused } else { text }
+}
+
+/// `Judged`: a card made from agy's stream on this computer, each action's verdict worked out once with the disk asked
+/// ([`checked_verdict`]) and kept on it; a rule the disk checks refuse leaves its action without one (the card shows no rule). Runs off the
+/// parser's and the page's threads.
+pub fn judged(mut card: PermissionRequest, probe: &dyn PathProbe, extra_folders: &[String]) -> PermissionRequest {
+    for action in &mut card.actions {
+        let verdict = action.rule.as_deref().map_or(RuleVerdict::Refused, |rule| checked_verdict(rule, probe, extra_folders));
+        if verdict == RuleVerdict::Refused {
+            action.rule = None;
+        }
+        action.verdict = Some(verdict);
+    }
+    card
+}
+
+/// The forms a local path is compared in besides as written (C# `ResolvedPath`): with every link along it read, never followed — where one
+/// leads must itself be a local path before anything there is asked, so a link to `\\host\share` is never opened —, then the longest part
+/// of that which exists as the file system names it, the rest as written. None (refused) when a link leads to a path that is not local,
+/// links loop, or the file system names nothing of it.
+fn disk_forms(path: &str, probe: &dyn PathProbe, local: &dyn Fn(&str) -> bool) -> Option<Vec<String>> {
+    let resolved = resolved(path, probe, local)?;
+    let canonical = canonical(&resolved, probe, local)?;
+    Some(vec![resolved.to_string_lossy().into_owned(), canonical.to_string_lossy().into_owned()])
+}
+
+/// `Path.GetFullPath` (nothing on disk asked): absolute, `.` and `..` taken out (on Windows a segment's trailing dots and spaces too, as
+/// `GetFullPathNameW` drops them).
+fn lexically_full(path: &Path) -> Option<PathBuf> {
+    let absolute = std::path::absolute(path).ok()?;
+    let mut result = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::ParentDir => {
+                result.pop();
+            }
+            Component::CurDir => {}
+            other => result.push(other.as_os_str()),
+        }
+    }
+    Some(result)
+}
+
+/// A full path's root and its parts.
+fn split(path: &Path) -> (PathBuf, VecDeque<OsString>) {
+    let mut root = PathBuf::new();
+    let mut parts = VecDeque::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => root.push(component.as_os_str()),
+            Component::Normal(part) => parts.push_back(part.to_os_string()),
+            Component::CurDir | Component::ParentDir => {}
+        }
+    }
+    (root, parts)
+}
+
+/// The path with every link along it read (a link to a link, or a link under one, likewise), at most 40 of them.
+fn resolved(path: &str, probe: &dyn PathProbe, local: &dyn Fn(&str) -> bool) -> Option<PathBuf> {
+    let (mut current, mut parts) = split(&lexically_full(Path::new(path))?);
+    let mut hops = 0;
+    while let Some(part) = parts.pop_front() {
+        let next = current.join(&part);
+        let Some(target) = probe.link_target(&next) else {
+            current = next;
+            continue;
+        };
+        hops += 1;
+        // A share or device as written (`\\host\share`, `//host/share`, which a full path would make look like a local one) refuses it.
+        let written = target.to_string_lossy();
+        if hops > 40 || written.starts_with("\\\\") || written.starts_with("//") {
+            return None;
+        }
+        // A relative target is the link's folder's.
+        let leads = lexically_full(&current.join(target))?;
+        if !local(&leads.to_string_lossy()) {
+            return None;
+        }
+        // The target is walked from its own root.
+        let (root, rest) = split(&leads);
+        current = root;
+        parts = rest.into_iter().chain(parts).collect();
+    }
+    Some(current)
+}
+
+/// The longest part of `path` that exists as the file system names it, the rest as written.
+fn canonical(path: &Path, probe: &dyn PathProbe, local: &dyn Fn(&str) -> bool) -> Option<PathBuf> {
+    let mut existing = path.to_path_buf();
+    let mut rest: Vec<OsString> = vec![];
+    loop {
+        if let Some(named) = probe.final_path(&existing) {
+            if !local(&named.to_string_lossy()) {
+                return None;
+            }
+            let mut full = named;
+            for part in rest.iter().rev() {
+                full.push(part);
+            }
+            return Some(full);
+        }
+        rest.push(existing.file_name()?.to_os_string());
+        if !existing.pop() {
+            return None;
+        }
+    }
+}
+
+/// C# `ToLowerInvariant` (S-L1): each character lowered on its own, kept when its lower case is more than one character (`İ`), never by
+/// its neighbours (str's lowering makes a word's last `Σ` a final `ς`, so `ΑΣ` and `Ασ` would differ).
+fn lower(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            let mut lowered = c.to_lowercase();
+            match (lowered.next(), lowered.next()) {
+                (Some(one), None) => one,
+                _ => c,
+            }
+        })
+        .collect()
+}
+
+/// `NormalizedPath`: an absolute path compared without case (each character on its own, [`lower`]), `\` as `/`, `.` and `..` taken out
+/// and no trailing slash; None when it is not absolute (`/…`, `C:\…`).
 pub fn normalized_path(path: &str) -> Option<String> {
     let slashed = path.replace('\\', "/");
     let bytes = slashed.as_bytes();
@@ -659,10 +937,10 @@ pub fn normalized_path(path: &str) -> Option<String> {
             ".." => {
                 parts.pop();
             }
-            _ => parts.push(part.to_lowercase()),
+            _ => parts.push(lower(part)),
         }
     }
-    let prefix = if drive { slashed[..2].to_lowercase() } else { String::new() };
+    let prefix = if drive { slashed[..2].to_ascii_lowercase() } else { String::new() };
     Some(format!("{prefix}/{}", parts.join("/")))
 }
 
@@ -671,64 +949,13 @@ pub fn within(path: &str, folder: &str) -> bool {
     path == folder || path.starts_with(&if folder.ends_with('/') { folder.to_string() } else { format!("{folder}/") })
 }
 
-/// The target of the link at `path`, followed to its last link (`ResolveLinkTarget(returnFinalTarget: true)`); None when it is no link
-/// or cannot be read.
-fn final_target(path: &Path) -> Option<PathBuf> {
-    let mut current = path.to_path_buf();
-    let mut followed = false;
-    for _ in 0..40 {
-        let is_link = std::fs::symlink_metadata(&current).is_ok_and(|m| m.file_type().is_symlink());
-        if !is_link {
-            return followed.then_some(current);
-        }
-        let target = std::fs::read_link(&current).ok()?;
-        let joined = if target.is_absolute() { target } else { current.parent().map(|p| p.join(&target)).unwrap_or(target) };
-        current = lexically_full(&joined)?;
-        followed = true;
-    }
-    None
-}
-
-/// `Path.GetFullPath`: absolute, `.` and `..` taken out.
-fn lexically_full(path: &Path) -> Option<PathBuf> {
-    let absolute = std::path::absolute(path).ok()?;
-    let mut result = PathBuf::new();
-    for component in absolute.components() {
-        match component {
-            std::path::Component::ParentDir => {
-                result.pop();
-            }
-            std::path::Component::CurDir => {}
-            other => result.push(other.as_os_str()),
-        }
-    }
-    Some(result)
-}
-
-/// `ResolvedPath`: the path with every link along it resolved, as far as it exists; None when it is not absolute or cannot be read.
-pub fn resolved_path(path: &str) -> Option<String> {
-    if !normalize::fully_qualified(path) {
-        return None;
-    }
-    let full = lexically_full(Path::new(path))?;
-    let mut current = PathBuf::new();
-    for component in full.components() {
-        current.push(component.as_os_str());
-        if matches!(component, std::path::Component::Normal(_))
-            && std::fs::symlink_metadata(&current).is_ok_and(|m| m.file_type().is_symlink())
-        {
-            current = final_target(&current)?;
-        }
-    }
-    Some(current.to_string_lossy().into_owned())
-}
-
-/// `RefusedArgument`: empty, the whole disk or home (`/`, `~`, `C:\`), a wildcard, a parenthesis or a control character.
+/// `RefusedArgument`: empty, the whole disk or home (`/`, `~`, `C:\`), a wildcard, a parenthesis, a control character or a hidden one
+/// ([`hidden_character`]).
 pub fn refused_argument(argument: &str) -> bool {
     if argument.contains(['*', '(', ')']) {
         return true;
     }
-    if argument.chars().any(|c| (c as u32) < 0x20 || c as u32 == 0x7F) {
+    if argument.chars().any(|c| (c as u32) < 0x20 || c as u32 == 0x7F || hidden_character(c)) {
         return true;
     }
     let core = argument.trim_matches([' ', '\t']).trim_end_matches(['/', '\\']).trim_matches([' ', '\t']);
@@ -787,6 +1014,10 @@ pub struct DenialCollector {
     order: Vec<i64>,
 }
 
+/// How many denied steps one turn keeps (S-L9): a card names at most [`MAXIMUM_ACTIONS`], so a turn denied far more often keeps its first
+/// ones and no step after them grows the collector.
+pub const MAXIMUM_STEPS: usize = 256;
+
 /// The first `count` UTF-16 units, never cutting a surrogate pair (C# `Prefix`).
 fn prefix(value: &str, count: usize) -> String {
     let mut units = 0;
@@ -832,6 +1063,9 @@ impl DenialCollector {
         let Some(message) = Self::denial_message(info) else { return };
         let tool = info.and_then(|i| meta::text(i, "name")).or_else(|| meta::text(payload, "tool_name")).unwrap_or("tool");
         if !self.steps.contains_key(&index) {
+            if self.order.len() >= MAXIMUM_STEPS {
+                return;
+            }
             self.order.push(index);
         }
         let parameters = info.and_then(|i| meta::prop(i, "parameters"));
@@ -879,7 +1113,9 @@ impl DenialCollector {
         // A refusal the steps did not show (agy reports each permission once).
         let covered: HashSet<String> = result.iter().map(|a| a.action.clone()).collect();
         for (action, name) in reported.iter().filter(|(action, _)| !covered.contains(action)) {
-            add(DeniedAction::new(kind(action, action), action, name, None, None), &mut result);
+            let value =
+                DeniedAction { verdict: Some(RuleVerdict::Refused), ..DeniedAction::new(kind(action, action), action, name, None, None) };
+            add(value, &mut result);
         }
         result
     }
@@ -887,6 +1123,8 @@ impl DenialCollector {
     /// `Action`: what one denied step was. A command is allowed by its whole command line (`command(<line>)`, a word-prefix rule in agy);
     /// any other denial names its own rule ("user denied permission for write_file(/path)"), used as agy wrote it when it names the tool's
     /// own permission ([`TOOL_PERMISSIONS`]). A rule the safety rules refuse, or a tool outside the mapping, leaves the action without one.
+    /// The verdict is the rule's text's ([`verdict`]: the parser never asks the disk), kept on the action; a file rule's disk checks come
+    /// once the card is made ([`judged`]).
     pub fn action(tool: &str, parameters: Option<&Value>, message: &str) -> DeniedAction {
         let parameter = |names: &[&str]| -> Option<String> {
             names.iter().find_map(|name| {
@@ -896,15 +1134,23 @@ impl DenialCollector {
         let permission = tool_permission(tool);
         if permission == Some("command") {
             let line = parameter(&["CommandLine", "Command", "command"]);
-            let rule =
-                line.as_ref().map(|line| format!("command({line})")).filter(|rule| verdict(rule, None, None) != RuleVerdict::Refused);
-            return DeniedAction { kind: "command".into(), action: "command".into(), display_name: tool.into(), target: line, rule };
+            let judged = line.as_ref().map_or(RuleVerdict::Refused, |line| verdict(&format!("command({line})"), None));
+            let rule = line.as_ref().map(|line| format!("command({line})")).filter(|_| judged != RuleVerdict::Refused);
+            return DeniedAction {
+                kind: "command".into(),
+                action: "command".into(),
+                display_name: tool.into(),
+                target: line,
+                rule,
+                verdict: Some(judged),
+            };
         }
         if let Some(permission) = permission
             && let Some(named) = named_rule(message)
             && let Some((name, argument)) = parts(&named)
             && name == permission
-            && verdict(&named, None, None) != RuleVerdict::Refused
+            && let judged = verdict(&named, None)
+            && judged != RuleVerdict::Refused
         {
             let kind = kind(name, tool);
             let mut target = argument.to_string();
@@ -914,7 +1160,7 @@ impl DenialCollector {
             {
                 target = host;
             }
-            return DeniedAction::new(kind, name, tool, Some(&target), Some(&named));
+            return DeniedAction { verdict: Some(judged), ..DeniedAction::new(kind, name, tool, Some(&target), Some(&named)) };
         }
         let action = permission.unwrap_or(tool);
         let plain = kind(action, tool);
@@ -924,7 +1170,14 @@ impl DenialCollector {
             "command" => parameter(&["CommandLine"]),
             _ => None,
         };
-        DeniedAction { kind: plain.into(), action: action.into(), display_name: tool.into(), target: shown, rule: None }
+        DeniedAction {
+            kind: plain.into(),
+            action: action.into(),
+            display_name: tool.into(),
+            target: shown,
+            rule: None,
+            verdict: Some(RuleVerdict::Refused),
+        }
     }
 }
 
@@ -964,24 +1217,24 @@ pub fn named_rule(message: &str) -> Option<String> {
     valid_rule(rule).then(|| rule.to_string())
 }
 
-static URL_AUTHORITY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\A[A-Za-z][A-Za-z0-9+.\-]*://([^/?#]*)").expect("regex"));
-
-/// `Host`: the host of an absolute URL as written (`scheme://[user@]host[:port]/…`); None for anything else, a bare domain included.
+/// `Host` (S-M2): the host a WHATWG URL parser (the `url` crate) reads from an absolute URL of a special scheme (http, https, ws, wss, ftp),
+/// as such a parser gives it — lower case, an IPv4 address in any of its spellings (2130706433, 0x7f.1) in dotted decimal, an IPv6 one
+/// without its brackets. None for anything else: a bare domain, another scheme, an authority that is no plain host
+/// ([`plain_url_authority`]), or a host or port such a parser refuses. The card then shows what agy wrote.
 pub fn host(value: &str) -> Option<String> {
-    let captures = URL_AUTHORITY.captures(value)?;
-    let mut authority = captures.get(1).map_or("", |m| m.as_str());
-    if let Some(user) = authority.rfind('@') {
-        authority = &authority[user + 1..];
+    let scheme = URL_SCHEME.find(value)?;
+    if !plain_url_authority(value) {
+        return None;
     }
-    if authority.starts_with('[') {
-        let close = authority.find(']')?;
-        return (close > 1).then(|| authority[1..close].to_string());
+    let name = value[..scheme.end() - "://".len()].to_ascii_lowercase();
+    if !matches!(name.as_str(), "http" | "https" | "ws" | "wss" | "ftp") {
+        return None;
     }
-    let host = match authority.find(':') {
-        Some(colon) => &authority[..colon],
-        None => authority,
-    };
-    (!host.is_empty()).then(|| host.to_string())
+    match url::Url::parse(value).ok()?.host()? {
+        url::Host::Domain(domain) => (!domain.is_empty()).then(|| domain.to_string()),
+        url::Host::Ipv4(address) => Some(address.to_string()),
+        url::Host::Ipv6(address) => Some(address.to_string()),
+    }
 }
 
 // ── the cards of every pane ─────────────────────────────────────────────────────────────────────────────────────────────────

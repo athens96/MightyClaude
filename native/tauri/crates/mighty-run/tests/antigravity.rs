@@ -17,6 +17,8 @@ use mighty_run::permissions::ProviderInput;
 use mighty_run::{providers, strings};
 use serde_json::json;
 
+/// Every check in this binary pins English first: nothing here sets another language, and the OS's (Korean on a Korean machine) is only
+/// a default while none is set (`strings::locale` never overwrites a chosen one), so no check reads another's copy.
 fn english() {
     strings::set_language("en");
 }
@@ -337,6 +339,7 @@ fn the_tool_kinds_parameters_and_names() {
 /// run time; the fallback list never resets a model. (The move itself is mighty-core's load: tests/load.rs.)
 #[test]
 fn only_the_live_list_says_a_model_is_gone() {
+    english();
     let live: ModelCatalog = providers::antigravity_catalog("gemini-4-argon-high\tGemini 4 Argon (High)\n");
     assert!(
         mighty_run::antigravity::model_unavailable("gemini-2.5-pro", &live)
@@ -354,6 +357,7 @@ fn only_the_live_list_says_a_model_is_gone() {
 /// rest is W5-D's): a list kept from an earlier read (its latest read failed) never resets an Antigravity pane's model; a fresh one does.
 #[test]
 fn a_kept_list_retires_nothing() {
+    english();
     use mighty_run::model::ModelOption;
     let mut kept =
         ModelCatalog::new("cli", vec![ModelOption::new("default", "Default", "")], "").with_failure("claude: 종료 코드 1".into());

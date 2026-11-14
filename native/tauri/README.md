@@ -216,8 +216,16 @@ was refused (`antigravityPermission`, then the run service's board), and have th
 (`~/.gemini/antigravity-cli/brain`, read-only). The rules an allowed card puts in agy's own settings
 (`%USERPROFILE%\.gemini\antigravity-cli\settings.json`, `permissions.allow`, written only when the user presses 이번만 허용 or 항상 허용) are
 recorded in the ledger `antigravity-temporary-rules.json` — the profile's with `--allow-state-write`, else
-`%LOCALAPPDATA%\dev.mightycode.tauri\antigravity\<profile>` — and what a crash left there is taken out at the next start; no file rule may
-reach agy's `.gemini` folder, the ledger's folder or the profile. A send to an Antigravity pane whose model agy's live list lacks starts
+`%LOCALAPPDATA%\dev.mightycode.tauri\antigravity\<profile>` — and what a crash left in either place is taken out as the run service
+starts, before any agy run may start (the other place's ledger pruned too, the profile's never written without the flag). With the flag
+the ledger is the same file the C# app keeps in the profile; the local one is this port's alone and the C# app never reads it, so the
+C# app's own leftovers are its own launch's to take out. A file rule names only a plain local path (`X:\…` or `X:/…` on a fixed drive,
+no further `:`, no `~`; `/…` but not `//…` on the Mac), read as text before the disk is asked (a UNC name is never handed to the file
+system), and never reaches agy's `.gemini` folder, the ledger's folder, the profile or the app's local folder — compared as written,
+with its links read (one leading to a share refuses it) and as the file system names the longest part that exists (mighty-platform
+`PathProbe`: `GetDriveTypeW`, `GetFinalPathNameByHandleW`). A card's verdicts are worked out once, off the parser's thread, and kept on
+it; an allow is judged again before its rules go in. A command rule is kept for good only when its line is plain ASCII, and a URL
+rule names only a plain host. A send to an Antigravity pane whose model agy's live list lacks starts
 on agy's default (the pane's model set back with a note). The CLIs are read once at start (`ProviderCatalog::get_runtime`) and a pane's provider again when
 its models are asked for; until then the composer says it is checking the runtime.
 
@@ -275,6 +283,7 @@ What a later stage gives the composer, the cards and the Mighty views stays at i
 | An Antigravity card on the phone and over the remote wire (`MobilePermission.FromAntigravity`, `MobileAntigravityCard`, the permission route's answers, a remote pane's host holding the card's rules in its own settings, `RemoteWireStart.AntigravityGrant`), the dashboard's count of a pane's card (`WorkDashboard.Pending`) | none: AntigravityPermissionVerification.cs:494, :511, :534 (its phone half), :683, :727 are W8's; the dashboard is the frame's later stage | W8, W6 |
 | Saving the text setting (Settings › Text), the files and work map panes' phone routes, the work dashboard's usage chips | the setting lasts until the app quits; none | W6, W8, W6 |
 | `ModelsAfterAccountChange` (a sign-in or sign-out drops every model list of that provider: models.rs over `ModelCatalogRefresh::invalidate`, before the accounts section's whole-runtime read) | nothing signs in or out in the app yet, so no list is dropped for it | W6 |
+| The rest of AntigravityVerification.cs:158 `TheModelListLabelsAndInstall`: the catalog row's filtering and fallback, `Efforts`/`IsBeta`, `Executable` for codex and claude, the install command, the update label, the `ModelLabel` slugs, the off-Windows block | its model list and a fake agy's models are checked (tests/antigravity.rs, W5-D's model lists); the setup screen's rows are not | W6 |
 
 Settings › 페이즈별 모델's form (W6) must check every model it saves with `wire::model` (the composer's `ChangeModel` rule) before it
 reaches mighty-run's `model_settings` writes, which take what they are given, as C#'s `ModelSettingsFileStore` does: a value with a line
@@ -318,7 +327,10 @@ open file's handle asked where it is: `GetFileType`, `GetFinalPathNameByHandleW`
 PDF's first page through `Windows.Data.Pdf`), `Desktop` (show in Explorer through `SHOpenFolderAndSelectItems`, open with the default app
 through `ShellExecuteExW` refusing a type `AssocIsDangerous` or `PATHEXT` names, as Windows' launcher refuses programs, and a picture on
 the clipboard as `CF_DIBV5` and `PNG`) and `SaveDialog` (Tauri's dialog plugin, owned by the window). On the Mac they are stubs until its
-stage: the path is walked again after an open (C# off Windows), and the rest refuses.
+stage: the path is walked again after an open (C# off Windows), and the rest refuses. Beside them `PathProbe` (`platform::path_probe`)
+answers the Antigravity rule safety's questions about a path agy named, only once it passed the text check: a fixed drive
+(`GetDriveTypeW`), a link read without following it, what the file system calls a path (`GetFinalPathNameByHandleW`; the Mac's is real:
+`realpath`, no drive letters); its fake `RecordingPathProbe` records every question.
 
 The C# host never sends `host`, and every page change for it sits behind `import.meta.env.MODE === 'tauri'`, so the C# page build
 (`dist/`) is byte for byte what it was.
