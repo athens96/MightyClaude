@@ -38,6 +38,8 @@ mod process;
 #[cfg(windows)]
 pub mod pty;
 #[cfg(windows)]
+pub mod setup_files;
+#[cfg(windows)]
 pub mod setup_probe;
 #[cfg(windows)]
 pub mod shell_activity;
@@ -74,6 +76,7 @@ mod imp {
     pub use crate::prefs::RegistryPrefs;
     pub use crate::process::{KILLED_EXIT_CODE, WindowsProcessHost};
     pub use crate::pty::WindowsPtyHost;
+    pub use crate::setup_files::WindowsSetupFiles;
     pub use crate::variables::Variables;
     pub use crate::webview2_install::{download_bootstrapper, is_microsoft_signed, run_installer};
 

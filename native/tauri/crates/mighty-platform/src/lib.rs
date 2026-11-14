@@ -30,6 +30,7 @@ pub mod process;
 pub mod profile;
 pub mod pty;
 pub mod secrets;
+pub mod setup;
 pub mod surface;
 pub mod unsupported;
 pub mod update;
@@ -49,6 +50,7 @@ pub use profile::{
 };
 pub use pty::{PtyControl, PtyHost, PtyRequest, PtySession, PtySize, TerminalInput};
 pub use secrets::SecretVault;
+pub use setup::SetupFiles;
 pub use surface::{
     BrowserEvent, BrowserListener, BrowserOptions, BrowserSurface, DeviceRect, Drawing, LogicalRect, NativeSurface, PetWindow,
     SurfaceFactory, SurfaceKind, SurfaceState, TerminalOptions, TerminalSurface,

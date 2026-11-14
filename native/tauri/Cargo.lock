@@ -2137,10 +2137,19 @@ dependencies = [
 name = "mighty-tools"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
  "chrono",
+ "indexmap 2.14.2",
+ "mighty-composer",
+ "mighty-core",
+ "mighty-platform",
+ "mighty-platform-windows",
+ "mighty-run",
  "regex",
+ "serde_json",
  "sha2",
+ "tokio",
+ "url",
+ "uuid",
 ]
 
 [[package]]
