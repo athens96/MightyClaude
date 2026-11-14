@@ -500,18 +500,22 @@ impl Host {
         self.push(view, "shell", format!("{{\"kind\":\"shell\",\"shell\":{text}}}"));
     }
 
-    /// Sends what changed now: the delta (`Flush`), then the frame model when it changed.
+    /// Sends what changed now: the delta (`Flush`), then the frame model when it changed, then the native views an input changed
+    /// (after the state's lock is let go: a view's builder takes it).
     pub fn flush(&self) {
-        let mut view = self.view();
-        if !view.ready {
-            return;
+        {
+            let mut view = self.view();
+            if !view.ready {
+                return;
+            }
+            let revision = view.revision;
+            let View { snapshot, bridge, .. } = &mut *view;
+            if let Some(delta) = bridge.flush(snapshot, revision) {
+                self.push(&view, "delta", delta);
+            }
+            self.push_shell(&mut view);
         }
-        let revision = view.revision;
-        let View { snapshot, bridge, .. } = &mut *view;
-        if let Some(delta) = bridge.flush(snapshot, revision) {
-            self.push(&view, "delta", delta);
-        }
-        self.push_shell(&mut view);
+        crate::native::flush(self);
     }
 
     /// `Schedule`: a flush about one frame from now, which every change until then rides along with.
@@ -580,8 +584,9 @@ impl Host {
                 while !host.closed.load(Ordering::SeqCst) {
                     std::thread::sleep(Duration::from_millis(250));
                     host.pass("shell-clock", || {
-                        let mut view = host.view();
-                        host.push_shell(&mut view);
+                        host.push_shell(&mut host.view());
+                        // C# `webShellClock.Tick += PushWebNatives`: the native views and the text setting, each when it changed.
+                        crate::native::tick(&host);
                     });
                 }
             })

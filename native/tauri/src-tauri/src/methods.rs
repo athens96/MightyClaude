@@ -190,6 +190,9 @@ pub fn registry() -> Registry {
     crate::files::register(&mut methods);
     crate::history::register(&mut methods);
     crate::frame::register(&mut methods);
+    // W6: the native forms (native.rs) and Settings with the guide (settings/mod.rs).
+    crate::native::register(&mut methods);
+    crate::settings::register(&mut methods);
     methods.add("openUrl", |_host: Arc<Host>, args| async move {
         // C# `openUrl`: an http, https or mailto address, to the user's default handler; anything else does nothing.
         if let Some(url) = text(&args, "url").and_then(openable_url) {
@@ -204,7 +207,7 @@ pub fn registry() -> Registry {
 /// `parsed.AbsoluteUri`: the address parsed, of one of those schemes, as its normalized text (what the shell is given is what was
 /// checked). An address holding a control character is refused whole: the parser would drop a tab or a line break inside it, and
 /// trim them around it, so the text checked would not be the text written.
-fn openable_url(url: &str) -> Option<String> {
+pub(crate) fn openable_url(url: &str) -> Option<String> {
     if url.chars().any(char::is_control) {
         return None;
     }
