@@ -1135,7 +1135,18 @@ fn a_hermes_session_is_continued_only_where_its_yolo_and_answer_allow() {
             && resume("manual", Some(3), Some(false)) == (Some(id.to_string()), None),
         "matching sessions are continued"
     );
-    assert_eq!(resume("manual", None, None), (Some(id.to_string()), None), "an unreadable record changes nothing");
+    assert!(
+        resume("manual", None, None) == (None, None)
+            && resume("manual", Some(3), None) == (None, None)
+            && resume("acceptEdits", Some(3), None) == (None, None)
+            && resume("plan", None, None) == (None, None),
+        "a pane that asks starts a new session when the session's policy receipt cannot be read"
+    );
+    assert!(
+        resume("fullAccess", None, None) == (Some(id.to_string()), None)
+            && resume("fullAccess", Some(3), None) == (Some(id.to_string()), None),
+        "a full-access pane continues it as asked"
+    );
 }
 
 #[test]

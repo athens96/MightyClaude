@@ -85,7 +85,7 @@ pub type FileOriginals = Arc<dyn Fn(&str, &str, &str, &str, &str, &Value) + Send
 pub type PiSessions = Arc<dyn Fn(&str, &str, &BTreeMap<String, String>) -> bool + Send + Sync>;
 /// What Hermes's `state.db` says of a session before a run continues it (C# `HermesSessions.MessageCount` and `StartedWithFullAccess`
 /// of `HermesSessions.StateDatabase(environment)`): given the run's CLI environment and the session id, its message count and whether it
-/// started with `--yolo`, each None when it cannot be read (which changes nothing).
+/// started with `--yolo`, each None when it cannot be read (a pane that asks then starts a new session: `agents::hermes_resume`).
 pub type HermesSessionReader = Arc<dyn Fn(&BTreeMap<String, String>, &str) -> (Option<i32>, Option<bool>) + Send + Sync>;
 
 /// `RunManager`'s constructor arguments and settable properties.
@@ -113,7 +113,8 @@ pub struct RunManagerOptions {
     /// The home an Antigravity run's sub-agents keep their transcripts under (`AntigravityRecords.Brain(home)`); None is the user's
     /// profile (C#'s `Environment.SpecialFolder.UserProfile`). Checks pass a fake one.
     pub antigravity_home: Option<PathBuf>,
-    /// Hermes's session facts (None: nothing is read, and a pane's session is continued as asked).
+    /// Hermes's session facts (None: nothing is read, as for a record that cannot be read: a pane that asks starts a new session, a
+    /// full-access one continues it as asked).
     pub hermes_session: Option<HermesSessionReader>,
 }
 
@@ -451,9 +452,12 @@ impl RunManager {
         lock(&self.inner.runs).get(id).cloned()
     }
 
-    /// `RespondToToolPermission`: 이번만 허용 / 거부 for one waiting request of one run.
+    /// `RespondToToolPermission`: 이번만 허용 / 거부 for one waiting request of one run. Once a stop has begun no answer goes (as
+    /// `AnswerQuestionnaire`): an Allow pressed in Hermes's second between its `session/cancel` and its end never reaches it.
     pub fn respond_to_tool_permission(&self, session_id: &str, request_id: &str, allow: bool) -> Result<()> {
-        let Some(run) = self.run(session_id) else { return Err(RunError::State(copy::already_settled())) };
+        let Some(run) = self.run(session_id).filter(|run| !run.cancel.is_cancelled()) else {
+            return Err(RunError::State(copy::already_settled()));
+        };
         if let Some(codex) = run.codex() {
             return codex.respond(request_id, allow);
         }
@@ -658,7 +662,17 @@ struct Exec {
     todo_run_id: Option<String>,
     /// Where `ReadChildren` finds the run's sub-agents (set once the run is under way), and whether reading them failed.
     children: Mutex<Children>,
+    hermes_saves: HermesSaves,
     emit: Emit,
+}
+
+/// The Hermes pickers being written ([`Exec::save_hermes_models`]): numbered as asked for, the newest written last, each awaited at the
+/// run's end.
+#[derive(Default)]
+struct HermesSaves {
+    next: std::sync::atomic::AtomicU64,
+    written: Arc<Mutex<u64>>,
+    pending: Mutex<Vec<std::thread::JoinHandle<()>>>,
 }
 
 /// C#'s `codexHome` (here the CLI's environment the run started with, which says where Codex keeps it), `antigravityBrain` and
@@ -749,16 +763,21 @@ impl Exec {
     }
 
     /// `StopHermes`: Hermes's turn runs in its gateway — `session/cancel` goes first, and the process ends a second later
-    /// (M/ProcessRunner.swift cancelGrace). Without a turn in flight the process ends at once.
+    /// (M/ProcessRunner.swift cancelGrace). Without a turn in flight the process ends at once. Before the cancel every approval still
+    /// waiting is answered `cancelled`, as ACP's prompt turn says the client must ([`AcpChannel::cancel_permissions`]).
     fn stop_hermes(run: &Arc<Run>) {
         let control = lock(&run.child).clone();
-        let frame = run.acp().and_then(|acp| acp.cancellation.take());
+        let acp = run.acp();
+        let frame = acp.as_ref().and_then(|acp| acp.cancellation.take());
         let Some(frame) = frame else {
             if let Some(control) = control {
                 control.kill();
             }
             return;
         };
+        if let Some(acp) = &acp {
+            acp.cancel_permissions();
+        }
         {
             let _gate = lock(&run.input_gate);
             if !run.acp_input_closed.load(Ordering::SeqCst)
@@ -883,19 +902,22 @@ impl Exec {
                     && let Ok(value) = serde_json::from_str::<Value>(line)
                 {
                     match value.get("type").and_then(Value::as_str) {
-                        Some("acp.session") => agents::hermes_save_models(value.get("configOptions"), Some(models)),
+                        Some("acp.session") => consume_exec.save_hermes_models(value.get("configOptions"), models),
                         Some("acp.update")
                             if value.get("update").and_then(|u| u.get("sessionUpdate")).and_then(Value::as_str)
                                 == Some("config_option_update") =>
                         {
-                            agents::hermes_save_models(value["update"].get("configOptions"), Some(models));
+                            consume_exec.save_hermes_models(value["update"].get("configOptions"), models);
                         }
                         _ => {}
                     }
                 }
                 consume_exec.consume(line);
             }),
+            // Under the node gate, which the run's last status is sent under too: a card is handed over before that status or not at all.
+            // (The channel delivers one callback at a time, so a sink answering at once never comes back in here while it is held.)
             emit: Arc::new(move |value| {
+                let _gate = lock(&emit_run.node_gate);
                 if !emit_run.finished.load(Ordering::SeqCst)
                     && let Some(sink) = &permission
                 {
@@ -930,6 +952,32 @@ impl Exec {
             },
             hooks,
         ))
+    }
+
+    /// `HermesAgent.SaveModels` off the run's own threads (a file read and write, asked for from the stdout pump): when two overlap the
+    /// newer picker is the one kept, and the run's end waits for every save ([`Exec::saved_hermes_models`]), so the menu read after a
+    /// Hermes run has it.
+    fn save_hermes_models(&self, options: Option<&Value>, path: &Path) {
+        let Some(options) = options.cloned() else { return };
+        let saves = &self.hermes_saves;
+        let number = saves.next.fetch_add(1, Ordering::SeqCst) + 1;
+        let (written, path) = (saves.written.clone(), path.to_path_buf());
+        let save = std::thread::spawn(move || {
+            let mut last = lock(&written);
+            if *last < number {
+                *last = number;
+                agents::hermes_save_models(Some(&options), Some(&path));
+            }
+        });
+        lock(&saves.pending).push(save);
+    }
+
+    /// Waits for every Hermes picker save begun so far (on a blocking thread).
+    fn saved_hermes_models(&self) {
+        let pending = std::mem::take(&mut *lock(&self.hermes_saves.pending));
+        for save in pending {
+            let _ = save.join();
+        }
     }
 
     /// `HandOver`: one graph node to the host, unless the run's last status is already out.
@@ -998,6 +1046,7 @@ impl Exec {
         let acp = lock(&run.acp).take();
         if let Some(acp) = acp {
             acp.cancel_all();
+            acp.drain();
         }
         let child = lock(&run.child).take();
         if let Some(child) = child {
@@ -1094,6 +1143,7 @@ impl Exec {
             plan_gate: Mutex::new(()),
             todo_run_id,
             children: Mutex::new(Children::default()),
+            hermes_saves: HermesSaves::default(),
             emit: emit.clone(),
         });
         let reopened = exec.clone();
@@ -1143,10 +1193,11 @@ impl Exec {
             dialogs.cancel_all();
         }
         exec.parser.set_pi_dialogs(None);
-        // The channel's callbacks hold the run: let them go with it.
+        // The channel's callbacks hold the run: let them go with it, once every one it queued is delivered.
         let acp = lock(&run.acp).take();
         if let Some(acp) = acp {
             acp.cancel_all();
+            acp.drain();
         }
         if let Some(connection) = mod_connection {
             connection.dispose();
@@ -1350,6 +1401,12 @@ impl Exec {
         let request = &run.request;
         run.finalizing.store(true, Ordering::SeqCst);
         self.graph_stop.cancel();
+        // The pump takes no line from now on: what the ACP channel queued before (a card, the end of a reply) goes out first, and the
+        // picker a Hermes session offered is on disk before the run's end is told.
+        if let Some(acp) = run.acp() {
+            acp.drain();
+        }
+        self.saved_hermes_models();
         if request.provider == "claude" && request.kind != "shell" {
             let _gate = lock(&self.plan_gate);
             if !run.finished.load(Ordering::SeqCst)
@@ -1670,11 +1727,19 @@ impl Exec {
                 let mode = request.settings().permission_mode;
                 // Hermes fixes `--yolo` when a session starts: a session that started with it is not continued by a pane that asks (it
                 // would not ask), one that started without it keeps asking; a session whose first request never got an answer is not
-                // continued (it keeps the provider it was made with and fails again). A record that cannot be read changes nothing.
+                // continued (it keeps the provider it was made with and fails again); a pane that asks does not continue one whose
+                // receipt cannot be read. `state.db` is read on a blocking thread.
                 if provider == "hermes"
                     && let Some(resume) = launch.resume_id.clone()
                 {
-                    let (count, full) = inner.options.hermes_session.as_ref().map_or((None, None), |read| read(&environment, &resume));
+                    let (count, full) = match inner.options.hermes_session.clone() {
+                        Some(read) => {
+                            let (environment, session) = (environment.clone(), resume.clone());
+                            tokio::task::spawn_blocking(move || read(&environment, &session)).await.unwrap_or((None, None))
+                        }
+                        None => (None, None),
+                    };
+                    self.cancelled()?;
                     let (resume_id, notice) = agents::hermes_resume(&resume, &mode, count, full);
                     launch.resume_id = resume_id;
                     hermes_notice = notice.map(strings::get);
@@ -1801,6 +1866,8 @@ impl Exec {
                         exec.consume(line);
                     }
                 }),
+                // The channel's callbacks run in its caller right after its lock, none deferred (so none is left once the pumps are
+                // done, and nothing needs draining as the ACP channel's queue does); a sink may answer at once, inside this call.
                 emit: Arc::new(move |value| {
                     if !emit_run.finished.load(Ordering::SeqCst)
                         && let Some(sink) = &permission
@@ -1952,6 +2019,10 @@ impl Exec {
                 }
             }
             _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
+        }
+        // What the ACP channel queued from the agent's last lines reaches the parser before its flush.
+        if let Some(acp) = run.acp() {
+            acp.drain();
         }
         self.parser.flush();
         let codex = run.codex();

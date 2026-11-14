@@ -1252,8 +1252,14 @@ impl ProviderCatalog {
             None => {
                 fallback(id).with_failure(strings::get_with("run.error.cliExecutableMissing", &[("name", strings::provider_label(id))]))
             }
-            // Hermes lists models only inside a session: the picker its last session offered is kept and read here.
-            Some(_) if id == "hermes" => crate::acp::agents::hermes_cached_catalog(self.hermes_model_cache().as_deref()),
+            // Hermes lists models only inside a session: the picker its last session offered is kept and read here (on a blocking
+            // thread: a file read).
+            Some(_) if id == "hermes" => {
+                let kept = self.hermes_model_cache();
+                tokio::task::spawn_blocking(move || crate::acp::agents::hermes_cached_catalog(kept.as_deref()))
+                    .await
+                    .unwrap_or_else(|_| crate::acp::agents::hermes_cached_catalog(None))
+            }
             Some(command) if matches!(id, "gemini" | "pi" | "opencode") => self.read_list_command(id, command, Some(directory)).await,
             Some(command) => self.read_models(id, command, Some(directory), None).await,
         };

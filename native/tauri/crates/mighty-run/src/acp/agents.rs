@@ -150,7 +150,9 @@ pub fn hermes_config_values(request: &StartRunRequest) -> Vec<(String, String)> 
 /// `HermesAgent.Resume`: whether a run continues the pane's Hermes session, and what the pane is told (the notice's locale key). Hermes
 /// fixes `--yolo` when a session starts, so one that started with it is not continued by a pane that asks, and one that started
 /// without it keeps asking in a full-access pane; a session whose first request never got an answer (`message_count` 0) keeps the
-/// provider it was made with and is not continued. Unreadable records change nothing.
+/// provider it was made with and is not continued. A pane that asks never continues a session whose policy receipt cannot be read
+/// (no `state.db`, no receipt, an unreadable one): it may have started with `--yolo` and would then not ask, so a new session starts
+/// (the rule the C# and Mac apps take too). A full-access pane continues it as asked.
 pub fn hermes_resume(
     resume_id: &str,
     mode: &str,
@@ -158,7 +160,7 @@ pub fn hermes_resume(
     started_with_full_access: Option<bool>,
 ) -> (Option<String>, Option<&'static str>) {
     let full = mode == "fullAccess";
-    if message_count == Some(0) {
+    if message_count == Some(0) || !full && started_with_full_access.is_none() {
         return (None, None);
     }
     if started_with_full_access == Some(true) && !full {

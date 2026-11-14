@@ -15,7 +15,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use indexmap::IndexMap;
 use mighty_core::{time, wire};
@@ -182,17 +182,22 @@ pub struct AcpChannel {
     state: Mutex<State>,
     queue: Mutex<VecDeque<Effect>>,
     delivering: AtomicBool,
+    /// The thread delivering the queue now, and the signal it gives when it stops ([`AcpChannel::drain`]).
+    deliverer: Mutex<Option<std::thread::ThreadId>>,
+    idle: Condvar,
     /// `Cancellation`: the `session/cancel` notification of the turn in flight; an agent whose turn outlives its ACP process (Hermes's
     /// gateway owns it) is told to stop before the process is ended.
     pub cancellation: AcpCancellation,
 }
 
-/// Lets the queue be delivered again when a callback unwinds.
-struct Delivering<'a>(&'a AtomicBool);
+/// Lets the queue be delivered again once the deliverer is done, or when a callback unwinds; a [`AcpChannel::drain`] waiting is told.
+struct Delivering<'a>(&'a AcpChannel);
 
 impl Drop for Delivering<'_> {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
+        *lock(&self.0.deliverer) = None;
+        self.0.delivering.store(false, Ordering::SeqCst);
+        self.0.idle.notify_all();
     }
 }
 
@@ -208,6 +213,8 @@ impl AcpChannel {
             state: Mutex::new(State::default()),
             queue: Mutex::new(VecDeque::new()),
             delivering: AtomicBool::new(false),
+            deliverer: Mutex::new(None),
+            idle: Condvar::new(),
             cancellation: AcpCancellation::default(),
         }
     }
@@ -251,7 +258,8 @@ impl AcpChannel {
                 return;
             }
             {
-                let _delivering = Delivering(&self.delivering);
+                *lock(&self.deliverer) = Some(std::thread::current().id());
+                let _delivering = Delivering(self);
                 while let Some(effect) = self.next_effect() {
                     match effect {
                         Effect::Consume(line) => (self.hooks.consume)(&line),
@@ -873,6 +881,47 @@ impl AcpChannel {
     /// `CancelAll`: every waiting card settles cancelled and the channel takes no more frames.
     pub fn cancel_all(&self) {
         self.with(|_, state, effects| Self::cancel_all_locked(state, effects))
+    }
+
+    /// The client's half of cancelling a prompt turn, before its `session/cancel` is written (ACP, Prompt Turn › Cancellation: "The
+    /// Client MUST respond to all pending session/request_permission requests with the cancelled outcome."): every approval still
+    /// waiting — a clarify asked as one among them — is answered `cancelled` and its card settles. A form (`elicitation/create`) is not
+    /// a permission request: it is left to the run's end.
+    pub fn cancel_permissions(&self) {
+        self.with(|this, state, effects| {
+            if state.closed {
+                return;
+            }
+            let asked: Vec<String> = state
+                .pending
+                .iter()
+                .filter(|(_, ask)| !ask.asked.as_ref().is_some_and(|asked| asked.form.is_some()))
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in asked {
+                if let Some(ask) = state.pending.get(&id) {
+                    this.answer(&ask.rpc_id, None);
+                }
+                Self::cancel_pending(state, effects, &id);
+            }
+        })
+    }
+
+    /// Returns once no callback is being delivered and none is queued (it delivers what is queued itself when nobody else is). The
+    /// runner calls it before the run's end is read and after the channel is cancelled, so no card or line queued earlier reaches the
+    /// pane after the run's last status. Called from inside a callback it returns at once (the callback's caller delivers the rest).
+    pub fn drain(&self) {
+        if *lock(&self.deliverer) == Some(std::thread::current().id()) {
+            return;
+        }
+        loop {
+            self.deliver();
+            let queue = lock(&self.queue);
+            if !self.delivering.load(Ordering::SeqCst) && queue.is_empty() {
+                return;
+            }
+            drop(self.idle.wait_timeout(queue, std::time::Duration::from_millis(10)));
+        }
     }
 
     fn cancel_all_locked(state: &mut State, effects: &mut Vec<Effect>) {
