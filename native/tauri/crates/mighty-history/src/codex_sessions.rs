@@ -7,6 +7,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use mighty_core::graph::GraphResponseRecord;
 use mighty_core::model::{AgentActivity, LogEntry};
@@ -14,6 +15,7 @@ use mighty_core::time::{self, DateTimeOffset};
 use mighty_core::workspace_files;
 use mighty_graph::node::{self, MAXIMUM_ENTRIES, MAXIMUM_INPUT_BYTES, MAXIMUM_OUTPUT_BYTES};
 use mighty_graph::tracker::{CodexCollaborationItem, CodexSessionAgent, codex_key, codex_usage};
+use mighty_platform::FileHandles;
 use mighty_run::activity;
 use serde_json::Value;
 
@@ -369,7 +371,9 @@ impl CodexSessionThread {
                     result = activity::output(prop(item, "error"));
                 }
                 bad |= matches!(prop(value, "isError"), Some(Value::Bool(true)));
-                if named.is_empty() { "MCP".to_string() } else { named.join(".") }
+                // `string.Join('.', …)` keeps an empty name, and only an empty result is "MCP" (CodexSessionRecords.cs:134).
+                let joined = named.join(".");
+                if joined.is_empty() { "MCP".to_string() } else { joined }
             }
             "Extension" => {
                 if text(item, "kind") == Some("web.search") {
@@ -500,6 +504,8 @@ pub struct CodexSessionWatcher {
     stopped: bool,
     /// `FirstLineReads`: how many files' first lines were read.
     pub first_line_reads: usize,
+    /// How an opened rollout's handle is asked where it is (None: the host's, mighty-composer's `file_handles`).
+    handles: Option<Arc<dyn FileHandles>>,
 }
 
 fn file_name(path: &Path) -> String {
@@ -549,7 +555,14 @@ impl CodexSessionWatcher {
             next: 0,
             stopped: false,
             first_line_reads: 0,
+            handles: None,
         })
+    }
+
+    /// The watcher asking `handles` where each rollout it opens really is, instead of the host's (the checks give a fake).
+    pub fn with_file_handles(mut self, handles: Arc<dyn FileHandles>) -> CodexSessionWatcher {
+        self.handles = Some(handles);
+        self
     }
 
     /// `Poll`: what changed since the last poll.
@@ -601,13 +614,18 @@ impl CodexSessionWatcher {
         folders
     }
 
-    /// `Open`: a regular file whose real path lies below the sessions folder.
+    /// `Open`: a regular file below the sessions folder, opened through C#'s `WorkspaceFiles.OpenFile` (mighty-composer's
+    /// [`open_file`](mighty_composer::files::open_file)): where the OS can ask the open handle (Windows' `GetFinalPathNameByHandleW`) the
+    /// handle itself must be a disk file inside the sessions folder, so a name swapped for a link between the look and the open is
+    /// caught; elsewhere the path is walked again after the open.
     fn open(&self, path: &Path) -> Option<File> {
         let sessions = self.sessions.as_ref()?;
-        if !files::regular(path) || !workspace_files::real_path(path).is_some_and(|real| workspace_files::contains(&real, sessions)) {
+        if !files::regular(path) {
             return None;
         }
-        files::open(path)
+        let relative = path.strip_prefix(sessions).ok()?.to_str()?;
+        let handles = self.handles.clone().unwrap_or_else(mighty_composer::files::file_handles);
+        mighty_composer::files::open_file(relative, sessions, handles.as_ref()).ok().map(|opened| opened.file)
     }
 
     /// `Header`: the file's first line as a sub-agent of `thread`, and where its records start; `incomplete` when the line is still
@@ -686,9 +704,9 @@ impl CodexSessionWatcher {
     /// `Discover`: the day folders' rollouts whose first line names a descendant of the root (a grandchild found before its parent
     /// waits until the parent is known).
     fn discover(&mut self) {
+        // `sessions ??= RealPath(...)`: a folder not there yet is looked for again at the next poll.
         if self.sessions.is_none() {
-            let path = self.home.join("sessions");
-            self.sessions = Some(workspace_files::real_path(&path).unwrap_or(path));
+            self.sessions = workspace_files::real_path(&self.home.join("sessions"));
         }
         if !self.sessions.as_deref().is_some_and(files::real_directory) {
             return;
@@ -696,8 +714,21 @@ impl CodexSessionWatcher {
         let mut reads = 0;
         for folder in self.day_folders() {
             let Ok(entries) = std::fs::read_dir(&folder) else { continue };
-            let paths: Vec<PathBuf> =
-                entries.flatten().filter(|e| e.file_type().is_ok_and(|t| !t.is_dir())).map(|e| e.path()).take(16_384).collect();
+            // A rollout last written before the run started is no sub-agent of it: its time comes with the folder's listing
+            // (`DirEntry::metadata`, the listing's own data on Windows), so such a file is never opened. One whose time cannot be read is
+            // looked at as C# looks at every file, after the open.
+            let started = self.started;
+            let fresh = |entry: &std::fs::DirEntry| match entry.metadata().and_then(|m| m.modified()) {
+                Ok(modified) => files::date_of(modified) >= started,
+                Err(_) => true,
+            };
+            let paths: Vec<PathBuf> = entries
+                .flatten()
+                .filter(|e| e.file_type().is_ok_and(|t| !t.is_dir()))
+                .take(16_384)
+                .filter(fresh)
+                .map(|e| e.path())
+                .collect();
             for path in paths {
                 if reads >= self.limits.first_lines_per_poll {
                     break;

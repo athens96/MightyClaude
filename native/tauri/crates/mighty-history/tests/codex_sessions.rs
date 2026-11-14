@@ -5,6 +5,8 @@
 mod common;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use mighty_core::locale::Locale;
 use mighty_core::model::LogEntry;
@@ -265,13 +267,168 @@ fn untrusted_metadata_and_links_never_become_children() {
     let outside = f.home.join("outside.jsonl");
     std::fs::write(&outside, format!("{}\n{}\n{}\n", meta(OTHER, ROOT), start(10, None), done("linked private", 20))).unwrap();
     let link = f.folder.join(format!("rollout-2026-10-01T12-00-00-{OTHER}.jsonl"));
-    // Windows refuses a symbolic link without the right to make one; the check then has no link to refuse, as C#'s does.
+    // Windows refuses a symbolic link without the right to make one: the link half is then skipped, and says so (the junction check
+    // below needs no right).
     #[cfg(windows)]
-    let _ = std::os::windows::fs::symlink_file(&outside, &link);
+    let linked = std::os::windows::fs::symlink_file(&outside, &link).is_ok();
     #[cfg(unix)]
-    std::os::unix::fs::symlink(&outside, &link).unwrap();
+    let linked = std::os::unix::fs::symlink(&outside, &link).is_ok();
+    assert!(linked || cfg!(windows), "a symbolic link is made off Windows");
+    if !linked {
+        eprintln!("skipped: the symbolic link half (no right to make a symbolic link here)");
+    }
     let mut watcher = f.watch(None);
     assert!(watcher.poll().is_empty(), "filename mismatch, guardian sources and symlinks are refused");
+    assert!(!linked || std::fs::symlink_metadata(&link).is_ok_and(|m| m.file_type().is_symlink()), "the link is there to refuse");
+}
+
+/// Makes `link` a junction to the folder `target` (any Windows account may), or a symbolic link elsewhere; false when it could not.
+#[allow(clippy::disallowed_methods, reason = "the check's own mklink, no child of the app")]
+fn folder_link(link: &Path, target: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        std::process::Command::new("cmd").arg("/c").arg("mklink").arg("/J").arg(link).arg(target).output().is_ok_and(|o| o.status.success())
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+}
+
+/// The links half of `UntrustedMetadataAndLinksNeverBecomeChildren` with a link anyone may make: a day folder that is a junction to a
+/// folder outside the sessions holds a descendant's rollout, which is never read.
+#[test]
+fn a_day_folder_that_is_a_link_is_never_read() {
+    let f = Fixture::new();
+    let outside = f.home.join("outside-day");
+    std::fs::create_dir_all(&outside).unwrap();
+    let path = outside.join(format!("rollout-2026-10-01T12-00-00-{CHILD}.jsonl"));
+    std::fs::write(&path, format!("{}\n{}\n{}\n", meta(CHILD, ROOT), start(10, None), done("through a link", 20))).unwrap();
+    common::set_modified(&path, common::plus_seconds(started(), 3.0));
+    std::fs::remove_dir(&f.folder).unwrap();
+    assert!(folder_link(&f.folder, &outside), "the day folder is a link");
+    assert!(f.watch(None).poll().is_empty(), "a linked day folder is not read");
+}
+
+/// Takes away a link made by [`folder_link`] (never what it leads to).
+fn unlink(link: &Path) {
+    std::fs::remove_dir(link).or_else(|_| std::fs::remove_file(link)).unwrap();
+}
+
+/// `sessions ??= WorkspaceFiles.RealPath(...)`: a sessions folder whose real path cannot be worked out at a poll (here its link loops)
+/// is not kept as it is written, but looked for again; once it leads to a folder (the user moved it elsewhere and linked it), that
+/// folder is read.
+#[test]
+fn a_sessions_folder_that_cannot_be_resolved_yet_is_looked_for_again() {
+    let parent = common::temp("codex-late-sessions");
+    let home = parent.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let sessions = home.join("sessions");
+    let looping = home.join("loop");
+    assert!(folder_link(&sessions, &looping) && folder_link(&looping, &sessions), "the sessions folder's link loops");
+    let now = common::plus_seconds(started(), 300.0);
+    let mut watcher = CodexSessionWatcher::new(&home, ROOT, started(), "watch-run", Some(Box::new(move || now)), None).unwrap();
+    assert!(watcher.poll().is_empty(), "nothing to read while the link loops");
+    unlink(&sessions);
+    unlink(&looping);
+    let moved = parent.join("moved-sessions");
+    let day = started().to_chrono().with_timezone(&chrono::Local).date_naive();
+    let folder = moved.join(day.format("%Y").to_string()).join(day.format("%m").to_string()).join(day.format("%d").to_string());
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = folder.join(format!("rollout-2026-10-01T12-00-00-{CHILD}.jsonl"));
+    std::fs::write(&path, format!("{}\n{}\n", meta(CHILD, ROOT), start(10, None))).unwrap();
+    common::set_modified(&path, common::plus_seconds(started(), 3.0));
+    assert!(folder_link(&sessions, &moved), "the sessions folder now leads elsewhere");
+    let read = watcher.poll();
+    assert!(read.len() == 1 && read[0].thread == CHILD, "the child is read from the folder the link leads to: {read:?}");
+    drop(watcher);
+    unlink(&sessions);
+    let _ = std::fs::remove_dir_all(&parent);
+}
+
+/// `WorkspaceFiles.OpenFile`'s handle check: a rollout whose open handle is somewhere else than the sessions folder (a name swapped for a
+/// link between the look and the open) is not read, whatever its path said; a handle inside it is.
+#[test]
+fn a_rollout_is_read_only_when_its_open_handle_is_inside_the_sessions_folder() {
+    use mighty_platform::fake::FakeFileHandles;
+
+    let f = Fixture::new();
+    let path = f.write(CHILD, &[meta(CHILD, ROOT), start(10, None)]);
+    let elsewhere = Arc::new(FakeFileHandles::asked(Some(f.home.join("elsewhere.jsonl")), None));
+    assert!(f.watch(None).with_file_handles(elsewhere).poll().is_empty(), "a handle outside the sessions folder is refused");
+    let real = mighty_core::workspace_files::real_path(&path).unwrap();
+    let inside = Arc::new(FakeFileHandles::asked(Some(real), None));
+    assert_eq!(f.watch(None).with_file_handles(inside).poll().len(), 1, "a handle inside it is read");
+    let not_disk = Arc::new(FakeFileHandles { asks: true, not_disk: true, ..FakeFileHandles::default() });
+    assert!(f.watch(None).with_file_handles(not_disk).poll().is_empty(), "a handle that is no disk file is refused");
+}
+
+/// Handles that count the files opened (each open asks its handle once) and place every one at `path`.
+struct Counting {
+    opened: AtomicUsize,
+    path: PathBuf,
+}
+
+impl mighty_platform::FileHandles for Counting {
+    fn asks_handles(&self) -> bool {
+        true
+    }
+    fn is_disk(&self, _file: &std::fs::File) -> bool {
+        true
+    }
+    fn final_path(&self, _file: &std::fs::File) -> Option<PathBuf> {
+        self.opened.fetch_add(1, Ordering::SeqCst);
+        Some(self.path.clone())
+    }
+    fn final_directory_path(&self, path: &Path) -> Option<PathBuf> {
+        Some(path.to_path_buf())
+    }
+}
+
+/// A rollout last written before the run started is no sub-agent of it: its time is read from the folder's listing, so it is never
+/// opened (a thousand old rollouts cost no open each second).
+#[test]
+fn a_rollout_older_than_the_run_is_never_opened() {
+    let f = Fixture::new();
+    let path = f.write(CHILD, &[meta(CHILD, ROOT), start(10, None)]);
+    common::set_modified(&path, common::plus_seconds(started(), -60.0));
+    let counting = Arc::new(Counting { opened: AtomicUsize::new(0), path: mighty_core::workspace_files::real_path(&path).unwrap() });
+    let mut watcher = f.watch(None).with_file_handles(counting.clone());
+    assert!(watcher.poll().is_empty() && watcher.poll().is_empty(), "an older rollout is no child");
+    assert_eq!(counting.opened.load(Ordering::SeqCst), 0, "and is never opened");
+    common::set_modified(&path, common::plus_seconds(started(), 5.0));
+    assert!(watcher.poll().len() == 1 && counting.opened.load(Ordering::SeqCst) == 1, "once written in the run it is opened and read");
+}
+
+/// CodexSessionRecords.cs:134: an MCP call's name is `string.Join('.', server, tool)` over the names it has (an empty one kept), and
+/// "MCP" only when that is empty.
+#[test]
+fn an_mcp_calls_name_joins_its_server_and_tool_as_csharp_does() {
+    let f = Fixture::new();
+    let call = |id: &str, server: Option<&str>, tool: Option<&str>, ordinal: i64| {
+        let mut item = json!({"type": "McpToolCall", "id": id, "status": "completed", "arguments": {}, "result": {"content": []}});
+        if let Some(server) = server {
+            item["server"] = json!(server);
+        }
+        if let Some(tool) = tool {
+            item["tool"] = json!(tool);
+        }
+        record("event_msg", json!({"type": "item_completed", "item": item}), ordinal, None)
+    };
+    f.write(
+        CHILD,
+        &[
+            meta(CHILD, ROOT),
+            start(10, None),
+            call("a", Some(""), None, 11),
+            call("b", None, None, 12),
+            call("c", Some(""), Some("lookup"), 13),
+            call("d", Some("docs"), Some("search"), 14),
+        ],
+    );
+    let read = f.watch(None).poll();
+    let names: Vec<String> = read[0].entries.iter().filter_map(|e| e.activity.as_ref().and_then(|a| a.tool_name.clone())).collect();
+    assert_eq!(names, ["MCP", "MCP", ".lookup", "docs.search"], "the calls' names");
 }
 
 /// CodexSessionWatcherVerification.cs:105 `ReusedChildKeepsPreviousAnswersAndResponseUsageOnce`.
