@@ -200,6 +200,8 @@ fn main() {
     } else {
         platform.paths.local_dir().join("image-cache").join(platform.paths.profile_key())
     };
+    // The work map's summaries likewise, and its git's empty hooks folder this machine's own (workmap.rs).
+    let workmap_folders = workmap::Folders::new(platform.paths.as_ref(), options.allow_state_write);
     // The file originals (files.rs, C# `FileOriginalStore`) likewise: the profile's `file-originals`, else this machine's own.
     let originals_dir = if options.allow_state_write {
         platform.paths.file_originals_dir()
@@ -236,6 +238,7 @@ fn main() {
             );
             // The files pane's state and the file originals, which the run engine keeps through it (files.rs).
             files::start(&host, originals_dir.clone());
+            workmap::configure(&host, workmap_folders.clone());
             // The frame's seams (frame.rs): the add menu's files entry opens files.rs's pane, and an agent pane added from the menu
             // offers the folder's earlier sessions through history.rs.
             let _ = frame::OPEN_FILES.set(files::open_files);

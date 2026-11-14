@@ -15,7 +15,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use mighty_core::graph::MightyGraphRun;
 use mighty_core::model::{RunSession, Workspace};
@@ -65,12 +65,6 @@ pub fn of(host: &Host) -> Arc<History> {
     }
     host.app.manage(Arc::new(History::default()));
     host.app.state::<Arc<History>>().inner().clone()
-}
-
-/// Whether the app was started with `--allow-state-write` (it may write `known-sessions.json` in the profile).
-fn writes_allowed() -> bool {
-    static ALLOWED: OnceLock<bool> = OnceLock::new();
-    *ALLOWED.get_or_init(|| crate::args::parse(std::env::args().skip(1)).map(|o| o.allow_state_write).unwrap_or(false))
 }
 
 impl History {
@@ -245,7 +239,8 @@ pub fn remember_session(host: &Host, id: &str) {
     let list = known.get_or_insert_with(|| known::load(&path));
     let Some(next) = known::adding(id, list) else { return };
     *list = next.clone();
-    if writes_allowed()
+    // Only when the app may write its profile (`--allow-state-write`, main.rs's parsed options).
+    if host.writes()
         && let Err(error) = known::save(&next, &path)
     {
         host.log.line(&format!("known-sessions.json: {error}"));

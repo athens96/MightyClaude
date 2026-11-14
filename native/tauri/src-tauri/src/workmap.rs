@@ -10,12 +10,14 @@
 //!   `open_file_in_pane`), and pushes `files{paneId, path}`.
 //!
 //! The summaries are kept per workspace in `<profile>/work-map` when the app may write its profile, else in this machine's local folder
-//! for the profile (as the picture cache is). The requests' edited files are read from the files pane's file originals (files.rs).
+//! for the profile (as the picture cache is): [`Folders`], made by main.rs from the platform's paths and its parsed options. The
+//! requests' edited files are read from the files pane's file originals (files.rs).
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use mighty_core::model::Workspace;
+use mighty_platform::Paths;
 use mighty_workmap::service::Finder;
 use mighty_workmap::summary::{self, Runner};
 use mighty_workmap::{Git, WorkMapService, WorkMapStart, pane};
@@ -25,16 +27,41 @@ use tauri::Manager;
 use crate::host::{Host, Registry, View};
 use crate::methods::text;
 
+/// Where the work map keeps its files: the summaries (`store`) and the empty folder its git is pointed at for hooks (`hooks`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Folders {
+    pub store: PathBuf,
+    pub hooks: PathBuf,
+}
+
+impl Folders {
+    /// The summaries in the profile's `work-map` when the app may write its profile (`writes`, the parsed `--allow-state-write`),
+    /// else in this machine's local folder for the profile (`<local>/work-map/<profile key>`, as the picture cache's); the hooks folder
+    /// is this machine's own on Windows (git reads a device name as a relative path there) and `/dev/null` elsewhere (C#
+    /// `DelegationGit.NoHooks`).
+    pub fn new(paths: &dyn Paths, writes: bool) -> Folders {
+        let local = |kind: &str| paths.local_dir().join(kind).join(paths.profile_key());
+        Folders {
+            store: if writes { paths.data_dir().join("work-map") } else { local("work-map") },
+            hooks: if cfg!(windows) { local("git-no-hooks") } else { PathBuf::from("/dev/null") },
+        }
+    }
+}
+
+/// The work map's folders, from main.rs (before the first `service`).
+pub fn configure(host: &Host, folders: Folders) {
+    host.app.manage(folders);
+}
+
 /// The app's one `WorkMapService`, made on first use once the run engine is up (it finds Claude through the engine's catalogue).
 pub fn service(host: &Arc<Host>) -> Result<Arc<WorkMapService>, String> {
     if let Some(service) = host.app.try_state::<Arc<WorkMapService>>() {
         return Ok(service.inner().clone());
     }
     let runs = host.engine()?;
-    let allowed = crate::args::parse(std::env::args().skip(1)).map(|o| o.allow_state_write).unwrap_or(false);
-    let local = local_folder(host);
-    let store = if allowed { host.data_dir.join("work-map") } else { local.join("work-map") };
-    let git = Git::new(host.processes.clone(), local.join("git-no-hooks"));
+    let folders = host.app.try_state::<Folders>().ok_or("the work map is not ready")?.inner().clone();
+    let store = folders.store;
+    let git = Git::new(host.processes.clone(), folders.hooks);
     let state = host.clone();
     let catalog = runs.catalog.clone();
     let finder: Finder = Arc::new(move || {
@@ -65,15 +92,6 @@ pub fn service(host: &Arc<Host>) -> Result<Arc<WorkMapService>, String> {
     }));
     host.app.manage(service);
     Ok(host.app.state::<Arc<WorkMapService>>().inner().clone())
-}
-
-/// This machine's own folder for the profile, as the picture cache's (`<local>/<kind>/<profile key>`).
-fn local_folder(host: &Host) -> PathBuf {
-    let name: String =
-        host.data_dir.to_string_lossy().chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect();
-    let name = if name.len() > 80 { name[name.len() - 80..].to_string() } else { name };
-    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    base.join("dev.mightycode.tauri").join("work-map").join(name)
 }
 
 fn workspace_of(view: &View, args: &Value) -> Option<Workspace> {
@@ -125,4 +143,26 @@ pub fn register(methods: &mut Registry) {
         let Some(workspace) = workspace_of(&host.view(), &args) else { return Err("Workspace not found.".into()) };
         crate::files::open_file_in_pane(&host, workspace.id(), text(&args, "path").unwrap_or("")).await.map(Value::Bool)
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use mighty_platform::AppPaths;
+
+    use super::*;
+
+    /// The summaries go to the profile only when the app may write it, else to this machine's folder for the profile; the hooks folder
+    /// is never the profile's (W4 review C7).
+    #[test]
+    fn the_work_maps_folders_follow_the_profile_and_its_writes() {
+        let paths = AppPaths::rooted(Path::new(if cfg!(windows) { "C:\\mighty" } else { "/mighty" }));
+        let writing = Folders::new(&paths, true);
+        let reading = Folders::new(&paths, false);
+        assert_eq!(writing.store, paths.data_dir().join("work-map"));
+        assert_eq!(reading.store, paths.local_dir().join("work-map").join("default"));
+        let hooks = if cfg!(windows) { paths.local_dir().join("git-no-hooks").join("default") } else { PathBuf::from("/dev/null") };
+        assert!(writing.hooks == hooks && reading.hooks == hooks, "{:?}", reading.hooks);
+    }
 }

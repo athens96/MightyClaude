@@ -331,6 +331,11 @@ impl Host {
         lock(&self.store).approve_local(path)
     }
 
+    /// Whether the app may write its profile (`--allow-state-write`, as main.rs parsed it into the store).
+    pub fn writes(&self) -> bool {
+        lock(&self.store).writes()
+    }
+
     /// The run service takes the state from here on (runs.rs).
     pub fn attach(&self, runs: Arc<Runs>) {
         let mut view = self.view();
