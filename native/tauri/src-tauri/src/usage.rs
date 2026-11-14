@@ -53,16 +53,34 @@ fn probe(host: &Host) -> usage::UsageProbe {
                 .unwrap_or_else(|| std::env::vars().collect())
         })
     };
-    let https = app.try_state::<crate::platform::Ports>().map(|ports| ports.https.clone());
     usage::runtime_probe(RuntimeProbe {
         find,
         environment,
         home: Arc::new(crate::accounts::home),
         working_directory: std::env::temp_dir(),
         processes: host.processes.clone(),
-        // No port yet (the app starting): a GET that is refused, so nothing leaves.
-        http: https.unwrap_or_else(|| Arc::new(mighty_platform::unsupported::Unsupported)),
+        http: Arc::new(AppHttps(app)),
     })
+}
+
+/// The HTTPS GET port as the app manages it, looked up when a read asks: the ports are managed after the frame's clocks first read
+/// the usage. None yet: refused, so nothing leaves.
+struct AppHttps(tauri::AppHandle);
+
+impl mighty_platform::HttpsGet for AppHttps {
+    fn get(
+        &self,
+        request: mighty_platform::http::HttpsRequest,
+        max_body: usize,
+    ) -> mighty_platform::BoxFuture<'_, mighty_platform::Result<mighty_platform::http::HttpsResponse>> {
+        let https = self.0.try_state::<crate::platform::Ports>().map(|ports| ports.https.clone());
+        Box::pin(async move {
+            match https {
+                Some(https) => https.get(request, max_body).await,
+                None => Err(mighty_platform::PlatformError::unsupported("https", "get")),
+            }
+        })
+    }
 }
 
 /// The window's usage, made on first use.

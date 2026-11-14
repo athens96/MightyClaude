@@ -105,10 +105,9 @@ fn coordinator(host: &Host) -> Option<Arc<CliAccountsCoordinator>> {
         return Some(made.clone());
     }
     let catalog = host.runs()?.catalog.clone();
-    let mut made = CliAccountsCoordinator::new(Arc::new(HostRunner::new(host.processes.clone())), catalog, home());
-    if let Some(ports) = host.app.try_state::<crate::platform::Ports>() {
-        made = made.with_terminal(ports.terminals.clone());
-    }
+    // Made once the ports are managed too, so its sign-ins have their terminal window.
+    let terminals = host.app.try_state::<crate::platform::Ports>()?.terminals.clone();
+    let made = CliAccountsCoordinator::new(Arc::new(HostRunner::new(host.processes.clone())), catalog, home()).with_terminal(terminals);
     let _ = accounts.coordinator.set(Arc::new(made));
     accounts.coordinator.get().cloned()
 }
@@ -151,6 +150,15 @@ pub fn statuses(host: &Host) -> Vec<CliAccountStatus> {
     let Some(coordinator) = of(host).coordinator.get().cloned() else { return vec![] };
     let read = coordinator.statuses();
     SECTION_PROVIDERS.iter().filter_map(|p| read.get(*p).cloned()).collect()
+}
+
+/// `accounts::busy`: whether the provider's sign-in, sign-out or terminal wait is under way (C# `loginBusy`, `accountChanges`,
+/// `accountLoginWaits`), for the update holds' `ProviderUse` and `RequireIdleAccount`. With the state locked: the accounts' own state
+/// only, never `host.view()`.
+#[allow(dead_code, reason = "a seam W6-D (the update holds' provider use) calls")]
+pub fn busy(host: &Host, provider: &str) -> bool {
+    let accounts = of(host);
+    lock(&accounts.busy).contains(provider) || lock(&accounts.changes).contains(provider) || lock(&accounts.waits).contains_key(provider)
 }
 
 /// `accounts::start_sign_in`: C# `StartCliSignIn(provider, option)` — the CLI's own sign-in in a terminal window, then its status
