@@ -15,7 +15,9 @@
 //!   and its marker read back, the footer, the pane's status running and idle again, the pane closed);
 //! - the files pane opened from the add menu, an HTML frame, the reference bubble and the picture viewer (smoke_files.rs);
 //! - the work map and the resume flow end to end, from the add menu's Claude entry to the resumed pane's older requests (smoke_history.rs);
-//! - with git on PATH, a clone through the Git sheet, then a rename sheet that survives a page reload (smoke_frame.rs).
+//! - with git on PATH, a clone through the Git sheet, then a rename sheet that survives a page reload (smoke_frame.rs);
+//! - Settings and a native dialog (smoke_settings.rs), then the setup, accounts and updates steps once their parts have them
+//!   (smoke_setup.rs, smoke_accounts.rs, smoke_updates.rs: W6-B, W6-C, W6-D).
 //!
 //! With `--smoke-fake-cli` an opencode run's question card answered from the page (smoke_acp.rs) and the run steps follow (smoke_runs.rs:
 //! the composer, the permission and plan cards, the Mighty diagram, the progress panel and a stop, against mighty-run's stand-in CLI);
@@ -24,7 +26,7 @@
 //!
 //! The host adds whether its own state took the click, the calls it saw and the methods it answered "unimplemented", and writes
 //! `smoke-result.json`; with `--smoke-exit` the app then quits, 0 when the smoke passed, else 1. A smoke that has no result in time
-//! (330 s, 480 s with the stand-in CLI, 420 s with the real one) fails.
+//! (390 s, 540 s with the stand-in CLI, 420 s with the real one) fails.
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -71,14 +73,35 @@ enum Stage {
     Create,
     /// A rename sheet open while the page loads again: drawn again and answered (smoke_frame.rs).
     Reload,
+    /// Settings and the native dialogs (smoke_settings.rs, W6-A).
+    Settings,
+    /// The setup screen, components and the status line (smoke_setup.rs, W6-B).
+    Setup,
+    /// The accounts, the sign-in card and the usage (smoke_accounts.rs, W6-C).
+    Accounts,
+    /// The plugin browser and the updates (smoke_updates.rs, W6-D).
+    Updates,
     /// An opencode run's question card answered from the page (smoke_acp.rs), with the stand-in CLI.
     Acp,
     Runs,
 }
 
 /// The steps after the first probe, in their order: each one that can start does (`Smoke::start`), the run steps last.
-const STEPS: [Stage; 9] =
-    [Stage::Frame, Stage::Browser, Stage::Terminal, Stage::Files, Stage::History, Stage::Create, Stage::Reload, Stage::Acp, Stage::Runs];
+const STEPS: [Stage; 13] = [
+    Stage::Frame,
+    Stage::Browser,
+    Stage::Terminal,
+    Stage::Files,
+    Stage::History,
+    Stage::Create,
+    Stage::Reload,
+    Stage::Settings,
+    Stage::Setup,
+    Stage::Accounts,
+    Stage::Updates,
+    Stage::Acp,
+    Stage::Runs,
+];
 
 const PROBE: &str = r#"(async () => {
   const until = async (test, ms) => { const end = performance.now() + ms; while (performance.now() < end) { const v = test(); if (v) return v; await new Promise((r) => setTimeout(r, 50)); } return test(); };
@@ -226,6 +249,11 @@ struct Progress {
     /// The `gitProgress` pushes the page was sent.
     git_progress: usize,
     reload: Option<Value>,
+    /// The W6 steps' reports.
+    settings: Option<Value>,
+    setup: Option<Value>,
+    accounts: Option<Value>,
+    updates: Option<Value>,
     acp: Option<Value>,
     /// The reload step's page is loading again: its `ready` brings the probe.
     reload_waiting: bool,
@@ -248,6 +276,10 @@ impl Progress {
             Stage::History => Some(&mut self.history),
             Stage::Create => Some(&mut self.create),
             Stage::Reload => Some(&mut self.reload),
+            Stage::Settings => Some(&mut self.settings),
+            Stage::Setup => Some(&mut self.setup),
+            Stage::Accounts => Some(&mut self.accounts),
+            Stage::Updates => Some(&mut self.updates),
             Stage::Acp => Some(&mut self.acp),
             Stage::Runs => None,
         }
@@ -278,8 +310,9 @@ impl Smoke {
     fn timeout(&self) -> Duration {
         Duration::from_secs(match self.mode {
             // The frame, browser, gitCreate and reload steps add up to two minutes, the terminal and history steps a minute each.
-            Mode::Page => 330,
-            Mode::FakeClaude => 480,
+            // The W6 steps a minute more.
+            Mode::Page => 390,
+            Mode::FakeClaude => 540,
             Mode::RealClaude => 420,
         })
     }
@@ -339,7 +372,7 @@ impl Smoke {
     }
 
     /// Runs `script` in the page (not `get_webview_window`: once a browser pane has a child webview, the window holds two).
-    fn eval(&self, host: &Host, script: &str) {
+    pub(crate) fn eval(&self, host: &Host, script: &str) {
         match host.app.get_webview(WINDOW) {
             Some(page) => {
                 if let Err(error) = page.eval(script) {
@@ -399,6 +432,11 @@ impl Smoke {
             Stage::History => page_steps && crate::smoke_history::start(host),
             Stage::Create => page_steps && self.start_create(host),
             Stage::Reload => page_steps && self.start_reload(host),
+            // The W6 steps, each its part's (smoke_settings.rs, smoke_setup.rs, smoke_accounts.rs, smoke_updates.rs).
+            Stage::Settings => page_steps && shared(host).is_some_and(|host| crate::smoke_settings::start(&host)),
+            Stage::Setup => page_steps && shared(host).is_some_and(|host| crate::smoke_setup::start(&host)),
+            Stage::Accounts => page_steps && shared(host).is_some_and(|host| crate::smoke_accounts::start(&host)),
+            Stage::Updates => page_steps && shared(host).is_some_and(|host| crate::smoke_updates::start(&host)),
             Stage::Acp => self.mode == Mode::FakeClaude && crate::smoke_acp::start(host),
             Stage::Runs => self.start_runs(host),
         }
@@ -593,6 +631,11 @@ impl Smoke {
             let progress = self.progress();
             (progress.snapshot_sent, progress.shell_sent)
         };
+        // The W6 steps' reports: settings, setup, accounts, updates.
+        let w6 = {
+            let progress = self.progress();
+            (progress.settings.clone(), progress.setup.clone(), progress.accounts.clone(), progress.updates.clone())
+        };
         let (theme, active, workspaces, panes) = {
             let view = host.view();
             let s = &view.snapshot;
@@ -660,6 +703,21 @@ impl Smoke {
             let missing = json!({"error": "the history step did not report"});
             for (name, passed) in crate::smoke_history::checks(history.as_ref().unwrap_or(&missing)) {
                 checks[name] = json!(passed);
+            }
+            // The W6 steps: the settings step always runs; the others only once their part has one (a step that did not start
+            // reports nothing and adds no check).
+            let missing = json!({"error": "the settings step did not report"});
+            for (name, passed) in crate::smoke_settings::checks(w6.0.as_ref().unwrap_or(&missing)) {
+                checks[name] = json!(passed);
+            }
+            let parts: [(&Option<Value>, StepChecks); 3] =
+                [(&w6.1, crate::smoke_setup::checks), (&w6.2, crate::smoke_accounts::checks), (&w6.3, crate::smoke_updates::checks)];
+            for (report, part) in parts {
+                if let Some(report) = report {
+                    for (name, passed) in part(report) {
+                        checks[name] = json!(passed);
+                    }
+                }
             }
         }
         match self.mode {
@@ -737,6 +795,10 @@ impl Smoke {
             "gitCreate": create,
             "gitProgressPushes": git_progress,
             "reload": reload,
+            "settings": w6.0,
+            "setup": w6.1,
+            "accounts": w6.2,
+            "updates": w6.3,
             "acp": self.progress().acp.clone(),
             "runs": runs,
             "mode": format!("{:?}", self.mode),
@@ -780,6 +842,14 @@ impl Smoke {
             }
         });
     }
+}
+
+/// A W6 step's checks from its report.
+type StepChecks = fn(&Value) -> Vec<(&'static str, bool)>;
+
+/// The host as the steps that outlive the call share it.
+fn shared(host: &Host) -> Option<Arc<Host>> {
+    host.app.try_state::<Arc<Host>>().map(|h| h.inner().clone())
 }
 
 /// Serves [`FIXTURE`] on 127.0.0.1 for the rest of the run; answers its address.

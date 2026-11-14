@@ -206,6 +206,7 @@ fn main() {
     let theme = snapshot.theme().to_string();
     let mut parts = Some((state, banner, log, smoke));
     let debugging_port = options.remote_debugging_port;
+    let native_dump = options.native_dump.clone();
     // The smoke's stand-in Claude records what it was sent beside the smoke's logs.
     let fake_claude = options.smoke_fake_cli.clone().map(|binary| runs::FakeClaude {
         binary,
@@ -248,7 +249,11 @@ fn main() {
             smoke::smoke_surface,
             smoke_runs::smoke_step,
             smoke_terminal::smoke_terminal,
-            smoke_history::smoke_history
+            smoke_history::smoke_history,
+            smoke_settings::smoke_settings,
+            smoke_setup::smoke_setup,
+            smoke_accounts::smoke_accounts,
+            smoke_updates::smoke_updates
         ])
         // HTML previews' folders, each under a host of its own, for the page's sandboxed frame (files.rs).
         .register_asynchronous_uri_scheme_protocol(files::PROTOCOL, files::protocol)
@@ -267,6 +272,8 @@ fn main() {
                 smoke,
                 methods::registry(),
             );
+            // The native forms' pushes also to `--native-dump`'s file (native.rs).
+            native::configure(&host, native_dump.clone());
             // The files pane's state and the file originals, which the run engine keeps through it (files.rs).
             files::start(&host, originals_dir.clone());
             workmap::configure(&host, workmap_folders.clone());
@@ -313,6 +320,8 @@ fn main() {
             app.manage(host.clone());
             // The user's settings outside the state (the text setting: frame.rs).
             app.manage(platform.prefs.clone());
+            // W6's ports: the terminal window, the font families, the HTTPS GET (platform.rs; a smoke's fakes).
+            app.manage(platform::ports(host.smoke.is_some()));
             let dispatcher = host.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(message) = calls.recv().await {

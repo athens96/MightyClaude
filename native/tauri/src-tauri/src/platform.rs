@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use mighty_platform::{Platform, Result, SurfaceFactory};
+use mighty_platform::{FontCatalog, HttpsGet, Platform, Result, SurfaceFactory, TerminalLauncher};
 
 #[cfg(windows)]
 use mighty_platform_windows as os;
@@ -29,6 +29,28 @@ pub fn surfaces(window: tauri::Window) -> Arc<dyn SurfaceFactory> {
 /// The system clipboard's text (a terminal's copy and paste).
 pub fn clipboard() -> Arc<dyn mighty_platform::Clipboard> {
     os::clipboard()
+}
+
+/// W6's ports, managed by the app (`host.app.state::<Ports>()`): a terminal window that outlives the app (sign-ins, the setup
+/// screen's install), the installed font families (Settings › 글자) and the account usage's HTTPS GET. A smoke gets the recording
+/// fakes for the two that reach outside the app (no window opens, no request leaves), and the real font list, which only reads.
+#[allow(dead_code, reason = "the W6 parts read them: W6-B and W6-C the terminal window, W6-A1 the fonts, W6-C the HTTPS GET")]
+pub struct Ports {
+    pub terminals: Arc<dyn TerminalLauncher>,
+    pub fonts: Arc<dyn FontCatalog>,
+    pub https: Arc<dyn HttpsGet>,
+}
+
+pub fn ports(smoke: bool) -> Ports {
+    if smoke {
+        Ports {
+            terminals: Arc::new(mighty_platform::fake::RecordingTerminalLauncher::default()),
+            fonts: os::font_catalog(),
+            https: Arc::new(mighty_platform::fake::RecordingHttps::default()),
+        }
+    } else {
+        Ports { terminals: os::terminal_launcher(), fonts: os::font_catalog(), https: os::https_get() }
+    }
 }
 
 /// An http(s) or mailto address opened with the user's default handler (C# `Process.Start` with `UseShellExecute`).

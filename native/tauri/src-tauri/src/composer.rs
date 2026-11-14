@@ -278,6 +278,13 @@ async fn submit(host: &Arc<Host>, id: &str) -> Result<SubmitReceipt, String> {
 
 /// C# `ReceiveQueueRunEvent` (MainWindow.QueuedComposer.cs:156): a run's status settles what waited behind it — a stop cancels it
 /// (the transcript says how many), an error holds it, an end drains it. True when the queue should drain now.
+/// `sessionInfo{paneId}` (C# `WebSessionInfo`, MainWindow.WebShell.Composer.cs:499-538: the session info popover's rows). Stub: W6-A1
+/// fills it (mighty-composer's `session_info`); until then it answers as a method the host does not have (the page shows the
+/// failure instead of a popover without rows).
+pub fn session_info(_host: &Arc<Host>, _pane: Option<&str>) -> crate::host::Reply {
+    Err("unimplemented: sessionInfo".into())
+}
+
 pub fn run_event(view: &mut View, event: &RunEvent) -> bool {
     let id = event.session_id.as_str();
     view.mighty.dirty(id);

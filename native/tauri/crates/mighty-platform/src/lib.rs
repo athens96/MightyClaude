@@ -36,10 +36,13 @@ pub mod unsupported;
 pub mod update;
 
 pub use clipboard::Clipboard;
+pub use console::{TerminalLaunch, TerminalLauncher, TerminalWindow};
 pub use environment::{CliEnvironment, EnvironmentSource, ShellEnvironment};
 pub use error::{PlatformError, Result};
 pub use files::{ClipboardImage, Desktop, FileHandles, FilePorts, PathProbe, PdfPage, PdfRaster, SaveDialog, SaveRequest};
 pub use firewall::{Firewall, FirewallChange, FirewallRule};
+pub use fonts::{FontCatalog, FontFamily};
+pub use http::{HttpsGet, HttpsRequest, HttpsResponse};
 pub use notify::{ActivationHandler, Notification, Notifier};
 pub use pairing::{PairedDevice, PairingIdentity, PairingStore, PushRegistration};
 pub use paths::{AppPaths, Paths};

@@ -336,6 +336,14 @@ impl Host {
         lock(&self.store).writes()
     }
 
+    /// W6's default until W9 (docs/tauri-conversion.md §8): whether the app may change the machine or the user's settings outside the
+    /// profile — sign in or out, update a CLI or a plugin, install, start an automatic update or auto-login, write HKCU
+    /// `Software\MightyCode`, `~/.claude/settings.json` or another tool's config — only with `--allow-state-write`, never in a smoke.
+    #[allow(dead_code, reason = "a seam W6-B, W6-C and W6-D (every machine-changing press, update and sign-in) calls")]
+    pub fn may_change_machine(&self) -> bool {
+        self.writes() && self.smoke.is_none()
+    }
+
     /// The run service takes the state from here on (runs.rs).
     pub fn attach(&self, runs: Arc<Runs>) {
         let mut view = self.view();
@@ -464,6 +472,8 @@ impl Host {
         let View { snapshot, layout_defaults, shows_dashboard, dialog_open, error, git, .. } = view;
         let active_git =
             active_git_key(snapshot).and_then(|key| git.as_ref().filter(|(k, _)| *k == key).and_then(|(_, info)| info.as_ref()));
+        // The setup's badge and banner (setup.rs, W6-B), read with the state locked.
+        let setup = crate::setup::shell_flags(self, snapshot);
         let context = ShellContext {
             locale: self.locale,
             version: &self.version,
@@ -478,8 +488,8 @@ impl Host {
             children: &[],
             // No runtime check yet (shell::Pending::Runtime): the machine at rest.
             runtime: Runtime::Known,
-            setup_badge: false,
-            setup_needed: false,
+            setup_badge: setup.badge,
+            setup_needed: setup.needed,
             remote: &empty_remote,
         };
         shell_model(snapshot, &context, layout_defaults)
@@ -500,18 +510,22 @@ impl Host {
         self.push(view, "shell", format!("{{\"kind\":\"shell\",\"shell\":{text}}}"));
     }
 
-    /// Sends what changed now: the delta (`Flush`), then the frame model when it changed.
+    /// Sends what changed now: the delta (`Flush`), then the frame model when it changed, then the native views an input changed
+    /// (after the state's lock is let go: a view's builder takes it).
     pub fn flush(&self) {
-        let mut view = self.view();
-        if !view.ready {
-            return;
+        {
+            let mut view = self.view();
+            if !view.ready {
+                return;
+            }
+            let revision = view.revision;
+            let View { snapshot, bridge, .. } = &mut *view;
+            if let Some(delta) = bridge.flush(snapshot, revision) {
+                self.push(&view, "delta", delta);
+            }
+            self.push_shell(&mut view);
         }
-        let revision = view.revision;
-        let View { snapshot, bridge, .. } = &mut *view;
-        if let Some(delta) = bridge.flush(snapshot, revision) {
-            self.push(&view, "delta", delta);
-        }
-        self.push_shell(&mut view);
+        crate::native::flush(self);
     }
 
     /// `Schedule`: a flush about one frame from now, which every change until then rides along with.
@@ -580,8 +594,9 @@ impl Host {
                 while !host.closed.load(Ordering::SeqCst) {
                     std::thread::sleep(Duration::from_millis(250));
                     host.pass("shell-clock", || {
-                        let mut view = host.view();
-                        host.push_shell(&mut view);
+                        host.push_shell(&mut host.view());
+                        // C# `webShellClock.Tick += PushWebNatives`: the native views and the text setting, each when it changed.
+                        crate::native::tick(&host);
                     });
                 }
             })

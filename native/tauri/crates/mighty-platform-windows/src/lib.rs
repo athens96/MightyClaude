@@ -68,11 +68,13 @@ mod imp {
     pub use crate::browser::{WebviewSurfaces, runtime_version as browser_runtime};
     pub use crate::cli::{CliRunResult, CliRunner};
     pub use crate::clipboard::WindowsClipboard;
+    pub use crate::console::WindowsTerminalLauncher;
     pub use crate::dpapi::{DpapiVault, FOLDER as REMOTE_KEYS_FOLDER, file_name as remote_key_file_name};
     pub use crate::environment::{CliEnvironmentSnapshot, WindowsShellEnvironment};
     pub use crate::files::{
         WindowsDesktop, WindowsFileHandles, WindowsPathProbe, WindowsPdf, decimal_separator, file_ports, path_probe, short_date_time,
     };
+    pub use crate::fonts::font_catalog;
     pub use crate::prefs::RegistryPrefs;
     pub use crate::process::{KILLED_EXIT_CODE, WindowsProcessHost};
     pub use crate::pty::WindowsPtyHost;
@@ -174,6 +176,18 @@ mod imp {
     /// The user's clipboard (a terminal's copy and paste).
     pub fn clipboard() -> Arc<dyn mighty_platform::Clipboard> {
         Arc::new(WindowsClipboard)
+    }
+
+    /// A command in a terminal window of its own that outlives the app (C# `CliAccountTerminal`): Windows Terminal, else the console
+    /// host (W6: sign-ins, the setup screen's install).
+    pub fn terminal_launcher() -> Arc<dyn mighty_platform::TerminalLauncher> {
+        Arc::new(WindowsTerminalLauncher)
+    }
+
+    /// The account usage's HTTPS GET (`mighty_platform::HttpsGet`). W6-C swaps in its WinHTTP GET (http.rs: system proxy, redirects,
+    /// cookies and automatic logon off, the body only for a 2xx); until then `Unsupported`, so no request reaches the network.
+    pub fn https_get() -> Arc<dyn mighty_platform::HttpsGet> {
+        Arc::new(Unsupported)
     }
 
     /// Each copy of the command `name` this PC has (C# `SetupProber.Executables`): along the environment's PATH with PATHEXT, then

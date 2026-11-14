@@ -4,8 +4,9 @@
 //! mighty-composer's rules; [`flush`] pushes each when its JSON changed (`composer` and `cards`, 30 ms, C# `FlushWebComposers`,
 //! `FlushWebCards`), the cards again each second while an open background strip has a task running.
 //!
-//! What later stages give the composer and the cards stays at its resting value (`WindowRules::default`, no web-open prompts, no sign-in
-//! card, no status line, no style): README "Pending inputs". The Antigravity card is antigravity.rs's.
+//! W6's parts give the update holds (updates.rs), the missing CLI's install (setup.rs), the sign-in card (accounts.rs) and the status
+//! line (status_line.rs) through their seams; what later stages give stays at its resting value (no web-open prompts, no style): README
+//! "Pending inputs". The Antigravity card is antigravity.rs's.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -117,9 +118,15 @@ pub fn requests(host: &Host, id: &str) -> Vec<ToolPermissionRequest> {
 
 /// What the window knows of the pane that the composer reads (C# `owner.*` members); the later stages' stay at rest. A Claude pane
 /// whose catalogue was never scanned is scanned for its "send to" switch (ask.rs, C# `RefreshAskCatalog(pane, whenStale: false)`).
+/// The update holds are W6-D's (updates.rs: `BackgroundUpdateHolds`, `ManualMutationBlockReason`, `ManualUpdateReason`), the missing
+/// CLI's install W6-B's (setup.rs: `SetupItemForMissingCli`), each read with the state locked.
 fn window_rules(host: &Host, snapshot: &AppSnapshot, pane: &RunSession, pending: usize) -> WindowRules {
     crate::ask::refresh_catalog(host, snapshot, pane, false);
     WindowRules {
+        background_update_holds: crate::updates::holds(host, snapshot, pane),
+        manual_mutation_block: crate::updates::manual_block(host, snapshot, pane),
+        manual_update_reason: crate::updates::manual_update(host, snapshot, pane),
+        setup_item_for_missing_cli: crate::setup::item_for_missing_cli(host, snapshot, pane).is_some(),
         pending_requests: pending,
         awaits_notice: mighty_graph::notice::awaits_notice(pane),
         status_line_enabled: snapshot.status_line_enabled,
@@ -127,6 +134,13 @@ fn window_rules(host: &Host, snapshot: &AppSnapshot, pane: &RunSession, pending:
         ask_notice: crate::ask::notice(host, pane.id()),
         ..WindowRules::default()
     }
+}
+
+/// Every pane's composer and cards looked at again on the next pass (a part's input changed: an update's hold, a sign-in card, a
+/// status line).
+#[allow(dead_code, reason = "a seam W6-B, W6-C and W6-D (their inputs changed) calls")]
+pub fn mark_all(host: &Host) {
+    host.panes_changed();
 }
 
 /// C# `WebComposerState` for a pane with a view.
@@ -187,8 +201,13 @@ pub fn cards_of(host: &Host, view: &mut View, id: &str) -> Option<(Vec<Card>, bo
     let pane = view.snapshot.session(id)?.clone();
     let requests = requests(host, id);
     let background_open = view.snapshot.background_work_open == Some(true);
+    // W6's inputs, read with the state locked: an automatic update's hold (updates.rs, W6-D), the sign-in card (accounts.rs, W6-C),
+    // the status line (status_line.rs, W6-B).
+    let holds = crate::updates::holds(host, &view.snapshot, &pane);
+    let login = crate::accounts::login_input(host, &view.snapshot, &pane);
+    let status_line = crate::status_line::input(host, &pane);
     let ui = view.panes.get_mut(id)?;
-    let busy = pane.status() == "running" || ui.view.starting || ui.view.queue_starting;
+    let busy = pane.status() == "running" || ui.view.starting || ui.view.queue_starting || holds;
     // The plan card's draft follows the first waiting request (RenderPlan makes one for each new plan).
     let first = cards::card_requests(&requests, false).first().map(|r| (*r).clone());
     let plan = first.as_ref().filter(|r| r.can_answer_plan && r.plan().is_some());
@@ -221,8 +240,8 @@ pub fn cards_of(host: &Host, view: &mut View, id: &str) -> Option<(Vec<Card>, bo
         antigravity: antigravity.as_ref(),
         terminal_prompt: terminal_prompt.as_ref(),
         web_open: &[],
-        login: None,
-        status_line: None,
+        login: login.as_ref(),
+        status_line: status_line.as_ref(),
     };
     Some(cards::cards(&inputs))
 }

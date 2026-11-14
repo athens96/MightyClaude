@@ -633,33 +633,24 @@ pub fn text_setting(host: &Host) -> TextAppearance {
     text.get_or_insert_with(|| saved_text(host)).clone()
 }
 
-fn push_text(host: &Host, text: &TextAppearance) {
-    let view = host.view();
-    host.push(&view, "text", text.push().to_string());
-}
-
 /// C# `textSize{step}` (`SetTextAppearance`): one size larger or smaller, or back to 100% with the fonts kept; the page follows the
-/// `text` push. Saving it is Settings' (W6): the registry is shared with the installed app, and this host writes none of it yet.
+/// `text` push (native.rs, as C#'s `PushWebText`). Saving it is Settings' (W6-A1): the registry is shared with the installed app.
 fn text_size(host: &Host, step: f64) {
     let current = text_setting(host);
     let next = if step == 0.0 { current.with_scale(1.0) } else { current.stepped(if step > 0.0 { 1 } else { -1 }) };
     if next == current {
         return;
     }
-    *lock(&frame(host).text) = Some(next.clone());
-    push_text(host, &next);
+    *lock(&frame(host).text) = Some(next);
+    crate::native::push_text(host);
     // C# `TextAppearanceChanged`: the terminals take their size again.
     crate::terminal::restyle(host);
 }
 
-/// What the page's `ready` brings back that a reload lost: its open dialogs (`dialogs.rs`) and, when it is not the standard one, the
-/// text setting.
+/// What the page's `ready` brings back that a reload lost: its open dialogs (`dialogs.rs`). The text setting and the native views
+/// come with the first tick after it and with the page's `nativeState` (native.rs).
 pub fn page_ready(host: &Arc<Host>) {
     dialogs::page_ready(host);
-    let text = text_setting(host);
-    if !text.is_standard() {
-        push_text(host, &text);
-    }
 }
 
 // ── registration ──

@@ -11,7 +11,3 @@ rust-version.workspace = true
 mighty-core.workspace = true
 serde_json.workspace = true
 indexmap.workspace = true
-
-# W6 Step 0 lists the dependencies before any code uses them; this table goes once the crate's code does.
-[lints.cargo]
-unused_dependencies = "allow"
