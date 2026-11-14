@@ -465,17 +465,35 @@ fn a_form_the_card_cannot_ask_is_declined_and_a_withdrawn_question_leaves_no_car
     let content = run.result(0).unwrap()["content"].clone();
     assert!(content["q0"] == "b" && content["q1"] == false, "the label's value travels; a boolean as a boolean: {content}");
     let pick = "{\"q0\":{\"type\":\"string\",\"title\":\"Pick\",\"description\":\"Which one?\",\"oneOf\":[{\"const\":\"a\",\"title\":\"First\"},{\"const\":\"b\",\"title\":\"Second\"}]}}";
+    // An answer to a card that went (or to no card at all) is refused and writes nothing.
+    let late = |run: &Replay, what: &str| {
+        let card = run.permissions()[0].clone();
+        let writes = run.writes().len();
+        let picked = IndexMap::from([("Which one?".to_string(), UserQuestionAnswer::new(&["First"], None))]);
+        assert!(
+            run.channel.answer_questions(&card.id, &picked).is_err()
+                && run.channel.respond(&card.id, false).is_err()
+                && run.channel.respond(&card.id, true).is_err()
+                && run.channel.respond("no-such-card", false).is_err()
+                && run.channel.answer_questions("no-such-card", &picked).is_err()
+                && run.writes().len() == writes,
+            "{what}: a late answer is refused and writes nothing"
+        );
+    };
     let run = asked(pick);
     run.receive("{\"jsonrpc\":\"2.0\",\"method\":\"$/cancel_request\",\"params\":{\"requestId\":0}}");
     assert!(run.states() == ["pending", "cancelled"] && run.result(0).is_none(), "a withdrawn request takes its card away");
+    late(&run, "withdrawn");
     let run = asked(pick);
     run.receive(&format!(
         "{{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{{\"sessionId\":\"{OPENCODE_SESSION}\",\"update\":{{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":\"call-9\",\"status\":\"failed\"}}}}}}"
     ));
     assert!(run.states() == ["pending", "cancelled"] && run.result(0).is_none(), "a settled call takes its card away");
+    late(&run, "settled");
     let run = asked(pick);
     run.channel.cancel_all();
     assert!(run.states() == ["pending", "cancelled"] && run.result(0).is_none(), "a stopped run withdraws the card");
+    late(&run, "stopped");
 }
 
 #[test]
@@ -525,7 +543,16 @@ fn opencode_tools_are_rows_and_an_ask_is_the_approval_card_answered_once() {
             && option(&reply).as_deref() == Some("once"),
         "answered with opencode's own option, id 0 as a number: {reply}"
     );
-    assert!(run.channel.respond(&card.id, true).is_err() && !run.parser.failed() && run.channel.turn_completed(), "answered once");
+    let writes = run.writes().len();
+    assert!(
+        run.channel.respond(&card.id, true).is_err()
+            && run.channel.respond(&card.id, false).is_err()
+            && run.channel.respond("no-such-card", true).is_err()
+            && run.writes().len() == writes
+            && !run.parser.failed()
+            && run.channel.turn_completed(),
+        "answered once: a second answer, or one to no card, writes nothing"
+    );
     let usage = run.usage().last().cloned().unwrap();
     assert!(
         usage.input_tokens == Some(5148)
@@ -538,6 +565,11 @@ fn opencode_tools_are_rows_and_an_ask_is_the_approval_card_answered_once() {
     assert_eq!(option(&denied.answers()[0]).as_deref(), Some("reject"), "a denial is opencode's reject");
     let ignored = play("opencode", "tools", None, None);
     assert_eq!(ignored.states(), ["pending", "cancelled"], "an unanswered ask goes when its call settles");
+    let (gone, writes) = (ignored.permissions()[0].id.clone(), ignored.writes().len());
+    assert!(
+        ignored.channel.respond(&gone, true).is_err() && ignored.writes().len() == writes,
+        "an Allow for the ask that went is refused and writes nothing"
+    );
 }
 
 #[test]
@@ -661,8 +693,12 @@ fn a_new_hermes_session_is_initialize_then_session_new_then_one_prompt() {
     );
     let cancelled = play("hermes", "cancel", None, None);
     assert!(
-        cancelled.channel.turn_completed() && !cancelled.parser.failed() && cancelled.usage().iter().all(|u| u.total_tokens.is_none()),
-        "a cancelled turn's zeros are not counts"
+        cancelled.channel.turn_completed()
+            && !cancelled.parser.failed()
+            && !cancelled.usage().is_empty()
+            && cancelled.usage().iter().all(|u| u.total_tokens.is_none()),
+        "a cancelled turn's zeros are not counts: {:?}",
+        cancelled.usage()
     );
 }
 
@@ -1217,4 +1253,146 @@ fn the_clarify_config_value_is_the_macs() {
             && agents::hermes_question_names("{}").is_none(),
         "lists as Hermes prints them"
     );
+}
+
+// ── the channel's own rules ───────────────────────────────────────────────────────────────────────────────────────────────
+
+/// `InitializationTimedOut`: an agent that never answered `initialize` fails the channel closed with the timeout's words, and nothing
+/// but `initialize` was ever written; once the session is open (the prompt sent), the timer's end does nothing.
+#[test]
+fn an_initialize_never_answered_times_out_and_a_late_timer_after_the_session_opened_does_nothing() {
+    let silent = channel(&simple("opencode", "hi"), None, None);
+    silent.channel.start();
+    silent.channel.initialization_timed_out();
+    assert!(
+        silent.failures() == [strings::get("acp.channel.initTimeout")] && silent.channel.failed() && silent.methods() == ["initialize"],
+        "timed out: {:?} {:?}",
+        silent.failures(),
+        silent.methods()
+    );
+    let open = channel(&simple("opencode", "hi"), None, None);
+    open.channel.start();
+    let lines = fixture("opencode", "answer");
+    open.receive(&lines[0]);
+    open.receive(&lines[1]);
+    let writes = open.writes().len();
+    open.channel.initialization_timed_out();
+    assert!(
+        open.failures().is_empty()
+            && !open.channel.failed()
+            && open.writes().len() == writes
+            && open.methods() == ["initialize", "session/new", "session/prompt"],
+        "no-op once the session opened: {:?}",
+        open.failures()
+    );
+}
+
+/// A frame nested deeper than serde_json reads (C# reads 256 levels) may be a request the turn waits on: it fails the channel closed as a
+/// frame too large does, never shown as a plain line that leaves the turn waiting.
+#[test]
+fn a_frame_nested_too_deep_to_read_fails_the_channel_closed() {
+    let run = channel(&simple("opencode", "hi"), None, None);
+    run.channel.start();
+    let lines = fixture("opencode", "answer");
+    run.receive(&lines[0]);
+    run.receive(&lines[1]);
+    let deep = format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/request_permission\",\"params\":{{\"sessionId\":\"{OPENCODE_SESSION}\",\"toolCall\":{{\"toolCallId\":\"call-1\",\"rawInput\":{}{}}}}}}}",
+        "[".repeat(200),
+        "]".repeat(200)
+    );
+    run.receive(&deep);
+    assert!(
+        run.failures() == [strings::get("acp.channel.frameTooLarge")] && run.channel.failed() && run.texts("output").is_empty(),
+        "failed closed, nothing shown: {:?} {:?}",
+        run.failures(),
+        run.logs()
+    );
+}
+
+/// The permission request of the tools recording, with its options.
+fn approval(id: i64, call: &str) -> String {
+    format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":{id},\"method\":\"session/request_permission\",\"params\":{{\"sessionId\":\"{OPENCODE_SESSION}\",\"toolCall\":{{\"toolCallId\":\"{call}\",\"title\":\"ls\",\"kind\":\"execute\",\"rawInput\":{{\"command\":\"ls\"}}}},\"options\":[{{\"optionId\":\"once\",\"kind\":\"allow_once\",\"name\":\"Allow\"}},{{\"optionId\":\"reject\",\"kind\":\"reject_once\",\"name\":\"Reject\"}}]}}}}"
+    )
+}
+
+/// ACP, Prompt Turn › Cancellation: "The Client MUST respond to all pending session/request_permission requests with the cancelled
+/// outcome." Before a stop's `session/cancel`, every approval still waiting is answered `cancelled` and its card settles; a form is not a
+/// permission request and is left as it is.
+#[test]
+fn before_a_cancel_every_waiting_approval_is_answered_cancelled() {
+    let run = channel(&simple("opencode", "hi"), None, None);
+    run.channel.start();
+    let lines = fixture("opencode", "answer");
+    run.receive(&lines[0]);
+    run.receive(&lines[1]);
+    run.receive(&approval(4, "call-4"));
+    run.receive(&approval(5, "call-5"));
+    run.receive(&format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"elicitation/create\",\"params\":{{\"mode\":\"form\",\"sessionId\":\"{OPENCODE_SESSION}\",\"toolCallId\":\"call-6\",\"message\":\"Questions\",\"requestedSchema\":{{\"type\":\"object\",\"properties\":{{\"q0\":{{\"type\":\"string\",\"title\":\"Pick\",\"description\":\"Which one?\",\"oneOf\":[{{\"const\":\"a\",\"title\":\"First\"}}]}}}},\"required\":[]}}}}}}"
+    ));
+    assert_eq!(run.states(), ["pending", "pending", "pending"], "two approvals and a form wait");
+    run.channel.cancel_permissions();
+    let cancelled = |id: i64| run.result(id).is_some_and(|r| r == serde_json::json!({"outcome": {"outcome": "cancelled"}}));
+    assert!(cancelled(4) && cancelled(5) && run.result(6).is_none(), "the approvals are answered cancelled, the form is not");
+    let states = run.states();
+    assert!(
+        states.iter().filter(|s| *s == "cancelled").count() == 2 && states.len() == 5 && !run.channel.failed(),
+        "their cards settle: {states:?}"
+    );
+}
+
+/// `Drain`: returns only once every callback is delivered — the one a caller is delivering now and the ones another caller queued
+/// meanwhile — so the runner can read a run's end knowing no card is still on its way.
+#[test]
+fn drain_waits_for_the_callback_being_delivered_and_for_what_was_queued_meanwhile() {
+    use std::sync::atomic::AtomicBool;
+    use std::time::Duration;
+
+    common::korean();
+    let cards: Arc<Mutex<Vec<String>>> = Arc::default();
+    let (holding, release) = (Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)));
+    let mut hooks = AcpHooks::writing(Arc::new(|_| {}));
+    let (seen, held, let_go) = (cards.clone(), holding.clone(), release.clone());
+    hooks.emit = Arc::new(move |value: ToolPermissionRequest| {
+        // The first card's delivery takes until the check lets it go.
+        if !held.swap(true, Ordering::SeqCst) {
+            while !let_go.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+        seen.lock().unwrap().push(value.state);
+    });
+    let channel = Arc::new(AcpChannel::new(
+        AcpRequest { run_id: "pane".into(), workspace_path: "/tmp/project".into(), prompt_text: "hi".into(), ..AcpRequest::default() },
+        hooks,
+    ));
+    channel.start();
+    let lines = fixture("opencode", "answer");
+    channel.receive(&lines[0]);
+    channel.receive(&lines[1]);
+    let first = {
+        let channel = channel.clone();
+        std::thread::spawn(move || channel.receive(&approval(4, "call-4")))
+    };
+    while !holding.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    // Another caller's card is queued behind the one being delivered; this caller returns at once.
+    channel.receive(&approval(5, "call-5"));
+    let drained = Arc::new(AtomicBool::new(false));
+    let drainer = {
+        let (channel, drained) = (channel.clone(), drained.clone());
+        std::thread::spawn(move || {
+            channel.drain();
+            drained.store(true, Ordering::SeqCst);
+        })
+    };
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(!drained.load(Ordering::SeqCst) && cards.lock().unwrap().is_empty(), "drain waits while a card is being delivered");
+    release.store(true, Ordering::SeqCst);
+    drainer.join().unwrap();
+    assert_eq!(*cards.lock().unwrap(), ["pending", "pending"], "both cards were delivered before drain returned");
+    first.join().unwrap();
 }

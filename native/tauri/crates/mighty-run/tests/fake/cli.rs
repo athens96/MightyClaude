@@ -708,6 +708,7 @@ fn replay_cli(recording: &str, record: &str, args: &[String]) {
 /// (`"id":"mighty-…"`) goes only after one request line was read; `--fake-stall` stops before the prompt's answer and `--fake-linger`
 /// keeps the server up after its input ended, both for a minute. `--fake-await-answers` (not C#'s: its checks answer no card) also waits,
 /// after each request of the agent's own (a permission, a form), for the client's answer line before it goes on, as a real agent does.
+/// Not C#'s either: each line read is also timestamped in `stdin-times.txt`, and `stdin-ended` says when stdin ended.
 fn fake_acp(state: &str, fixture_path: &str, rest: &[String]) {
     let linger = rest.iter().any(|a| a == "--fake-linger");
     let stall = rest.iter().any(|a| a == "--fake-stall");
@@ -750,6 +751,20 @@ fn fake_acp(state: &str, fixture_path: &str, rest: &[String]) {
     });
     let _ = std::fs::write(state.join("env.json"), env.to_string());
     let stdin = state.join("stdin.txt").to_string_lossy().into_owned();
+    // Each line read, also in `stdin-times.txt` with when it was read (milliseconds since 1970), and `stdin-ended` once stdin ends.
+    let times = state.join("stdin-times.txt").to_string_lossy().into_owned();
+    let ended = state.join("stdin-ended");
+    let now = || std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    let read_line = || match read_line() {
+        Some(line) => {
+            append(&times, &format!("{} {line}\n", now()));
+            Some(line)
+        }
+        None => {
+            let _ = std::fs::write(&ended, now().to_string());
+            None
+        }
+    };
     let recorded = std::fs::read_to_string(fixture_path).unwrap_or_default();
     // The client's requests read while waiting for an answer, each still owed its recorded answer.
     let mut requests: std::collections::VecDeque<String> = std::collections::VecDeque::new();
