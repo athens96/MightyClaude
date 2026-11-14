@@ -40,7 +40,15 @@ extension AppStore {
         guard !ending, !closingSessions.contains(sessionId), !antigravityResponses.contains(key),
               let card = antigravityBoard.pending(sessionId: sessionId, requestId: request.id, runId: request.runId) else { return L("remote.error.notPendingPermission") }
         antigravityPermissionErrors.removeValue(forKey: sessionId)
-        guard decision != .deny else { antigravityBoard.remove(sessionId: sessionId); return nil }
+        guard decision != .deny else {
+            antigravityBoard.remove(sessionId: sessionId)
+            // A continuation of this card still waiting leaves with its rules (S-L3).
+            if var queue = queuedInputs[sessionId] {
+                queue.revokeContinuations(of: card.id)
+                queuedInputs[sessionId] = queue.isEmpty ? nil : queue
+            }
+            return nil
+        }
         func refuse(_ reason: String) -> String { antigravityPermissionErrors[sessionId] = reason; return reason }
         // No rule, or "항상 허용" for a rule that may be allowed only once.
         if let reason = AntigravityPermissionFlow.refusal(card, decision: decision) { return refuse(reason) }

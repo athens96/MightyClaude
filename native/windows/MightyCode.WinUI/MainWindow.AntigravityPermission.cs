@@ -131,7 +131,13 @@ public sealed partial class MainWindow
             var service = owner.service; var notPending = Locale.Get("remote.error.notPendingPermission");
             if (owner.closing || !QueuePaneAlive || service.AntigravityAnswering(id, request) || service.PendingAntigravityCard(id, request.Id, request.RunId) is not { } card) return notPending;
             service.SetAntigravityError(id, null);
-            if (decision == AntigravityPermissionDecision.Deny) { service.TakeAntigravityCard(id); return null; }
+            if (decision == AntigravityPermissionDecision.Deny)
+            {
+                service.TakeAntigravityCard(id);
+                // A continuation of this card still waiting (its start failed and the card came back) leaves with its rules (S-L3).
+                if (queuedInputs.RevokeContinuations(card.Id) > 0) { RenderQueuedInputs(); RefreshComposerState(); }
+                return null;
+            }
             string Refuse(string reason) { service.SetAntigravityError(id, reason); return reason; }
             // No rule, or 항상 허용 for a rule that may be allowed only once.
             if (AntigravityPermissionFlow.Refusal(card, decision) is { } refusal) return Refuse(refusal);

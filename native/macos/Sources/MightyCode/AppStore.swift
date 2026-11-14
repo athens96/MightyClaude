@@ -1356,9 +1356,17 @@ final class AppStore: ObservableObject, DelegationHost {
             }
             // A queued request now runs: own when it was this Mac's (B2), the phone's only followed.
             if !start(id, session: session, workspace: workspace, input: next.text, attachments: next.attachments, restoringDraft: nil, queued: next, own: own ?? next.own) {
-                // Validation refused it; keep the item so nothing typed is lost.
-                queuedInputs[id, default: []].insert(next, at: 0)
-                updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("queue.log.keptAfterFailure", ["error": error ?? ""]))) }
+                if next.isContinuation {
+                    // An allowed card's continuation that could not start leaves the queue with its rules (S-L3): its card comes back with the reason.
+                    if let card = next.antigravityCard {
+                        antigravityBoard.restore(card, sessionId: id)
+                        if antigravityBoard[sessionId: id] == card { antigravityPermissionErrors[id] = error ?? L("remote.error.startFailed") }
+                    }
+                } else {
+                    // Validation refused it; keep the item so nothing typed is lost.
+                    queuedInputs[id, default: []].insert(next, at: 0)
+                    updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("queue.log.keptAfterFailure", ["error": error ?? ""]))) }
+                }
             }
         case "stopped":
             // Stopped while the turn was over and only background work ran:

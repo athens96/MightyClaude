@@ -201,6 +201,25 @@ struct AntigravityPermissionTests {
         #expect(AntigravityDeniedAction(kind: .command, action: "command", displayName: "RunCommand", target: "echo 'hi'", rule: "command(echo 'hi')").onceOnlyReason == nil)
     }
 
+    /// S-L3 (Windows ADeniedOrFailedContinuationLeavesTheQueueWithItsRules): a deny of a card takes a
+    /// continuation of it still waiting out of the queue with its rules, by its grant or its card, and
+    /// nothing else; the app also drops a continuation whose start was refused (its card comes back with
+    /// the reason) instead of putting it back, rules and all, at the head of the queue.
+    @Test func aDeniedOrFailedContinuationLeavesTheQueueWithItsRules() throws {
+        let card = AntigravityPermissionRequest(runId: "run-1", actions: [AntigravityDeniedAction(kind: .command, action: "command", displayName: "RunCommand", target: "echo hi", rule: "command(echo hi)")])
+        let other = AntigravityPermissionRequest(runId: "run-2", actions: [AntigravityDeniedAction(kind: .command, action: "command", displayName: "RunCommand", target: "pwd", rule: "command(pwd)")])
+        let allowed = try #require(AntigravityPermissionFlow.continuation(card, decision: .once))
+        let otherGrant = try #require(AntigravityPermissionFlow.continuation(other, decision: .once)).grant
+        let typed = QueuedInput(text: "typed by hand")
+        let waiting = QueuedInput(text: allowed.prompt, antigravityGrant: allowed.grant, antigravityCard: card)
+        let grantOnly = QueuedInput(text: allowed.prompt, antigravityGrant: allowed.grant)
+        let later = QueuedInput(text: "continue", antigravityGrant: otherGrant, antigravityCard: other)
+        #expect(waiting.continues(card: card.id) && grantOnly.continues(card: card.id) && !later.continues(card: card.id) && !typed.continues(card: card.id))
+        var queue = [typed, waiting, grantOnly, later]
+        #expect(queue.revokeContinuations(of: card.id) == 2 && queue.map(\.id) == [typed.id, later.id])
+        #expect(queue.revokeContinuations(of: card.id) == 0 && queue.count == 2)
+    }
+
     @Test func aQueuedItemKeepsItsRecordedModeWhenItsStylePlansEveryRequest() {
         // The run's own decision when it was queued wins, plan-mode style or not.
         let queued = QueuedInput(text: "go", permissionModeOverride: nil)

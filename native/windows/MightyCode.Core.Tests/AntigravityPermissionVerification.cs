@@ -477,6 +477,27 @@ internal static class AntigravityPermissionVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// S-L3 (AntigravityPermissionTests.swift aDeniedOrFailedContinuationLeavesTheQueueWithItsRules): a deny of a card takes a continuation of
+    /// it still waiting out of the queue with its rules, by its grant or its card, and nothing else; the windows also drop a continuation whose
+    /// start failed (its card comes back with the reason) instead of keeping it, rules and all, at the head of the queue.
+    /// </summary>
+    internal static Task ADeniedOrFailedContinuationLeavesTheQueueWithItsRules()
+    {
+        var card = AntigravityPermissionRequest.Make("run-1", [new("command", "command", "RunCommand", "echo hi", "command(echo hi)")]);
+        var other = AntigravityPermissionRequest.Make("run-2", [new("command", "command", "RunCommand", "pwd", "command(pwd)")]);
+        var allowed = AntigravityPermissionFlow.Continuation(card, AntigravityPermissionDecision.Once)!;
+        var queue = new QueuedInputBuffer();
+        var typed = queue.Add("typed by hand", []);
+        var waiting = queue.Add(allowed.Prompt, [], prepared: true, antigravityGrant: allowed.Grant, antigravityCard: card);
+        var grantOnly = queue.Add(allowed.Prompt, [], prepared: true, antigravityGrant: allowed.Grant);
+        var later = queue.Add("continue", [], prepared: true, antigravityGrant: AntigravityPermissionFlow.Continuation(other, AntigravityPermissionDecision.Once)!.Grant, antigravityCard: other);
+        Check(waiting.Continues(card.Id) && grantOnly.Continues(card.Id) && !later.Continues(card.Id) && !typed.Continues(card.Id), "what continues the card");
+        Check(queue.RevokeContinuations(card.Id) == 2 && queue.Items.Select(item => item.Id).SequenceEqual([typed.Id, later.Id]), "its continuations leave, the rest stay in order");
+        Check(queue.RevokeContinuations(card.Id) == 0 && queue.Items.Count == 2, "a second deny changes nothing");
+        return Task.CompletedTask;
+    }
+
     internal static async Task ARuleAgyWritesBackIsTakenOutAgain()
     {
         using var folder = new Folder(); folder.Make(Real);

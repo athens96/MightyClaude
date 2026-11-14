@@ -89,4 +89,17 @@ public extension QueuedInput {
     /// The follow-up of an allowed Antigravity card (`antigravityGrant`, `antigravityCard`): it must start as this pane's
     /// own next run, so 바로 실행 never sends it to a worktree child or steers it (``QueueRunNow/decide(heldIndex:text:attachments:continuation:pane:)``).
     var isContinuation: Bool { antigravityGrant != nil || antigravityCard != nil }
+    /// The continuation of the Antigravity card `cardId`: its grant or its card (Windows `QueuedComposerInput.Continues`).
+    func continues(card cardId: String) -> Bool { antigravityGrant?.requestId == cardId || antigravityCard?.id == cardId }
+}
+
+public extension Array where Element == QueuedInput {
+    /// The card `cardId` was denied: a continuation of it still waiting leaves the queue with its
+    /// rules (S-L3), so a later drain never puts them in place (Windows `QueuedInputBuffer.RevokeContinuations`).
+    /// Returns how many left.
+    @discardableResult mutating func revokeContinuations(of cardId: String) -> Int {
+        let before = count
+        removeAll { $0.continues(card: cardId) }
+        return before - count
+    }
 }

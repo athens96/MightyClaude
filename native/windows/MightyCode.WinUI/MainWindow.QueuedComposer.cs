@@ -462,18 +462,41 @@ public sealed partial class MainWindow
                 request = request with { PermissionModeOverride = item.PermissionModeOverride, AntigravityGrant = item.AntigravityGrant, AntigravityCard = item.AntigravityCard };
                 // Stop or removal while style consent was open must prevent this request from starting.
                 if (!QueuePaneAlive || !queuedInputs.Items.Any(queued => queued.Id == item.Id)) return false;
-                // No run took it (the items held for the pane stay held): it stays at the head of the queue, and the transcript says so (M/AppStore+Delegation.swift:191-195).
-                if (await owner.StartFromComposer(request) is DelegationRelease.NotStarted) { if (QueuePaneAlive) await SlashNote(QueuedInputBuffer.KeptNotice(Locale.Get("remote.error.startFailed"))); return false; }
+                DelegationRelease release;
+                try { release = await owner.StartFromComposer(request); }
+                // An allowed card's continuation that could not start leaves the queue with its rules; its card comes back with the reason.
+                catch (Exception ex) when (ex is not OutOfMemoryException && QueueRunNow.IsContinuation(item)) { RevokeContinuation(item, ex is OperationCanceledException ? null : ex.Message); throw; }
+                if (release is DelegationRelease.NotStarted)
+                {
+                    if (QueueRunNow.IsContinuation(item)) RevokeContinuation(item, Locale.Get("remote.error.startFailed"));
+                    // No run took it (the items held for the pane stay held): it stays at the head of the queue, and the transcript says so (M/AppStore+Delegation.swift:191-195).
+                    else if (QueuePaneAlive) await SlashNote(QueuedInputBuffer.KeptNotice(Locale.Get("remote.error.startFailed")));
+                    return false;
+                }
                 queuedInputs.Remove(item.Id);
                 return true;
             }
             // Refused before its run began (nothing of it reached the transcript): the request stays, and the transcript says why (M/AppStore.swift:917-921).
-            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException) && QueuePaneAlive && Session.Logs.LastOrDefault()?.Id == last)
+            catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException) && !QueueRunNow.IsContinuation(item) && QueuePaneAlive && Session.Logs.LastOrDefault()?.Id == last)
             {
                 await SlashNote(QueuedInputBuffer.KeptNotice(ex.Message));
                 throw;
             }
             finally { queueStarting = false; if (QueuePaneAlive) { RenderQueuedInputs(); RefreshComposerState(); } }
+        }
+
+        /// <summary>
+        /// An allowed Antigravity card's continuation that could not start leaves the queue, and its rules with it (S-L3): its card comes back
+        /// with the reason (none after a stop, as on the Mac), so a deny there, or a later drain, never puts them in place. The service may have
+        /// brought the card back already (DesktopService.ContinuationFailed).
+        /// </summary>
+        private void RevokeContinuation(QueuedComposerInput item, string? reason)
+        {
+            queuedInputs.Remove(item.Id);
+            if (!QueuePaneAlive || reason is null || item.AntigravityCard is not { } card) return;
+            var service = owner.service;
+            service.RestoreAntigravityCard(id, card);
+            if (service.AntigravityCard(id) == card) service.SetAntigravityError(id, reason);
         }
     }
 }

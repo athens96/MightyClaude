@@ -5,7 +5,11 @@ namespace MightyCode.Core;
 /// <param name="AntigravityGrant">The continuation of an allowed Antigravity card: the rules its run puts in place (AntigravityPermissions.cs). Not saved.</param>
 /// <param name="AntigravityCard">That card, which comes back with the reason when its run cannot start. Not saved.</param>
 public sealed record QueuedComposerInput(string Id, string Text, IReadOnlyList<RunAttachment> Attachments, string? PermissionModeOverride = null, bool Prepared = false, AntigravityAllowGrant? AntigravityGrant = null,
-    AntigravityPermissionRequest? AntigravityCard = null);
+    AntigravityPermissionRequest? AntigravityCard = null)
+{
+    /// <summary>The continuation of the Antigravity card <paramref name="cardId"/>: its grant or its card (M/MightyCore/Models.swift QueuedInput.continues).</summary>
+    public bool Continues(string cardId) => AntigravityGrant?.RequestId == cardId || AntigravityCard?.Id == cardId;
+}
 
 /// <summary>Ephemeral requests behind a running turn. Errors pause; an explicit stop cancels.</summary>
 public sealed class QueuedInputBuffer
@@ -23,6 +27,11 @@ public sealed class QueuedInputBuffer
         var item = new QueuedComposerInput(Wire.Id(), text, files, permissionModeOverride, prepared, antigravityGrant, antigravityCard); items.Add(item); return item;
     }
     public bool Remove(string id) => items.RemoveAll(item => item.Id == id) > 0;
+    /// <summary>
+    /// The card <paramref name="cardId"/> was denied: a continuation of it still waiting leaves the queue with its rules (S-L3), so a later
+    /// drain never puts them in place. Returns how many left.
+    /// </summary>
+    public int RevokeContinuations(string cardId) => items.RemoveAll(item => item.Continues(cardId));
     /// <summary>The queued request <paramref name="id"/> moved to the head of the queue (바로 실행 in this pane); false when it is not queued.</summary>
     public bool MoveToFront(string id)
     {
