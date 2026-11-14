@@ -13,7 +13,7 @@ use std::time::Duration;
 use chrono::{DateTime, TimeDelta, Utc};
 #[cfg(windows)]
 use common::{TerminalHosts, launch_plan};
-use mighty_accounts::accounts::{self, CliAccountStatus, CliLoginOption, method};
+use mighty_accounts::accounts::{self, CliAccountStatus, method};
 use mighty_accounts::login::{self, CliAutoLoginGate, CliBackgroundLogin, CliLoginOutputParser, CliLoginRetryBook};
 use mighty_accounts::terminal::{CliLoginOutcome, CliTerminalSignIn, login_wait, terminal_login};
 use mighty_core::json::Wire;
@@ -403,17 +403,13 @@ async fn antigravity_sign_in_is_its_status_reading_signed_in() {
     assert_eq!(pi.outcome, CliLoginOutcome::LoggedIn, "pi's terminal sign-in ends with pi's status");
 }
 
-/// CliLoginRecoveryVerification.cs:147-155, the terminal half: the Antigravity sign-in terminal in the pane's workspace.
+/// CliLoginRecoveryVerification.cs:147-155, the terminal half: the Antigravity sign-in terminal in the pane's workspace (the plan is
+/// the Windows launcher's own, mighty-platform-windows' `launch_plan`).
 #[cfg(windows)]
 #[test]
-fn the_antigravity_sign_in_terminal_starts_in_the_workspace() {}
-
-/// CliLoginRecoveryVerification.cs:298-305: pi.cmd by its full path through cmd /c, in Windows Terminal or the console host.
-#[cfg(windows)]
-#[test]
-fn pis_terminal_runs_its_shim_through_cmd() {
+fn the_antigravity_sign_in_terminal_starts_in_the_workspace() {
     let hosts = TerminalHosts::new(None);
-    let agy = strings_of(&accounts::login_arguments("gemini", CliLoginOption::Account).unwrap());
+    let agy = strings_of(&accounts::login_arguments("gemini", accounts::CliLoginOption::Account).unwrap());
     let plan = launch_plan(&hosts, &agy, true, Some(r"C:\Projects\app"), None, None, None).unwrap();
     assert_eq!(
         plan.1,
@@ -542,10 +538,17 @@ fn pi_sign_in_failures_and_the_terminal_table() {
             && !gate.should_start("pi", true, &status("pi"), false, now, false, None),
         "pi's sign-in starts only for a signed-out status"
     );
+}
 
+/// CliLoginRecoveryVerification.cs:298-305: pi.cmd by its full path through cmd /c, in Windows Terminal or the console host; the tab
+/// says what to type, and a title Windows Terminal would split is left out.
+#[cfg(windows)]
+#[test]
+fn pis_terminal_runs_its_shim_through_cmd() {
+    common::korean();
     let hosts = TerminalHosts::new(None);
     let shim = r"C:\Users\me\AppData\Roaming\npm\pi.cmd";
-    let title = entry("pi").title();
+    let title = CliTerminalSignIn::get("pi").unwrap().title();
     let tab =
         launch_plan(&hosts, &strings_of(&[shim]), true, Some(r"C:\Projects\app"), Some(shim), Some(r"C:\wt.exe"), Some(&title)).unwrap();
     assert!(
@@ -564,6 +567,12 @@ fn pi_sign_in_failures_and_the_terminal_table() {
         launch_plan(&hosts, &strings_of(&["agy"]), true, None, None, None, Some("a;b")).unwrap().1,
         strings_of(&["new-tab", "--", "agy"]),
         "a title Windows Terminal would split is left out"
+    );
+    assert!(
+        mighty_platform_windows::command::is_batch("PI.CMD")
+            && mighty_platform_windows::command::is_batch("x.bat")
+            && !mighty_platform_windows::command::is_batch("agy.exe"),
+        "a .cmd or .bat shim, whatever its case, runs through cmd"
     );
 }
 
