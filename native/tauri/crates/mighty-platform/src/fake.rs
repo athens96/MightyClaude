@@ -536,11 +536,26 @@ pub struct FakeSurfaces {
     log: Log,
     fail_opens: Mutex<usize>,
     listeners: Mutex<std::collections::HashMap<String, BrowserListener>>,
+    /// While set, every view's snapshot waits for a permit of it (as an engine's capture takes its time).
+    snapshot_gate: Arc<Mutex<Option<Arc<tokio::sync::Semaphore>>>>,
 }
 
 impl FakeSurfaces {
     pub fn new(native_terminal: bool) -> FakeSurfaces {
-        FakeSurfaces { native_terminal, log: Arc::default(), fail_opens: Mutex::new(0), listeners: Mutex::default() }
+        FakeSurfaces {
+            native_terminal,
+            log: Arc::default(),
+            fail_opens: Mutex::new(0),
+            listeners: Mutex::default(),
+            snapshot_gate: Arc::default(),
+        }
+    }
+
+    /// Makes every snapshot wait until the returned gate gives it a permit (`add_permits`).
+    pub fn hold_snapshots(&self) -> Arc<tokio::sync::Semaphore> {
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        *lock(&self.snapshot_gate) = Some(gate.clone());
+        gate
     }
 
     /// Sends `event` to the listener of the pane's browser view, as its engine would (a popup the page asked for, a download).
@@ -573,6 +588,7 @@ impl FakeSurfaces {
             state: Mutex::new((SurfaceState { bounds, visible: true, url: url.clone() }, false)),
             listener: None,
             engine: Mutex::new((url.into_iter().collect(), 0)),
+            snapshot_gate: self.snapshot_gate.clone(),
         }
     }
 }
@@ -591,6 +607,7 @@ pub struct FakeView {
     listener: Option<BrowserListener>,
     /// The engine's own history: its entries and the one shown.
     engine: Mutex<(Vec<String>, usize)>,
+    snapshot_gate: Arc<Mutex<Option<Arc<tokio::sync::Semaphore>>>>,
 }
 
 impl FakeView {
@@ -640,6 +657,10 @@ impl NativeSurface for FakeView {
     }
     fn snapshot(&self) -> BoxFuture<'_, Result<Option<String>>> {
         Box::pin(async move {
+            let gate = lock(&self.snapshot_gate).clone();
+            if let Some(gate) = gate {
+                let _ = gate.acquire().await.map(|permit| permit.forget());
+            }
             self.change(SurfaceEvent::Snapshot { pane: self.pane.clone() }, |_| {})?;
             Ok(Some("data:image/png;base64,".to_string()))
         })
@@ -675,7 +696,9 @@ impl BrowserSurface for FakeView {
     }
     fn reload(&self) -> Result<()> {
         self.change(SurfaceEvent::Navigated { pane: self.pane.clone(), url: "reload".into() }, |_| {})?;
-        if let Some(url) = lock(&self.state).0.url.clone() {
+        // The state's guard goes before `loaded` takes it again.
+        let url = lock(&self.state).0.url.clone();
+        if let Some(url) = url {
             self.loaded(&url);
         }
         Ok(())
@@ -728,5 +751,39 @@ impl SurfaceFactory for FakeSurfaces {
     }
     fn open_pet(&self) -> BoxFuture<'_, Result<Box<dyn PetWindow>>> {
         Box::pin(async { Err(PlatformError::unsupported("SurfaceFactory", "open_pet")) })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fake browser's reload loads its page again and its listener hears it (it once waited on its own state's lock for ever); run
+    /// on a thread of its own, so a wait fails the check instead of hanging it.
+    #[test]
+    fn a_fake_browser_reloads_its_page() {
+        let surfaces = FakeSurfaces::new(false);
+        let heard = Arc::new(Mutex::new(Vec::<String>::new()));
+        let sink = heard.clone();
+        let listener = BrowserListener::new(move |event| {
+            if let BrowserEvent::Navigated { url: Some(url), .. } = event {
+                lock(&sink).push(url);
+            }
+        });
+        let options = BrowserOptions {
+            pane_id: "p".into(),
+            url: "https://example.com/".into(),
+            data_dir: PathBuf::new(),
+            bounds: DeviceRect::default(),
+            listener: Some(listener),
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let view = runtime.block_on(surfaces.open_browser(options)).unwrap();
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = done.send(view.reload().is_ok());
+        });
+        assert_eq!(finished.recv_timeout(std::time::Duration::from_secs(5)), Ok(true), "the reload ends");
+        assert_eq!(*lock(&heard), ["https://example.com/", "https://example.com/"], "loaded, then loaded again");
     }
 }

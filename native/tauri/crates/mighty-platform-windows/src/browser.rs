@@ -6,7 +6,9 @@
 //! engine's own navigation events tell the host where the view went (`NavigationCompleted`: the address the engine reports, else the
 //! one the navigation started with, and whether it succeeded); back and forward are the engine's; a press in the page reports the view
 //! focused. The picture a page overlay shows in the view's place is the engine's `CapturePreview` (PNG). Each workspace's panes share
-//! one web profile (`BrowserOptions::data_dir`, the host's `BrowserProfile` folder).
+//! one web profile (`BrowserOptions::data_dir`, the host's `BrowserProfile` folder). As C#'s plain WebView2, the engine keeps
+//! SmartScreen and a dropped file reaches the page; a "leave this page?" dialog is accepted; and a pane never loads the app's own
+//! addresses (its page, its IPC, the frames' protocol), which every webview of the app would answer.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,8 +20,11 @@ use mighty_platform::{
     Result, SurfaceFactory, SurfaceKind, SurfaceState, TerminalOptions, TerminalSurface,
 };
 use tauri::webview::{DownloadEvent, NewWindowResponse, WebviewBuilder};
-use tauri::{PhysicalPosition, PhysicalSize, Rect, Url, Webview, WebviewUrl, Window};
-use webview2_com::Microsoft::Web::WebView2::Win32::{COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG, ICoreWebView2Controller};
+use tauri::{Manager as _, PhysicalPosition, PhysicalSize, Rect, Url, Webview, WebviewUrl, Window};
+use webview2_com::Microsoft::Web::WebView2::Win32::{
+    COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG, COREWEBVIEW2_SCRIPT_DIALOG_KIND, COREWEBVIEW2_SCRIPT_DIALOG_KIND_BEFOREUNLOAD,
+    ICoreWebView2Controller,
+};
 use webview2_com::{
     CapturePreviewCompletedHandler, FocusChangedEventHandler, NavigationCompletedEventHandler, NavigationStartingEventHandler,
     ScriptDialogOpeningEventHandler, take_pwstr,
@@ -33,6 +38,33 @@ use windows::core::{BOOL, PWSTR};
 
 /// The address a view is made with before its first one: the engine's events are attached before anything real loads.
 const BLANK: &str = "about:blank";
+
+/// The browser engine's arguments, the same for every pane (WebView2 makes one environment per data folder, and a workspace's panes
+/// share theirs: a second view with other arguments would not start). wry's default is
+/// `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`; a browser pane keeps SmartScreen (as C#'s WebView2 does, with
+/// no arguments), and only the mini menu and the PDF toolbar's pop-out stay off.
+const BROWSER_ARGUMENTS: &str = "--disable-features=msWebOOUI,msPdfOOUI";
+
+/// The custom protocols every webview of the app answers (the app's page `tauri`, its `ipc`, the frames' `mightyhtml`; on Windows a
+/// view without `use_https_scheme`, as a pane's is, answers them at `http://<name>.<anything>`).
+const APP_PROTOCOLS: [&str; 4] = ["tauri", "ipc", "mightyhtml", "asset"];
+
+/// Whether `url` is one of the app's own addresses, which a browser pane never loads (its page there would be the app's, with what a
+/// local page may call): a custom protocol of the app (as a scheme, or as the first label of an http host, which the engine hands to
+/// the app's handler whatever follows), or the dev server of a dev build.
+fn app_address(url: &Url, dev_server: Option<&Url>) -> bool {
+    let named = |name: &str| APP_PROTOCOLS.iter().any(|p| p.eq_ignore_ascii_case(name));
+    if named(url.scheme()) {
+        return true;
+    }
+    let first_label = url.host_str().and_then(|host| host.split_once('.')).map(|(first, _)| first);
+    if url.scheme() == "http" && first_label.is_some_and(named) {
+        return true;
+    }
+    dev_server.is_some_and(|dev| {
+        dev.scheme() == url.scheme() && dev.host_str() == url.host_str() && dev.port_or_known_default() == url.port_or_known_default()
+    })
+}
 
 fn refused(what: &str, error: impl std::fmt::Display) -> PlatformError {
     PlatformError::Refused(format!("{what}: {error}"))
@@ -82,8 +114,21 @@ unsafe fn attach(controller: &ICoreWebView2Controller, listener: Option<BrowserL
         let core = controller.CoreWebView2()?;
         core.Settings()?.SetAreDefaultScriptDialogsEnabled(false)?;
         let mut token = 0i64;
-        // With the default dialogs off a handler that never accepts dismisses every alert, confirm and prompt.
-        core.add_ScriptDialogOpening(&ScriptDialogOpeningEventHandler::create(Box::new(|_, _| Ok(()))), &mut token)?;
+        // With the default dialogs off a handler that never accepts dismisses every alert, confirm and prompt; a page's "leave this
+        // page?" is accepted, so a page cannot keep the pane from going elsewhere.
+        core.add_ScriptDialogOpening(
+            &ScriptDialogOpeningEventHandler::create(Box::new(|_, args| {
+                if let Some(args) = args {
+                    let mut kind = COREWEBVIEW2_SCRIPT_DIALOG_KIND::default();
+                    args.Kind(&mut kind)?;
+                    if kind == COREWEBVIEW2_SCRIPT_DIALOG_KIND_BEFOREUNLOAD {
+                        args.Accept()?;
+                    }
+                }
+                Ok(())
+            })),
+            &mut token,
+        )?;
         let Some(listener) = listener else { return Ok(()) };
         let started: Arc<Mutex<HashMap<u64, String>>> = Arc::default();
         let starting = started.clone();
@@ -149,13 +194,22 @@ impl SurfaceFactory for WebviewSurfaces {
             let window = self.window.clone();
             let BrowserOptions { data_dir, bounds, listener, .. } = options;
             let (popups, downloads) = (listener.clone(), listener.clone());
+            // A dev build's page comes from the dev server, which a pane never loads either.
+            let dev_server = if tauri::is_dev() { window.config().build.dev_url.clone() } else { None };
+            if app_address(&url, dev_server.as_ref()) {
+                return Err(PlatformError::Invalid("address: the app's own".into()));
+            }
             // add_child waits for the UI thread: never on the UI thread itself, never on an async worker.
             let webview = tauri::async_runtime::spawn_blocking(move || {
                 // Its own WebView2 data: never the page's (whose environment options differ) and never the C# app's. No remote
-                // debugging port, no extra arguments; a new window or a download is refused and the host hears of it.
+                // debugging port, the engine's arguments set (SmartScreen kept), files dropped on it the page's own (a drop handler
+                // would swallow them), never the app's own addresses; a new window or a download is refused and the host hears of it.
                 let builder = WebviewBuilder::new(label, WebviewUrl::External(Url::parse(BLANK).expect("about:blank")))
                     .data_directory(data_dir)
+                    .additional_browser_args(BROWSER_ARGUMENTS)
+                    .disable_drag_drop_handler()
                     .focused(false)
+                    .on_navigation(move |url| !app_address(url, dev_server.as_ref()))
                     .on_new_window(move |_, _| {
                         if let Some(listener) = &popups {
                             listener.send(BrowserEvent::PopupRefused);
@@ -179,10 +233,18 @@ impl SurfaceFactory for WebviewSurfaces {
             .await
             .map_err(|error| refused("the browser view", error))?
             .map_err(|error| refused("the browser view", error))?;
-            // SAFETY: on_ui runs the closure on the UI thread that owns the controller.
-            on_ui(&webview, "the browser engine", move |controller| unsafe { attach(controller, listener) }).await?;
-            if url.as_str() != BLANK {
-                webview.navigate(url).map_err(|error| refused("navigate", error))?;
+            // From here a failure closes the view it made: no shown view is left without its pane's surface.
+            let started = async {
+                // SAFETY: on_ui runs the closure on the UI thread that owns the controller.
+                on_ui(&webview, "the browser engine", move |controller| unsafe { attach(controller, listener) }).await?;
+                if url.as_str() != BLANK {
+                    webview.navigate(url).map_err(|error| refused("navigate", error))?;
+                }
+                Ok(())
+            };
+            if let Err(error) = started.await {
+                let _ = webview.close();
+                return Err(error);
             }
             Ok(Box::new(WebviewBrowser { webview }) as Box<dyn BrowserSurface>)
         })
@@ -306,6 +368,11 @@ impl NativeSurface for WebviewBrowser {
 impl BrowserSurface for WebviewBrowser {
     fn navigate(&self, url: &str) -> Result<()> {
         let url = Url::parse(url).map_err(|error| PlatformError::Invalid(format!("address: {error}")))?;
+        // The engine's navigation handler refuses the app's own addresses too; this says so to the caller.
+        let dev_server = if tauri::is_dev() { self.webview.config().build.dev_url.clone() } else { None };
+        if app_address(&url, dev_server.as_ref()) {
+            return Err(PlatformError::Invalid("address: the app's own".into()));
+        }
         self.webview.navigate(url).map_err(|error| refused("navigate", error))
     }
 
@@ -343,12 +410,50 @@ pub fn runtime_version() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::label;
+    use super::*;
 
     #[test]
     fn labels_are_tauri_labels_and_unique() {
         assert_eq!(label("a1:b/c", 3), "browser-a1_b_c-3");
         assert_ne!(label("p", 1), label("p", 2));
+    }
+
+    /// A browser pane keeps SmartScreen: its arguments turn off only the mini menu and the PDF pop-out (wry's default also turned
+    /// off msSmartScreenProtection).
+    #[test]
+    fn browser_panes_keep_smartscreen() {
+        assert!(!BROWSER_ARGUMENTS.contains("SmartScreen"), "{BROWSER_ARGUMENTS}");
+        assert_eq!(BROWSER_ARGUMENTS, "--disable-features=msWebOOUI,msPdfOOUI");
+    }
+
+    /// The app's own addresses (its page, its IPC, the frames' protocol, the dev server) are never a pane's; the web is.
+    #[test]
+    fn a_pane_never_loads_the_app_itself() {
+        let url = |text: &str| Url::parse(text).unwrap();
+        let dev = url("http://localhost:5173");
+        for own in [
+            "http://tauri.localhost/index.html",
+            "http://TAURI.localhost/",
+            "http://ipc.localhost/host_post",
+            "http://mightyhtml.h1.html.mighty.invalid/page.html",
+            "tauri://localhost/",
+            "ipc://localhost/",
+            "mightyhtml://h1/",
+            "http://localhost:5173/src/main.tsx",
+        ] {
+            assert!(app_address(&url(own), Some(&dev)), "{own}");
+        }
+        for web in [
+            "https://example.com/",
+            "http://localhost:8080/",
+            "http://127.0.0.1:5173/",
+            "about:blank",
+            "https://tauri.app/",
+            "http://localhost/",
+        ] {
+            assert!(!app_address(&url(web), Some(&dev)), "{web}");
+        }
+        assert!(!app_address(&url("http://localhost:5173/"), None), "a release build has no dev server");
     }
 
     #[test]

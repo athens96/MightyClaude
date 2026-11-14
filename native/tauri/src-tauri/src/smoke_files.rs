@@ -97,9 +97,14 @@ const PROBE: &str = r#"(async () => {
   await window.__TAURI_INTERNALS__.invoke('smoke_probe', { probe: report });
 })();"#;
 
+/// Where the steps' workspace folder is (this run's own; removed again once the checks are read).
+fn fixture_path() -> PathBuf {
+    std::env::temp_dir().join(format!("mighty-tauri-smoke-files-{}", std::process::id()))
+}
+
 /// The steps' workspace folder with its fixture files.
 fn fixture_folder() -> std::io::Result<PathBuf> {
-    let folder = std::env::temp_dir().join(format!("mighty-tauri-smoke-files-{}", std::process::id()));
+    let folder = fixture_path();
     let files = [
         ("smoke-folder/hello.ts", "const smokeMarker = 42; // web files smoke\n"),
         ("src/a.ts", "// referenceMarker\nconst one = 1;\nconst three = 3;\nexport { one, three };\n"),
@@ -174,8 +179,10 @@ pub fn start(host: &Host) -> Result<String, String> {
         .replace("__PICTURES__", PICTURES))
 }
 
-/// The steps' checks, from the probe's report and what the frames' protocol served.
+/// The steps' checks, from the probe's report and what the frames' protocol served. The smoke reads them last: the fixture folder
+/// goes here.
 pub fn checks(host: &Host, report: &Value) -> Vec<(&'static str, bool)> {
+    let _ = std::fs::remove_dir_all(fixture_path());
     let yes = |key: &str| report.get(key) == Some(&Value::Bool(true));
     let served = served(host);
     let frame = report.get("htmlFrame").and_then(Value::as_str).unwrap_or("");

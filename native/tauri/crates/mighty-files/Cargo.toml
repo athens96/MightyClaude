@@ -22,6 +22,8 @@ base64 = "0.22"
 tokio = { workspace = true, features = ["io-util", "time", "macros"] }
 # SVG drawn to PNG (C# NativeSvgRaster, Win2D's CanvasSvgDocument): the safe, canonical document only.
 resvg = "0.50"
+# The size of a picture inside an SVG, read from its header before resvg decodes it (the reader usvg itself uses).
+imagesize = "0.15"
 # Pictures the page cannot draw as they are, or too large to send whole, decoded and fitted to a PNG (C# BitmapDecoder/BitmapEncoder).
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico", "tiff"] }
 

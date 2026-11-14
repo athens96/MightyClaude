@@ -414,11 +414,12 @@ pub async fn pick_folder_path(host: &Arc<Host>) -> Option<std::path::PathBuf> {
 }
 
 /// C# `ConfirmRemoveWorkspace`: asked in the page (danger, Cancel the default), then `RemoveWorkspaceAsync`: every pane's run stopped,
-/// the workspace and its panes gone, another one active.
+/// the workspace and its panes gone, another one active. The sheet stays up until the workspace is gone, so the add menu and the
+/// other sheets stay off while its runs stop (nothing is added to a workspace on its way out).
 async fn remove_workspace(host: &Arc<Host>, id: &str) -> Result<(), String> {
     let Some(name) = host.view().snapshot.workspace(id).map(|w| w.name().to_string()) else { return Ok(()) };
+    let Some(_sheet) = Sheet::begin(host) else { return Ok(()) };
     let confirmed = {
-        let Some(_sheet) = Sheet::begin(host) else { return Ok(()) };
         let l = host.locale;
         let (_, answer) = dialogs::of(host).open(json!({
             "type": "confirm", "title": l.get("workspace.remove.title"), "message": l.get_with("workspace.remove.body", &[("name", &name)]),

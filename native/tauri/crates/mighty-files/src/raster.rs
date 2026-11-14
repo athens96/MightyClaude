@@ -20,6 +20,10 @@ pub struct SvgRaster {
     pub original_height: f64,
 }
 
+/// The most pixels a picture inside an SVG may have to be drawn: a 4,096 × 4,096 drawing's worth (the largest the SVG itself is drawn
+/// at), so a few kilobytes of PNG can never make the drawing decode gigabytes.
+pub const MAXIMUM_EMBEDDED_PIXELS: u64 = 4096 * 4096;
+
 /// The system's fonts, read once (Win2D draws an SVG's text with them).
 fn fonts() -> Arc<usvg::fontdb::Database> {
     static FONTS: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
@@ -44,6 +48,14 @@ pub fn svg_png(bytes: &[u8], maximum_edge: u32, enlarge: bool) -> Result<SvgRast
     let mut options = usvg::Options { fontdb: fonts(), ..usvg::Options::default() };
     // Only what the document holds is drawn: no file is read for an <image> (SafeSvgDocument let only data: pictures through).
     options.image_href_resolver.resolve_string = Box::new(|_, _| None);
+    // resvg decodes a data: picture whole to draw it: one whose header says more than MAXIMUM_EMBEDDED_PIXELS is left out.
+    let data_resolver = usvg::ImageHrefResolver::default_data_resolver();
+    options.image_href_resolver.resolve_data = Box::new(move |mime, data, options| {
+        if imagesize::blob_size(&data).is_ok_and(|size| size.width as u64 * size.height as u64 > MAXIMUM_EMBEDDED_PIXELS) {
+            return None;
+        }
+        data_resolver(mime, data, options)
+    });
     let tree = usvg::Tree::from_str(&source.xml, &options).map_err(|_| AgentImageError::Undecodable)?;
     let mut pixmap = tiny_skia::Pixmap::new(width, height).ok_or(AgentImageError::TooManyPixels)?;
     // The document laid out at its own size, then scaled to the pixels (C#: the drawing session's transform over DrawSvg).
@@ -64,12 +76,19 @@ pub struct BitmapSize {
     pub height: u32,
 }
 
-/// A decoder over the bytes; `measuring` reads the header only, so no limit on what a decode would allocate applies (WIC reads a
-/// picture's size without decoding it); a decode keeps the image crate's limits.
+/// What reading a picture's header may allocate: its size is read without decoding it (WIC reads it so), so no limit on the picture's
+/// own size applies, but what the header holds is bounded (a PNG's iCCP profile is inflated as it is read: a crafted one would
+/// otherwise grow to gigabytes from a megabyte).
+pub const MAXIMUM_HEADER_BYTES: u64 = 64 * 1024 * 1024;
+
+/// A decoder over the bytes; `measuring` reads the header only, bounded by [`MAXIMUM_HEADER_BYTES`] and with no limit on the
+/// picture's width or height; a decode keeps the image crate's limits.
 fn decoder(bytes: &[u8], measuring: bool) -> image::ImageResult<impl ImageDecoder + '_> {
     let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
     if measuring {
-        reader.no_limits();
+        let mut limits = image::Limits::no_limits();
+        limits.max_alloc = Some(MAXIMUM_HEADER_BYTES);
+        reader.limits(limits);
     }
     reader.into_decoder()
 }

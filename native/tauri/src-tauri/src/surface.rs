@@ -97,11 +97,12 @@ pub fn profile_key(workspace_profile_key: Option<&str>, workspace_id: &str) -> S
     [workspace_profile_key.unwrap_or(""), workspace_id].into_iter().find(|key| wire::identifier(key)).unwrap_or("default").to_string()
 }
 
+/// A slot's view, shared so that a wait on it (a snapshot, an inspect) happens with the slots' lock let go.
 enum View {
-    Browser(Box<dyn BrowserSurface>),
+    Browser(Arc<dyn BrowserSurface>),
     /// The Mac's Ghostty view, opened by its pane's terminal (the Mac stage); Windows draws terminals in the page.
     #[allow(dead_code)]
-    Terminal(Box<dyn TerminalSurface>),
+    Terminal(Arc<dyn TerminalSurface>),
 }
 
 impl View {
@@ -109,6 +110,13 @@ impl View {
         match self {
             View::Browser(view) => view.as_ref(),
             View::Terminal(view) => view.as_ref(),
+        }
+    }
+
+    fn shared(&self) -> Arc<dyn NativeSurface> {
+        match self {
+            View::Browser(view) => view.clone(),
+            View::Terminal(view) => view.clone(),
         }
     }
 }
@@ -306,7 +314,7 @@ impl SurfaceManager {
             let options = BrowserOptions { pane_id: pane.to_string(), url, data_dir, bounds: report.rect, listener: Some(listener) };
             match self.factory.open_browser(options).await {
                 Ok(view) => {
-                    slot.view = Some(View::Browser(view));
+                    slot.view = Some(View::Browser(Arc::from(view)));
                     slot.shown = true;
                     slot.placed = Some(report.rect);
                     self.browsers.change(pane, |browser| browser.status = "ready");
@@ -338,13 +346,18 @@ impl SurfaceManager {
         Ok(())
     }
 
-    /// `focus` → null; `snapshot` → a `data:` URL or null. A slot without a view answers null.
+    /// The slot's view, the slots' lock let go again (for a wait on the view: every other slot's report goes on meanwhile).
+    async fn view_of(&self, pane: &str, kind: SurfaceKind) -> Option<Arc<dyn NativeSurface>> {
+        self.slots.lock().await.get(&(pane.to_string(), kind)).and_then(|slot| slot.view.as_ref()).map(View::shared)
+    }
+
+    /// `focus` → null; `snapshot` → a `data:` URL or null (waited for with the slots' lock let go: up to 2 s). A slot without a view
+    /// answers null.
     pub async fn action(&self, pane: &str, kind: SurfaceKind, action: &str) -> Reply {
-        let slots = self.slots.lock().await;
-        let Some(view) = slots.get(&(pane.to_string(), kind)).and_then(|slot| slot.view.as_ref()) else { return Ok(Value::Null) };
+        let Some(view) = self.view_of(pane, kind).await else { return Ok(Value::Null) };
         match action {
-            "focus" => view.native().focus().map(|()| Value::Null).map_err(|e| e.to_string()),
-            "snapshot" => Ok(view.native().snapshot().await.map_err(|e| e.to_string())?.map(Value::String).unwrap_or(Value::Null)),
+            "focus" => view.focus().map(|()| Value::Null).map_err(|e| e.to_string()),
+            "snapshot" => Ok(view.snapshot().await.map_err(|e| e.to_string())?.map(Value::String).unwrap_or(Value::Null)),
             other => Err(format!("unknown surface action: {other}")),
         }
     }
@@ -502,9 +515,7 @@ impl SurfaceManager {
 
     /// What the OS's view really is (the smoke's check); None without a view.
     pub async fn inspect(&self, pane: &str, kind: SurfaceKind) -> Option<SurfaceState> {
-        let slots = self.slots.lock().await;
-        let view = slots.get(&(pane.to_string(), kind))?.view.as_ref()?;
-        view.native().inspect().await.ok()
+        self.view_of(pane, kind).await?.inspect().await.ok()
     }
 }
 
@@ -820,6 +831,30 @@ mod tests {
         assert_eq!(h.surfaces.events().last(), Some(&SurfaceEvent::Closed { pane: "p".into() }));
         assert!(h.manager.inspect("p", SurfaceKind::Browser).await.is_none());
         assert_eq!(h.manager.browser_state("p")["status"], "starting", "its state went with it");
+    }
+
+    /// A snapshot is waited for with the slots' lock let go (the engine's capture takes up to 2 s): every report goes on meanwhile.
+    #[tokio::test]
+    async fn a_snapshot_never_holds_the_slots() {
+        let surfaces = Arc::new(FakeSurfaces::new(false));
+        let manager = Arc::new(SurfaceManager::new(surfaces.clone(), Os::Windows, PathBuf::from("browser-data"), Arc::new(|_| {})));
+        manager.set_runtime(Arc::new(|| Some("130.0".into())));
+        manager.browser_open("p", "workspace", true).await.unwrap();
+        manager.bounds("p", SurfaceKind::Browser, shown(RECT)).await.unwrap();
+        let gate = surfaces.hold_snapshots();
+        let snapping = {
+            let manager = manager.clone();
+            tokio::spawn(async move { manager.action("p", SurfaceKind::Browser, "snapshot").await })
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(!snapping.is_finished(), "the snapshot waits on the engine");
+        let moved = DeviceRect { y: 40, ..RECT };
+        tokio::time::timeout(std::time::Duration::from_secs(2), manager.bounds("p", SurfaceKind::Browser, shown(moved)))
+            .await
+            .expect("a report while a snapshot waits")
+            .unwrap();
+        gate.add_permits(1);
+        assert!(snapping.await.unwrap().unwrap().as_str().unwrap().starts_with("data:image/png"));
     }
 
     #[tokio::test]

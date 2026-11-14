@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: the page listens for the host's messages (host-message). The app's own commands (host_post, smoke_probe) need no permission.",
-  "windows": ["main"],
+  "description": "The app's own page, the main webview only (never a browser pane's child webview, which lives in the same window): it listens for the host's messages (host-message). The app's own commands (host_post, smoke_probe) need no permission; host_post takes only the main webview's page.",
+  "webviews": ["main"],
   "permissions": ["core:event:default"]
 }

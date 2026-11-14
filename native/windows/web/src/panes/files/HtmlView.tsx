@@ -22,8 +22,9 @@ export function HtmlToggle({ source, onChoose }: { source: boolean; onChoose: (s
  * The page itself (Mac: WKWebView with read access to the file's folder). The host serves the file's folder under a name of its
  * own (`htmlFrame`, WebShell.HtmlHostSuffix) and the page shows it in a frame sandboxed to scripts only: with no
  * `allow-same-origin` the page runs in an opaque origin, so it cannot reach this window, its bridge or its storage, nor top-navigate,
- * open popups, submit forms or download. The host also refuses every frame navigation outside the mapped hosts, so links to
- * other sites do nothing.
+ * open popups, submit forms or download. Links to other sites do nothing: the C# host refuses every frame navigation outside the
+ * mapped hosts (FrameNavigationStarting); Tauri has no such hook, so there the window's policy (frame-src: the mapped hosts only)
+ * refuses them, and each served page carries `sandbox allow-scripts; frame-src` the mapped hosts of its own.
  */
 export function HtmlFrame({ paneId, path, name, reference }: { paneId: string; path: string; name: string; reference: boolean }) {
   const { bridge, t } = useServices();

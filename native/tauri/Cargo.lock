@@ -1986,6 +1986,7 @@ dependencies = [
  "chrono",
  "encoding_rs",
  "image",
+ "imagesize",
  "mighty-composer",
  "mighty-core",
  "mighty-graph",

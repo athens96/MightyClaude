@@ -213,7 +213,8 @@ pub fn register(methods: &mut Registry) {
             return Ok(Value::Null);
         };
         let cache = host.engine()?.images.clone();
-        let tiles = tauri::async_runtime::spawn_blocking(move || {
+        // The tiles' SVGs are drawn here: bounded as any untrusted drawing (past it, no tile).
+        let tiles = crate::files::bounded(move || {
             page.shown
                 .iter()
                 .map(|item| {
@@ -275,7 +276,8 @@ pub fn register(methods: &mut Registry) {
         let Some(image) = image else { return Ok(Value::Null) };
         let cache = host.engine()?.images.clone();
         let kind = image.media_type.clone().unwrap_or_else(|| "image/png".into());
-        let data = tauri::async_runtime::spawn_blocking(move || cache.data(&image)).await.ok().flatten();
-        Ok(image_url(data, &kind).map_or(Value::Null, Value::from))
+        // Read and (an SVG) drawn off the page's thread, the drawing bounded as any untrusted one.
+        let url = crate::files::bounded(move || image_url(cache.data(&image), &kind)).await.flatten();
+        Ok(url.map_or(Value::Null, Value::from))
     });
 }

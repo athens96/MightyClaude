@@ -50,6 +50,12 @@ const MAXIMUM_PATH_UNITS: usize = 4096;
 /// C# `WebPictureBytes`, `WebSvgEdge`: the most a picture handed to the page may weigh, and the longest edge an SVG is drawn at.
 const WEB_PICTURE_BYTES: usize = 8 * 1024 * 1024;
 const WEB_SVG_EDGE: u32 = 2048;
+/// The longest an untrusted document (a PDF's first page, an SVG's filters) may take to be drawn before the page hears it failed. The
+/// drawing cannot be stopped: it ends on its own thread and its answer is dropped.
+const RENDER_TIME: Duration = Duration::from_secs(20);
+/// How many frame files are read at once (each up to `frames::MAXIMUM_ASSET_BYTES` in memory): a page asking for hundreds waits.
+const FRAME_READS: usize = 8;
+static FRAME_PERMITS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(FRAME_READS);
 
 /// The files pane's state for the app's life.
 pub struct Files {
@@ -153,11 +159,34 @@ fn retain_originals(files: &Files, sessions: &[Arc<RunSession>]) {
 
 /// The run engine's hook (mighty-run `FileOriginals`): an Edit, Write or MultiEdit result of a Claude run, kept as C#
 /// `FileOriginalStore.Capture` keeps it (the parser's `EditedOriginal` reading of the result: `FileEdit::from_result`).
+///
+/// The run's output is read on an async worker: the capture (which reads and writes files) is done on a thread of its own, one
+/// result after another in the order they came.
 pub fn originals_hook(app: &AppHandle) -> Option<mighty_run::manager::FileOriginals> {
     let store = app.try_state::<Arc<Files>>()?.originals.clone();
+    let (sender, captures) = std::sync::mpsc::channel::<(String, String, String, String, FileEdit)>();
+    std::thread::Builder::new()
+        .name("file-originals-capture".into())
+        .spawn(move || {
+            for (session, run, root, path, edit) in captures {
+                store.capture(&session, &run, &root, &path, &edit);
+            }
+        })
+        .ok()?;
     Some(Arc::new(move |session: &str, run: &str, root: &str, path: &str, tool: &str, result: &Value| {
-        store.capture(session, run, root, path, &FileEdit::from_result(tool, result));
+        let edit = FileEdit::from_result(tool, result);
+        let _ = sender.send((session.into(), run.into(), root.into(), path.into(), edit));
     }))
+}
+
+/// `work` on a blocking thread, waited for at most `limit` (None past it, or when it panicked).
+async fn bounded_by<T: Send + 'static>(limit: Duration, work: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    tokio::time::timeout(limit, tauri::async_runtime::spawn_blocking(work)).await.ok()?.ok()
+}
+
+/// An untrusted drawing off the page's thread, waited for at most [`RENDER_TIME`].
+pub async fn bounded<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    bounded_by(RENDER_TIME, work).await
 }
 
 fn state(host: &Host) -> Result<Arc<Files>, String> {
@@ -211,15 +240,16 @@ fn with_tree<T>(files: &Files, workspace: &str, change: impl FnOnce(&mut FilePan
     change(lock(&files.trees).entry(workspace.to_string()).or_default())
 }
 
-/// C# `WebFilePreview`: the file read (`FilePreviewLoader`) and drawn for the page, off its thread.
+/// C# `WebFilePreview`: the file read (`FilePreviewLoader`) and drawn for the page, off its thread; a drawing past [`RENDER_TIME`]
+/// is a failed preview.
 async fn file_preview(files: Arc<Files>, locale: Locale, root: String, path: String) -> Value {
     let worker = path.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    bounded(move || {
         let data = preview::load(Path::new(&root), &worker, files.ports.handles.as_ref(), &locale);
         model::file_preview(&worker, &data, &locale, files.formats.as_ref(), files.ports.pdf.as_ref())
     })
     .await
-    .unwrap_or_else(|_| model::failed_preview(&path, "", &locale.get("files.preview.failed")))
+    .unwrap_or_else(|| model::failed_preview(&path, "", &locale.get("files.preview.failed")))
 }
 
 /// C# `WebImageUrl`: a picture's bytes as a data URL the page's policy allows: PNG, JPEG, GIF and WebP as they are, an SVG drawn to
@@ -255,6 +285,20 @@ fn originals_run(view: &View, pane: &str, run: &str) -> String {
 /// C# `WorkspaceFiles.Resolve(path, root)` read off the page's thread.
 async fn resolve(path: String, root: String) -> Option<PathBuf> {
     tauri::async_runtime::spawn_blocking(move || mighty_core::workspace_files::resolve(&path, Path::new(&root))).await.ok().flatten()
+}
+
+/// [`resolve`] for a file: None for a folder (C#'s `Directory.Exists(path)` check), read off the page's thread too.
+async fn resolve_file(path: String, root: String) -> Option<PathBuf> {
+    tauri::async_runtime::spawn_blocking(move || mighty_core::workspace_files::resolve(&path, Path::new(&root)).filter(|p| !p.is_dir()))
+        .await
+        .ok()
+        .flatten()
+}
+
+/// The desktop's open (its default app) or reveal (Explorer), which wait on the shell: off the page's thread.
+async fn desktop<T: Send + 'static>(files: &Files, act: impl FnOnce(&dyn mighty_platform::Desktop) -> T + Send + 'static) -> Option<T> {
+    let desktop = files.ports.desktop.clone();
+    tauri::async_runtime::spawn_blocking(move || act(desktop.as_ref())).await.ok()
 }
 
 /// The error banner (C# `error.Text = ex.Message`).
@@ -424,11 +468,10 @@ async fn picture_action(
     let cache = host.engine()?.images.clone();
     let locale = host.locale;
     let (worker_files, worker_cache, worker_root) = (files.clone(), cache.clone(), root.clone());
-    let shown = tauri::async_runtime::spawn_blocking(move || {
-        load_picture(&action, worker_root.as_deref(), &worker_cache, &locale).map(|s| (s, action))
-    })
-    .await
-    .map_err(|e| e.to_string())??;
+    // An SVG is drawn here: bounded as any untrusted drawing.
+    let shown = bounded(move || load_picture(&action, worker_root.as_deref(), &worker_cache, &locale).map(|s| (s, action)))
+        .await
+        .ok_or_else(|| locale.get("images.missing"))??;
     let (shown, action) = shown;
     match name {
         "copy" => tauri::async_runtime::spawn_blocking(move || {
@@ -478,18 +521,33 @@ async fn picture_action(
 
 // ---- the HTML frames' protocol ----------------------------------------------------------------------------------------------
 
-/// Where a frame host's files start: the protocol as the OS's webview reaches it.
-fn frame_origin(host: &str) -> String {
-    if cfg!(windows) { format!("http://{PROTOCOL}.{host}") } else { format!("{PROTOCOL}://{host}") }
+/// The scheme the custom protocol answers on Windows: the page's own (`http`, or `https` when the window uses
+/// `use_https_scheme`, which moves every custom protocol with it).
+fn frame_scheme(app: &AppHandle) -> &'static str {
+    let page = app.get_webview_window(crate::host::WINDOW).and_then(|window| window.url().ok());
+    if page.is_some_and(|url| url.scheme() == "https") { "https" } else { "http" }
 }
 
-/// C# `WebHtmlAddress`: the file's address under its folder's host, or None.
-fn html_address(files: &Files, file: &Path) -> Option<String> {
-    lock(&files.frames).address(file, frame_origin)
+/// Where a frame host's files start: the protocol as the OS's webview reaches it (`<scheme>://mightyhtml.<host>` on Windows).
+fn frame_origin(scheme: &str, host: &str) -> String {
+    if cfg!(windows) { format!("{scheme}://{PROTOCOL}.{host}") } else { format!("{PROTOCOL}://{host}") }
 }
 
-/// The `mightyhtml` protocol: a frame's request answered from the folder its host serves (C#'s virtual host mapping, DenyCors), 404 for
-/// anything else. Only the app's own window asks.
+/// The policy a served page carries: sandboxed to scripts (as its frame is, also when it is opened some other way), and frames of
+/// its own only from the frame hosts.
+fn frame_policy(scheme: &str) -> String {
+    let hosts = if cfg!(windows) { format!("{scheme}://*{}", frames::HOST_SUFFIX) } else { format!("{PROTOCOL}:") };
+    format!("sandbox allow-scripts; frame-src {hosts}")
+}
+
+/// C# `WebHtmlAddress`: the file's address under its folder's host (the folder kept with the root it was resolved under), or None.
+fn html_address(files: &Files, root: &Path, file: &Path, scheme: &str) -> Option<String> {
+    lock(&files.frames).address(root, file, |host| frame_origin(scheme, host))
+}
+
+/// The `mightyhtml` protocol: a frame's request answered from the folder its host serves (C#'s virtual host mapping, DenyCors), read
+/// through the root it was resolved under again, at most [`FRAME_READS`] at once; 404 for anything else. Only the app's own window
+/// asks.
 pub fn protocol(
     context: tauri::UriSchemeContext<'_, tauri::Wry>,
     request: tauri::http::Request<Vec<u8>>,
@@ -497,32 +555,34 @@ pub fn protocol(
 ) {
     let app = context.app_handle().clone();
     let from_main = context.webview_label() == crate::host::WINDOW;
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn(async move {
         let not_found =
             || tauri::http::Response::builder().status(404).header("Cache-Control", "no-store").body(Vec::new()).unwrap_or_default();
         let Some(files) = app.try_state::<Arc<Files>>().map(|s| s.inner().clone()) else { return responder.respond(not_found()) };
         let host = request.uri().host().unwrap_or("").to_string();
-        let folder = from_main.then(|| lock(&files.frames).folder(&host)).flatten();
-        let served = folder.and_then(|folder| frames::serve(&folder, request.method().as_str(), request.uri().path()));
-        match served {
-            Some(served) => {
-                let mut log = lock(&files.served);
-                if log.len() == 256 {
-                    log.remove(0);
-                }
-                log.push(request.uri().path().to_string());
-                drop(log);
-                let response = tauri::http::Response::builder()
-                    .status(200)
-                    .header("Content-Type", served.media_type)
-                    .header("X-Content-Type-Options", "nosniff")
-                    .header("Cache-Control", "no-store")
-                    .body(served.bytes)
-                    .unwrap_or_default();
-                responder.respond(response);
-            }
-            None => responder.respond(not_found()),
+        let Some((root, folder)) = from_main.then(|| lock(&files.frames).folder(&host)).flatten() else {
+            return responder.respond(not_found());
+        };
+        let Ok(_reading) = FRAME_PERMITS.acquire().await else { return responder.respond(not_found()) };
+        let (method, path) = (request.method().as_str().to_string(), request.uri().path().to_string());
+        let reading = path.clone();
+        let served = tauri::async_runtime::spawn_blocking(move || frames::serve(&root, &folder, &method, &reading)).await.ok().flatten();
+        let Some(served) = served else { return responder.respond(not_found()) };
+        let mut log = lock(&files.served);
+        if log.len() == 256 {
+            log.remove(0);
         }
+        log.push(path);
+        drop(log);
+        let mut response = tauri::http::Response::builder()
+            .status(200)
+            .header("Content-Type", served.media_type)
+            .header("X-Content-Type-Options", "nosniff")
+            .header("Cache-Control", "no-store");
+        if served.media_type == "text/html" {
+            response = response.header("Content-Security-Policy", frame_policy(frame_scheme(&app)));
+        }
+        responder.respond(response.body(served.bytes).unwrap_or_default());
     });
 }
 
@@ -619,7 +679,7 @@ pub fn register(methods: &mut Registry) {
         let (_, root) = require_files(&host, &args)?;
         let files = state(&host)?;
         if let Some(path) = resolve(text(&args, "path").unwrap_or("").to_string(), root).await
-            && let Err(error) = files.ports.desktop.reveal(&path)
+            && let Some(Err(error)) = desktop(&files, move |desktop| desktop.reveal(&path)).await
         {
             banner(&host, error.to_string());
         }
@@ -629,10 +689,10 @@ pub fn register(methods: &mut Registry) {
     methods.add("filesOpen", |host: Arc<Host>, args| async move {
         let (_, root) = require_files(&host, &args)?;
         let files = state(&host)?;
-        let Some(path) = resolve(text(&args, "path").unwrap_or("").to_string(), root).await.filter(|p| !p.is_dir()) else {
+        let Some(path) = resolve_file(text(&args, "path").unwrap_or("").to_string(), root).await else {
             return Ok(json!(false));
         };
-        Ok(json!(files.ports.desktop.open(&path).unwrap_or(false)))
+        Ok(json!(desktop(&files, move |desktop| desktop.open(&path).unwrap_or(false)).await.unwrap_or(false)))
     });
     methods.add("referencePreview", |host: Arc<Host>, args| async move {
         let Some(root) = reference_root(&host.view(), &args) else { return Ok(Value::Null) };
@@ -683,16 +743,16 @@ pub fn register(methods: &mut Registry) {
     methods.add("referenceOpen", |host: Arc<Host>, args| async move {
         let Some(root) = reference_root(&host.view(), &args) else { return Ok(json!(false)) };
         let files = state(&host)?;
-        let Some(path) = resolve(text(&args, "path").unwrap_or("").to_string(), root).await.filter(|p| !p.is_dir()) else {
+        let Some(path) = resolve_file(text(&args, "path").unwrap_or("").to_string(), root).await else {
             return Ok(json!(false));
         };
-        Ok(json!(files.ports.desktop.open(&path).unwrap_or(false)))
+        Ok(json!(desktop(&files, move |desktop| desktop.open(&path).unwrap_or(false)).await.unwrap_or(false)))
     });
     methods.add("referenceReveal", |host: Arc<Host>, args| async move {
         let Some(root) = reference_root(&host.view(), &args) else { return Ok(Value::Null) };
         let files = state(&host)?;
         if let Some(path) = resolve(text(&args, "path").unwrap_or("").to_string(), root).await
-            && let Err(error) = files.ports.desktop.reveal(&path)
+            && let Some(Err(error)) = desktop(&files, move |desktop| desktop.reveal(&path)).await
         {
             banner(&host, error.to_string());
         }
@@ -713,13 +773,14 @@ pub fn register(methods: &mut Registry) {
         let root =
             if flag(&args, "reference") { reference_root(&host.view(), &args) } else { files_target(&host, &args)?.map(|(_, root)| root) };
         let (Some(root), Some(path)) = (root, path_arg(&args)) else { return Ok(Value::Null) };
-        let Some(file) = resolve(path, root).await else { return Ok(Value::Null) };
+        let Some(file) = resolve_file(path, root.clone()).await else { return Ok(Value::Null) };
         let html = file.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).is_some_and(|e| e == "html" || e == "htm");
-        if file.is_dir() || !html {
+        if !html {
             return Ok(Value::Null);
         }
         let files = state(&host)?;
-        Ok(html_address(&files, &file).map_or(Value::Null, Value::from))
+        let scheme = frame_scheme(&host.app);
+        Ok(html_address(&files, Path::new(&root), &file, scheme).map_or(Value::Null, Value::from))
     });
     // The picture viewer's buttons (src/pictures/PictureViewer.tsx): the picture named as its thumbnail or tile was fetched, read and
     // checked again and handed to the viewer's own actions. Answers null when done, else the failure's words.
@@ -810,5 +871,34 @@ fn gallery_image(pane: &RunSession, older: &[MightyGraphRun], root: Option<&str>
 async fn futures_join<F: std::future::Future<Output = ()>>(loads: impl Iterator<Item = F>) {
     for load in loads {
         load.await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A frame's address and its page's policy follow the page's scheme (`use_https_scheme` moves the custom protocol too).
+    #[test]
+    fn frames_follow_the_page_scheme() {
+        let host = format!("h1{}", frames::HOST_SUFFIX);
+        if cfg!(windows) {
+            assert_eq!(frame_origin("http", &host), "http://mightyhtml.h1.html.mighty.invalid");
+            assert_eq!(frame_origin("https", &host), "https://mightyhtml.h1.html.mighty.invalid");
+            assert_eq!(frame_policy("http"), "sandbox allow-scripts; frame-src http://*.html.mighty.invalid");
+            assert_eq!(frame_policy("https"), "sandbox allow-scripts; frame-src https://*.html.mighty.invalid");
+        } else {
+            assert_eq!(frame_origin("http", &host), "mightyhtml://h1.html.mighty.invalid");
+            assert_eq!(frame_policy("http"), "sandbox allow-scripts; frame-src mightyhtml:");
+        }
+    }
+
+    /// An untrusted drawing that does not end in time is a failure for the page; one that ends answers.
+    #[tokio::test]
+    async fn untrusted_drawings_are_waited_for_a_bounded_time() {
+        let slow = bounded_by(Duration::from_millis(50), || std::thread::sleep(Duration::from_secs(2))).await;
+        assert!(slow.is_none(), "past its time");
+        assert_eq!(bounded_by(Duration::from_secs(5), || 7).await, Some(7));
+        assert_eq!(bounded_by(Duration::from_secs(5), || -> i32 { panic!("a drawing that panics") }).await, None);
     }
 }

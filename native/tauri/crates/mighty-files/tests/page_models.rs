@@ -322,44 +322,99 @@ fn preview_data(name: &str) -> preview::PreviewData {
 fn html_frames_get_a_host_per_folder() {
     let mut hosts = FrameHosts::default();
     let origin = |host: &str| format!("http://mightyhtml.{host}");
-    let docs = Path::new("work").join("docs");
-    let first = hosts.address(&docs.join("한글 page.html"), origin).unwrap();
+    let workspace = Temp::new("frame-hosts");
+    let root = workspace.path();
+    let real = |relative: &str| mighty_core::workspace_files::resolve(relative, root).unwrap();
+    write(root, "docs/한글 page.html", b"");
+    write(root, "docs/other.html", b"");
+    write(root, "top.html", b"");
+    let first = hosts.address(root, &real("docs/한글 page.html"), origin).unwrap();
     assert!(first.starts_with("http://mightyhtml.h") && first.ends_with(".html.mighty.invalid/%ED%95%9C%EA%B8%80%20page.html"), "{first}");
     let host = first.trim_start_matches("http://mightyhtml.").split('/').next().unwrap().to_string();
     assert_eq!(host.len(), "h".len() + 32 + frames::HOST_SUFFIX.len());
-    let again = hosts.address(&docs.join("other.html"), origin).unwrap();
+    let again = hosts.address(root, &real("docs/other.html"), origin).unwrap();
     assert!(again.starts_with(&format!("http://mightyhtml.{host}/")), "a folder keeps its host");
-    assert!(
-        hosts.address(&Path::new("WORK").join("DOCS").join("x.html"), origin).unwrap().contains(&host),
-        "folders compare ignoring case"
-    );
-    assert_eq!(hosts.folder(&host).as_deref(), Some(docs.as_path()));
+    let shouted = real("docs").to_string_lossy().to_uppercase();
+    assert!(hosts.address(root, &Path::new(&shouted).join("x.html"), origin).unwrap().contains(&host), "folders compare ignoring case");
+    assert_eq!(hosts.folder(&host), Some((root.to_path_buf(), "docs".to_string())), "the root and the folder's place in it");
+    let top = hosts.address(root, &real("top.html"), origin).unwrap();
+    let top_host = top.trim_start_matches("http://mightyhtml.").split('/').next().unwrap().to_string();
+    assert_eq!(hosts.folder(&top_host).map(|(_, folder)| folder).as_deref(), Some(""), "the root itself");
+    assert!(hosts.address(root, &std::env::temp_dir().join("elsewhere.html"), origin).is_none(), "a file outside the root has no host");
     for index in 0..frames::MAXIMUM_HOSTS {
-        hosts.address(&Path::new("more").join(index.to_string()).join("a.html"), origin);
+        write(root, &format!("more/{index}/a.html"), b"");
+        hosts.address(root, &real(&format!("more/{index}/a.html")), origin);
     }
     assert_eq!(hosts.len(), frames::MAXIMUM_HOSTS, "at most eight folders");
     assert!(hosts.folder(&host).is_none(), "the oldest mapping went");
 }
+
 /// The frames' protocol serves GETs of files inside the folder only: no `..` or `.`, no backslash, no folder, no link out of it.
+/// Text goes without a charset (a page's own `<meta charset>` decides, as WebView2's virtual host leaves it), and nothing past
+/// 16 MiB.
 #[test]
 fn html_frames_serve_their_folder_only() {
     let parent = Temp::new("frames");
-    let folder = parent.path().join("docs");
+    let root = parent.path();
+    let folder = root.join("docs");
     write(&folder, "page.html", b"<h1>page</h1><link rel=stylesheet href=style.css>");
     write(&folder, "style.css", b"h1{color:red}");
     write(&folder, "img/logo.svg", b"<svg/>");
-    write(parent.path(), "private.txt", b"outside");
-    let served = frames::serve(&folder, "GET", "/page.html").unwrap();
-    assert!(served.media_type == "text/html; charset=utf-8" && served.bytes.starts_with(b"<h1>"));
-    assert_eq!(frames::serve(&folder, "GET", "/style.css?v=1#x").unwrap().media_type, "text/css; charset=utf-8");
-    assert_eq!(frames::serve(&folder, "GET", "/img/logo.svg").unwrap().media_type, "image/svg+xml");
-    assert!(frames::serve(&folder, "POST", "/page.html").is_none(), "GET only");
+    write(root, "private.txt", b"outside");
+    let serve = |method: &str, path: &str| frames::serve(root, "docs", method, path);
+    let served = serve("GET", "/page.html").unwrap();
+    assert!(served.media_type == "text/html" && served.bytes.starts_with(b"<h1>"));
+    assert_eq!(serve("GET", "/style.css?v=1#x").unwrap().media_type, "text/css");
+    assert_eq!(serve("GET", "/img/logo.svg").unwrap().media_type, "image/svg+xml");
+    assert!(serve("POST", "/page.html").is_none(), "GET only");
     for refused in
         ["/../private.txt", "/%2e%2e/private.txt", "/%2E%2E%2Fprivate.txt", "/./page.html", "/img\\logo.svg", "/", "/img", "/missing.html"]
     {
-        assert!(frames::serve(&folder, "GET", refused).is_none(), "{refused}");
+        assert!(serve("GET", refused).is_none(), "{refused}");
     }
-    if common::link(&folder.join("escape.txt"), &parent.path().join("private.txt"), false) {
-        assert!(frames::serve(&folder, "GET", "/escape.txt").is_none(), "a link out of the folder is not served");
+    if common::link(&folder.join("escape.txt"), &root.join("private.txt"), false) {
+        assert!(serve("GET", "/escape.txt").is_none(), "a link out of the folder is not served");
     }
+    // A Korean page in CP949 reaches the frame as it is, its charset its own.
+    let (euc_kr, _, _) = encoding_rs::EUC_KR.encode("<meta charset=\"euc-kr\"><p>한글</p>");
+    write(&folder, "korean.html", &euc_kr);
+    let korean = serve("GET", "/korean.html").unwrap();
+    assert!(korean.bytes == euc_kr.as_ref() && !korean.media_type.contains("charset"), "{}", korean.media_type);
+    write(&folder, "big.bin", &vec![0u8; frames::MAXIMUM_ASSET_BYTES + 1]);
+    assert!(serve("GET", "/big.bin").is_none(), "past 16 MiB nothing is served");
+    write(&folder, "fits.bin", &vec![0u8; 1024]);
+    assert!(serve("GET", "/fits.bin").is_some());
+}
+
+/// A served folder is read through its root at every request: once a folder on its way is swapped for a junction out of the root,
+/// nothing is served from it.
+#[cfg(windows)]
+#[test]
+#[allow(clippy::disallowed_methods, reason = "the check's own mklink, no child of the app")]
+fn a_frame_folder_swapped_for_a_link_serves_nothing() {
+    let parent = Temp::new("frame-swap");
+    let (root, outside) = (parent.path().join("workspace"), parent.path().join("outside"));
+    write(&root, "site/docs/page.html", b"<h1>inside</h1>");
+    write(&outside, "docs/page.html", b"<h1>outside</h1>");
+    let mut hosts = FrameHosts::default();
+    let page = mighty_core::workspace_files::resolve("site/docs/page.html", &root).unwrap();
+    let address = hosts.address(&root, &page, |host| format!("http://mightyhtml.{host}")).unwrap();
+    let host = address.trim_start_matches("http://mightyhtml.").split('/').next().unwrap();
+    let (served_root, folder) = hosts.folder(host).unwrap();
+    assert_eq!(frames::serve(&served_root, &folder, "GET", "/page.html").unwrap().bytes, b"<h1>inside</h1>");
+    std::fs::remove_dir_all(root.join("site")).unwrap();
+    let made = std::process::Command::new("cmd")
+        .arg("/c")
+        .arg("mklink")
+        .arg("/J")
+        .arg(root.join("site"))
+        .arg(&outside)
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !made {
+        eprintln!("  (junction check skipped: no junction could be made here)");
+        return;
+    }
+    assert!(frames::serve(&served_root, &folder, "GET", "/page.html").is_none(), "the folder now leaves the root: nothing is served");
+    let _ = std::fs::remove_dir(root.join("site"));
 }
