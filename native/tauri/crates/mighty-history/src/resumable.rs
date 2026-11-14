@@ -186,9 +186,10 @@ pub fn in_use<'a>(sessions: impl IntoIterator<Item = &'a RunSession>) -> HashSet
 }
 
 /// Folds a text as `CompareOptions.IgnoreCase | IgnoreWidth | IgnoreNonSpace` compares it: compatibility forms (full-width letters, …)
-/// read as their plain ones, combining marks dropped, letters lowered.
+/// read as their plain ones, combining marks dropped, letters lowered, and what is left composed again, so a Hangul syllable stays one
+/// letter (decomposed, "하" would be found inside "한").
 fn folded(text: &str) -> String {
-    text.nfkd().filter(|c| !unicode_normalization::char::is_combining_mark(*c)).flat_map(char::to_lowercase).collect()
+    text.nfkd().filter(|c| !unicode_normalization::char::is_combining_mark(*c)).flat_map(char::to_lowercase).nfc().collect()
 }
 
 /// `Filter`: the titles containing every word of the query, ignoring case, width and accents.
@@ -952,5 +953,10 @@ mod tests {
         assert_eq!(filter(&items, "NEW").len(), 1);
         assert_eq!(filter(&items, " ").len(), 3);
         assert_eq!(filter(&items, "cafe LOGIN").len(), 1);
+        // A Hangul syllable is one letter: "하" is not inside "한글", "한" and "글" are (W4 review C9).
+        let korean = vec![item("한글 정리"), item("하루 계획")];
+        assert_eq!(filter(&korean, "하").iter().map(|i| i.title.clone().unwrap()).collect::<Vec<_>>(), ["하루 계획"]);
+        assert_eq!(filter(&korean, "한").len(), 1);
+        assert_eq!(filter(&korean, "글 정").len(), 1);
     }
 }
