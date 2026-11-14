@@ -279,13 +279,20 @@ pub fn date(text: Option<&str>) -> Option<DateTimeOffset> {
         }
         _ => return None,
     };
+    // .NET's years are 1 to 9999, and the instant in UTC must lie between `DateTimeOffset.MinValue` and `MaxValue`.
+    if year == 0 {
+        return None;
+    }
     let date = chrono::NaiveDate::from_ymd_opt(year as i32, month, day)?;
     let time = chrono::NaiveTime::from_hms_opt(hour, minute, second)?;
     let local = chrono::NaiveDateTime::new(date, time).and_utc();
     let utc = local - chrono::Duration::minutes(offset_minutes);
     let ticks = mighty_core::time::ticks_of(utc) + ticks_fraction;
-    Some(DateTimeOffset::from_utc_ticks(ticks))
+    (0..=MAXIMUM_TICKS).contains(&ticks).then(|| DateTimeOffset::from_utc_ticks(ticks))
 }
+
+/// `DateTime.MaxValue.Ticks`: 9999-12-31T23:59:59.9999999.
+const MAXIMUM_TICKS: i64 = 3_155_378_975_999_999_999;
 
 /// C# `StateStore.AtomicWriteAsync(path, data)` as `KeepAsync` calls it (no backup): `data` written to a new temporary file beside
 /// `path` and flushed to the disk, readable and writable by this user only off Windows, then moved over the file; a refused move

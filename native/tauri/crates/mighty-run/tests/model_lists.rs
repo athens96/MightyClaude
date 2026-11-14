@@ -213,6 +213,14 @@ fn a_kept_lists_date_reads_as_the_c_sharp_formats_do() {
         assert!(kept_lists::date(Some(bad)).is_none(), "{bad} is no date");
     }
     assert!(kept_lists::date(Some(&format!("2026-11-11T02:00:00{}", "0".repeat(60)))).is_none(), "longer than 64 is no date");
+    // `DateTimeOffset.TryParseExact`'s range: years 1 to 9999, the instant in UTC from MinValue to MaxValue.
+    let ticks = |text: &str| kept_lists::date(Some(text)).map(|d| d.utc_ticks());
+    assert_eq!(ticks("0001-01-01T00:00:00Z"), Some(0), "MinValue");
+    assert_eq!(ticks("0001-01-01T00:30:00+00:30"), Some(0), "MinValue through an offset");
+    assert_eq!(ticks("9999-12-31T23:59:59.9999999Z"), Some(3_155_378_975_999_999_999), "MaxValue");
+    for bad in ["0000-01-01T00:00:00Z", "0000-12-31T23:00:00-02:00", "0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00"] {
+        assert!(kept_lists::date(Some(bad)).is_none(), "{bad} is out of .NET's range");
+    }
 }
 
 // ── A kept list is shown, never trusted ─────────────────────────────────────────────────────────────────────────────────
