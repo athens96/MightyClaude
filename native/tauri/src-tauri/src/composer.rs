@@ -189,10 +189,16 @@ async fn submit(host: &Arc<Host>, id: &str) -> Result<SubmitReceipt, String> {
         (typed, files, ui.submission)
     };
     let (typed, files, submission) = taken;
-    let outcome = start_run(host, id, &typed, files.clone(), None).await;
+    // The model list as the CLI has it now comes first: the request takes the pane's model and effort after it (models.rs).
+    crate::models::prepare(host, id).await;
+    let moot = {
+        let view = host.view();
+        !panes::alive(&view, id) || view.panes.get(id).is_none_or(|u| u.submission != submission)
+    };
+    let outcome = if moot { None } else { Some(start_run(host, id, &typed, files.clone(), None).await) };
     let mut view = host.view();
     let alive = panes::alive(&view, id);
-    let started = matches!(outcome, Ok(Some(_)));
+    let started = matches!(outcome, Some(Ok(Some(_))));
     if let Some(ui) = view.panes.get_mut(id) {
         ui.view.starting = false;
         ui.dirty = true;
@@ -206,6 +212,8 @@ async fn submit(host: &Arc<Host>, id: &str) -> Result<SubmitReceipt, String> {
             ui.view.attachments.splice(0..0, back);
         }
     }
+    // A send made moot while the models were checked (a stop, another send, the pane gone) starts nothing.
+    let Some(outcome) = outcome else { return Ok(SubmitReceipt::new("none")) };
     match outcome {
         Err(error) => Err(error),
         Ok(None) => {
@@ -271,6 +279,7 @@ pub fn drain_queue(host: Arc<Host>, id: String) {
                 ui.dirty = true;
                 item
             };
+            crate::models::prepare(&host, &id).await;
             let outcome = start_run(&host, &id, &next.text, next.attachments.clone(), next.permission_mode_override.clone()).await;
             let mut view = host.view();
             if let Some(ui) = view.panes.get_mut(&id) {
@@ -492,7 +501,8 @@ fn run_menu_action(host: &Arc<Host>, view: &mut View, id: &str, action: MenuActi
             }
             let next = switch_provider(host, &pane, &value);
             change(view, id, |_| next)?;
-            refresh_models(host, view, id);
+            // The switch reads the new agent's models; the list in hand is another agent's (models.rs, C# RefreshModels).
+            crate::models::refresh(host, &view.snapshot, id, true);
         }
         MenuAction::RefreshModels => refresh_models(host, view, id),
         MenuAction::ChangeModel(value) => change_model(host, view, id, &value)?,

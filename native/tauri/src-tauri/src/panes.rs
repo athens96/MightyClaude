@@ -200,6 +200,8 @@ pub fn cards_of(host: &Host, view: &mut View, id: &str) -> Option<(Vec<Card>, bo
 /// One pass of the composer and cards pushes over the pane views (C# `FlushWebComposers`, `FlushWebCards`): a pane whose record
 /// changed, or that something else marked, is read again; each model goes out when its JSON is not the one last sent.
 pub fn flush(host: &Host) {
+    // A pane selected reads its model list again (models.rs, C# RefreshSelectedPaneModels).
+    crate::models::follow_selection(host);
     let mut view = host.view();
     if !view.ready {
         return;

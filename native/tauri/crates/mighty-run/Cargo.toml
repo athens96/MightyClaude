@@ -19,6 +19,7 @@ doc = false
 mighty-core.workspace = true
 mighty-platform.workspace = true
 serde_json.workspace = true
+serde.workspace = true
 indexmap.workspace = true
 chrono.workspace = true
 sys-locale.workspace = true

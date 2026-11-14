@@ -90,6 +90,7 @@ impl Runs {
         environment: Arc<dyn ShellEnvironment>,
         fake: Option<FakeClaude>,
         image_dir: PathBuf,
+        catalog_dir: PathBuf,
     ) -> Arc<Runs> {
         mighty_run::strings::set_language(host.locale.language());
         // `{value:N0}` (the attachments' sizes) in the user's regional format, as C#'s current culture writes it.
@@ -108,7 +109,8 @@ impl Runs {
             });
             finder
         });
-        let catalog = Arc::new(ProviderCatalog::new(processes, environment, finder));
+        // The last list each CLI gave is kept in `catalog_dir` (C#'s storageDirectory, KeptModelLists), so a restart still has it.
+        let catalog = Arc::new(ProviderCatalog::new(processes, environment, finder).with_storage(Some(catalog_dir)));
         let images = Arc::new(AgentImageCache::new(image_dir, IMAGE_CACHE_BYTES));
         let store: Arc<dyn ImageStore> = Arc::new(CacheStore(images.clone()));
         // A Claude run's Edit, Write and MultiEdit results keep the files' originals (files.rs, C# FileOriginalStore).
@@ -173,6 +175,11 @@ impl Runs {
         value
     }
 
+    /// A provider's newer reading taken as its runtime (C# `runtime = ProviderCatalog.With(runtime, refreshed)`, models.rs).
+    pub fn keep(&self, value: ProviderRuntime) {
+        crate::host::lock(&self.runtime).insert(value.id.clone(), value);
+    }
+
     /// The runtime as the composer reads it (mighty-composer's mirror of C# `ProviderRuntime`).
     pub fn composer_runtime(&self, provider: &str) -> Option<composer_runtime::ProviderRuntime> {
         self.runtime(provider).map(|r| composer_runtime(&r))
@@ -210,8 +217,9 @@ pub fn composer_runtime(value: &ProviderRuntime) -> composer_runtime::ProviderRu
                     resolved_model: m.resolved_model.clone(),
                 })
                 .collect(),
-            // `ModelListNotices.Notice` is the model list's (W5's catalogue settings); none until then.
-            notice: None,
+            // `ModelListNotices.Notice`: the built-in list after a read that failed, or the last list the CLI gave, kept.
+            notice: mighty_run::kept_lists::notice(&value.model_catalog, None)
+                .map(|n| composer_runtime::ModelListNotice { line: n.line, help: n.help }),
         },
         capabilities: composer_runtime::ProviderCapabilities {
             effort: caps.effort,

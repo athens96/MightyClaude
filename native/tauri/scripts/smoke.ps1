@@ -81,7 +81,7 @@ if (-not $readOnly) {
     # folder name>) goes with it.
     $name = $Profile -replace '[^A-Za-z0-9-]', '_'
     if ($name.Length -gt 80) { $name = $name.Substring($name.Length - 80) }
-    foreach ($kind in 'webview', 'browser', 'image-cache', 'file-originals') {
+    foreach ($kind in 'webview', 'browser', 'image-cache', 'file-originals', 'provider-catalog') {
         Remove-Item -Recurse -Force (Join-Path $env:LOCALAPPDATA "dev.mightycode.tauri\$kind\$name") -ErrorAction SilentlyContinue
     }
 }

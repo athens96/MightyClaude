@@ -6,6 +6,8 @@
 //! |---|---|
 //! | `Models.cs` `StartRunRequest`, `RunEvent`, `ModelOption`/`ModelCatalog`/`ProviderRuntime`/`RuntimeInfo`, `RunSession.Apply` | [`model`], [`apply`] |
 //! | `ProviderCatalog.cs` | [`providers`] |
+//! | `KeptModelLists.cs` (`KeptModelLists`, `ModelListNotices`) | [`kept_lists`] |
+//! | `ModelSelection.cs` (`ModelSelectionSupport`, `ModelCatalogRefresh`), `ClaudeModelReset.cs` | [`model_selection`] |
 //! | `PhaseModelPreferences.cs` (the run's part) | [`phase_models`] |
 //! | `ToolPermissions.cs`, `ToolPermissionPresentation.cs`, `ToolPermissionStrings.cs` | [`permissions`], [`presentation`] |
 //! | `UserQuestionnaire.cs`, `QuestionnaireProgress.cs`, `AgentQuestions.cs` | [`questionnaire`] |
@@ -28,10 +30,12 @@ pub mod failure;
 pub mod flow_steps;
 pub mod graph;
 pub mod handback;
+pub mod kept_lists;
 pub mod lines;
 pub mod manager;
 pub mod meta;
 pub mod model;
+pub mod model_selection;
 pub mod mods;
 pub mod os;
 pub mod parser;
