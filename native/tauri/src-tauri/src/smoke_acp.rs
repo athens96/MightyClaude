@@ -89,8 +89,16 @@ fn add_pane(host: &Host) -> Result<(), String> {
 /// Adds the step's pane and runs its probe; false without the stand-in CLI.
 pub fn start(host: &Host) -> bool {
     let Some(smoke) = &host.smoke else { return false };
-    if smoke.fake_record().is_none() {
-        return false;
+    let Some(record) = smoke.fake_record() else { return false };
+    // The stand-in adds every line it reads to `stdin.txt`: an earlier smoke's answer there must not pass this one (`acpAnswered`). A
+    // record that cannot be cleared stops the step, whose checks then fail.
+    match std::fs::remove_file(state(record).join("stdin.txt")) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            host.log.line(&format!("smoke: the ACP stand-in's earlier record was not cleared: {error}"));
+            return false;
+        }
     }
     if let Err(error) = add_pane(host) {
         host.log.line(&format!("smoke: the ACP step's pane was not added: {error}"));
