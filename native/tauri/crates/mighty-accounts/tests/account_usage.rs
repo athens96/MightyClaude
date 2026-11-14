@@ -1465,6 +1465,33 @@ async fn the_codex_app_server_is_asked_over_the_process_host() {
     common::remove_when_free(&state).await;
 }
 
+/// Review C10: a probe that panics ends its read as cancelled and leaves nothing under way, so the next read asks again instead of
+/// joining a read no one will answer.
+#[tokio::test]
+async fn a_panicking_probe_leaves_no_read_under_way() {
+    common::korean();
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = calls.clone();
+    let service = AccountUsageService::new(
+        probe_of(move |provider| {
+            if counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                panic!("the probe failed unexpectedly");
+            }
+            Ok(AccountUsageSnapshot {
+                windows: vec![AccountUsageWindow::new("five_hour", 10.0)],
+                status: "available".into(),
+                ..AccountUsageSnapshot::new(&provider)
+            })
+        }),
+        clock_at(instant()),
+    );
+    let first = service.read("claude", true).await;
+    assert!(first.windows.is_empty() && first.detail == copy::detail_cancelled(), "the panicked read: {first:?}");
+    let second = tokio::time::timeout(Duration::from_secs(10), service.read("claude", true)).await.expect("not held");
+    assert!(second.windows.len() == 1 && second.status == "available", "asked again: {second:?}");
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
 /// The cards and chips of a reading through the service: an entitlement row reaches the Claude card only while the switch is on.
 #[tokio::test]
 async fn the_reset_rows_follow_the_switch() {

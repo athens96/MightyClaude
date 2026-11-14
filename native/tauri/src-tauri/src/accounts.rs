@@ -9,6 +9,10 @@
 //! Machine changes: a sign-in (hidden or in a terminal), a sign-out, the Bedrock reset and the automatic sign-in run only when the app
 //! may change the machine (`Host::may_change_machine`: `--allow-state-write`, never in a smoke); otherwise the row or the card says
 //! "verification mode" and nothing runs. A smoke reads no account status (no CLI is asked).
+//!
+//! Locks: the state's lock may be held while an account lock is taken (`login_input`, `busy`, `prune` run with the state locked), so
+//! no account lock is ever held across `host.view()`, `redraw()` or another part's call: each is taken for one map operation through
+//! the `Accounts` helpers and let go before anything else runs.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -56,8 +60,16 @@ struct LoginWindow {
 }
 
 impl LoginWindow {
+    /// The wait's "still open" (C# `!(window.ClosesWithWindow && window.Exit.IsCompleted)`): a Windows Terminal tab handed its command
+    /// off, so only the console host's closing is known.
     fn open(&self) -> bool {
         !(self.holds_command && self.closed.load(Ordering::SeqCst))
+    }
+
+    /// Whether a new start of the provider waits on this window again instead of opening another (C# `{ Open: true }`:
+    /// `ClosesWithWindow && !Exit.IsCompleted`): only a console host window still open; a Windows Terminal tab never.
+    fn reusable(&self) -> bool {
+        self.holds_command && !self.closed.load(Ordering::SeqCst)
     }
 }
 
@@ -85,8 +97,41 @@ pub struct Accounts {
     model_reset: AtomicBool,
     checking_runtime: AtomicBool,
     serial: AtomicU64,
-    /// Sign-outs run (the smoke's check that D8 cancelled ran none).
-    logouts: AtomicUsize,
+    /// Sign-outs confirmed in D8, counted before any gate (the smoke's check that D8 cancelled confirmed none).
+    sign_out_attempts: AtomicUsize,
+    /// The app is closing: no sign-in starts, every wait ends.
+    closed: AtomicBool,
+}
+
+impl Accounts {
+    fn has_job(&self, provider: &str) -> bool {
+        lock(&self.jobs).contains_key(provider)
+    }
+    fn is_busy(&self, provider: &str) -> bool {
+        lock(&self.busy).contains(provider)
+    }
+    fn is_changing(&self, provider: &str) -> bool {
+        lock(&self.changes).contains(provider)
+    }
+    fn is_waiting(&self, provider: &str) -> bool {
+        lock(&self.waits).contains_key(provider)
+    }
+    fn is_current(&self, retry: &CliLoginRetry) -> bool {
+        lock(&self.book).is_current(retry)
+    }
+    fn has_deferred(&self, provider: &str) -> bool {
+        lock(&self.deferred).contains_key(provider)
+    }
+    /// The job of `provider` when it is still the one numbered `serial`.
+    fn is_job(&self, provider: &str, serial: u64) -> bool {
+        lock(&self.jobs).get(provider).is_some_and(|job| job.serial == serial)
+    }
+    /// The job `serial` of `provider` changed by `change`, when it is still that job.
+    fn with_job(&self, provider: &str, serial: u64, change: impl FnOnce(&mut Job)) {
+        if let Some(job) = lock(&self.jobs).get_mut(provider).filter(|job| job.serial == serial) {
+            change(job);
+        }
+    }
 }
 
 /// The window's accounts, made on first use.
@@ -158,7 +203,7 @@ pub fn statuses(host: &Host) -> Vec<CliAccountStatus> {
 #[allow(dead_code, reason = "a seam W6-D (the update holds' provider use) calls")]
 pub fn busy(host: &Host, provider: &str) -> bool {
     let accounts = of(host);
-    lock(&accounts.busy).contains(provider) || lock(&accounts.changes).contains(provider) || lock(&accounts.waits).contains_key(provider)
+    accounts.is_busy(provider) || accounts.is_changing(provider) || accounts.is_waiting(provider)
 }
 
 /// `accounts::start_sign_in`: C# `StartCliSignIn(provider, option)` — the CLI's own sign-in in a terminal window, then its status
@@ -197,7 +242,7 @@ pub fn refresh(host: &Arc<Host>) {
 pub fn resend_after_update(host: &Arc<Host>) {
     let host = host.clone();
     tauri::async_runtime::spawn(async move {
-        if crate::updates::any_running(&host) {
+        if host.closing() || crate::updates::any_running(&host) || crate::plugins::operations_running(&host) {
             return;
         }
         let mut waiting: Vec<String> = lock(&of(&host).awaiting_update).iter().cloned().collect();
@@ -294,7 +339,7 @@ pub fn on_run_event(host: &Arc<Host>, event: &RunEvent) {
         tauri::async_runtime::spawn(async move { confirm_login_failure(&host, retry).await });
     }
     if let Some(provider) = provider
-        && lock(&accounts.deferred).contains_key(&provider)
+        && accounts.has_deferred(&provider)
     {
         let host = host.clone();
         tauri::async_runtime::spawn(async move { resume_deferred_auto_login(&host, &provider).await });
@@ -321,12 +366,12 @@ async fn confirm_login_failure(host: &Arc<Host>, retry: CliLoginRetry) {
     let accounts = of(host);
     let id = retry.request.session_id.clone();
     for _ in 0..200 {
-        if !lock(&accounts.book).is_current(&retry) || !session_running(host, &id) || host.closing() {
+        if !accounts.is_current(&retry) || !session_running(host, &id) || host.closing() {
             break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    if host.closing() || !lock(&accounts.book).is_current(&retry) || !login::sign_in_can_fix(&status) {
+    if host.closing() || !accounts.is_current(&retry) || !login::sign_in_can_fix(&status) {
         return;
     }
     let pane = host.view().snapshot.session(&id).cloned();
@@ -343,10 +388,10 @@ async fn confirm_login_failure(host: &Arc<Host>, retry: CliLoginRetry) {
 fn start_automatic_login_if_allowed(host: &Arc<Host>, retry: CliLoginRetry, status: CliAccountStatus) {
     let accounts = of(host);
     let provider = retry.request.provider.clone();
-    let changing = lock(&accounts.jobs).contains_key(&provider)
-        || lock(&accounts.busy).contains(&provider)
-        || lock(&accounts.changes).contains(&provider)
-        || lock(&accounts.waits).contains_key(&provider)
+    let changing = accounts.has_job(&provider)
+        || accounts.is_busy(&provider)
+        || accounts.is_changing(&provider)
+        || accounts.is_waiting(&provider)
         || crate::updates::any_running(host);
     let enabled = host.view().snapshot.auto_login_clis != Some(false) && host.may_change_machine();
     let now = mighty_core::time::clock_now();
@@ -381,7 +426,8 @@ async fn resume_deferred_auto_login(host: &Arc<Host>, provider: &str) {
     }
     let accounts = of(host);
     let Some((retry, status)) = lock(&accounts.deferred).remove(provider) else { return };
-    if lock(&accounts.book).requests().get(&retry.request.session_id) == Some(&retry) {
+    let waiting = lock(&accounts.book).requests().get(&retry.request.session_id) == Some(&retry);
+    if waiting {
         start_automatic_login_if_allowed(host, retry, status);
     }
 }
@@ -391,7 +437,8 @@ async fn resume_deferred_auto_login(host: &Arc<Host>, provider: &str) {
 /// in a smoke nothing starts; without `--allow-state-write` the card says "verification mode".
 fn start_background_login(host: &Arc<Host>, provider: &str, automatic: bool, session: Option<&str>) {
     let accounts = of(host);
-    if host.closing() || lock(&accounts.jobs).contains_key(provider) || !login::PROVIDERS.contains(&provider) || host.smoke.is_some() {
+    let closing = host.closing() || accounts.closed.load(Ordering::SeqCst);
+    if closing || accounts.has_job(provider) || !login::PROVIDERS.contains(&provider) || host.smoke.is_some() {
         return;
     }
     if !host.may_change_machine() {
@@ -400,12 +447,8 @@ fn start_background_login(host: &Arc<Host>, provider: &str, automatic: bool, ses
         return;
     }
     let updating = crate::updates::any_running(host);
-    if lock(&accounts.busy).contains(provider)
-        || lock(&accounts.changes).contains(provider)
-        || lock(&accounts.waits).contains_key(provider)
-        || updating
-        || active_provider(host, provider)
-    {
+    let held = accounts.is_busy(provider) || accounts.is_changing(provider) || accounts.is_waiting(provider);
+    if held || updating || active_provider(host, provider) {
         let key = if updating { "loginRecovery.updating" } else { "loginRecovery.busy" };
         lock(&accounts.failures).insert(provider.to_string(), strings::get(key));
         redraw(host);
@@ -424,18 +467,25 @@ fn start_background_login(host: &Arc<Host>, provider: &str, automatic: bool, ses
     let (host, provider, session) = (host.clone(), provider.to_string(), session.map(str::to_string));
     tauri::async_runtime::spawn(async move {
         let mut stop = cancelled.clone();
+        // The hidden terminal, closed below whatever ends the job, before the provider is let go (C# keeps `loginBusy` until
+        // `DisposeAsync`).
+        let started: Started = Arc::default();
         let work = async {
             match terminal {
                 Some(entry) => run_terminal_sign_in(&host, entry, serial, session.as_deref()).await,
-                None => run_background_login(&host, &provider, serial).await,
+                None => run_background_login(&host, &provider, serial, started.clone()).await,
             }
         };
         let ended = tokio::select! {
             outcome = work => Some(outcome),
             _ = stop.wait_for(|stopped| *stopped) => None,
         };
+        let process = lock(&started).take();
+        if let Some(process) = process {
+            process.close().await;
+        }
         let accounts = of(&host);
-        let current = lock(&accounts.jobs).get(&provider).is_some_and(|job| job.serial == serial);
+        let current = accounts.is_job(&provider, serial);
         match ended {
             Some(Ok(true)) if current => login_succeeded(&host, &provider).await,
             Some(Err(failure)) if current && !host.closing() => {
@@ -445,30 +495,21 @@ fn start_background_login(host: &Arc<Host>, provider: &str, automatic: bool, ses
             }
             _ => {}
         }
-        let mut jobs = lock(&accounts.jobs);
-        if jobs.get(&provider).is_some_and(|job| job.serial == serial) {
-            jobs.remove(&provider);
+        if accounts.is_job(&provider, serial) {
+            lock(&accounts.jobs).remove(&provider);
         }
-        drop(jobs);
         lock(&accounts.busy).remove(&provider);
         redraw(&host);
     });
 }
 
-/// Closes a hidden sign-in whatever ends its task (C#'s `finally { await job.Process.DisposeAsync() }`).
-struct CloseOnDrop(Arc<CliBackgroundLogin>);
-
-impl Drop for CloseOnDrop {
-    fn drop(&mut self) {
-        let process = self.0.clone();
-        tauri::async_runtime::spawn(async move { process.close().await });
-    }
-}
+/// The hidden sign-in a job started, for its task to close whatever ended it (C#'s `finally { await job.Process.DisposeAsync() }`).
+type Started = Arc<Mutex<Option<Arc<CliBackgroundLogin>>>>;
 
 /// `RunBackgroundLogin`: the status read again (a Bedrock or API-key configuration chosen meanwhile never starts a browser sign-in),
 /// the CLI's own sign-in in a hidden pseudo terminal in the home, its link and code prompt shown on the card, then the wait
 /// (`CliLoginWait`). Ok(true) signed in; Err the card's failure.
-async fn run_background_login(host: &Arc<Host>, provider: &str, serial: u64) -> Result<bool, String> {
+async fn run_background_login(host: &Arc<Host>, provider: &str, serial: u64, started: Started) -> Result<bool, String> {
     let failed = || strings::get("loginRecovery.startFailed");
     let status = read_status(host, provider).await.ok_or_else(failed)?;
     if !login::sign_in_can_fix(&status) {
@@ -484,12 +525,12 @@ async fn run_background_login(host: &Arc<Host>, provider: &str, serial: u64) -> 
     let process = Arc::new(
         CliBackgroundLogin::start(ptys.as_ref(), &command, &arguments, &PathBuf::from(home()), environment).await.map_err(|_| failed())?,
     );
-    let _closing = CloseOnDrop(process.clone());
+    *lock(&started) = Some(process.clone());
     let accounts = of(host);
-    if let Some(job) = lock(&accounts.jobs).get_mut(provider).filter(|job| job.serial == serial) {
+    accounts.with_job(provider, serial, |job| {
         job.process = Some(process.clone());
         job.phase = "waiting".into();
-    }
+    });
     redraw(host);
     // Each new reading of the output redraws the card.
     let mut changes = process.changes();
@@ -517,8 +558,12 @@ async fn run_background_login(host: &Arc<Host>, provider: &str, serial: u64) -> 
     process.finish_output();
     match outcome.outcome {
         CliLoginOutcome::LoggedIn => {
-            // The CLI finishes saving its credential files before a lingering job ends.
+            // The CLI finishes saving its credential files before a lingering job ends, then its terminal closes.
             let _ = tokio::time::timeout(Duration::from_secs(15), process.completion()).await;
+            let taken = lock(&started).take();
+            if let Some(process) = taken {
+                process.close().await;
+            }
             Ok(true)
         }
         CliLoginOutcome::TimedOut => Err(strings::get("loginRecovery.timedOut")),
@@ -545,7 +590,7 @@ async fn run_terminal_sign_in(host: &Arc<Host>, entry: CliTerminalSignIn, serial
         workspace.and_then(|id| state.workspace(&id).filter(|w| w.remote.is_none()).map(|w| w.path().to_string()))
     };
     let accounts = of(host);
-    let kept = lock(&accounts.windows).get(provider).filter(|w| w.open()).cloned();
+    let kept = lock(&accounts.windows).get(provider).filter(|w| w.reusable()).cloned();
     let window = match kept {
         Some(window) => window,
         None => {
@@ -562,9 +607,7 @@ async fn run_terminal_sign_in(host: &Arc<Host>, entry: CliTerminalSignIn, serial
             window
         }
     };
-    if let Some(job) = lock(&accounts.jobs).get_mut(provider).filter(|job| job.serial == serial) {
-        job.phase = "waiting".into();
-    }
+    accounts.with_job(provider, serial, |job| job.phase = "waiting".into());
     redraw(host);
     let reader = host.clone();
     let outcome = CliTerminalSignIn::wait(
@@ -627,7 +670,8 @@ async fn resend_login_request(host: &Arc<Host>, id: &str) {
     };
     let block = crate::updates::manual_block(host, &host.view().snapshot, &pane);
     let updating = crate::updates::any_running(host);
-    if updating || block.is_some() || lock(&accounts.busy).contains(pane.provider()) || lock(&accounts.changes).contains(pane.provider()) {
+    let held = accounts.is_busy(pane.provider()) || accounts.is_changing(pane.provider());
+    if updating || block.is_some() || held {
         if updating || block.is_some() {
             lock(&accounts.awaiting_update).insert(id.to_string());
         }
@@ -637,51 +681,94 @@ async fn resend_login_request(host: &Arc<Host>, id: &str) {
         return;
     }
     lock(&accounts.awaiting_update).remove(id);
-    crate::models::prepare(host, id).await;
-    if host.closing() || !lock(&accounts.book).is_current(&retry) {
-        return;
-    }
     let outcome = start_again(host, id, &retry).await;
-    if let Err(error) = outcome
-        && lock(&accounts.book).remember(retry)
-    {
-        lock(&accounts.notes).insert(id.to_string(), error);
+    if let Err(error) = outcome {
+        let kept = lock(&accounts.book).remember(retry);
+        if kept && let Some(error) = error {
+            lock(&accounts.notes).insert(id.to_string(), error);
+        }
     }
     redraw(host);
 }
 
-/// `PaneView.ResendLoginRequest`: the request as the pane would send it now, through the run service; its own sign-in failure only
-/// raises the card again (never an automatic start).
-async fn start_again(host: &Arc<Host>, id: &str, retry: &CliLoginRetry) -> Result<(), String> {
-    let refused = || strings::get("loginRecovery.resendFailed");
-    let engine = host.engine()?;
+/// Ends the resend's claim on the pane's composer (C#'s `finally { starting = false; }`).
+struct Starting<'a>(&'a Host, &'a str);
+
+impl Drop for Starting<'_> {
+    fn drop(&mut self) {
+        if let Ok(ui) = crate::panes::ui(&mut self.0.view(), self.1) {
+            ui.view.starting = false;
+            ui.dirty = true;
+        }
+    }
+}
+
+/// `PaneView.ResendLoginRequest`: not while the pane's composer starts a request or a queued one, or the pane runs; the composer held
+/// meanwhile (`starting`) so neither it nor its queue starts another; the models made ready, the provider's runtime available, then the
+/// request as the pane would send it now (an Antigravity model its live list lacks giving way to agy's default, as
+/// `PrepareStyleRunRequest` does), through the run service. Its own sign-in failure only raises the card again (never an automatic
+/// start). Err(None): not now, nothing to say; Err(Some(why)): the note the card shows.
+async fn start_again(host: &Arc<Host>, id: &str, retry: &CliLoginRetry) -> Result<(), Option<String>> {
+    let refused = || Some(strings::get("loginRecovery.resendFailed"));
+    let engine = host.engine().map_err(Some)?;
+    let submission = {
+        let mut view = host.view();
+        let running = view.snapshot.session(id).is_none_or(|p| p.status() == "running");
+        let ui = crate::panes::ui(&mut view, id).map_err(|_| None::<String>)?;
+        if running || ui.view.starting || ui.view.queue_starting {
+            return Err(None);
+        }
+        ui.view.starting = true;
+        ui.submission += 1;
+        ui.dirty = true;
+        ui.submission
+    };
+    let _starting = Starting(host, id);
+    let accounts = of(host);
+    if session_running(host, id) || !accounts.is_current(retry) {
+        return Err(None);
+    }
+    crate::models::prepare(host, id).await;
+    let provider = retry.request.provider.clone();
+    let runtime = host.runs().and_then(|runs| runs.runtime(&provider));
+    if runtime.as_ref().is_none_or(|r| !r.available) {
+        return Err(Some(strings::get("composer.hint.refreshRuntime")));
+    }
     let request = {
-        let view = host.view();
+        let mut view = host.view();
         let pane = view.snapshot.session(id).cloned().ok_or_else(refused)?;
-        if pane.provider() != retry.request.provider {
-            return Err(refused());
+        let current = crate::panes::ui(&mut view, id).is_ok_and(|ui| ui.submission == submission);
+        if !current || pane.provider() != provider || host.closing() {
+            return Err(None);
         }
         let workspace = view.snapshot.workspace(pane.workspace_id()).cloned();
         let mut request = StartRunRequest::new(pane.id(), pane.workspace_id(), pane.kind(), &retry.request.input);
         request.registered_models = crate::runs::registered_models_for(pane.provider(), workspace.as_ref(), &view.snapshot);
         request.model = pane.model().to_string();
-        request.provider = pane.provider().to_string();
+        if pane.provider() == "gemini"
+            && runtime.as_ref().is_some_and(|r| mighty_run::antigravity::model_unavailable(pane.model(), &r.model_catalog))
+        {
+            request.model = "default".into();
+        }
+        request.provider = provider.clone();
         request.settings = pane.settings.clone();
         request.resume_id = pane.resume_id.clone();
         request.attachments = retry.request.attachments.clone();
         request
     };
-    let accounts = of(host);
+    if !accounts.is_current(retry) {
+        return Err(None);
+    }
     lock(&accounts.book).expect_resend(id);
     match engine.service.start(request).await {
         Ok(Some(())) => Ok(()),
         Ok(None) => {
             lock(&accounts.book).cancel_resend(id);
-            Err(refused())
+            Err(None)
         }
         Err(error) => {
             lock(&accounts.book).cancel_resend(id);
-            Err(error.message().to_string())
+            Err(Some(error.message().to_string()))
         }
     }
 }
@@ -701,16 +788,24 @@ fn dismiss(host: &Arc<Host>, id: &str) {
 
 /// `CancelUnusedLogin`: a sign-in no pane waits on any more ends.
 fn cancel_unused_login(host: &Host, provider: &str) {
-    let used = lock(&of(host).book).requests().values().any(|r| r.request.provider == provider);
+    cancel_unused(&of(host), provider);
+}
+
+fn cancel_unused(accounts: &Accounts, provider: &str) {
+    let used = lock(&accounts.book).requests().values().any(|r| r.request.provider == provider);
     if !used {
-        cancel_background_login(host, provider);
+        cancel_job(accounts, provider);
     }
 }
 
 /// `CancelBackgroundLogin`: the provider's sign-in ended (its automatic starts wait out the cooldown), its failure forgotten.
 fn cancel_background_login(host: &Host, provider: &str) {
-    let accounts = of(host);
-    if let Some(job) = lock(&accounts.jobs).remove(provider) {
+    cancel_job(&of(host), provider);
+}
+
+fn cancel_job(accounts: &Accounts, provider: &str) {
+    let job = lock(&accounts.jobs).remove(provider);
+    if let Some(job) = job {
         job.cancel.send_replace(true);
         lock(&accounts.gate).stopped(provider, mighty_core::time::clock_now());
     }
@@ -721,7 +816,7 @@ fn cancel_background_login(host: &Host, provider: &str) {
 async fn terminal_login_fallback(host: &Arc<Host>, provider: &str) {
     cancel_background_login(host, provider);
     for _ in 0..100 {
-        if !lock(&of(host).busy).contains(provider) {
+        if !of(host).is_busy(provider) {
             break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -740,7 +835,7 @@ async fn terminal_login_fallback(host: &Arc<Host>, provider: &str) {
 /// `RequireIdleAccount`: refused while the account changes, a CLI updates or the provider runs.
 fn require_idle_account(host: &Host, provider: &str) -> Result<(), String> {
     let accounts = of(host);
-    if lock(&accounts.busy).contains(provider) || lock(&accounts.changes).contains(provider) {
+    if accounts.is_busy(provider) || accounts.is_changing(provider) {
         return Err(strings::get("loginRecovery.busy"));
     }
     if crate::updates::any_running(host) {
@@ -765,16 +860,20 @@ fn say(host: &Host, provider: &str, message: Option<String>) {
 /// `StartCliSignIn`: the CLI's own sign-in in a terminal window, then the wait (`AwaitTerminalSignIn`); the account is held only
 /// while the terminal opens. Bedrock's setup holds it until its window closes, then the status is read once.
 async fn start_cli_sign_in(host: &Arc<Host>, provider: &str, option: CliLoginOption) -> Result<(), String> {
+    if of(host).closed.load(Ordering::SeqCst) {
+        return Ok(());
+    }
     require_idle_account(host, provider)?;
     let Some(argv) = login_arguments(provider, option) else { return Ok(()) };
     if !host.may_change_machine() {
         say(host, provider, Some(verification()));
         return Ok(());
     }
-    let coordinator = coordinator(host).ok_or_else(|| host.engine().err().unwrap_or_default())?;
+    let coordinator = coordinator(host).ok_or_else(|| strings::get("loginRecovery.startFailed"))?;
     say(host, provider, None);
     let accounts = of(host);
-    if let Some(replaced) = lock(&accounts.waits).remove(provider) {
+    let replaced = lock(&accounts.waits).remove(provider);
+    if let Some(replaced) = replaced {
         replaced.send_replace(true);
     }
     let before = coordinator.status_of(provider);
@@ -872,18 +971,19 @@ async fn confirm_cli_sign_out(host: &Arc<Host>, provider: &str, relogin: bool) -
     if crate::native::show_dialog(host, mighty_accounts::view::sign_out_dialog(provider, relogin)).await != DialogResult::Primary {
         return Ok(());
     }
+    of(host).sign_out_attempts.fetch_add(1, Ordering::SeqCst);
     require_idle_account(host, provider)?;
     if !host.may_change_machine() {
         say(host, provider, Some(verification()));
         return Ok(());
     }
-    let coordinator = coordinator(host).ok_or_else(|| host.engine().err().unwrap_or_default())?;
+    let coordinator = coordinator(host).ok_or_else(|| strings::get("loginRecovery.startFailed"))?;
     let accounts = of(host);
     lock(&accounts.changes).insert(provider.to_string());
-    if let Some(waiting) = lock(&accounts.waits).remove(provider) {
+    let waiting = lock(&accounts.waits).remove(provider);
+    if let Some(waiting) = waiting {
         waiting.send_replace(true);
     }
-    accounts.logouts.fetch_add(1, Ordering::SeqCst);
     let after = coordinator.logout(provider).await;
     crate::models::after_account_change(host, provider);
     refresh_cli_accounts(host).await;
@@ -900,24 +1000,8 @@ async fn confirm_cli_sign_out(host: &Arc<Host>, provider: &str, relogin: bool) -
 pub async fn refresh_cli_accounts(host: &Arc<Host>) {
     let Some(coordinator) = coordinator(host).filter(|_| host.smoke.is_none()) else { return };
     coordinator.refresh(&SECTION_PROVIDERS).await;
-    reload_provider_models(host).await;
+    crate::models::reload_runtime(host).await;
     redraw(host);
-}
-
-/// `ReloadProviderModels`: the CLIs found again for this PC's active workspace (a remote one's are its host's), each provider's
-/// reading kept as its runtime.
-async fn reload_provider_models(host: &Arc<Host>) {
-    let Some(runs) = host.runs().cloned() else { return };
-    let path = {
-        let view = host.view();
-        let state = &view.snapshot;
-        state.active_workspace_id.as_deref().and_then(|id| state.workspace(id)).filter(|w| w.remote.is_none()).map(|w| w.path().to_string())
-    };
-    let info = runs.catalog.get_runtime(true, path.as_deref()).await;
-    for provider in info.providers {
-        runs.keep(provider);
-    }
-    host.panes_changed();
 }
 
 /// `ResetClaudeModels`: not while Claude runs (the row says so); every Claude pane back to the default model and effort, the CLIs
@@ -1028,7 +1112,8 @@ impl mighty_accounts::view::AccountActions for TabActions {
         self.then(provider, async move { start_cli_sign_in(&host, &p, option).await });
     }
     fn cancel_wait(&self, provider: &str) {
-        if let Some(wait) = lock(&of(&self.host).waits).get(provider) {
+        let wait = lock(&of(&self.host).waits).get(provider).cloned();
+        if let Some(wait) = wait {
             wait.send_replace(true);
         }
     }
@@ -1064,25 +1149,34 @@ impl mighty_accounts::view::AccountActions for TabActions {
 /// each provider's last status ("checking" until read), with the rows' waits, messages and work.
 pub fn accounts_model(host: &Host, fixture: Option<Vec<CliAccountStatus>>) -> mighty_accounts::view::AccountsModel {
     let accounts = of(host);
-    let statuses = fixture.unwrap_or_else(|| {
-        let read = accounts.coordinator.get().map(|c| c.statuses()).unwrap_or_default();
-        mighty_accounts::view::AccountsModel::from_statuses(&read)
-    });
-    let (waits, messages, working) = (lock(&accounts.waits), lock(&accounts.messages), lock(&accounts.working));
+    let read = accounts.coordinator.get().map(|c| c.statuses()).unwrap_or_default();
+    model_of(&accounts, fixture, &read, || host.view().snapshot.auto_login_clis != Some(false))
+}
+
+/// The CLI accounts box's model from the accounts' state: `auto_login` (it reads the state) runs before any account lock is taken, and
+/// each map is copied under its own lock, so a builder never holds an account lock while the state's is taken (`login_input` and
+/// `busy` take account locks with the state locked).
+fn model_of(
+    accounts: &Accounts,
+    fixture: Option<Vec<CliAccountStatus>>,
+    read: &HashMap<String, CliAccountStatus>,
+    auto_login: impl FnOnce() -> bool,
+) -> mighty_accounts::view::AccountsModel {
+    let auto_login = auto_login();
+    let statuses = fixture.unwrap_or_else(|| mighty_accounts::view::AccountsModel::from_statuses(read));
+    let waits: HashSet<String> = lock(&accounts.waits).keys().cloned().collect();
+    let messages = lock(&accounts.messages).clone();
+    let working = lock(&accounts.working).clone();
     let rows = statuses
         .into_iter()
         .map(|status| mighty_accounts::view::AccountRow {
-            pending: waits.contains_key(&status.provider),
+            pending: waits.contains(&status.provider),
             message: messages.get(&status.provider).cloned(),
             working: working.contains(&status.provider),
             status,
         })
         .collect();
-    mighty_accounts::view::AccountsModel {
-        rows,
-        reading: accounts.reading.load(Ordering::SeqCst) > 0,
-        auto_login: host.view().snapshot.auto_login_clis != Some(false),
-    }
+    mighty_accounts::view::AccountsModel { rows, reading: accounts.reading.load(Ordering::SeqCst) > 0, auto_login }
 }
 
 /// The providers box's model: the run engine's runtime per provider, and the recheck under way.
@@ -1100,7 +1194,7 @@ pub fn recheck_runtime(host: &Arc<Host>) {
     redraw(host);
     let host = host.clone();
     tauri::async_runtime::spawn(async move {
-        reload_provider_models(&host).await;
+        crate::models::reload_runtime(&host).await;
         of(&host).checking_runtime.store(false, Ordering::SeqCst);
         redraw(&host);
     });
@@ -1125,17 +1219,156 @@ pub fn has_retry(host: &Host, pane: &str) -> bool {
 
 /// Whether the account changes or a button of its row works (the smoke's D8 waits for it to settle).
 pub fn is_changing(accounts: &Accounts, provider: &str) -> bool {
-    lock(&accounts.changes).contains(provider) || lock(&accounts.working).contains(provider)
+    let working = lock(&accounts.working).contains(provider);
+    working || accounts.is_changing(provider)
 }
 
-/// Whether a sign-out ran (the smoke's D8 cancelled must leave none).
+/// Whether a sign-out was confirmed in D8, before any gate (the smoke's D8 cancelled must leave none).
 pub fn signed_out_in_smoke(host: &Host) -> bool {
-    of(host).logouts.load(Ordering::SeqCst) > 0
+    of(host).sign_out_attempts.load(Ordering::SeqCst) > 0
+}
+
+/// `RefreshLoginCards`' upkeep (MainWindow.LoginRecovery.cs:96-103), on every frame pass with the state locked: a retry whose pane is
+/// gone or now runs another provider is dropped, then every sign-in no pane waits on any more ends. Takes account locks only (never the
+/// state's: `snapshot` is the locked state) and draws nothing: the next pass shows it.
+pub fn prune(host: &Host, snapshot: &AppSnapshot) {
+    prune_of(&of(host), snapshot);
+}
+
+fn prune_of(accounts: &Accounts, snapshot: &AppSnapshot) {
+    let gone: Vec<String> = lock(&accounts.book)
+        .requests()
+        .iter()
+        .filter(|(id, retry)| snapshot.session(id).is_none_or(|pane| pane.provider() != retry.request.provider))
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in &gone {
+        lock(&accounts.book).drop_session(id);
+        lock(&accounts.notes).remove(id);
+        lock(&accounts.awaiting_update).remove(id);
+    }
+    let providers: Vec<String> = lock(&accounts.jobs).keys().cloned().collect();
+    for provider in providers {
+        cancel_unused(accounts, &provider);
+    }
+}
+
+/// `ShutdownLoginRecovery` (MainWindow.LoginRecovery.cs:313-319): every sign-in ended (its hidden terminal closed by its task), every
+/// terminal wait cancelled, the deferred starts, retries, notes and held resends forgotten; no sign-in starts from here on. Called
+/// once from the app's exit.
+#[allow(dead_code, reason = "W6-A's main.rs calls it from the Exit handler")]
+pub fn shutdown(host: &Host) {
+    let accounts = of(host);
+    accounts.closed.store(true, Ordering::SeqCst);
+    let providers: Vec<String> = lock(&accounts.jobs).keys().cloned().collect();
+    for provider in providers {
+        cancel_background_login(host, &provider);
+    }
+    let waits: Vec<watch::Sender<bool>> = lock(&accounts.waits).drain().map(|(_, wait)| wait).collect();
+    for wait in waits {
+        wait.send_replace(true);
+    }
+    lock(&accounts.book).clear();
+    lock(&accounts.notes).clear();
+    lock(&accounts.awaiting_update).clear();
+    lock(&accounts.deferred).clear();
 }
 
 #[cfg(test)]
 mod tests {
+    use mighty_core::Wire;
     use mighty_core::locale::Locale;
+
+    use super::*;
+
+    /// Review C1: the CLI tab's model reads the state (its auto-login switch) before it takes any account lock, so it never waits on
+    /// the state's lock while holding one that a pass holding the state's lock waits on (`login_input`, `busy`). Before, it held the
+    /// waits, messages and work maps across `host.view()`: these two threads deadlocked.
+    #[test]
+    fn the_tabs_model_never_holds_an_account_lock_while_the_state_is_taken() {
+        let accounts = Arc::new(Accounts::default());
+        lock(&accounts.waits).insert("pi".into(), watch::channel(false).0);
+        lock(&accounts.messages).insert("pi".into(), "hint".into());
+        let state = Arc::new(Mutex::new(()));
+        let (done, finished) = std::sync::mpsc::channel();
+        let (a, a_state, a_done) = (accounts.clone(), state.clone(), done.clone());
+        std::thread::spawn(move || {
+            for _ in 0..3000 {
+                let _locked = lock(&a_state);
+                let _ = a.is_waiting("pi") || a.is_busy("pi") || a.is_changing("pi");
+                let _ = lock(&a.messages).len();
+            }
+            let _ = a_done.send(());
+        });
+        let (b, b_state) = (accounts.clone(), state.clone());
+        std::thread::spawn(move || {
+            for _ in 0..3000 {
+                let model = model_of(&b, None, &HashMap::new(), || {
+                    let _locked = lock(&b_state);
+                    true
+                });
+                assert!(model.rows.iter().any(|r| r.status.provider == "pi" && r.pending && r.message.as_deref() == Some("hint")));
+            }
+            let _ = done.send(());
+        });
+        for _ in 0..2 {
+            finished.recv_timeout(Duration::from_secs(30)).expect("the tab's model and a locked pass deadlocked");
+        }
+    }
+
+    /// Review C2: a new start of a terminal sign-in waits on the window before only while that window is the console host's and still
+    /// open; a Windows Terminal tab handed its command off, so the next start opens a new one. The wait itself counts a tab as open.
+    #[test]
+    fn only_an_open_console_window_is_waited_on_again() {
+        let tab = LoginWindow { holds_command: false, closed: Arc::new(AtomicBool::new(true)) };
+        assert!(!tab.reusable(), "a Windows Terminal tab is never reused, even after its launcher ended");
+        assert!(tab.open(), "the wait cannot see a tab close");
+        let console = LoginWindow { holds_command: true, closed: Arc::new(AtomicBool::new(false)) };
+        assert!(console.reusable() && console.open(), "a console window still open is waited on again");
+        console.closed.store(true, Ordering::SeqCst);
+        assert!(!console.reusable() && !console.open(), "a closed console window opens a new one and ends the wait");
+    }
+
+    /// Review C4 (C# `RefreshLoginCards`): a retry whose pane is gone, or now runs another provider, is dropped, and a sign-in no pane
+    /// waits on any more ends; one still waited on stays.
+    #[test]
+    fn retries_of_closed_panes_go_and_their_sign_ins_end() {
+        mighty_run::strings::set_language("ko");
+        let accounts = Accounts::default();
+        let keep = |id: &str, provider: &str| {
+            let mut request = StartRunRequest::new(id, "w", "claude", "again");
+            request.provider = provider.into();
+            let mut book = lock(&accounts.book);
+            book.sent(&request, None);
+            let retry = book.settled(id).unwrap();
+            book.remember(retry);
+        };
+        keep("kept", "claude");
+        keep("closed", "codex");
+        keep("switched", "gemini");
+        let job = |provider: &str| {
+            let (cancel, cancelled) = watch::channel(false);
+            lock(&accounts.jobs).insert(
+                provider.into(),
+                Job { serial: 1, automatic: true, terminal: false, phase: "waiting".into(), process: None, cancel },
+            );
+            cancelled
+        };
+        let (claude, codex) = (job("claude"), job("codex"));
+        let snapshot = AppSnapshot::read(&serde_json::json!({
+            "workspaces": [{"id": "w", "path": "/fixture"}],
+            "sessions": [
+                {"id": "kept", "workspaceId": "w", "kind": "claude", "provider": "claude"},
+                {"id": "switched", "workspaceId": "w", "kind": "claude", "provider": "pi"},
+            ],
+        }))
+        .unwrap();
+        prune_of(&accounts, &snapshot);
+        let left: Vec<String> = lock(&accounts.book).requests().keys().cloned().collect();
+        assert_eq!(left, ["kept"], "only the live pane's retry stays");
+        assert!(accounts.has_job("claude") && !*claude.borrow(), "a sign-in still waited on goes on");
+        assert!(!accounts.has_job("codex") && *codex.borrow(), "the closed pane's sign-in ends");
+    }
 
     /// The source-grep halves of C#'s L1400 and L1427 as the app's registry: the sign-in card's, the usage popover's and the CLI tab's
     /// methods are registered (`loginAction`, `usageRefresh`, `usageDirect`; the native forms' through `nativeAction`), and Settings'

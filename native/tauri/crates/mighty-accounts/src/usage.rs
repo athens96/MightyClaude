@@ -497,14 +497,18 @@ pub mod credential_file {
         Some(ClaudeQuotaCredential { token: token.to_string(), plan: text(meta::text(oauth, "subscriptionType")) })
     }
 
-    /// `Read`: size-checked before it is read, and never touched otherwise.
+    /// `Read`: size-checked before it is read, and never touched otherwise. Opened once, its size taken from that handle and at most
+    /// one byte past the bound read, so a file swapped or grown between the check and the read is still bounded.
     pub fn read(home: &str, environment: &std::collections::BTreeMap<String, String>, now: DateTime<Utc>) -> Option<ClaudeQuotaCredential> {
         let path = path(home, crate::env_get(environment, "CLAUDE_CONFIG_DIR"));
-        let info = std::fs::metadata(&path).ok()?;
+        let file = std::fs::File::open(&path).ok()?;
+        let info = file.metadata().ok()?;
         if !info.is_file() || info.len() > MAXIMUM_BYTES as u64 {
             return None;
         }
-        parse(&String::from_utf8_lossy(&std::fs::read(&path).ok()?), now)
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut std::io::Read::take(file, MAXIMUM_BYTES as u64 + 1), &mut bytes).ok()?;
+        parse(&String::from_utf8_lossy(&bytes), now)
     }
 }
 
@@ -618,7 +622,24 @@ impl AccountUsageService {
     }
 }
 
+/// A read's entry in `in_flight` that leaves it however the read ends: a probe that panicked, or a runtime shut down under it,
+/// would otherwise leave every later read joining a channel no one answers. Disarmed when the read settles itself.
+struct InFlight<'a> {
+    inner: &'a ServiceInner,
+    provider: &'a str,
+    armed: bool,
+}
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            lock(&self.inner.state).in_flight.remove(self.provider);
+        }
+    }
+}
+
 async fn run(inner: Arc<ServiceInner>, provider: String, started: DateTime<Utc>, sender: watch::Sender<Option<AccountUsageSnapshot>>) {
+    let mut entry = InFlight { inner: &inner, provider: &provider, armed: true };
     tokio::task::yield_now().await;
     let mut closing = inner.closing.subscribe();
     let outcome = tokio::select! {
@@ -640,6 +661,7 @@ async fn run(inner: Arc<ServiceInner>, provider: String, started: DateTime<Utc>,
     };
     let mut state = lock(&inner.state);
     state.in_flight.remove(&provider);
+    entry.armed = false;
     sender.send_replace(Some(value));
 }
 

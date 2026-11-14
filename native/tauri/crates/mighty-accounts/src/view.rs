@@ -218,16 +218,19 @@ pub fn account_row(ui: &mut Ui, row: &AccountRow, reading: bool, actions: &Arc<d
         .tooltip(strings::get("settings.cliAccounts.bedrockHelp"))
         .enabled(held);
         place(&mut parts, &mut cols, bedrock, Track::Auto);
-        let act = actions.clone();
-        reset_bedrock = Some(
-            push(
-                ui,
-                strings::get("settings.cliAccounts.resetBedrockButton"),
-                Some("cli-account-reset-bedrock-claude".into()),
-                Box::new(move || act.reset_bedrock()),
-            )
-            .enabled(held),
-        );
+        // The reset is Windows' only, as C# and the Mac's Swift app build it.
+        if mighty_run::os::windows() {
+            let act = actions.clone();
+            reset_bedrock = Some(
+                push(
+                    ui,
+                    strings::get("settings.cliAccounts.resetBedrockButton"),
+                    Some("cli-account-reset-bedrock-claude".into()),
+                    Box::new(move || act.reset_bedrock()),
+                )
+                .enabled(held),
+            );
+        }
     }
     let (act, p) = (actions.clone(), provider.clone());
     let refresh = ui

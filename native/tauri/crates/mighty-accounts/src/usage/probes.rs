@@ -12,7 +12,7 @@ use mighty_platform::{BoxFuture, ChildControl, ProcessHost};
 use mighty_run::model::CliCommand;
 use mighty_run::{meta, strings};
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, Lines};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
 use super::reset::SHARED_DEADLINE;
 use super::{
@@ -203,7 +203,7 @@ pub trait AccountUsageStdio: Send {
 pub struct HostCodexStdio {
     control: Arc<dyn ChildControl>,
     input: Option<ChildWriter>,
-    lines: Option<Lines<BufReader<ChildReader>>>,
+    output: Option<BufReader<ChildReader>>,
 }
 
 impl HostCodexStdio {
@@ -222,11 +222,7 @@ impl HostCodexStdio {
                 while matches!(errors.read(&mut buffer).await, Ok(read) if read > 0) {}
             });
         }
-        Ok(HostCodexStdio {
-            control: child.control(),
-            input: child.stdin.take(),
-            lines: child.stdout.take().map(|output| BufReader::new(output).lines()),
-        })
+        Ok(HostCodexStdio { control: child.control(), input: child.stdin.take(), output: child.stdout.take().map(BufReader::new) })
     }
 }
 
@@ -241,9 +237,9 @@ impl AccountUsageStdio for HostCodexStdio {
 
     fn read_line(&mut self) -> BoxFuture<'_, Result<Option<String>, String>> {
         Box::pin(async move {
-            match self.lines.as_mut() {
+            match self.output.as_mut() {
                 None => Ok(None),
-                Some(lines) => lines.next_line().await.map_err(|e| e.to_string()),
+                Some(output) => bounded_line(output, MAXIMUM_BODY_BYTES).await.map_err(|e| e.to_string()),
             }
         })
     }
@@ -251,10 +247,42 @@ impl AccountUsageStdio for HostCodexStdio {
     fn close(&mut self) -> BoxFuture<'_, ()> {
         Box::pin(async move {
             self.input = None;
-            self.lines = None;
+            self.output = None;
             self.control.kill();
             let _ = self.control.close().await;
         })
+    }
+}
+
+/// The next line as `next_line` reads it (its `\n` or `\r\n` dropped), or None at the end; a line past `limit` bytes is an error
+/// as soon as it passes it, so an app-server that never ends its line is never held in memory past the exchange's own bound.
+async fn bounded_line<R: AsyncBufRead + Unpin>(reader: &mut R, limit: usize) -> std::io::Result<Option<String>> {
+    let mut line = Vec::new();
+    loop {
+        let buffer = reader.fill_buf().await?;
+        if buffer.is_empty() && line.is_empty() {
+            return Ok(None);
+        }
+        let (taken, ended) = match buffer.iter().position(|b| *b == b'\n') {
+            Some(at) => (at + 1, true),
+            None => (buffer.len(), buffer.is_empty()),
+        };
+        if line.len() + taken > limit.saturating_add(2) {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "line exceeds the size limit"));
+        }
+        line.extend_from_slice(&buffer[..taken]);
+        reader.consume(taken);
+        if ended {
+            if line.last() == Some(&b'\n') {
+                line.pop();
+                if line.last() == Some(&b'\r') {
+                    line.pop();
+                }
+            }
+            return String::from_utf8(line)
+                .map(Some)
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "stream did not contain valid UTF-8"));
+        }
     }
 }
 
@@ -591,4 +619,26 @@ pub fn runtime_probe(parts: RuntimeProbe) -> UsageProbe {
             }
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Review C9: the app-server's lines are read as `next_line` reads them, and one that runs past the bound fails once it passes
+    /// it instead of being read whole.
+    #[tokio::test]
+    async fn the_app_servers_lines_are_bounded() {
+        let mut reader = BufReader::with_capacity(4, &b"one\r\ntwo\n\nlast"[..]);
+        let mut lines = Vec::new();
+        while let Some(line) = bounded_line(&mut reader, 16).await.unwrap() {
+            lines.push(line);
+        }
+        assert_eq!(lines, ["one", "two", "", "last"]);
+        let endless = [b'x'; 100];
+        let mut reader = BufReader::with_capacity(8, &endless[..]);
+        assert!(bounded_line(&mut reader, 16).await.is_err(), "a line past the bound");
+        let mut reader = BufReader::new(&b"\xFF\n"[..]);
+        assert!(bounded_line(&mut reader, 16).await.is_err(), "not UTF-8, as next_line refuses it");
+    }
 }

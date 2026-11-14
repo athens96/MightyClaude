@@ -113,6 +113,8 @@ fn chip_words(status: &AccountUsageStatus, provider: &str, text: &str, warning: 
 /// The frame model's usage parts (C# `RenderAccountUsage` then `status.chips`, `WebUsageDetails` and the dashboard's bars), with the
 /// state locked: the state given to the usage first (`Update`), a read queued when its providers changed.
 pub fn shell(host: &Host, snapshot: &AppSnapshot) -> Option<UsageModel> {
+    // The frame pass also keeps the sign-in cards' retries to live panes (accounts.rs, C# `RefreshLoginCards`).
+    crate::accounts::prune(host, snapshot);
     let usage = of(host);
     if usage.status.update(snapshot) {
         queue(host, &usage, false);

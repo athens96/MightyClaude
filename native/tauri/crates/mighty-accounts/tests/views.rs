@@ -136,7 +136,6 @@ fn the_accounts_box_draws_each_status_and_its_buttons() {
         "cli-account-change-claude",
         "cli-account-reset-models-claude",
         "cli-account-bedrock-claude",
-        "cli-account-reset-bedrock-claude",
         "cli-account-login-codex",
         "cli-account-refresh-codex",
         "cli-auto-login",
@@ -147,6 +146,11 @@ fn the_accounts_box_draws_each_status_and_its_buttons() {
         by_aid(&node, "cli-account-status-claude").and_then(|n| n["text"].as_str().map(str::to_string)),
         Some(model.rows[0].status.summary()),
         "the status line"
+    );
+    assert_eq!(
+        by_aid(&node, "cli-account-reset-bedrock-claude").is_some(),
+        mighty_run::os::windows(),
+        "Claude's Bedrock reset is Windows' only (review C5)"
     );
     assert!(by_aid(&node, "cli-account-change-gemini").is_none(), "Antigravity cannot be signed out here");
     let id = |aid: &str| by_aid(&node, aid).and_then(|n| n["id"].as_i64()).unwrap_or_else(|| panic!("{aid} has no id"));

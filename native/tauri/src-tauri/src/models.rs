@@ -116,6 +116,50 @@ pub fn after_account_change(host: &Host, provider: &str) {
     }
 }
 
+/// `modelRefreshRevision`: the newest `ReloadProviderModels`; an older one that ends later takes nothing in.
+static RELOAD_REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// `ReloadProviderModels` (MainWindow.Settings.cs:956-973, W6-C: after a sign-in, a sign-out, a model reset, the providers box's
+/// recheck): every provider's selections in the active workspace remembered, the CLIs found again and read for its folder (this PC's
+/// only: a remote workspace's models are its host's), then — unless a newer reload began or another workspace became active
+/// meanwhile — each provider's reading kept as its runtime and stored as that folder's newest list, which reconciles its panes
+/// (`ModelRefreshes.Store` → `AcceptModels`). True when it took the reading in. A smoke keeps the runtime and reconciles nothing.
+pub async fn reload_runtime(host: &Host) -> bool {
+    use std::sync::atomic::Ordering;
+    let Some(runs) = host.runs().cloned() else { return false };
+    let (workspace_id, path) = {
+        let view = host.view();
+        let state = &view.snapshot;
+        let workspace = state.active_workspace_id.clone();
+        let path = workspace.as_deref().and_then(|id| state.workspace(id)).filter(|w| w.remote.is_none()).map(|w| w.path().to_string());
+        (workspace, path)
+    };
+    let revision = RELOAD_REVISION.fetch_add(1, Ordering::SeqCst) + 1;
+    let contexts: Vec<ModelContext> = match (&workspace_id, &path) {
+        (Some(id), Some(path)) => mighty_core::wire::PROVIDERS.iter().map(|provider| ModelContext::new(id, path, provider)).collect(),
+        _ => vec![],
+    };
+    for key in &contexts {
+        remember_selections(host, key);
+    }
+    let next = runs.catalog.get_runtime(true, path.as_deref()).await;
+    if host.closing() || RELOAD_REVISION.load(Ordering::SeqCst) != revision || host.view().snapshot.active_workspace_id != workspace_id {
+        return false;
+    }
+    for provider in &next.providers {
+        runs.keep(provider.clone());
+    }
+    if let Some(models) = models(host) {
+        for key in &contexts {
+            if let Some(read) = next.providers.iter().find(|p| p.id == key.provider) {
+                models.refresh.store(key, read.clone());
+            }
+        }
+    }
+    host.panes_changed();
+    true
+}
+
 /// `RefreshPaneModels` → `RefreshRuntime` → `ReloadProviderModels` (MainWindow.WorkflowParity.cs:27, MainWindow.Settings.cs:955-972):
 /// the model menu's refresh row, and a new conversation, read the pane's list again now, a reading already under way reading again
 /// first; the list read is its folder's newest, so a run about to start within the minute takes it rather than an older one, and the
