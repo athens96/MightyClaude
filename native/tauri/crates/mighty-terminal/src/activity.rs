@@ -29,3 +29,10 @@ pub fn next_status(current: &str, busy: Option<bool>) -> Option<&'static str> {
     let next = if running { "running" } else { "idle" };
     (next != current).then_some(next)
 }
+
+/// A reading of the shell's activity as the change of one pane (C# `ApplyShellActivity` through `SetShellStatus`): [`next_status`]
+/// from the status `pane` has now, then [`shell_status_change`]. Made inside the state's update, so a pane that completed or failed
+/// after the reading was taken keeps that.
+pub fn activity_change(pane: &RunSession, busy: bool) -> Option<(RunSession, bool)> {
+    next_status(pane.status(), Some(busy)).and_then(|next| shell_status_change(pane, next))
+}

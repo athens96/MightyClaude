@@ -125,14 +125,14 @@ impl PaneEvents for HostEvents {
 
     fn status(&self, pane: &str, status: &'static str) {
         if let Some(host) = self.host.upgrade() {
-            set_shell_status(&host, pane, status);
+            change_shell_status(&host, pane, |session| mighty_terminal::activity::shell_status_change(session, status));
         }
     }
 
-    fn session_status(&self, pane: &str) -> Option<String> {
-        let host = self.host.upgrade()?;
-        let view = host.view();
-        view.snapshot.session(pane).map(|s| s.status().to_string())
+    fn activity(&self, pane: &str, busy: bool) {
+        if let Some(host) = self.host.upgrade() {
+            change_shell_status(&host, pane, |session| mighty_terminal::activity::activity_change(session, busy));
+        }
     }
 
     fn error(&self, text: String) {
@@ -165,13 +165,13 @@ impl PaneEvents for HostEvents {
     }
 }
 
-/// C# `SetShellStatus` through the run service (a light update of the pane), then the page's copy taken again.
-fn set_shell_status(host: &Arc<Host>, pane: &str, status: &'static str) {
+/// C# `SetShellStatus` through the run service (a light update of the pane, `change` deciding from the pane as the update finds it),
+/// then the page's copy taken again.
+fn change_shell_status(host: &Arc<Host>, pane: &str, change: impl FnOnce(&RunSession) -> Option<(RunSession, bool)>) {
     let Some(runs) = host.runs() else { return };
-    let changed = runs.service.update_pane(pane, |session| {
-        mighty_terminal::activity::shell_status_change(session, status)
-            .map(|(next, now)| (next, if now { PaneSave::Now } else { PaneSave::Later }))
-    });
+    let changed = runs
+        .service
+        .update_pane(pane, |session| change(session).map(|(next, now)| (next, if now { PaneSave::Now } else { PaneSave::Later })));
     if changed {
         host.view().sync();
         host.schedule();

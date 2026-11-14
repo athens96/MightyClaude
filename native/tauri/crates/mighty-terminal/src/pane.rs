@@ -19,7 +19,6 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
 
-use crate::activity::next_status;
 use crate::agent::AgentTerminal;
 use crate::text::{BoundedText, Utf8Decoder, last_units};
 
@@ -136,8 +135,10 @@ pub trait PaneEvents: Send + Sync {
     fn post(&self, pane: &str, message: &TerminalMessage);
     /// The shell pane's status from its terminal (C# `ShellStatusChanged`: idle, running, completed, error).
     fn status(&self, pane: &str, status: &'static str);
-    /// The pane's status as the state has it now (C# `service.SessionStatus`).
-    fn session_status(&self, pane: &str) -> Option<String>;
+    /// A reading of the shell pane's activity (C# `ApplyShellActivity`): running while a command occupies its terminal, idle at its
+    /// prompt, as [`crate::activity::next_status`] decides from the status the pane has when the change is made — inside the state's
+    /// update, so an exit or a failure that landed after the reading is never overwritten.
+    fn activity(&self, pane: &str, busy: bool);
     /// The window's error line (C# `owner.error.Text`).
     fn error(&self, text: String);
     /// A press inside the terminal, which never reaches the pane as a pointer event (C# `ActivatePane`).
@@ -522,17 +523,15 @@ impl TerminalPane {
     }
 
     /// One reading of the shell's activity (C# `ShellProcessProbe.IsBusy` then `ApplyShellActivity`): the pane is running while a
-    /// command occupies its terminal and idle at its prompt; a pane that has exited or failed keeps that, and a reading of a shell the
-    /// pane no longer has changes nothing. Whether a shell was read.
+    /// command occupies its terminal and idle at its prompt; a pane that has exited or failed keeps that (decided by the window against
+    /// the status it has then, [`PaneEvents::activity`]), and a reading that could not be taken or of a shell the pane no longer has
+    /// changes nothing. Whether a shell was read.
     pub fn read_activity(&self) -> bool {
         let Some(control) = self.attached() else { return false };
         let busy = control.busy();
         let still = self.attached().is_some_and(|current| Arc::ptr_eq(&current, &control));
-        if !still {
-            return true;
-        }
-        if let Some(next) = self.events.session_status(&self.options.id).and_then(|current| next_status(&current, busy)) {
-            self.events.status(&self.options.id, next);
+        if let Some(busy) = busy.filter(|_| still) {
+            self.events.activity(&self.options.id, busy);
         }
         true
     }

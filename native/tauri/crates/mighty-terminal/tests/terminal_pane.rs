@@ -267,8 +267,8 @@ impl PaneEvents for Held {
     fn status(&self, pane: &str, status: &'static str) {
         self.window.status(pane, status);
     }
-    fn session_status(&self, pane: &str) -> Option<String> {
-        self.window.session_status(pane)
+    fn activity(&self, pane: &str, busy: bool) {
+        self.window.activity(pane, busy);
     }
     fn error(&self, text: String) {
         self.window.error(text);

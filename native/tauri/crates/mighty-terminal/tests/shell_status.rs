@@ -13,7 +13,7 @@ use mighty_platform::fake::{FakeProcessHost, FakeShellEnvironment};
 use mighty_run::ServiceEvent;
 use mighty_run::providers::ProviderCatalog;
 use mighty_run::service::{PaneSave, RunService, RunServiceOptions};
-use mighty_terminal::activity::{next_status, shell_status_change};
+use mighty_terminal::activity::{activity_change, next_status, shell_status_change};
 use mighty_terminal::shell_blocks::{self, OUTPUT_LIMIT_BYTES};
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -102,6 +102,23 @@ async fn shell_pane_status_follows_its_shell() {
     // A shell that was running a command when the app closed is at a new prompt next time (Swift StateStore.swift:201).
     let restored = normalize(&service.snapshot(), true).unwrap();
     assert_eq!(restored.session("shell").map(|s| s.status()), Some("idle"), "a shell pane saved as running must be idle after a restart");
+    service.dispose().await;
+}
+
+/// A reading taken before the shell exited lands after the exit's "completed": it is decided against the status the pane has when
+/// the change is made (inside the service's update), so the pane keeps completed (and error) instead of going back to idle or running.
+#[tokio::test]
+async fn a_late_activity_reading_never_overwrites_an_exit() {
+    let (service, _events) = service();
+    let read = |busy: bool| service.update_pane("shell", |pane| activity_change(pane, busy).map(|(next, _)| (next, PaneSave::Later)));
+    assert!(read(true) && status(&service, "shell").as_deref() == Some("running"), "a command running");
+    assert!(!read(true), "the same reading again changes nothing");
+    for end in ["completed", "error"] {
+        assert!(set_shell_status(&service, "shell", end));
+        assert!(!read(false) && !read(true), "a reading after the {end} changes nothing");
+        assert_eq!(status(&service, "shell").as_deref(), Some(end));
+    }
+    assert!(!service.update_pane("agent", |pane| activity_change(pane, true).map(|(next, _)| (next, PaneSave::Later))), "a shell's only");
     service.dispose().await;
 }
 

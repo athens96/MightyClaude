@@ -56,8 +56,13 @@ impl PaneEvents for Window {
         self.statuses.lock().unwrap().push(status);
         *self.status.lock().unwrap() = status.to_string();
     }
-    fn session_status(&self, _pane: &str) -> Option<String> {
-        Some(self.status.lock().unwrap().clone())
+    /// As the service's update would: decided from the status the pane has now.
+    fn activity(&self, _pane: &str, busy: bool) {
+        let mut current = self.status.lock().unwrap();
+        if let Some(next) = mighty_terminal::activity::next_status(&current, Some(busy)) {
+            self.statuses.lock().unwrap().push(next);
+            *current = next.to_string();
+        }
     }
     fn error(&self, text: String) {
         self.errors.lock().unwrap().push(text);
