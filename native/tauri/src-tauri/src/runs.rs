@@ -122,20 +122,22 @@ pub fn plugin_directory() -> String {
 
 /// The agents' files the app ships (C# `AgentFiles`: the Mac bundle's Resources/Agents, which the C# build copies next to its exe as
 /// `Agents`; pi's `ask_user` extension and opencode's question instructions among them): beside the exe when they were put there, else
-/// the repository's own (a development build).
-pub fn agents_directory() -> PathBuf {
-    let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join("Agents")));
-    match beside.filter(|dir| dir.is_dir()) {
-        Some(dir) => dir,
-        None => Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("macos")
-            .join("Sources")
-            .join("MightyCore")
-            .join("Resources")
-            .join("Agents"),
-    }
+/// in the app's resources (`resources`: Tauri's resource folder, the Mac bundle's Contents/Resources), else — a development build only
+/// — the repository's own. A release build never reads the build machine's paths: None when neither place has them.
+pub fn agents_directory(resources: Option<PathBuf>) -> Option<PathBuf> {
+    let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf));
+    #[cfg(debug_assertions)]
+    let repository = Some(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("macos").join("Sources").join("MightyCore").join("Resources"),
+    );
+    #[cfg(not(debug_assertions))]
+    let repository = None;
+    agents_directory_among(beside, resources, repository)
+}
+
+/// The first of the folders' `Agents` that is there: beside the exe, in the resources, in the repository's resources.
+fn agents_directory_among(beside: Option<PathBuf>, resources: Option<PathBuf>, repository: Option<PathBuf>) -> Option<PathBuf> {
+    [beside, resources, repository].into_iter().flatten().map(|folder| folder.join("Agents")).find(|dir| dir.is_dir())
 }
 
 impl Runs {
@@ -215,7 +217,7 @@ impl Runs {
         let store: Arc<dyn ImageStore> = Arc::new(CacheStore(images.clone()));
         // A Claude run's Edit, Write and MultiEdit results keep the files' originals (files.rs, C# FileOriginalStore).
         let originals = crate::files::originals_hook(&host.app);
-        providers::set_agent_files(Some(agents_directory()));
+        providers::set_agent_files(agents_directory(tauri::Manager::path(&host.app).resource_dir().ok()));
         // The CLIs' own records are read, never written: a Codex run's session files, pi's session list.
         let home = history::user_home();
         let pi_home = home.clone();
@@ -364,4 +366,33 @@ pub fn registered_models_for(provider: &str, workspace: Option<&Workspace>, snap
     }
     let names: Vec<Option<String>> = from_workspace.iter().map(|e| e.name.clone()).collect();
     from_workspace.iter().cloned().chain(from_app.into_iter().filter(|e| !names.contains(&e.name))).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The agents' files: beside the exe first, then the app's resources (the Mac bundle's Contents/Resources), then the repository's —
+    /// which a release build does not pass, so without the other two it finds none rather than the build machine's.
+    #[test]
+    fn the_agents_files_are_beside_the_exe_then_in_the_resources_and_the_repository_only_in_development() {
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("mighty-agents-{}-{nanos}", std::process::id()));
+        let (exe, resources, repository) = (root.join("exe"), root.join("Resources"), root.join("repository"));
+        for folder in [&exe, &resources, &repository] {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        let among = |beside: &Path, repository: Option<&Path>| {
+            agents_directory_among(Some(beside.to_path_buf()), Some(resources.clone()), repository.map(Path::to_path_buf))
+        };
+        assert_eq!(among(&exe, None), None, "a release build without the files anywhere finds none");
+        std::fs::create_dir_all(repository.join("Agents")).unwrap();
+        assert_eq!(among(&exe, Some(&repository)), Some(repository.join("Agents")), "a development build falls back to the repository");
+        assert_eq!(among(&exe, None), None, "a release build never reads the repository");
+        std::fs::create_dir_all(resources.join("Agents")).unwrap();
+        assert_eq!(among(&exe, Some(&repository)), Some(resources.join("Agents")), "the resources come before the repository");
+        std::fs::create_dir_all(exe.join("Agents")).unwrap();
+        assert_eq!(among(&exe, Some(&repository)), Some(exe.join("Agents")), "beside the exe comes first");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

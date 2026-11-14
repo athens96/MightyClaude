@@ -295,7 +295,8 @@ mod runs {
         let directory = common::temp("pi-run");
         let record = directory.join("pi");
         let events = Events::default();
-        let (manager, workspace) = manager(&directory, &record, "answer", &[], &events);
+        // pi stays quiet for 1.5 s before its `agent_end`: longer than the second of silence after which a turn that ended is closed.
+        let (manager, workspace) = manager(&directory, &record, "answer", &["--pi-pause-before-end", "1500"], &events);
         manager.start(pi("pane", &workspace, "hi there")).await.unwrap();
         common::until(|| events.ended(), 30000, "the pi run ends").await;
         manager.dispose().await;
@@ -332,6 +333,11 @@ mod runs {
             stdin.len() == 2 && stdin[0] == "{\"type\":\"get_state\"}" && stdin[1].contains("\"message\":\"hi there\""),
             "stdin: get_state then the prompt: {stdin:?}"
         );
+        assert_eq!(
+            std::fs::read_to_string(suffixed(&record, ".eof")).unwrap_or_default(),
+            "after agent_end",
+            "stdin stayed open until the turn ended"
+        );
         common::remove_when_free(&directory).await;
     }
 
@@ -342,9 +348,21 @@ mod runs {
         let directory = common::temp("pi-steer");
         let record = directory.join("pi");
         let events = Events::default();
-        let (manager, workspace) = manager(&directory, &record, "answer", &["--pi-steer"], &events);
+        // pi holds its `agent_start` back until the check lets it go, so a steer can be tried while the run is up and the turn not open.
+        let hold = directory.join("go");
+        let hold_text = hold.to_string_lossy().into_owned();
+        let (manager, workspace) = manager(&directory, &record, "answer", &["--pi-steer", "--pi-hold-start", &hold_text], &events);
         assert!(!manager.try_steer("pane", "nobody home"), "nothing running");
         manager.start(pi("pane", &workspace, "hi")).await.unwrap();
+        common::until(
+            || std::fs::read_to_string(suffixed(&record, ".stdin")).is_ok_and(|s| s.contains("\"prompt\"")),
+            30000,
+            "pi read the prompt",
+        )
+        .await;
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        assert!(!manager.try_steer("pane", "before the turn"), "refused between the start and agent_start");
+        std::fs::write(&hold, "").unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         let mut steered = false;
         while !steered && std::time::Instant::now() < deadline {
@@ -358,6 +376,7 @@ mod runs {
         assert_eq!(events.last_status().as_deref(), Some("completed"), "completed");
         let stdin = std::fs::read_to_string(suffixed(&record, ".stdin")).unwrap_or_default();
         assert!(stdin.contains("{\"type\":\"steer\",\"message\":\"also check the lint\"}"), "the steer line: {stdin}");
+        assert!(!stdin.contains("before the turn"), "the refused steer was never written: {stdin}");
         assert!(!manager.try_steer("pane", "too late"), "refused after the run");
         manager.dispose().await;
         common::remove_when_free(&directory).await;
@@ -390,6 +409,51 @@ mod runs {
         let from: Vec<&str> = argv.iter().skip_while(|a| *a != "--mode").map(String::as_str).collect();
         assert_eq!(from, ["--mode", "rpc", "--extension", extension.as_str()], "no --session: {argv:?}");
         assert!(!argv.iter().any(|a| a == "--session"), "the missing session is dropped");
+        common::remove_when_free(&directory).await;
+    }
+
+    /// PiDialogVerification.cs:94's timed dialog through the runner: pi gives its select dialog a 1.5 s deadline, and the run's own timer
+    /// (C#'s `timer` → `PiDialogs.TimedOut`) takes the card away when it passes, unanswered, and tells the pane.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_timed_dialogs_card_goes_when_the_runs_deadline_passes() {
+        use mighty_run::permissions::ToolPermissionRequest;
+        use std::time::{Duration, Instant};
+
+        common::korean();
+        providers::set_agent_files(Some(common::agents()));
+        let directory = common::temp("pi-deadline");
+        let record = directory.join("pi").to_string_lossy().into_owned();
+        let file = common::fixtures().join("pi-rpc-dialogs.jsonl").to_string_lossy().into_owned();
+        let catalog = common::fake_catalog(&["--fake-cli", "pi", &record, "--pi-fixture", &file, "--pi-dialogs"]);
+        let workspace = Workspace { path: Some(directory.to_string_lossy().into_owned()), ..Workspace::default() };
+        let events = Events::default();
+        let cards: Arc<Mutex<Vec<(ToolPermissionRequest, Instant)>>> = Arc::default();
+        let (resolved, list, seen) = (workspace.clone(), events.0.clone(), cards.clone());
+        let mut options = RunManagerOptions::new(
+            "",
+            Arc::new(move |_| {
+                let workspace = resolved.clone();
+                Box::pin(async move { Ok(workspace) })
+            }),
+            Arc::new(move |event| list.lock().unwrap().push(event)),
+        );
+        options.permission_requested = Some(Arc::new(move |card| seen.lock().unwrap().push((card, Instant::now()))));
+        options.pi_sessions = Some(Arc::new(|_, _, _| false));
+        let manager = RunManager::new(catalog, options);
+        manager.start(pi("pane", &workspace, "hi")).await.unwrap();
+        let timed = |state: &str| {
+            let cards = cards.lock().unwrap();
+            cards.iter().find(|(card, _)| card.input_json.contains("Pick a color") && card.state == state).map(|(_, at)| *at)
+        };
+        common::until(|| timed("pending").is_some(), 30000, "the timed dialog's card").await;
+        common::until(|| timed("cancelled").is_some(), 10000, "the card goes when the deadline passes").await;
+        let waited = timed("cancelled").unwrap() - timed("pending").unwrap();
+        let told = mighty_run::strings::get_with("run.notice.piDialogTimedOut", &[("title", "Pick a color")]);
+        let warned = events.all().iter().any(|e| e.entry.as_ref().is_some_and(|l| l.text.as_deref() == Some(told.as_str())));
+        manager.stop("pane").await.unwrap();
+        manager.dispose().await;
+        assert!(waited >= Duration::from_millis(1300) && waited < Duration::from_secs(5), "after its 1.5 s: {waited:?}");
+        assert!(warned, "the pane is told");
         common::remove_when_free(&directory).await;
     }
 }

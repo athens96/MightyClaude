@@ -85,7 +85,7 @@ pub type FileOriginals = Arc<dyn Fn(&str, &str, &str, &str, &str, &Value) + Send
 pub type PiSessions = Arc<dyn Fn(&str, &str, &BTreeMap<String, String>) -> bool + Send + Sync>;
 /// What Hermes's `state.db` says of a session before a run continues it (C# `HermesSessions.MessageCount` and `StartedWithFullAccess`
 /// of `HermesSessions.StateDatabase(environment)`): given the run's CLI environment and the session id, its message count and whether it
-/// started with `--yolo`, each None when it cannot be read (which changes nothing).
+/// started with `--yolo`, each None when it cannot be read (a pane that asks then starts a new session: `agents::hermes_resume`).
 pub type HermesSessionReader = Arc<dyn Fn(&BTreeMap<String, String>, &str) -> (Option<i32>, Option<bool>) + Send + Sync>;
 
 /// `RunManager`'s constructor arguments and settable properties.
@@ -113,7 +113,8 @@ pub struct RunManagerOptions {
     /// The home an Antigravity run's sub-agents keep their transcripts under (`AntigravityRecords.Brain(home)`); None is the user's
     /// profile (C#'s `Environment.SpecialFolder.UserProfile`). Checks pass a fake one.
     pub antigravity_home: Option<PathBuf>,
-    /// Hermes's session facts (None: nothing is read, and a pane's session is continued as asked).
+    /// Hermes's session facts (None: nothing is read, as for a record that cannot be read: a pane that asks starts a new session, a
+    /// full-access one continues it as asked).
     pub hermes_session: Option<HermesSessionReader>,
 }
 
@@ -451,9 +452,12 @@ impl RunManager {
         lock(&self.inner.runs).get(id).cloned()
     }
 
-    /// `RespondToToolPermission`: 이번만 허용 / 거부 for one waiting request of one run.
+    /// `RespondToToolPermission`: 이번만 허용 / 거부 for one waiting request of one run. Once a stop has begun no answer goes (as
+    /// `AnswerQuestionnaire`): an Allow pressed in Hermes's second between its `session/cancel` and its end never reaches it.
     pub fn respond_to_tool_permission(&self, session_id: &str, request_id: &str, allow: bool) -> Result<()> {
-        let Some(run) = self.run(session_id) else { return Err(RunError::State(copy::already_settled())) };
+        let Some(run) = self.run(session_id).filter(|run| !run.cancel.is_cancelled()) else {
+            return Err(RunError::State(copy::already_settled()));
+        };
         if let Some(codex) = run.codex() {
             return codex.respond(request_id, allow);
         }
@@ -658,16 +662,27 @@ struct Exec {
     todo_run_id: Option<String>,
     /// Where `ReadChildren` finds the run's sub-agents (set once the run is under way), and whether reading them failed.
     children: Mutex<Children>,
+    hermes_saves: HermesSaves,
     emit: Emit,
 }
 
+/// The Hermes pickers being written ([`Exec::save_hermes_models`]): numbered as asked for, the newest written last, each awaited at the
+/// run's end.
+#[derive(Default)]
+struct HermesSaves {
+    next: std::sync::atomic::AtomicU64,
+    written: Arc<Mutex<u64>>,
+    pending: Mutex<Vec<std::thread::JoinHandle<()>>>,
+}
+
 /// C#'s `codexHome` (here the CLI's environment the run started with, which says where Codex keeps it), `antigravityBrain` and
-/// `watcherDisabled`.
+/// `watcherDisabled`; `closed` once the closing read began (nothing is read after it).
 #[derive(Default)]
 struct Children {
     environment: Option<BTreeMap<String, String>>,
     antigravity_brain: Option<PathBuf>,
     disabled: bool,
+    closed: bool,
 }
 
 enum Failure {
@@ -748,16 +763,21 @@ impl Exec {
     }
 
     /// `StopHermes`: Hermes's turn runs in its gateway — `session/cancel` goes first, and the process ends a second later
-    /// (M/ProcessRunner.swift cancelGrace). Without a turn in flight the process ends at once.
+    /// (M/ProcessRunner.swift cancelGrace). Without a turn in flight the process ends at once. Before the cancel every approval still
+    /// waiting is answered `cancelled`, as ACP's prompt turn says the client must ([`AcpChannel::cancel_permissions`]).
     fn stop_hermes(run: &Arc<Run>) {
         let control = lock(&run.child).clone();
-        let frame = run.acp().and_then(|acp| acp.cancellation.take());
+        let acp = run.acp();
+        let frame = acp.as_ref().and_then(|acp| acp.cancellation.take());
         let Some(frame) = frame else {
             if let Some(control) = control {
                 control.kill();
             }
             return;
         };
+        if let Some(acp) = &acp {
+            acp.cancel_permissions();
+        }
         {
             let _gate = lock(&run.input_gate);
             if !run.acp_input_closed.load(Ordering::SeqCst)
@@ -882,19 +902,22 @@ impl Exec {
                     && let Ok(value) = serde_json::from_str::<Value>(line)
                 {
                     match value.get("type").and_then(Value::as_str) {
-                        Some("acp.session") => agents::hermes_save_models(value.get("configOptions"), Some(models)),
+                        Some("acp.session") => consume_exec.save_hermes_models(value.get("configOptions"), models),
                         Some("acp.update")
                             if value.get("update").and_then(|u| u.get("sessionUpdate")).and_then(Value::as_str)
                                 == Some("config_option_update") =>
                         {
-                            agents::hermes_save_models(value["update"].get("configOptions"), Some(models));
+                            consume_exec.save_hermes_models(value["update"].get("configOptions"), models);
                         }
                         _ => {}
                     }
                 }
                 consume_exec.consume(line);
             }),
+            // Under the node gate, which the run's last status is sent under too: a card is handed over before that status or not at all.
+            // (The channel delivers one callback at a time, so a sink answering at once never comes back in here while it is held.)
             emit: Arc::new(move |value| {
+                let _gate = lock(&emit_run.node_gate);
                 if !emit_run.finished.load(Ordering::SeqCst)
                     && let Some(sink) = &permission
                 {
@@ -929,6 +952,32 @@ impl Exec {
             },
             hooks,
         ))
+    }
+
+    /// `HermesAgent.SaveModels` off the run's own threads (a file read and write, asked for from the stdout pump): when two overlap the
+    /// newer picker is the one kept, and the run's end waits for every save ([`Exec::saved_hermes_models`]), so the menu read after a
+    /// Hermes run has it.
+    fn save_hermes_models(&self, options: Option<&Value>, path: &Path) {
+        let Some(options) = options.cloned() else { return };
+        let saves = &self.hermes_saves;
+        let number = saves.next.fetch_add(1, Ordering::SeqCst) + 1;
+        let (written, path) = (saves.written.clone(), path.to_path_buf());
+        let save = std::thread::spawn(move || {
+            let mut last = lock(&written);
+            if *last < number {
+                *last = number;
+                agents::hermes_save_models(Some(&options), Some(&path));
+            }
+        });
+        lock(&saves.pending).push(save);
+    }
+
+    /// Waits for every Hermes picker save begun so far (on a blocking thread).
+    fn saved_hermes_models(&self) {
+        let pending = std::mem::take(&mut *lock(&self.hermes_saves.pending));
+        for save in pending {
+            let _ = save.join();
+        }
     }
 
     /// `HandOver`: one graph node to the host, unless the run's last status is already out.
@@ -997,6 +1046,7 @@ impl Exec {
         let acp = lock(&run.acp).take();
         if let Some(acp) = acp {
             acp.cancel_all();
+            acp.drain();
         }
         let child = lock(&run.child).take();
         if let Some(child) = child {
@@ -1038,7 +1088,7 @@ impl Exec {
             && request.kind != "shell"
             && let Some(permission) = inner.options.permission_requested.clone()
         {
-            let (write_run, emit_run, timer_run) = (run.clone(), run.clone(), run.clone());
+            let (write_run, emit_run, timer_run) = (run.clone(), run.clone(), Arc::downgrade(&run));
             let row = Arc::downgrade(&parser);
             let (warning_run, warning_emit) = (run.clone(), emit.clone());
             let dialogs = Arc::new(PiDialogChannel::new(
@@ -1056,12 +1106,17 @@ impl Exec {
                         }
                     }),
                     warning: Arc::new(move |message| Exec::log(&warning_run, &warning_emit, "system", message)),
-                    // pi answers a dialog with a deadline itself when it passes: the card goes then too.
+                    // pi answers a dialog with a deadline itself when it passes: the card goes then too. The wait holds no run (its
+                    // stdin among it) and ends with the run.
                     timer: Some(Arc::new(move |id: &str, seconds: f64| {
+                        let Some(mut ended) = timer_run.upgrade().map(|run| run.done.subscribe()) else { return };
                         let (run, id) = (timer_run.clone(), id.to_string());
                         tokio::spawn(async move {
-                            tokio::time::sleep(Duration::from_secs_f64(seconds.min(86_400.0))).await;
-                            if let Some(dialogs) = run.pi_dialogs() {
+                            tokio::select! {
+                                _ = tokio::time::sleep(Duration::from_secs_f64(seconds.min(86_400.0))) => {}
+                                _ = ended.wait_for(|done| *done) => return,
+                            }
+                            if let Some(dialogs) = run.upgrade().and_then(|run| run.pi_dialogs()) {
                                 dialogs.timed_out(&id);
                             }
                         });
@@ -1088,6 +1143,7 @@ impl Exec {
             plan_gate: Mutex::new(()),
             todo_run_id,
             children: Mutex::new(Children::default()),
+            hermes_saves: HermesSaves::default(),
             emit: emit.clone(),
         });
         let reopened = exec.clone();
@@ -1106,12 +1162,12 @@ impl Exec {
         let start_failure = match outcome {
             Ok(()) => None,
             Err(Failure::Cancelled) => {
-                exec.finish(if run.protocol_failed.load(Ordering::SeqCst) { "error" } else { "stopped" });
+                exec.end(if run.protocol_failed.load(Ordering::SeqCst) { "error" } else { "stopped" }).await;
                 Some(RunError::Cancelled(strings::get("run.activity.stopped")))
             }
             Err(Failure::Error(message)) => {
                 Self::log(&run, &emit, "error", &message);
-                exec.finish(if run.cancel.is_cancelled() && !run.protocol_failed.load(Ordering::SeqCst) { "stopped" } else { "error" });
+                exec.end(if run.cancel.is_cancelled() && !run.protocol_failed.load(Ordering::SeqCst) { "stopped" } else { "error" }).await;
                 Some(RunError::State(message))
             }
         };
@@ -1137,10 +1193,11 @@ impl Exec {
             dialogs.cancel_all();
         }
         exec.parser.set_pi_dialogs(None);
-        // The channel's callbacks hold the run: let them go with it.
+        // The channel's callbacks hold the run: let them go with it, once every one it queued is delivered.
         let acp = lock(&run.acp).take();
         if let Some(acp) = acp {
             acp.cancel_all();
+            acp.drain();
         }
         if let Some(connection) = mod_connection {
             connection.dispose();
@@ -1269,20 +1326,12 @@ impl Exec {
         !work::running(&lock(&self.background).work()).is_empty()
     }
 
-    /// `PublishGraph(false)`.
+    /// `PublishGraph`: the live graph when it changed since the last one sent; false once the run is ending. The graph's loop reads the
+    /// sub-agents' files first, on a blocking thread of its own ([`Exec::read_children`]).
     fn publish_graph(&self) -> bool {
-        self.publish_graph_with(false)
-    }
-
-    /// `PublishGraph(readChildren)`: the live graph when it changed since the last one sent (the sub-agents' files read first
-    /// when asked); false once the run is ending.
-    fn publish_graph_with(&self, read_children: bool) -> bool {
         let _gate = lock(&self.graph_gate);
         if self.run.finalizing.load(Ordering::SeqCst) || self.run.finished.load(Ordering::SeqCst) {
             return false;
-        }
-        if read_children {
-            self.read_children(false);
         }
         if self.graph_dirty.swap(false, Ordering::SeqCst)
             && let Some(tracker) = &self.tracker
@@ -1300,20 +1349,48 @@ impl Exec {
 
     /// `ReadChildren(closing)`: the run's sub-agents read from the CLI's own files through the graph ([`GraphSink::read_children`]):
     /// agy's stream names each sub-agent's conversation but not its work (M/ProcessRunner.swift watchAntigravitySubagents), and Codex's
-    /// sub-agents are in its session files. Observation is optional: a file changing under it must never fail the actual CLI turn, so a
-    /// failed read stops the reading for the rest of the run.
+    /// sub-agents are in its session files. Called on a blocking thread (the graph's loop gives it one, `finish` runs on one): the
+    /// tracker is locked only to ask what is due and to merge what was read, never while the files are read, so the run's output, its
+    /// cards and their answers go on meanwhile (C#'s watchers poll outside the tracker's lock and lock it only in `CodexSession` /
+    /// `AntigravitySession`). One read at a time, `children` held throughout; none once the run is ending but the closing one, and
+    /// none after it. Observation is optional: a file changing under it must never fail the actual CLI turn, so a failed read stops the
+    /// reading for the rest of the run (C#'s `watcherDisabled`; the watcher the read took along is dropped with it).
     fn read_children(&self, closing: bool) {
         let Some(tracker) = &self.tracker else { return };
         let mut children = lock(&self.children);
-        if children.disabled {
+        if children.disabled || children.closed || !closing && self.run.finalizing.load(Ordering::SeqCst) {
             return;
         }
-        let Some(environment) = &children.environment else { return };
-        let sources =
-            ChildSources { environment, antigravity_brain: children.antigravity_brain.as_deref(), namespace: &self.run.activity_id };
-        let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lock(tracker).read_children(&sources, closing)));
-        if read.is_err() {
+        if closing {
+            children.closed = true;
+        }
+        let failed = {
+            let Some(environment) = &children.environment else { return };
+            let sources =
+                ChildSources { environment, antigravity_brain: children.antigravity_brain.as_deref(), namespace: &self.run.activity_id };
+            let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let read = lock(tracker).read_children(&sources, closing)?;
+                Some(read())
+            }));
+            match read {
+                Ok(Some(found)) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lock(tracker).merge_children(found))).is_err(),
+                Ok(None) => false,
+                Err(_) => true,
+            }
+        };
+        if failed {
             children.disabled = true;
+        }
+    }
+
+    /// [`Exec::finish`] on a blocking thread: its closing read of the sub-agents' files can be large (C#'s `Finish` runs on a pool
+    /// thread). A panic in it is the run's own, as before.
+    async fn end(self: &Arc<Self>, state: &'static str) {
+        let exec = self.clone();
+        if let Err(failed) = tokio::task::spawn_blocking(move || exec.finish(state)).await
+            && let Ok(panic) = failed.try_into_panic()
+        {
+            std::panic::resume_unwind(panic);
         }
     }
 
@@ -1324,6 +1401,12 @@ impl Exec {
         let request = &run.request;
         run.finalizing.store(true, Ordering::SeqCst);
         self.graph_stop.cancel();
+        // The pump takes no line from now on: what the ACP channel queued before (a card, the end of a reply) goes out first, and the
+        // picker a Hermes session offered is on disk before the run's end is told.
+        if let Some(acp) = run.acp() {
+            acp.drain();
+        }
+        self.saved_hermes_models();
         if request.provider == "claude" && request.kind != "shell" {
             let _gate = lock(&self.plan_gate);
             if !run.finished.load(Ordering::SeqCst)
@@ -1524,7 +1607,10 @@ impl Exec {
                         _ = tokio::time::sleep(Duration::from_secs(1)) => {}
                         _ = exec.graph_stop.cancelled() => return,
                     }
-                    if !exec.publish_graph_with(true) {
+                    // `PublishGraph(true)`: the sub-agents' files first, read on a blocking thread, then the graph.
+                    let reader = exec.clone();
+                    let _ = tokio::task::spawn_blocking(move || reader.read_children(false)).await;
+                    if !exec.publish_graph() {
                         return;
                     }
                 }
@@ -1641,11 +1727,19 @@ impl Exec {
                 let mode = request.settings().permission_mode;
                 // Hermes fixes `--yolo` when a session starts: a session that started with it is not continued by a pane that asks (it
                 // would not ask), one that started without it keeps asking; a session whose first request never got an answer is not
-                // continued (it keeps the provider it was made with and fails again). A record that cannot be read changes nothing.
+                // continued (it keeps the provider it was made with and fails again); a pane that asks does not continue one whose
+                // receipt cannot be read. `state.db` is read on a blocking thread.
                 if provider == "hermes"
                     && let Some(resume) = launch.resume_id.clone()
                 {
-                    let (count, full) = inner.options.hermes_session.as_ref().map_or((None, None), |read| read(&environment, &resume));
+                    let (count, full) = match inner.options.hermes_session.clone() {
+                        Some(read) => {
+                            let (environment, session) = (environment.clone(), resume.clone());
+                            tokio::task::spawn_blocking(move || read(&environment, &session)).await.unwrap_or((None, None))
+                        }
+                        None => (None, None),
+                    };
+                    self.cancelled()?;
                     let (resume_id, notice) = agents::hermes_resume(&resume, &mode, count, full);
                     launch.resume_id = resume_id;
                     hermes_notice = notice.map(strings::get);
@@ -1772,6 +1866,8 @@ impl Exec {
                         exec.consume(line);
                     }
                 }),
+                // The channel's callbacks run in its caller right after its lock, none deferred (so none is left once the pumps are
+                // done, and nothing needs draining as the ACP channel's queue does); a sink may answer at once, inside this call.
                 emit: Arc::new(move |value| {
                     if !emit_run.finished.load(Ordering::SeqCst)
                         && let Some(sink) = &permission
@@ -1924,6 +2020,10 @@ impl Exec {
             }
             _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
         }
+        // What the ACP channel queued from the agent's last lines reaches the parser before its flush.
+        if let Some(acp) = run.acp() {
+            acp.drain();
+        }
         self.parser.flush();
         let codex = run.codex();
         if let Some(codex) = &codex {
@@ -1954,7 +2054,7 @@ impl Exec {
         } else {
             "error"
         };
-        self.finish(state);
+        self.end(state).await;
         Ok(())
     }
 

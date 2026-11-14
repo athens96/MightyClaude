@@ -394,3 +394,66 @@ fn the_watcher_follows_growing_transcripts_and_nested_subagents() {
     assert!(records::transcript(&brain, "../escape").is_none(), "no path leaves the brain folder");
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// The tracker as the runner holds it (C# `RunManager.ReadChildren`: the watcher polled outside the tracker's lock, the tracker locked only
+/// in `AntigravitySession`): the sink hands out a read that takes the watcher along and touches no sink, the sink takes frames while the
+/// read is out and hands out no second one, and what the read found is merged when it comes back, with the watcher kept for the next
+/// read (which goes on from where the first stopped).
+#[test]
+fn the_sinks_read_runs_without_the_sink_and_what_it_read_is_merged_on_its_return() {
+    use mighty_graph::run::TrackerFactory;
+    use mighty_run::graph::{ChildSources, GraphFactory, GraphStart};
+
+    let locale = english();
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let home = std::env::temp_dir().join(format!("mighty-graph-agy-sink-{}-{nanos}", std::process::id()));
+    let brain = records::brain(&home);
+    let factory = TrackerFactory { locale: Some(locale), codex_sessions: None };
+    let mut sink = factory.start(GraphStart {
+        run_id: "agy-run".into(),
+        input: "Ask a helper to read a.txt".into(),
+        provider: "gemini".into(),
+        model: "default".into(),
+        effort: None,
+        node: Arc::new(|_| {}),
+    });
+    let stream = subagent_stream();
+    let environment = std::collections::BTreeMap::new();
+    let sources = ChildSources { environment: &environment, antigravity_brain: Some(&brain), namespace: "agy-run" };
+    assert!(sink.read_children(&sources, false).is_none(), "nothing to read before the stream names a sub-agent");
+    for frame in &stream[..5] {
+        sink.frame("gemini", &json_of(frame));
+    }
+    let lines = child_lines();
+    let path = write_transcript(&home, CHILD, &lines[..2], "");
+    let read = sink.read_children(&sources, false).expect("a read once the stream named a sub-agent");
+    // The read is out: the sink goes on taking the stream, and hands out no second read.
+    for frame in &stream[5..] {
+        sink.frame("gemini", &json_of(frame));
+    }
+    assert!(sink.read_children(&sources, false).is_none(), "one read at a time");
+    let found = read();
+    let read_file = |run: &mighty_core::graph::MightyGraphRun| {
+        run.agents()
+            .iter()
+            .any(|a| a.entries().iter().any(|e| e.activity.as_ref().is_some_and(|t| t.tool_name.as_deref() == Some("view_file"))))
+    };
+    assert!(!read_file(&sink.build_run(true).unwrap()), "nothing of the transcript is in the graph before the read comes back");
+    sink.merge_children(found);
+    assert!(read_file(&sink.build_run(true).unwrap()), "the sub-agent's first steps are merged");
+    let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+    use std::io::Write;
+    writeln!(file, "{}", lines[2..].join("\n")).unwrap();
+    drop(file);
+    write_transcript(&home, GRANDCHILD, &grandchild_lines(), "");
+    let read = sink.read_children(&sources, true).expect("the closing read, with the same watcher");
+    sink.merge_children(read());
+    sink.finish("completed");
+    let run = sink.build_run(false).unwrap();
+    let child = run.agents().iter().find(|a| a.input() == "Read a.txt").cloned().unwrap();
+    assert!(
+        child.status() == "completed" && child.entries().iter().any(|e| e.kind() == "assistant" && e.text() == "It says hi"),
+        "the rest of the transcript was read from where the first read stopped: {child:?}"
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}

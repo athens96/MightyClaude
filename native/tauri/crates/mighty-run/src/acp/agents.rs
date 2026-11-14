@@ -150,7 +150,9 @@ pub fn hermes_config_values(request: &StartRunRequest) -> Vec<(String, String)> 
 /// `HermesAgent.Resume`: whether a run continues the pane's Hermes session, and what the pane is told (the notice's locale key). Hermes
 /// fixes `--yolo` when a session starts, so one that started with it is not continued by a pane that asks, and one that started
 /// without it keeps asking in a full-access pane; a session whose first request never got an answer (`message_count` 0) keeps the
-/// provider it was made with and is not continued. Unreadable records change nothing.
+/// provider it was made with and is not continued. A pane that asks never continues a session whose policy receipt cannot be read
+/// (no `state.db`, no receipt, an unreadable one): it may have started with `--yolo` and would then not ask, so a new session starts
+/// (the rule the C# and Mac apps take too). A full-access pane continues it as asked.
 pub fn hermes_resume(
     resume_id: &str,
     mode: &str,
@@ -158,7 +160,7 @@ pub fn hermes_resume(
     started_with_full_access: Option<bool>,
 ) -> (Option<String>, Option<&'static str>) {
     let full = mode == "fullAccess";
-    if message_count == Some(0) {
+    if message_count == Some(0) || !full && started_with_full_access.is_none() {
         return (None, None);
     }
     if started_with_full_access == Some(true) && !full {
@@ -464,6 +466,16 @@ struct Ran {
 /// Ends a child that a dropped future still owned (C#'s `await using`).
 struct CloseOnDrop(Option<Arc<dyn ChildControl>>);
 
+impl CloseOnDrop {
+    /// The child closed here and awaited (C#'s `await using` on the way out), so nothing of it is left once the call returns; the drop
+    /// closes it in a task of its own only when the future is dropped first.
+    async fn close(mut self) {
+        if let Some(control) = self.0.take() {
+            let _ = control.close().await;
+        }
+    }
+}
+
 impl Drop for CloseOnDrop {
     fn drop(&mut self) {
         if let Some(control) = self.0.take() {
@@ -509,7 +521,7 @@ async fn run_cli(
         Some(Ran { code, output: utf16_prefix(&output, 1_048_576), error })
     };
     let ran = tokio::time::timeout(Duration::from_secs(20), read).await.ok().flatten();
-    drop(guard);
+    guard.close().await;
     ran
 }
 

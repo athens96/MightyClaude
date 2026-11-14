@@ -2027,8 +2027,10 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "memchr",
+ "mighty-composer",
  "mighty-core",
  "mighty-graph",
+ "mighty-platform",
  "mighty-run",
  "percent-encoding",
  "regex",

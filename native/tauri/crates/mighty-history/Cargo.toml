@@ -9,6 +9,9 @@ rust-version.workspace = true
 
 [dependencies]
 mighty-core.workspace = true
+# `WorkspaceFiles.OpenFile` with the open handle checked through the platform's `FileHandles` port (the Codex session watcher's `Open`).
+mighty-composer.workspace = true
+mighty-platform.workspace = true
 mighty-graph.workspace = true
 # `ActivitySupport.Kind` and `Clean` (mighty-graph reads mighty-run already, so this adds no cycle).
 mighty-run.workspace = true

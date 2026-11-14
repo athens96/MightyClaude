@@ -11,11 +11,11 @@
 //! C# runs every callback under the channel's re-entrant lock. Here the frames to the agent are written under the lock, in order; every
 //! other callback (`consume`, `emit`, `activity`, `warning`, `fail`, `completed`) is queued under it and delivered once it is released,
 //! one at a time and in the order C# makes them, by whichever caller finds the queue undelivered — so a callback may answer at once,
-//! as C#'s may. A frame nested deeper than serde_json's 128 levels (C# reads 256) is read as a plain line.
+//! as C#'s may. A frame nested deeper than serde_json's 128 levels (C# reads 256) fails the channel closed, as one too large does.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use indexmap::IndexMap;
 use mighty_core::{time, wire};
@@ -182,17 +182,22 @@ pub struct AcpChannel {
     state: Mutex<State>,
     queue: Mutex<VecDeque<Effect>>,
     delivering: AtomicBool,
+    /// The thread delivering the queue now, and the signal it gives when it stops ([`AcpChannel::drain`]).
+    deliverer: Mutex<Option<std::thread::ThreadId>>,
+    idle: Condvar,
     /// `Cancellation`: the `session/cancel` notification of the turn in flight; an agent whose turn outlives its ACP process (Hermes's
     /// gateway owns it) is told to stop before the process is ended.
     pub cancellation: AcpCancellation,
 }
 
-/// Lets the queue be delivered again when a callback unwinds.
-struct Delivering<'a>(&'a AtomicBool);
+/// Lets the queue be delivered again once the deliverer is done, or when a callback unwinds; a [`AcpChannel::drain`] waiting is told.
+struct Delivering<'a>(&'a AcpChannel);
 
 impl Drop for Delivering<'_> {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
+        *lock(&self.0.deliverer) = None;
+        self.0.delivering.store(false, Ordering::SeqCst);
+        self.0.idle.notify_all();
     }
 }
 
@@ -208,6 +213,8 @@ impl AcpChannel {
             state: Mutex::new(State::default()),
             queue: Mutex::new(VecDeque::new()),
             delivering: AtomicBool::new(false),
+            deliverer: Mutex::new(None),
+            idle: Condvar::new(),
             cancellation: AcpCancellation::default(),
         }
     }
@@ -251,7 +258,8 @@ impl AcpChannel {
                 return;
             }
             {
-                let _delivering = Delivering(&self.delivering);
+                *lock(&self.deliverer) = Some(std::thread::current().id());
+                let _delivering = Delivering(self);
                 while let Some(effect) = self.next_effect() {
                     match effect {
                         Effect::Consume(line) => (self.hooks.consume)(&line),
@@ -315,8 +323,16 @@ impl AcpChannel {
             if state.closed {
                 return;
             }
-            let node = if line.trim_start().starts_with('{') { serde_json::from_str::<Value>(line).ok() } else { None };
-            let Some(Value::Object(frame)) = node else {
+            let parsed = line.trim_start().starts_with('{').then(|| serde_json::from_str::<Value>(line));
+            // A frame nested deeper than serde_json reads (128 levels; C# reads 256) may be a request the turn waits on: it fails closed
+            // as a frame too large does, never read as a plain line that leaves the turn waiting.
+            if let Some(Err(error)) = &parsed
+                && error.to_string().starts_with("recursion limit exceeded")
+            {
+                this.fail_closed(state, effects, strings::get("acp.channel.frameTooLarge"));
+                return;
+            }
+            let Some(Ok(Value::Object(frame))) = parsed else {
                 // An agent may print a plain line (a warning) before or beside its frames: shown, not fatal.
                 let shown = clean(Some(&agents::utf16_prefix(line, 4_096)), 4_096, false);
                 if !shown.is_empty() {
@@ -666,7 +682,7 @@ impl AcpChannel {
             .filter(|named| !named.is_empty() && named.len() <= 256 && named.chars().all(|ch| ch > ' ' && ch != '\x7f'))
             .map(str::to_string)
             .unwrap_or_else(|| format!("permission-{request_key}"));
-        let Some(display) = display_json(&display_input(call.get("rawInput"))).filter(|d| d.len() <= MAXIMUM_INPUT_BYTES) else {
+        let Some(display) = display_json(&display_input(call.get("rawInput"))) else {
             self.answer(raw_id, reject.as_deref());
             effects.push(Effect::Warning(strings::get("acp.channel.requestTooLarge")));
             return;
@@ -867,6 +883,47 @@ impl AcpChannel {
         self.with(|_, state, effects| Self::cancel_all_locked(state, effects))
     }
 
+    /// The client's half of cancelling a prompt turn, before its `session/cancel` is written (ACP, Prompt Turn › Cancellation: "The
+    /// Client MUST respond to all pending session/request_permission requests with the cancelled outcome."): every approval still
+    /// waiting — a clarify asked as one among them — is answered `cancelled` and its card settles. A form (`elicitation/create`) is not
+    /// a permission request: it is left to the run's end.
+    pub fn cancel_permissions(&self) {
+        self.with(|this, state, effects| {
+            if state.closed {
+                return;
+            }
+            let asked: Vec<String> = state
+                .pending
+                .iter()
+                .filter(|(_, ask)| !ask.asked.as_ref().is_some_and(|asked| asked.form.is_some()))
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in asked {
+                if let Some(ask) = state.pending.get(&id) {
+                    this.answer(&ask.rpc_id, None);
+                }
+                Self::cancel_pending(state, effects, &id);
+            }
+        })
+    }
+
+    /// Returns once no callback is being delivered and none is queued (it delivers what is queued itself when nobody else is). The
+    /// runner calls it before the run's end is read and after the channel is cancelled, so no card or line queued earlier reaches the
+    /// pane after the run's last status. Called from inside a callback it returns at once (the callback's caller delivers the rest).
+    pub fn drain(&self) {
+        if *lock(&self.deliverer) == Some(std::thread::current().id()) {
+            return;
+        }
+        loop {
+            self.deliver();
+            let queue = lock(&self.queue);
+            if !self.delivering.load(Ordering::SeqCst) && queue.is_empty() {
+                return;
+            }
+            drop(self.idle.wait_timeout(queue, std::time::Duration::from_millis(10)));
+        }
+    }
+
     fn cancel_all_locked(state: &mut State, effects: &mut Vec<Effect>) {
         if state.closed {
             return;
@@ -1035,9 +1092,12 @@ fn sorted(value: &Value) -> Value {
 }
 
 /// `DisplayJson`: the card's JSON — indented, keys sorted, format characters (bidirectional overrides and the like) escaped so they
-/// cannot hide text. None when it nests too deep to write.
+/// cannot hide text. None when it nests too deep to write, or when it is longer than [`MAXIMUM_INPUT_BYTES`] (the card's cap), which
+/// is looked at on the compact text first: the indented text is never shorter, and a crafted request whose sorted copy and indented
+/// text would take gigabytes is refused before either is made (C#'s out-of-memory fails only the run; a failed allocation here would
+/// end the app).
 fn display_json(value: &Value) -> Option<String> {
-    if depth(value) > 64 {
+    if depth(value) > 64 || text_json::relaxed(value, false).len() > MAXIMUM_INPUT_BYTES {
         return None;
     }
     let text = text_json::relaxed(&sorted(value), true);
@@ -1052,7 +1112,7 @@ fn display_json(value: &Value) -> Option<String> {
             result.push(character);
         }
     }
-    Some(result)
+    (result.len() <= MAXIMUM_INPUT_BYTES).then_some(result)
 }
 
 #[cfg(test)]
