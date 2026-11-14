@@ -881,21 +881,47 @@ async fn a_failed_write_to_the_cli_ends_the_run_in_an_error() {
 
 /// The input of a Claude run with host prompts after its request's result: a steer opens a new turn, so the last turn's result no
 /// longer lets the 120 s close (here 300 ms) end it; and a turn the CLI still says runs keeps its input however long it is silent.
+/// The steer is sent on the pane's turn end (waiting on its background agent), once more to a slow host that holds the pump on what
+/// it shows next until the steer is in: the steer lands before the pump has read past that result, which still never ends the new turn.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_idle_close_waits_for_the_turn_the_cli_still_runs() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc;
     common::korean();
     let directory = common::temp("idle-close");
     let workspace = workspace(&directory);
     let plugin = common::plugin(&directory);
-    for fixture in ["steered watchdog fixture", "busy watchdog fixture"] {
-        let record = directory.join(fixture.split(' ').next().unwrap());
+    for (fixture, slow) in [("steered watchdog fixture", false), ("steered watchdog fixture", true), ("busy watchdog fixture", false)] {
+        let name = format!("{}{}", fixture.split(' ').next().unwrap(), if slow { "-slow" } else { "" });
+        let record = directory.join(&name);
         let catalog = common::fake_catalog(&["--fake-cli", "claude", &record.to_string_lossy()]);
         let events = Events::default();
-        let mut options = RunManagerOptions::new(&plugin, resolve(&workspace), events.emit());
+        let (shown, turn_end) = mpsc::channel::<()>();
+        let (steered, steer_in) = mpsc::channel::<()>();
+        let mut emit = events.emit();
+        if slow {
+            let (sink, steer_in, ended, held) = (emit, Mutex::new(steer_in), AtomicBool::new(false), AtomicBool::new(false));
+            emit = Arc::new(move |event: RunEvent| {
+                let waiting = event.background.as_ref().is_some_and(work::waiting_on_background);
+                let hold = !waiting && ended.load(Ordering::SeqCst) && !held.swap(true, Ordering::SeqCst);
+                sink(event);
+                ended.fetch_or(waiting, Ordering::SeqCst);
+                if hold {
+                    let _ = shown.send(());
+                    let _ = steer_in.lock().unwrap().recv_timeout(std::time::Duration::from_secs(20));
+                }
+            });
+        }
+        let mut options = RunManagerOptions::new(&plugin, resolve(&workspace), emit);
         options.background_idle_close = std::time::Duration::from_millis(300);
         options.permission_requested = Some(Arc::new(|_| {}));
         let manager = RunManager::new(catalog, options);
         manager.start(request("idle-pane", &workspace, "claude", fixture)).await.unwrap();
+        if slow {
+            // Read off the runtime: the held pump's worker may be the one driving its timers.
+            let held = tokio::task::spawn_blocking(move || turn_end.recv_timeout(std::time::Duration::from_secs(20)));
+            held.await.unwrap().expect("the pump is held after the pane's turn end");
+        }
         if fixture.starts_with("steered") {
             common::until(
                 || events.all().iter().any(|e| e.background.as_ref().is_some_and(work::waiting_on_background)),
@@ -904,16 +930,17 @@ async fn the_idle_close_waits_for_the_turn_the_cli_still_runs() {
             )
             .await;
             assert!(manager.try_steer("idle-pane", "and one more thing"), "the steer joins the open input");
+            let _ = steered.send(());
         } else {
             common::until(|| read(suffixed(&record, ".input")).lines().count() >= 2, 20000, "the prompt is written").await;
         }
         // Well past the idle close: the silent turn's input is still open.
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
-        assert!(manager.try_steer("idle-pane", "second"), "{fixture}: the input is still open after the silence");
+        assert!(manager.try_steer("idle-pane", "second"), "{name}: the input is still open after the silence");
         common::until(|| !manager.is_running("idle-pane"), 20000, "the run ends").await;
         manager.dispose().await;
-        assert!(read(suffixed(&record, ".second")).contains("second") && !suffixed(&record, ".closed").exists(), "{fixture}");
-        assert_eq!(events.last_status("idle-pane").as_deref(), Some("completed"), "{fixture}: the run completes");
+        assert!(read(suffixed(&record, ".second")).contains("second") && !suffixed(&record, ".closed").exists(), "{name}");
+        assert_eq!(events.last_status("idle-pane").as_deref(), Some("completed"), "{name}: the run completes");
     }
     common::remove_when_free(&directory).await;
 }
