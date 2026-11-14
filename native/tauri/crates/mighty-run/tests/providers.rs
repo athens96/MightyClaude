@@ -504,10 +504,83 @@ mod reads {
             Some(ModelListNotice { line: strings::get("composer.model.listFallback"), help: kept.read_failure.clone().unwrap() }),
             "the built-in list's line"
         );
-        // A catalog without a storage folder (the checks) keeps the lists in memory only.
+        // A catalog without a storage folder (the checks) keeps the lists in memory only: a read that fails later still has the last
+        // list, and no lists file is written or changed anywhere.
+        let before = kept_files(&fake.state);
+        assert!(before.iter().any(|(path, _)| *path == file), "the storage folder's file is there to compare");
+        fake.recover("gemini");
         let memory = fake.catalog();
-        memory.refresh_provider("gemini", Some(&workspace), false).await;
-        assert!(!fake.state.join(kept_lists::FILE_NAME).exists(), "nothing is written without a storage folder");
+        let listed = memory.refresh_provider("gemini", Some(&workspace), false).await.model_catalog;
+        fake.fail("gemini", SIGNED_OUT);
+        let remembered = memory.refresh_provider("gemini", Some(&workspace), false).await.model_catalog;
+        assert!(
+            listed.is_fresh()
+                && remembered.source == "cli"
+                && models_json(&remembered.models) == models_json(&listed.models)
+                && remembered.read_failure == kept.read_failure,
+            "the last list is kept in memory"
+        );
+        assert_eq!(kept_files(&fake.state), before, "nothing is written without a storage folder");
+    }
+
+    /// A kept-lists file that is there but cannot be read (another program holds it) is not taken for "no lists": the list the CLI gave
+    /// is used, nothing is written over the file, and once it reads, the lists it holds stay beside the new one.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_kept_lists_file_that_cannot_be_read_is_not_written_over() {
+        use std::os::windows::fs::OpenOptionsExt as _;
+
+        use mighty_run::kept_lists::{self, Entry, KeptModelLists};
+        common::korean();
+        let fake = FakeListClis::new();
+        let storage = fake.state.join("storage");
+        let workspace = fake.state.join("site");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let workspace = workspace.to_string_lossy().into_owned();
+        let file = storage.join(kept_lists::FILE_NAME);
+        // Another workspace's Codex list, kept by an earlier launch.
+        let other = Entry {
+            provider: "codex".into(),
+            workspace: Some(fake.state.join("other").to_string_lossy().into_owned()),
+            listed_at: "2026-11-11T02:00:00Z".into(),
+            detail: "d".into(),
+            models: vec![ModelOption::new("gpt-6.1-sol", "Sol", "")],
+        };
+        kept_lists::write(&file, &KeptModelLists::new(vec![other.clone()]).encoded()).unwrap();
+        let catalog = fake.catalog_kept(&storage);
+        // Held without sharing: the catalog's first read of the file fails.
+        let held = std::fs::OpenOptions::new().read(true).share_mode(0).open(&file).unwrap();
+        assert!(KeptModelLists::read(Some(&file)).is_err(), "the fixture must hold the file");
+        let fresh = catalog.refresh_provider("gemini", Some(&workspace), false).await.model_catalog;
+        assert!(fresh.is_fresh(), "the list the CLI gave is used as it is");
+        drop(held);
+        assert_eq!(
+            KeptModelLists::load(Some(&file)).entries(),
+            std::slice::from_ref(&other),
+            "nothing was written over the file it could not read"
+        );
+        // The file reads now: the next list the CLI gives is kept beside the ones it holds.
+        catalog.refresh_provider("gemini", Some(&workspace), false).await;
+        let saved = KeptModelLists::load(Some(&file));
+        assert!(
+            saved.list("codex", other.workspace.as_deref()) == Some(&other) && saved.list("gemini", Some(&workspace)).is_some(),
+            "the lists it held stay: {:?}",
+            saved.entries().iter().map(|e| e.provider.as_str()).collect::<Vec<_>>()
+        );
+    }
+
+    /// Every kept-lists file under `folder`, with what it holds.
+    fn kept_files(folder: &std::path::Path) -> Vec<(std::path::PathBuf, Vec<u8>)> {
+        let mut found = Vec::new();
+        for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                found.extend(kept_files(&path));
+            } else if path.file_name().is_some_and(|n| n == mighty_run::kept_lists::FILE_NAME) {
+                found.push((path.clone(), std::fs::read(&path).unwrap()));
+            }
+        }
+        found.sort();
+        found
     }
 
     #[tokio::test(flavor = "multi_thread")]
