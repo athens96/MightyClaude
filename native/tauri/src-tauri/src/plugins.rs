@@ -18,7 +18,10 @@ use mighty_native::surface::DialogChrome;
 use mighty_native::surface::DialogSpec;
 use mighty_native::ui::Content;
 use mighty_run::strings::get;
-use mighty_updates::plugins::{ClaudePluginBrowser, ClaudePluginOperationResult, ClaudePluginSnapshot, PluginReader, status};
+use mighty_updates::plugins::strings::{codex as codex_strings, plugin as plugin_strings};
+use mighty_updates::plugins::{
+    ClaudePluginBrowser, ClaudePluginOperationResult, ClaudePluginSnapshot, PluginOperations, PluginReader, status,
+};
 use mighty_updates::runner::CancellationToken;
 use mighty_updates::view::{self, PluginActions};
 
@@ -104,6 +107,9 @@ impl Panel {
                 Arc::new(ClaudePluginSnapshot::of(status::BUSY, get("loginRecovery.updating")))
             } else if let Some(read) = stand_in {
                 Arc::new(read(&panel.workspace))
+            } else if panel.host.smoke.is_some() && !panel.fake {
+                // A smoke never asks a real CLI: without a stand-in read the list reads as a missing CLI.
+                Arc::new(missing(&panel.provider))
             } else {
                 panel.reader.snapshot(&panel.workspace, panel.closing.clone()).await
             };
@@ -115,49 +121,57 @@ impl Panel {
         });
     }
 
-    /// C# `PluginMutationBlockReason(provider, workspace)`.
-    fn block_reason(&self) -> Option<String> {
-        let updates = crate::updates::of(&self.host)?;
-        let current = !self.host.closing() && {
-            let view = self.host.view();
-            view.snapshot
+    /// C# `PluginMutationBlockReason(provider, workspace)` (and W6's flag for a real reader), read under the state guard the caller
+    /// holds.
+    fn block_reason(&self, view: &crate::host::View, updates: &crate::updates::Updates) -> Option<String> {
+        let current = !self.host.closing()
+            && view
+                .snapshot
                 .workspaces()
                 .iter()
-                .any(|w| w.id() == self.workspace.id() && w.path() == self.workspace.path() && w.remote() == self.workspace.remote())
-        };
-        let usage = crate::updates::provider_use(&self.host, &self.provider);
-        updates.activity().plugin_mutation_block_reason(&self.provider, current, self.workspace.remote().is_none(), &usage)
+                .any(|w| w.id() == self.workspace.id() && w.path() == self.workspace.path() && w.remote() == self.workspace.remote());
+        let usage = crate::updates::provider_use_in(&self.host, view, &self.provider);
+        updates
+            .activity()
+            .plugin_mutation_block_reason(&self.provider, current, self.workspace.remote().is_none(), &usage)
+            .or_else(|| (!self.fake && !self.host.may_change_machine()).then(|| get("windows.notifications.statusVerificationMode")))
     }
 
     /// C# `OperateAsync`: refused (the reason shown) while something else holds the CLI, or (W6) without `--allow-state-write` for a
-    /// real reader; else the operation through the app's operations object, the holds announced before and after, the sign-ins held
-    /// for it resent once it ended.
+    /// real reader; else the app-wide gate taken at once, in the same decision under the state's lock (C# sets `running` before any
+    /// await, so no composer start slips in between), and the operation run under it through the app's operations object; the holds
+    /// announced before and after, the sign-ins held for it resent once it ended.
     fn operate(self: &Arc<Self>, install: Option<String>) {
-        let refusal = self
-            .block_reason()
-            .or_else(|| (!self.fake && !self.host.may_change_machine()).then(|| get("windows.notifications.statusVerificationMode")));
-        if let Some(reason) = refusal {
-            self.browser.show_result(ClaudePluginOperationResult::new(status::SKIPPED, reason));
-            self.touch();
-            return;
-        }
         let Some(updates) = crate::updates::of(&self.host) else { return };
+        let admitted = {
+            let view = self.host.view();
+            match self.block_reason(&view, &updates) {
+                Some(reason) => Err(reason),
+                None => updates.operations.reserve().ok_or_else(|| get("plugins.operation.busy")),
+            }
+        };
+        let reservation = match admitted {
+            Ok(reservation) => reservation,
+            Err(reason) => {
+                self.browser.show_result(ClaudePluginOperationResult::new(status::SKIPPED, reason));
+                self.touch();
+                return;
+            }
+        };
         let panel = self.clone();
         tauri::async_runtime::spawn(async move {
             let host = panel.host.clone();
             let work = {
-                let (operations, browser, reader) = (updates.operations.clone(), panel.browser.clone(), panel.reader.clone());
+                let (browser, reader) = (panel.browser.clone(), panel.reader.clone());
                 let token = panel.closing.clone();
                 async move {
                     match install {
-                        Some(id) => operations.install(&browser, &reader, &id, &token).await,
-                        None => operations.refresh_marketplaces(&browser, &reader, &token).await,
+                        Some(id) => PluginOperations::install_reserved(reservation, &browser, &reader, &id, &token).await,
+                        None => PluginOperations::refresh_reserved(reservation, &browser, &reader, &token).await,
                     }
                 }
             };
             let running = tauri::async_runtime::spawn(work);
-            // The phase was set as the operation began: the window and the composers show it now.
-            tokio::task::yield_now().await;
             crate::updates::notify(&host);
             panel.touch();
             let _ = running.await;
@@ -264,12 +278,33 @@ pub fn operations_running(host: &Host) -> bool {
     crate::updates::of(host).is_some_and(|updates| updates.operations.is_running())
 }
 
+/// What a smoke's list reads without a stand-in read: the provider's missing-CLI sentence (no real CLI is asked).
+fn missing(provider: &str) -> ClaudePluginSnapshot {
+    let detail = if provider == ClaudePluginBrowser::CODEX_PROVIDER {
+        codex_strings::detail_missing_cli()
+    } else {
+        plugin_strings::detail_missing_cli()
+    };
+    ClaudePluginSnapshot::of(status::MISSING, detail)
+}
+
 #[cfg(test)]
 mod tests {
-    /// The Rust half of `WindowIsARealWinUISurfaceWiredIntoTheApp` (C#: the run pane menu and the palette open the window): the
-    /// page's pane button calls `openPlugins`, which the host answers with this window (methods.rs registers it with C#'s guard).
+    use super::*;
+
+    /// The registry half of `WindowIsARealWinUISurfaceWiredIntoTheApp`: the page's pane button calls `openPlugins`, which the host
+    /// registers (methods.rs, with C#'s guard). That the button opens this window, drawn, is the smoke's `pluginWindowWired`.
     #[test]
-    fn the_page_reaches_the_plugin_window_through_open_plugins() {
+    fn open_plugins_is_a_method_the_host_answers() {
         assert!(crate::methods::registry().names().contains("openPlugins"));
+    }
+
+    /// A smoke's list without a stand-in read is the provider's missing CLI, never a real CLI's answer.
+    #[test]
+    fn a_smoke_without_a_stand_in_reads_a_missing_cli() {
+        mighty_run::strings::set_language("ko");
+        assert_eq!(missing("claude").status, status::MISSING);
+        assert_eq!(missing("claude").detail, plugin_strings::detail_missing_cli());
+        assert_eq!(missing("codex").detail, codex_strings::detail_missing_cli());
     }
 }

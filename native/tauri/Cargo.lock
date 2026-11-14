@@ -2173,6 +2173,7 @@ dependencies = [
  "mighty-platform-windows",
  "mighty-run",
  "regex",
+ "serde",
  "serde_json",
  "tokio",
  "tokio-util",

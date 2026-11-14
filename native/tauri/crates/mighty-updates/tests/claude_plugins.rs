@@ -191,6 +191,16 @@ async fn missing_old_and_empty_are_explained_without_installing() {
 /// ClaudePluginTests.malformedOrOversizedCatalogDoesNotBecomeReadyEmpty
 #[tokio::test]
 async fn malformed_or_oversized_answer_never_becomes_an_empty_list() {
+    // Rust only: an answer of too many rows is refused by a pre-scan that keeps no value, before the listing is parsed into values.
+    let rows = |n: usize| (0..n).map(|i| format!(r#"{{"id":"p{i}@sample","scope":"user"}}"#)).collect::<Vec<_>>().join(",");
+    assert!(support::within_row_caps(&format!(r#"{{"installed":[{}],"available":[]}}"#, rows(10_000))), "the cap itself passes");
+    assert!(!support::within_row_caps(&format!(r#"{{"installed":[{}],"available":[]}}"#, rows(10_001))), "one row more is refused");
+    assert!(!support::within_row_caps(&format!(r#"{{"installed":[],"available":[{}]}}"#, rows(10_001))), "in either array");
+    assert!(!support::within_row_caps(&format!("[{}]", vec!["{}"; 257].join(","))), "Claude's marketplaces past 256");
+    assert!(!support::within_row_caps(&format!(r#"{{"marketplaces":[{}]}}"#, vec!["{}"; 257].join(","))), "Codex's marketplaces past 256");
+    assert!(!support::within_row_caps("{broken"), "text that is no JSON");
+    assert!(support::within_row_caps(r#"{"installed":[],"available":[],"other":[1,2,3]}"#), "other fields are not counted");
+
     korean();
     let folder = text(&temp("claude-malformed"));
     for body in ["{broken", "[]", r#"{"installed":[],"available":"wrong"}"#, "", r#"{"available":[]}"#] {

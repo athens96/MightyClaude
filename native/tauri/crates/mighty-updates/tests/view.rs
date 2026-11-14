@@ -309,8 +309,8 @@ fn the_codex_window_has_its_footer_one_scope_and_the_git_only_sentence() {
     assert_eq!(by_aid(&tree, &id("marketplace-unavailable")).unwrap()["text"], codex_strings::refresh_git_only());
 }
 
-#[test]
-fn a_running_change_shows_its_progress_and_cancel_and_its_result_after() {
+#[tokio::test(flavor = "multi_thread")]
+async fn a_running_change_shows_its_progress_and_cancel_and_its_result_after() {
     korean();
     let w = window("claude", claude_snapshot());
     let id = |part: &str| support::automation_id("claude", part);
@@ -319,9 +319,39 @@ fn a_running_change_shows_its_progress_and_cancel_and_its_result_after() {
     assert!(nodes(&tree).iter().any(|n| n["t"] == "spinner"), "the ring turns while the list is read");
     assert_eq!(by_aid(&tree, &id("progress")).unwrap()["text"], plugin_strings::progress_loading());
     assert_eq!(by_aid(&tree, &id("reload")).and_then(|n| n.get("disabled")), Some(&Value::Bool(true)), "no reload while one runs");
+    assert!(by_aid(&tree, &id("cancel-operation")).is_none(), "a read is no change: nothing to cancel");
     w.browser.apply(claude_snapshot());
-    w.browser.show_result(ClaudePluginOperationResult::new(status::SUCCEEDED, plugin_strings::install_succeeded()));
+
+    // An install that runs until the window's own cancel stops it: the ring, the install's progress line and the cancel show.
+    w.browser.set_scope("user");
+    w.browser.set_tab(ClaudePluginBrowser::MARKETPLACE_TAB);
+    let reader: Arc<dyn mighty_updates::plugins::PluginReader> =
+        Arc::new(mighty_updates::plugins::smoke::FakeMarketplaceReader::new(claude_snapshot(), true));
+    let running = {
+        let (browser, reader) = (w.browser.clone(), reader.clone());
+        tokio::spawn(async move { browser.install(&reader, "docs@sample", &mighty_updates::runner::CancellationToken::new()).await })
+    };
+    until(|| w.browser.is_mutating(), 5000, "the install runs").await;
     let tree = read(&w.surfaces);
-    assert_eq!(by_aid(&tree, &id("operation-result")).unwrap()["text"], plugin_strings::install_succeeded());
-    assert!(by_aid(&tree, &id("progress")).is_none() && by_aid(&tree, &id("operation-progress")).is_none(), "idle: no progress");
+    assert!(nodes(&tree).iter().any(|n| n["t"] == "spinner"), "the ring turns while the install runs");
+    assert_eq!(by_aid(&tree, &id("operation-progress")).unwrap()["text"], plugin_strings::progress_installing());
+    assert!(by_aid(&tree, &id("progress")).is_none(), "the install's line, not the read's");
+    let cancel = by_aid(&tree, &id("cancel-operation")).expect("the cancel shows while the change runs");
+    assert_eq!((cancel["label"].as_str(), cancel.get("disabled")), (Some(plugin_strings::button_cancel_operation().as_str()), None));
+    assert_eq!(by_aid(&tree, &id("install-docs@sample")).unwrap()["label"], plugin_strings::button_installing(), "the pressed row");
+
+    // The window's cancel button: the install stops, says so, and the window is idle again.
+    assert!(act(&w.surfaces, control_id(&tree, &id("cancel-operation")), "invoke", Value::Null));
+    let result = running.await.unwrap();
+    assert_eq!(result.detail, plugin_strings::operation_cancelled_by_user());
+    let tree = read(&w.surfaces);
+    assert_eq!(by_aid(&tree, &id("operation-result")).unwrap()["text"], plugin_strings::operation_cancelled_by_user());
+    assert!(
+        by_aid(&tree, &id("progress")).is_none()
+            && by_aid(&tree, &id("operation-progress")).is_none()
+            && by_aid(&tree, &id("cancel-operation")).is_none(),
+        "idle: no progress, no cancel"
+    );
+    w.browser.show_result(ClaudePluginOperationResult::new(status::SUCCEEDED, plugin_strings::install_succeeded()));
+    assert_eq!(by_aid(&read(&w.surfaces), &id("operation-result")).unwrap()["text"], plugin_strings::install_succeeded());
 }

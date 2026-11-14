@@ -146,6 +146,36 @@ impl UpdateActivity {
     }
 }
 
+/// A pane with its queue as a change of the holds reads it (C# `PaneView.BackgroundUpdateChanged`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueuedPane<'a> {
+    pub id: &'a str,
+    pub pane: HoldPane<'a>,
+    pub status: &'a str,
+    /// `starting || queueStarting`.
+    pub starting: bool,
+    pub queued: usize,
+}
+
+impl UpdateActivity {
+    /// C# `BackgroundUpdateChanged` on every pane, each time the holds change: a pane with queued requests that nothing holds now
+    /// (neither an automatic update nor a manual one or a plugin change, which `StartNextQueuedInput` also waits for), not running,
+    /// not in error and not starting, drains its queue.
+    pub fn drains<'a>(&self, panes: &[QueuedPane<'a>]) -> Vec<&'a str> {
+        panes
+            .iter()
+            .filter(|p| {
+                p.queued > 0
+                    && !matches!(p.status, "running" | "error")
+                    && !p.starting
+                    && !self.background_update_holds(&p.pane)
+                    && self.manual_mutation_block_reason(&p.pane, false).is_none()
+            })
+            .map(|p| p.id)
+            .collect()
+    }
+}
+
 /// How a provider is in use on this PC (C# `ReadyForAutomaticUpdate`'s inputs).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProviderUse {
@@ -202,6 +232,22 @@ pub struct AutomaticState {
     pub finished_at: Option<DateTime<Utc>>,
     pub cli_results: Vec<CliUpdateResult>,
     pub plugin_results: BTreeMap<String, PluginAutoUpdateResult>,
+}
+
+/// Puts a pass's fields at rest when it is dropped; a pass that did not end normally tells the host the holds changed.
+struct PassEnded<'a> {
+    updates: &'a AutomaticUpdates,
+    host: &'a dyn AutomaticUpdateHost,
+    normal: bool,
+}
+
+impl Drop for PassEnded<'_> {
+    fn drop(&mut self) {
+        self.updates.rest();
+        if !self.normal {
+            self.host.changed();
+        }
+    }
 }
 
 /// The automatic CLI and plugin updates: the schedule, the pass, and what it is doing now.
@@ -274,12 +320,16 @@ impl AutomaticUpdates {
         }
         let (clis, plugins) = host.preferences();
         let enabled = clis == Some(true) || plugins != Some(false);
-        let mut schedule = self.schedule();
-        if schedule.is_due(now, enabled) {
-            schedule.pass_started(now);
-            return wire::PROVIDERS.iter().map(|p| p.to_string()).collect();
+        {
+            let mut schedule = self.schedule();
+            if schedule.is_due(now, enabled) {
+                schedule.pass_started(now);
+                return wire::PROVIDERS.iter().map(|p| p.to_string()).collect();
+            }
         }
-        schedule.due_retries(enabled, |provider| host.ready(provider))
+        // Each provider's readiness asked with no lock of this object held (the host reads its state and the accounts for it).
+        let ready: Vec<&str> = wire::PROVIDERS.iter().copied().filter(|provider| host.ready(provider)).collect();
+        self.schedule().due_retries(enabled, |provider| ready.contains(&provider))
     }
 
     /// C# `RunAutomaticUpdates`: each provider's CLI in turn while `AutoUpdateCLIs` stays a JSON true (one not ready is deferred and
@@ -292,16 +342,22 @@ impl AutomaticUpdates {
             state.finished_at = None;
         }
         host.changed();
+        // C#'s `finally`: the holds end however the pass ends — done, cancelled, panicking or its task dropped.
+        let mut ended = PassEnded { updates: self, host, normal: false };
         let completed = self.pass(host, providers, home, cancel).await;
-        {
-            let mut state = self.state();
-            state.running = false;
-            state.provider = None;
-            state.plugins = false;
-            state.finished_at = Some(Utc::now());
-        }
+        ended.normal = true;
+        drop(ended);
         host.changed();
         host.pass_finished(completed);
+    }
+
+    /// The pass's fields at rest, its finish time now.
+    fn rest(&self) {
+        let mut state = self.state();
+        state.running = false;
+        state.provider = None;
+        state.plugins = false;
+        state.finished_at = Some(Utc::now());
     }
 
     async fn pass(&self, host: &dyn AutomaticUpdateHost, providers: &[String], home: &Workspace, cancel: &CancellationToken) -> bool {
