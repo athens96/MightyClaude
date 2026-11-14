@@ -285,7 +285,10 @@ fn antigravity_older_requests_are_read_from_the_conversation_transcript() {
         "file contents are never copied",
     );
     check(
-        checker.parent_id.as_deref() == reader.id.as_deref() && checker.input() == "Check it" && checker.status() == "completed",
+        checker.parent_id.is_some()
+            && checker.parent_id.as_deref() == reader.id.as_deref()
+            && checker.input() == "Check it"
+            && checker.status() == "completed",
         "the checker under the reader",
     );
     check(chunk.runs[2].agents().is_empty(), "the declined edit has no sub-agent");

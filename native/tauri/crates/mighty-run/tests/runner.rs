@@ -790,8 +790,8 @@ async fn a_panic_in_a_run_ends_it_and_frees_its_pane() {
     common::remove_when_free(&directory).await;
 }
 
-/// An Antigravity run (W5-C, Verification.cs "provider prompt goes to stdin" for agy): the prompt is one stream-json line on stdin, agy's
-/// stream is read for the answer, the conversation to continue and the turn, and the run completes.
+/// An Antigravity run (W5-C, Verification.cs "provider prompt goes to stdin" for agy): the prompt is one stream-json line on stdin and never
+/// an argument, agy's stream is read for the answer (once, from its deltas) and the conversation to continue, and the run completes.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_antigravity_run_reads_its_stream() {
     common::korean();
