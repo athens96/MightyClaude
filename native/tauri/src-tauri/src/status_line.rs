@@ -112,11 +112,11 @@ fn context(host: &Host, pane: &RunSession, folder: &str) -> StatusLineContext {
 /// the state, its commands run through the host's `ProcessHost`; a change draws the card again.
 fn refresher(host: &Arc<Host>, pane: &str, workspace_id: &str, folder: &str) -> Arc<StatusLineRefresher> {
     let (reader, folder_path) = (host.clone(), PathBuf::from(folder));
-    // The settings files read where the run task stands, as blocking work the runtime moves its other tasks away from; no environment,
-    // as C# reads them (MainWindow.StatusLine.cs:64): `<home>\.claude`, never CLAUDE_CONFIG_DIR.
+    // The settings files (read by the refresher as blocking work); no environment, as C# reads them (MainWindow.StatusLine.cs:64):
+    // `<home>\.claude`, never CLAUDE_CONFIG_DIR.
     let discover: refresher::Discover = Arc::new(move || {
         let home = home(&reader);
-        tokio::task::block_in_place(|| config::discover(Some(&folder_path), home.as_deref(), None))
+        config::discover(Some(&folder_path), home.as_deref(), None)
     });
     let state = host.clone();
     let trusted: refresher::Trusted = Arc::new(move || state.view().snapshot.trusted_status_lines.clone());

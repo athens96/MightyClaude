@@ -209,6 +209,8 @@ fn the_plugin_window_says_why_it_may_not_change_anything() {
 struct FakeHost {
     preferences: Mutex<(Option<bool>, Option<bool>)>,
     not_ready: Mutex<Vec<String>>,
+    /// Ready when asked, but a start came before the admission (what `admit`'s one decision catches).
+    started_before_admission: Mutex<Vec<String>>,
     plugin_running: Mutex<bool>,
     log: Mutex<Vec<String>>,
     changes: Mutex<usize>,
@@ -230,6 +232,7 @@ impl FakeHost {
         FakeHost {
             preferences: Mutex::new(preferences),
             not_ready: Mutex::new(Vec::new()),
+            started_before_admission: Mutex::new(Vec::new()),
             plugin_running: Mutex::new(false),
             log: Mutex::new(Vec::new()),
             changes: Mutex::new(0),
@@ -241,8 +244,13 @@ impl FakeHost {
         }
     }
 
+    /// What the pass ran (its admissions left out: [`FakeHost::admissions`]).
     fn log(&self) -> Vec<String> {
-        self.log.lock().unwrap().clone()
+        self.log.lock().unwrap().iter().filter(|line| !line.starts_with("admit:")).cloned().collect()
+    }
+
+    fn admissions(&self) -> Vec<String> {
+        self.log.lock().unwrap().iter().filter(|line| line.starts_with("admit:")).cloned().collect()
     }
 }
 
@@ -252,6 +260,15 @@ impl AutomaticUpdateHost for FakeHost {
     }
     fn ready(&self, provider: &str) -> bool {
         !self.not_ready.lock().unwrap().iter().any(|p| p == provider)
+    }
+    /// As the app's: decided and held in one call.
+    fn admit(&self, provider: &str, plugins: bool) -> bool {
+        self.log.lock().unwrap().push(format!("admit:{provider}:{plugins}"));
+        let admitted = self.ready(provider) && !self.started_before_admission.lock().unwrap().iter().any(|p| p == provider);
+        if admitted {
+            self.updates.hold(provider, plugins);
+        }
+        admitted
     }
     fn update_cli(&self, provider: &str, cancel: CancellationToken) -> BoxFuture<'_, CliUpdateResult> {
         let provider = provider.to_string();
@@ -343,6 +360,32 @@ async fn the_automatic_pass_updates_in_order_holds_each_provider_and_defers_the_
     let retry = updates.check(Utc::now(), CheckGate { policy: ALLOWED, ..CheckGate::default() }, &host);
     assert_eq!(retry, ["codex"], "only the deferred provider retries");
     assert!(updates.check(Utc::now(), CheckGate { policy: ALLOWED, ..CheckGate::default() }, &host).is_empty(), "once");
+}
+
+/// Review A L3: each CLI and each plugin update is admitted and held in one host call; a provider that started between the pass's
+/// look and its admission is deferred, not updated, and nothing holds it.
+#[tokio::test]
+async fn each_update_is_admitted_and_held_in_one_decision() {
+    korean();
+    let updates = Arc::new(AutomaticUpdates::new());
+    let host = FakeHost::with((Some(true), None), updates.clone());
+    host.started_before_admission.lock().unwrap().extend(["gemini".to_string(), "claude".to_string()]);
+    let providers = vec!["claude".to_string(), "gemini".to_string(), "codex".to_string()];
+    updates.run(&host, &providers, &workspace("/home/someone"), &CancellationToken::new()).await;
+    assert_eq!(
+        host.admissions(),
+        ["admit:claude:false", "admit:gemini:false", "admit:codex:false", "admit:claude:true", "admit:codex:true"],
+        "every update asks for admission, the plugins' too"
+    );
+    assert_eq!(host.log(), ["cli:codex", "plugins:codex:/home/someone", "catalog:codex"], "only the admitted run");
+    for (call, provider, _) in host.seen_holds.lock().unwrap().iter() {
+        assert_eq!(provider.as_deref(), Some("codex"), "{call} runs under the hold its admission set");
+    }
+    let state = updates.snapshot();
+    let skipped = |p: &str| state.cli_results.iter().any(|r| r.provider == p && r.status == "skipped");
+    assert!(skipped("claude") && skipped("gemini"), "a provider started before its admission is deferred");
+    assert_eq!(state.plugin_results["claude"].status, "skipped");
+    assert!(state.provider.is_none(), "nothing is held after the pass");
 }
 
 #[tokio::test]

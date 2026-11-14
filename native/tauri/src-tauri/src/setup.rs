@@ -283,6 +283,12 @@ impl SetupActions for Actions {
     /// The CLI accounts' own sign-in (a terminal window on the CLI's login command, W6-C's); why it cannot start now is the screen's
     /// message (C# `setupMessage = ex.Message`). No screen lock is held while it runs (it redraws).
     fn sign_in(&self, provider: &str) {
+        // In verification mode the sign-in only marks the CLI tab's row: the screen says so itself, as the install does.
+        if !self.0.may_change_machine() {
+            self.0.log.line("setup: the sign-in was refused (no --allow-state-write)");
+            lock(&of(&self.0).screen).message = Some(verification_mode());
+            return;
+        }
         lock(&of(&self.0).screen).message = None;
         let (host, provider) = (self.0.clone(), provider.to_string());
         crate::native::act(&self.0, async move {

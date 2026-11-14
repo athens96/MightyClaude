@@ -201,6 +201,9 @@ pub trait AutomaticUpdateHost: Send + Sync {
     fn preferences(&self) -> (Option<bool>, Option<bool>);
     /// [`ready_for_automatic_update`] for the provider, now.
     fn ready(&self, provider: &str) -> bool;
+    /// [`AutomaticUpdateHost::ready`] and, when ready, the provider held ([`AutomaticUpdates::hold`]) in one decision, so no
+    /// composer start slips in between (C# decides and holds on the window's one dispatcher). True when it was admitted.
+    fn admit(&self, provider: &str, plugins: bool) -> bool;
     /// `CliUpdateService::update`.
     fn update_cli(&self, provider: &str, cancel: CancellationToken) -> BoxFuture<'_, CliUpdateResult>;
     /// `PluginOperations::is_running`.
@@ -371,11 +374,10 @@ impl AutomaticUpdates {
             if host.preferences().0 != Some(true) {
                 break;
             }
-            if !host.ready(provider) {
+            if !host.admit(provider, false) {
                 self.schedule().skipped_busy(provider);
                 results.insert(provider.clone(), CliUpdateResult::new(provider, "skipped").with_detail(deferred()));
             } else {
-                self.set_provider(Some(provider), false);
                 host.changed();
                 let result = host.update_cli(provider, cancel.clone()).await;
                 results.insert(provider.clone(), result);
@@ -404,7 +406,12 @@ impl AutomaticUpdates {
                 self.state().plugin_results.insert(provider.clone(), PluginAutoUpdateResult::busy());
                 continue;
             }
-            self.set_provider(Some(provider), true);
+            // Asked again as it is held: a start since the look above defers it.
+            if !host.admit(provider, true) {
+                self.schedule().skipped_busy(provider);
+                self.state().plugin_results.insert(provider.clone(), PluginAutoUpdateResult::new("skipped", deferred()));
+                continue;
+            }
             host.changed();
             let result = host.update_plugins(provider, home, remaining, cancel.clone()).await;
             self.state().plugin_results.insert(provider.clone(), result);
@@ -414,6 +421,11 @@ impl AutomaticUpdates {
             host.plugins_updated(provider);
         }
         !cancel.is_cancelled()
+    }
+
+    /// The pass holds `provider` (its CLI, or its plugins): what [`AutomaticUpdateHost::admit`] does once it found it ready.
+    pub fn hold(&self, provider: &str, plugins: bool) {
+        self.set_provider(Some(provider), plugins);
     }
 
     fn set_provider(&self, provider: Option<&str>, plugins: bool) {

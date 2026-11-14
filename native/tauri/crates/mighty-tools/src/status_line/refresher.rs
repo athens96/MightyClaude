@@ -238,7 +238,9 @@ impl StatusLineRefresher {
             if cancel.is_cancelled() {
                 return Err(Cancelled);
             }
-            let discovery = (self.discover)();
+            // The settings files are read as blocking work, off the runtime's workers (any runtime flavour).
+            let discover = self.discover.clone();
+            let discovery = tokio::task::spawn_blocking(move || discover()).await.unwrap_or_default();
             let trusted = (self.trusted)();
             let (config, untrusted) = trust::resolve_trusted(&discovery, trusted.as_ref(), &self.workspace_id);
             let mut result = None;

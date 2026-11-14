@@ -385,7 +385,8 @@ fn the_kit_rows_labels_switches_and_segments() {
 }
 
 /// A read fills the act table: an input on an id reaches the control's handler with C#'s argument; the segment already chosen does
-/// nothing; an id the last read did not reach answers false; ids stay put across reads of the same tree.
+/// nothing; an id the last read did not reach answers false; the next read draws the inputs' values the model has not taken; ids
+/// stay put across reads of the same tree.
 #[test]
 fn a_read_fills_the_act_table_and_keeps_ids() {
     let e = dark();
@@ -422,6 +423,10 @@ fn a_read_fills_the_act_table_and_keeps_ids() {
     assert!(!run(&mut acts, 9, "invoke", json!(null)));
     assert_eq!(*seen.lock().unwrap(), vec!["save", "text abc", "pick light"]);
     acts.clear();
+    let pending = write(&Reader::new(&e, "settings", &mut ids, &mut acts).node(&build(seen.clone(), false)).unwrap());
+    assert!(pending.contains(r#""text":"abc""#), "the model has not taken the words yet: the input's are drawn: {pending}");
+    // With no input pending (a table of its own), the same tree reads as it did.
+    let mut acts = Acts::default();
     let again = write(&Reader::new(&e, "settings", &mut ids, &mut acts).node(&build(seen.clone(), false)).unwrap());
     assert_eq!(first, again, "the same tree read again has the same ids");
     acts.clear();

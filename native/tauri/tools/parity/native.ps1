@@ -9,8 +9,9 @@
 # C# runs with MIGHTY_SMOKE_WEB=1 in an empty temporary profile, as scripts\test-native-windows.ps1 -Web runs it. Its smoke is stopped
 # once its automatic-updates step reported, before its live steps reach the completion notification (which registers the build with
 # Windows' notifications in HKCU and shows a toast): every native form W6 draws is pushed before then. The Tauri smoke runs in a
-# new demo profile (smoke.ps1 -NoRuns). HKCU Software\MightyCode, the notification registrations and %APPDATA%\MightyCode are
-# compared before and after (the profile's logs left out: a running installed app appends to them); any change fails the run.
+# new demo profile (smoke.ps1 -NoRuns). HKCU Software\MightyCode, the notification registrations, %APPDATA%\MightyCode,
+# %LOCALAPPDATA%\MightyCode and the CLIs' user configs are compared before and after (the profiles' logs left out: a running
+# installed app appends to them); any change fails the run.
 #
 # Writes cs.jsonl, rs.jsonl and diff.txt to -Out and exits with native-diff's code (0 when every view is the same).
 param(
@@ -31,22 +32,29 @@ $Out = (Resolve-Path $Out).Path
 $cs = Join-Path $Out 'cs.jsonl'
 $rs = Join-Path $Out 'rs.jsonl'
 
-# What neither app may change: HKCU Software\MightyCode's values, the notification registrations' names, the C# profile's files.
+# What neither app may change: HKCU Software\MightyCode's values, the toast registrations' names (Classes\AppUserModelId's values and
+# the Notifications keys' names: Windows rewrites other apps' counters there, a registration adds a key), the C# profile's and
+# %LOCALAPPDATA%\MightyCode's files, Claude's settings.json and omc's and Ouroboros's configs (smoke.ps1's UserConfig). Read only.
 function UserState {
     $values = [ordered]@{}
-    foreach ($root in 'HKCU:\Software\MightyCode', 'HKCU:\Software\Classes\AppUserModelId') {
+    foreach ($root in 'HKCU:\Software\MightyCode', 'HKCU:\Software\Classes\AppUserModelId', 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications') {
         if (-not (Test-Path $root)) { $values[$root] = $null; continue }
+        $namesOnly = $root -like '*\Notifications'
         foreach ($key in @(Get-Item -Path $root) + @(Get-ChildItem -Path $root -Recurse -ErrorAction SilentlyContinue)) {
             $values["$($key.Name)\"] = ''
+            if ($namesOnly) { continue }
             foreach ($name in $key.GetValueNames()) { $values["$($key.Name)\$name"] = "$($key.GetValue($name, $null, 'DoNotExpandEnvironmentNames'))" }
         }
     }
-    $profile = Join-Path $env:APPDATA 'MightyCode'
-    if (Test-Path $profile) {
+    foreach ($folder in (Join-Path $env:APPDATA 'MightyCode'), (Join-Path $env:LOCALAPPDATA 'MightyCode')) {
+        if (-not (Test-Path $folder)) { $values[$folder] = $null; continue }
         # Its logs left out: an installed Mighty Code that is running (this very session's host, perhaps) appends to them.
-        foreach ($file in Get-ChildItem -LiteralPath $profile -Recurse -Force -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -ne '.log' }) {
+        foreach ($file in Get-ChildItem -LiteralPath $folder -Recurse -Force -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -ne '.log' }) {
             $values[$file.FullName] = "$($file.Length) $($file.LastWriteTimeUtc.ToString('o'))"
         }
+    }
+    foreach ($file in (Join-Path $env:USERPROFILE '.claude\settings.json'), (Join-Path $env:USERPROFILE '.config\claude-omc\config.jsonc'), (Join-Path $env:USERPROFILE '.ouroboros\config.yaml')) {
+        $values[$file] = if (Test-Path $file) { $info = Get-Item $file; "$($info.LastWriteTimeUtc.ToString('o')) $((Get-FileHash $file -Algorithm SHA256).Hash)" } else { $null }
     }
     $values
 }
@@ -75,13 +83,12 @@ if ($CsCapture) {
     $stopped = 'timed out'
     while ((Get-Date) -lt $end) {
         if ($app.HasExited) { $stopped = "exited ($($app.ExitCode))"; break }
-        if ((Test-Path $trace) -and (Select-String -LiteralPath $trace -Pattern 'smoke:automaticUpdates:(passed|failed)' -Quiet)) {
-            # A moment for the capture to drain the last pushes.
-            Start-Sleep -Milliseconds 800
+        # Stopped at once: the next step (remoteWorkspaces) leads to completionNotification, which registers the build in HKCU.
+        if ((Test-Path $trace) -and (Select-String -LiteralPath $trace -Pattern 'smoke:automaticUpdates:(passed|failed)|smoke:remoteWorkspaces:running' -Quiet)) {
             $stopped = 'stopped after automaticUpdates'
             break
         }
-        Start-Sleep -Milliseconds 100
+        Start-Sleep -Milliseconds 25
     }
     if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue; $app.WaitForExit(10000) | Out-Null }
     if (-not $capture.WaitForExit(15000)) { Stop-Process -Id $capture.Id -Force -ErrorAction SilentlyContinue }
@@ -114,5 +121,5 @@ if ($changed.Count -gt 0) {
     foreach ($name in $changed) { Write-Output "  $name`: $($before[$name]) -> $($after[$name])" }
     exit 1
 }
-Write-Output 'user state unchanged: HKCU Software\MightyCode, the notification registrations, %APPDATA%\MightyCode'
+Write-Output 'user state unchanged: HKCU Software\MightyCode, the notification registrations, %APPDATA% and %LOCALAPPDATA%\MightyCode, the CLIs'' user configs'
 exit $diffExit

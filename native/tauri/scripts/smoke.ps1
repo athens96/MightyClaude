@@ -60,14 +60,22 @@ function ProfileTree {
     }
     $values
 }
-# The values under a registry key and all its subkeys, as "key\name" = "value" (a key without values as "key\" = '').
+# The values under a registry key and all its subkeys, as "key\name" = "value" (a key without values as "key\" = ''). Each key is
+# read on its own: one that cannot be read is its own "probe failed" entry and every other key is still compared.
 function RegistryTree([string]$Root, $Into) {
     if (-not (Test-Path $Root)) { $Into[$Root] = $null; return }
-    foreach ($key in @(Get-Item -Path $Root) + @(Get-ChildItem -Path $Root -Recurse -ErrorAction Stop)) {
+    $pending = New-Object 'System.Collections.Generic.Queue[string]'
+    $pending.Enqueue($Root)
+    while ($pending.Count -gt 0) {
+        $path = $pending.Dequeue()
+        try { $key = Get-Item -LiteralPath $path -ErrorAction Stop } catch { $Into["$path\"] = "probe failed: $($_.Exception.Message)"; continue }
         foreach ($name in $key.GetValueNames()) {
             $Into["$($key.Name)\$name"] = Probe { "$($key.GetValue($name, $null, 'DoNotExpandEnvironmentNames'))" }
         }
         if ($key.ValueCount -eq 0) { $Into["$($key.Name)\"] = '' }
+        try {
+            foreach ($child in Get-ChildItem -LiteralPath $path -ErrorAction Stop) { $pending.Enqueue($child.PSPath) }
+        } catch { $Into["$($key.Name)\*"] = "probe failed: $($_.Exception.Message)" }
     }
 }
 # The user's settings outside any profile, which a smoke must never change (W6 plan §4.4): HKCU Software\MightyCode (shared with the

@@ -462,6 +462,18 @@ impl AutomaticUpdateHost for Pass {
         self.host().is_some_and(|host| ready_for_automatic_update(&provider_use(&host, provider), Utc::now()))
     }
 
+    /// Decided and held under one state guard (the state, then the updates' own lock), as the manual update is.
+    fn admit(&self, provider: &str, plugins: bool) -> bool {
+        let Some(host) = self.host() else { return false };
+        let Some(updates) = of(&host) else { return false };
+        let view = host.view();
+        let ready = ready_for_automatic_update(&provider_use_in(&host, &view, provider), Utc::now());
+        if ready {
+            updates.automatic.hold(provider, plugins);
+        }
+        ready
+    }
+
     fn update_cli(&self, provider: &str, cancel: CancellationToken) -> BoxFuture<'_, CliUpdateResult> {
         let provider = provider.to_string();
         Box::pin(async move {

@@ -39,7 +39,10 @@ impl SurfaceModel for OneBox {
 }
 
 /// The box drawn in C#'s capture's context (dark, the standard text, Korean), normalized as the golden is.
+/// The capture is Windows', so the boxes are drawn as on Windows on every OS (the Bedrock reset button is Windows-only); this test
+/// binary's every test compares with that capture.
 fn drawn(title: String, build: impl FnMut(&mut Ui) -> El + Send + 'static) -> String {
+    mighty_run::os::set_windows(true);
     mighty_run::strings::set_language("ko");
     let surfaces = Surfaces::new();
     surfaces.open("settings", Place::Surface, Box::new(OneBox { title, build: Box::new(build) }));

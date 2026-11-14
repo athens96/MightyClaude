@@ -50,6 +50,8 @@ struct Job {
     process: Option<Arc<CliBackgroundLogin>>,
     /// Ends the job's task (C#'s cancellation).
     cancel: watch::Sender<bool>,
+    /// The job's task, which the app's exit waits for (it closes the hidden terminal).
+    task: Option<tauri::async_runtime::JoinHandle<()>>,
 }
 
 /// A terminal window a terminal sign-in opened: whether it holds the command (the console host), and whether it closed.
@@ -459,13 +461,14 @@ fn start_background_login(host: &Arc<Host>, provider: &str, automatic: bool, ses
     let (cancel, cancelled) = watch::channel(false);
     lock(&accounts.jobs).insert(
         provider.to_string(),
-        Job { serial, automatic, terminal: terminal.is_some(), phase: "starting".into(), process: None, cancel },
+        Job { serial, automatic, terminal: terminal.is_some(), phase: "starting".into(), process: None, cancel, task: None },
     );
     lock(&accounts.busy).insert(provider.to_string());
     lock(&accounts.failures).remove(provider);
     redraw(host);
     let (host, provider, session) = (host.clone(), provider.to_string(), session.map(str::to_string));
-    tauri::async_runtime::spawn(async move {
+    let job_provider = provider.clone();
+    let task = tauri::async_runtime::spawn(async move {
         let mut stop = cancelled.clone();
         // The hidden terminal, closed below whatever ends the job, before the provider is let go (C# keeps `loginBusy` until
         // `DisposeAsync`).
@@ -501,6 +504,8 @@ fn start_background_login(host: &Arc<Host>, provider: &str, automatic: bool, ses
         lock(&accounts.busy).remove(&provider);
         redraw(&host);
     });
+    // Kept on the job for the exit to wait on; a task that already ended took its job with it.
+    accounts.with_job(&job_provider, serial, |job| job.task = Some(task));
 }
 
 /// The hidden sign-in a job started, for its task to close whatever ended it (C#'s `finally { await job.Process.DisposeAsync() }`).
@@ -1258,14 +1263,21 @@ fn prune_of(accounts: &Accounts, snapshot: &AppSnapshot) {
     }
 }
 
-/// `ShutdownLoginRecovery` (MainWindow.LoginRecovery.cs:313-319): every sign-in ended (its hidden terminal closed by its task), every
-/// terminal wait cancelled, the deferred starts, retries, notes and held resends forgotten; no sign-in starts from here on. Called
-/// once from the app's exit.
+/// How long the app's exit waits for the sign-ins' tasks to close their hidden terminals.
+const SHUTDOWN_WAIT: Duration = Duration::from_secs(3);
+
+/// `ShutdownLoginRecovery` (MainWindow.LoginRecovery.cs:313-319): every sign-in ended and its task waited for — its hidden terminal
+/// closed — for at most [`SHUTDOWN_WAIT`], every terminal wait cancelled, the deferred starts, retries, notes and held resends
+/// forgotten; no sign-in starts from here on. Called once from the app's exit, outside the async runtime; no account lock is held
+/// while it waits.
 pub fn shutdown(host: &Host) {
     let accounts = of(host);
     accounts.closed.store(true, Ordering::SeqCst);
     let providers: Vec<String> = lock(&accounts.jobs).keys().cloned().collect();
+    let mut tasks = vec![];
     for provider in providers {
+        let task = lock(&accounts.jobs).get_mut(&provider).and_then(|job| job.task.take());
+        tasks.extend(task);
         cancel_background_login(host, &provider);
     }
     let waits: Vec<watch::Sender<bool>> = lock(&accounts.waits).drain().map(|(_, wait)| wait).collect();
@@ -1276,6 +1288,16 @@ pub fn shutdown(host: &Host) {
     lock(&accounts.notes).clear();
     lock(&accounts.awaiting_update).clear();
     lock(&accounts.deferred).clear();
+    if !tasks.is_empty() {
+        tauri::async_runtime::block_on(async move {
+            let all = async {
+                for task in tasks {
+                    let _ = task.await;
+                }
+            };
+            let _ = tokio::time::timeout(SHUTDOWN_WAIT, all).await;
+        });
+    }
 }
 
 #[cfg(test)]
@@ -1354,7 +1376,7 @@ mod tests {
             let (cancel, cancelled) = watch::channel(false);
             lock(&accounts.jobs).insert(
                 provider.into(),
-                Job { serial: 1, automatic: true, terminal: false, phase: "waiting".into(), process: None, cancel },
+                Job { serial: 1, automatic: true, terminal: false, phase: "waiting".into(), process: None, cancel, task: None },
             );
             cancelled
         };

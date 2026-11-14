@@ -429,33 +429,38 @@ impl<'a> Reader<'a> {
             Kind::CheckBox { on, content } => {
                 let label = words(content);
                 let id = self.id(path, "check", &label);
-                self.acts.insert(id, Target::Toggle { enabled, on: *on, handler: el.on.clone() });
-                Some(dict(vec![("t", "check".into()), ("id", J::Int(id)), ("on", (*on).into()), ("label", label.into())]))
+                let on = self.acts.live_on(id, *on);
+                self.acts.insert(id, Target::Toggle { enabled, on, handler: el.on.clone() });
+                Some(dict(vec![("t", "check".into()), ("id", J::Int(id)), ("on", on.into()), ("label", label.into())]))
             }
             Kind::RadioButton { on, content } => {
                 let label = words(content);
                 let id = self.id(path, "radio", &label);
-                self.acts.insert(id, Target::Radio { enabled, on: *on, handler: el.on.clone() });
-                Some(dict(vec![("t", "radio".into()), ("id", J::Int(id)), ("on", (*on).into()), ("label", label.into())]))
+                let on = self.acts.live_on(id, *on);
+                self.acts.insert(id, Target::Radio { enabled, on, handler: el.on.clone() });
+                Some(dict(vec![("t", "radio".into()), ("id", J::Int(id)), ("on", on.into()), ("label", label.into())]))
             }
             Kind::ToggleSwitch { on, header } => {
                 let name = Some(words(header)).filter(|w| !w.is_empty()).unwrap_or_else(|| el.name.clone());
                 let id = self.id(path, "switch", &name);
-                self.acts.insert(id, Target::Switch { enabled, on: *on, handler: el.on.clone() });
-                Some(dict(vec![("t", "switch".into()), ("id", J::Int(id)), ("on", (*on).into()), ("name", name.into())]))
+                let on = self.acts.live_on(id, *on);
+                self.acts.insert(id, Target::Switch { enabled, on, handler: el.on.clone() });
+                Some(dict(vec![("t", "switch".into()), ("id", J::Int(id)), ("on", on.into()), ("name", name.into())]))
             }
             Kind::ToggleButton { on, .. } => {
                 let id = self.id(path, "toggle", &el.name);
-                self.acts.insert(id, Target::Toggle { enabled, on: *on, handler: el.on.clone() });
-                Some(dict(vec![("t", "switch".into()), ("id", J::Int(id)), ("on", (*on).into()), ("name", el.name.clone().into())]))
+                let on = self.acts.live_on(id, *on);
+                self.acts.insert(id, Target::Toggle { enabled, on, handler: el.on.clone() });
+                Some(dict(vec![("t", "switch".into()), ("id", J::Int(id)), ("on", on.into()), ("name", el.name.clone().into())]))
             }
             Kind::ComboBox { index, items } => {
                 let id = self.id(path, "select", &el.name);
-                self.acts.insert(id, Target::Combo { enabled, index: *index, count: items.len(), handler: el.on.clone() });
+                let index = self.acts.live_index(id, *index);
+                self.acts.insert(id, Target::Combo { enabled, index, count: items.len(), handler: el.on.clone() });
                 Some(dict(vec![
                     ("t", "select".into()),
                     ("id", J::Int(id)),
-                    ("index", J::Int(i64::from(*index))),
+                    ("index", J::Int(i64::from(index))),
                     ("name", el.name.clone().into()),
                     ("items", J::Arr(items.iter().map(|item| words(item).into()).collect())),
                 ]))
@@ -463,6 +468,7 @@ impl<'a> Reader<'a> {
             Kind::TextBox { text, placeholder, multiline, readonly, header, family } => {
                 let name = Some(el.name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| words(header));
                 let id = self.id(path, "field", &name);
+                let text = self.acts.live_text(id, text);
                 self.acts.insert(id, Target::Field { enabled, readonly: *readonly, text: text.clone(), handler: el.on.clone() });
                 let face = family.clone().unwrap_or_else(|| self.control_family());
                 Some(dict(vec![
@@ -478,6 +484,7 @@ impl<'a> Reader<'a> {
             }
             Kind::PasswordBox { text, placeholder } => {
                 let id = self.id(path, "password", &el.name);
+                let text = self.acts.live_text(id, text);
                 self.acts.insert(id, Target::Password { enabled, text: text.clone(), handler: el.on.clone() });
                 Some(dict(vec![
                     ("t", "field".into()),
@@ -490,11 +497,12 @@ impl<'a> Reader<'a> {
             }
             Kind::Slider { value, min, max, step } => {
                 let id = self.id(path, "slider", &el.name);
-                self.acts.insert(id, Target::Slider { enabled, value: *value, min: *min, max: *max, handler: el.on.clone() });
+                let value = self.acts.live_number(id, *value);
+                self.acts.insert(id, Target::Slider { enabled, value, min: *min, max: *max, handler: el.on.clone() });
                 Some(dict(vec![
                     ("t", "slider".into()),
                     ("id", J::Int(id)),
-                    ("value", (*value).into()),
+                    ("value", value.into()),
                     ("min", (*min).into()),
                     ("max", (*max).into()),
                     ("step", (*step).into()),
@@ -565,7 +573,8 @@ impl<'a> Reader<'a> {
             }),
             Kind::ListView { index, items } => {
                 let id = self.id(path, "list", &el.name);
-                self.acts.insert(id, Target::List { index: *index, count: items.len(), handler: el.on.clone() });
+                let index = self.acts.live_index(id, *index);
+                self.acts.insert(id, Target::List { index, count: items.len(), handler: el.on.clone() });
                 let inside = self.control_inherit(None);
                 let mut rows = vec![];
                 for (at, item) in items.iter().enumerate() {
@@ -578,7 +587,7 @@ impl<'a> Reader<'a> {
                         .unwrap_or_else(|| dict(vec![("t", "text".into()), ("text", words(item).into())]));
                     rows.push(J::Obj(node));
                 }
-                Some(dict(vec![("t", "list".into()), ("id", J::Int(id)), ("index", J::Int(i64::from(*index))), ("items", J::Arr(rows))]))
+                Some(dict(vec![("t", "list".into()), ("id", J::Int(id)), ("index", J::Int(i64::from(index))), ("items", J::Arr(rows))]))
             }
             Kind::ItemsControl { items } => {
                 let mut list = vec![];
@@ -630,8 +639,9 @@ impl<'a> Reader<'a> {
                     let label = words(content);
                     let at = child_path(path, child, index);
                     let id = self.id(&at, "segment", &label);
-                    self.acts.insert(id, Target::Toggle { enabled: enabled && child.enabled, on: *on, handler: child.on.clone() });
-                    options.push(J::Obj(dict(vec![("id", J::Int(id)), ("label", label.into()), ("on", (*on).into())])));
+                    let on = self.acts.live_on(id, *on);
+                    self.acts.insert(id, Target::Toggle { enabled: enabled && child.enabled, on, handler: child.on.clone() });
+                    options.push(J::Obj(dict(vec![("id", J::Int(id)), ("label", label.into()), ("on", on.into())])));
                 }
                 let disabled = el.opacity < 0.75 || options.is_empty();
                 Some(dict(vec![
@@ -724,11 +734,12 @@ impl<'a> Reader<'a> {
                 }
                 MenuItem::Toggle { text, checked, enabled, on } => {
                     let id = self.id(&at, "toggleItem", text);
-                    self.acts.insert(id, Target::ToggleMenuItem { enabled: *enabled, checked: *checked, on: on.clone() });
+                    let checked = self.acts.live_on(id, *checked);
+                    self.acts.insert(id, Target::ToggleMenuItem { enabled: *enabled, checked, on: on.clone() });
                     dict(vec![
                         ("id", J::Int(id)),
                         ("label", text.clone().into()),
-                        ("checked", (*checked).into()),
+                        ("checked", checked.into()),
                         ("disabled", (!enabled).into()),
                     ])
                 }

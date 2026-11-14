@@ -558,6 +558,41 @@ mod tests {
         assert!(pushed.contains(r#""id":1,"#) && pushed.contains(r#""id":2,"#), "{pushed}");
     }
 
+    /// Review A M2: an input's value outlives the read after it. Two clicks on a switch with a read between them, its handler not
+    /// having saved yet (the model still off), send on then off, and the read between shows it on; once the model reports the value,
+    /// the model is followed again.
+    #[test]
+    fn a_rebuild_between_two_clicks_keeps_what_the_first_click_did() {
+        use crate::ui::{Input, handler};
+        let saved = Arc::new(Mutex::new(false));
+        let seen = Arc::new(Mutex::new(Vec::<Input>::new()));
+        struct Switch(Arc<Mutex<bool>>, Arc<Mutex<Vec<Input>>>);
+        impl SurfaceModel for Switch {
+            fn view(&mut self, _: &mut Ui) -> View {
+                let seen = self.1.clone();
+                let on = *self.0.lock().unwrap();
+                let switch = El::new(crate::ui::Kind::ToggleSwitch { on, header: Content::Text("Auto".into()) })
+                    .on(handler(move |input| seen.lock().unwrap().push(input)));
+                View::Companion { title: "t".into(), body: Some(switch) }
+            }
+        }
+        let surfaces = Surfaces::new();
+        surfaces.open("settings", Place::Surface, Box::new(Switch(saved.clone(), seen.clone())));
+        let on_of = |push: &str| serde_json::from_str::<Value>(push).unwrap()["view"]["sections"][0]["node"]["on"].clone();
+        assert_eq!(on_of(&rendered(&surfaces, "settings").unwrap()), json!(false));
+        assert!(surfaces.act("settings", 1, "toggle", &Value::Null).run(|_| {}));
+        assert_eq!(on_of(&rendered(&surfaces, "settings").unwrap()), json!(true), "drawn as the click left it");
+        assert!(surfaces.act("settings", 1, "toggle", &Value::Null).run(|_| {}));
+        assert_eq!(*seen.lock().unwrap(), vec![Input::Toggle(true), Input::Toggle(false)]);
+        assert_eq!(on_of(&rendered(&surfaces, "settings").unwrap()), json!(false));
+        // The handler saves: the model reports on, and from then on the model is followed, whatever else changes it.
+        assert!(surfaces.act("settings", 1, "toggle", &Value::Null).run(|_| {}));
+        *saved.lock().unwrap() = true;
+        assert_eq!(on_of(&rendered(&surfaces, "settings").unwrap()), json!(true));
+        *saved.lock().unwrap() = false;
+        assert_eq!(on_of(&rendered(&surfaces, "settings").unwrap()), json!(false), "the model is followed again");
+    }
+
     #[test]
     fn a_surface_is_pushed_only_when_its_text_changed() {
         let surfaces = Surfaces::new();

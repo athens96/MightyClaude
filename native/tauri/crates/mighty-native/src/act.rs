@@ -14,8 +14,14 @@
 //!
 //! A control's own event fires only on a change (a radio button already checked, the same row picked again, the same words): its
 //! handler runs only then, and the input still answers true. Anything else answers false.
+//!
+//! C#'s live control keeps what the input made it until its handler changes it, but here every read builds the control again from
+//! the model. So each value an input gives a control is kept as pending under its id (one id is one control identity of the surface,
+//! [`crate::ids`]) and the reader draws and stores it over the model's value ([`Acts::live_on`] and the others) until the model
+//! reports that value or [`PENDING_FOR`] passes: a second click on a switch whose handler has not saved yet still toggles it back.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -89,10 +95,23 @@ pub enum Target {
     },
 }
 
-/// The table of one read.
+/// How long a value an input gave a control is drawn over the model's when the model never reports it (its handler refused it).
+pub const PENDING_FOR: Duration = Duration::from_secs(2);
+
+/// A value an input gave a control.
+#[derive(Debug, Clone, PartialEq)]
+enum Live {
+    On(bool),
+    Index(i32),
+    Text(String),
+    Number(f64),
+}
+
+/// The table of one read, and the values inputs gave its controls that the model has not reported yet.
 #[derive(Default)]
 pub struct Acts {
     targets: HashMap<i64, Target>,
+    pending: HashMap<i64, (Live, Instant)>,
 }
 
 /// What an input does.
@@ -155,8 +174,59 @@ fn web_address(uri: &str) -> bool {
 }
 
 impl Acts {
+    /// A new read begins: the table empties; the pending values stay (the read draws them), those past [`PENDING_FOR`] go.
     pub fn clear(&mut self) {
         self.targets.clear();
+        self.pending.retain(|_, (_, since)| since.elapsed() < PENDING_FOR);
+    }
+
+    /// What control `id` shows: the value an input gave it while the model has not reported it yet (and not for longer than
+    /// [`PENDING_FOR`]), else the model's. A model that reports the value ends the pending one.
+    fn live(&mut self, id: i64, model: Live) -> Live {
+        match self.pending.get(&id) {
+            Some((value, since)) if *value != model && since.elapsed() < PENDING_FOR => value.clone(),
+            Some(_) => {
+                self.pending.remove(&id);
+                model
+            }
+            None => model,
+        }
+    }
+
+    /// [`Acts::live`] of a check box, radio button, switch, toggle or toggle menu row.
+    pub fn live_on(&mut self, id: i64, model: bool) -> bool {
+        match self.live(id, Live::On(model)) {
+            Live::On(on) => on,
+            _ => model,
+        }
+    }
+
+    /// [`Acts::live`] of a pop-up's or a list's row.
+    pub fn live_index(&mut self, id: i64, model: i32) -> i32 {
+        match self.live(id, Live::Index(model)) {
+            Live::Index(index) => index,
+            _ => model,
+        }
+    }
+
+    /// [`Acts::live`] of a field's words.
+    pub fn live_text(&mut self, id: i64, model: &str) -> String {
+        match self.live(id, Live::Text(model.to_string())) {
+            Live::Text(text) => text,
+            _ => model.to_string(),
+        }
+    }
+
+    /// [`Acts::live`] of a slider's value.
+    pub fn live_number(&mut self, id: i64, model: f64) -> f64 {
+        match self.live(id, Live::Number(model)) {
+            Live::Number(number) => number,
+            _ => model,
+        }
+    }
+
+    fn keep(&mut self, id: i64, value: Live) {
+        self.pending.insert(id, (value, Instant::now()));
     }
 
     pub fn insert(&mut self, id: i64, target: Target) {
@@ -179,11 +249,20 @@ impl Acts {
     }
 
     /// What `op` with `value` does to control `id` (WebNative.cs `Act`). As C#'s live control takes the change, the stored control does
-    /// too: a second click on a switch whose handler has not redrawn it yet toggles it back, and words typed then cleared reach the
-    /// field both times.
+    /// too, and the value is kept as pending for the reads after it: a second click on a switch whose handler has not saved yet
+    /// toggles it back, and words typed then cleared reach the field both times.
     pub fn resolve(&mut self, id: i64, op: &str, value: &Value) -> Outcome {
         let Some(target) = self.targets.get_mut(&id) else { return Outcome::Refused };
-        match (op, target) {
+        let (outcome, live) = Self::take(target, op, value);
+        if let Some(live) = live {
+            self.keep(id, live);
+        }
+        outcome
+    }
+
+    /// What the input does to `target`, and the value the control holds after it when it took it.
+    fn take(target: &mut Target, op: &str, value: &Value) -> (Outcome, Option<Live>) {
+        let outcome = match (op, &mut *target) {
             ("invoke", Target::Link { uri: Some(uri) }) if web_address(uri) => Outcome::Open(uri.clone()),
             ("invoke", Target::Button { enabled: true, on }) => call(on, Input::Invoke),
             ("invoke", Target::ToggleMenuItem { enabled: true, checked, on }) => {
@@ -248,7 +327,19 @@ impl Acts {
                 _ => Outcome::Refused,
             },
             _ => Outcome::Refused,
-        }
+        };
+        let live = match target {
+            _ if !outcome.taken() => None,
+            Target::ToggleMenuItem { checked: on, .. }
+            | Target::Radio { on, .. }
+            | Target::Toggle { on, .. }
+            | Target::Switch { on, .. } => Some(Live::On(*on)),
+            Target::Combo { index, .. } | Target::List { index, .. } => Some(Live::Index(*index)),
+            Target::Field { text, .. } | Target::Password { text, .. } => Some(Live::Text(text.clone())),
+            Target::Slider { value, .. } => Some(Live::Number(*value)),
+            Target::Link { .. } | Target::Button { .. } | Target::MenuItem { .. } | Target::Expander { .. } => None,
+        };
+        (outcome, live)
     }
 }
 
@@ -360,6 +451,29 @@ mod tests {
                 Input::Select(0)
             ]
         );
+    }
+
+    /// Review A M2: a read after an input draws the input's value over the model's until the model reports it or [`PENDING_FOR`]
+    /// passes; a refused input keeps nothing.
+    #[test]
+    fn an_input_value_is_drawn_until_the_model_reports_it() {
+        let (on, _) = recorder();
+        let mut acts = Acts::default();
+        acts.insert(1, Target::Switch { enabled: true, on: false, handler: Some(on.clone()) });
+        acts.insert(2, Target::Field { enabled: true, readonly: true, text: "a".into(), handler: Some(on.clone()) });
+        acts.insert(3, Target::Combo { enabled: true, index: 0, count: 3, handler: Some(on) });
+        assert!(run(&mut acts, 1, "toggle", Value::Null));
+        assert!(!run(&mut acts, 2, "text", json!("b")));
+        assert!(run(&mut acts, 3, "select", json!(2)));
+        acts.clear();
+        assert!(acts.live_on(1, false), "the model has not saved yet");
+        assert_eq!(acts.live_text(2, "a"), "a", "a refused input keeps nothing");
+        assert_eq!(acts.live_index(3, 2), 2, "the model reports the row");
+        assert_eq!(acts.live_index(3, 0), 0, "and is followed from then on");
+        // A handler that never saves: the model's value comes back once PENDING_FOR passes.
+        acts.pending.get_mut(&1).unwrap().1 = Instant::now() - PENDING_FOR;
+        assert!(!acts.live_on(1, false));
+        assert!(acts.pending.is_empty());
     }
 
     /// Every input on a disabled control is refused (C#'s `IsEnabled: true` patterns).

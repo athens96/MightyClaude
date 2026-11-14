@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -17,27 +18,27 @@ pub fn korean() {
     mighty_run::strings::set_language("ko");
 }
 
-/// A new empty folder of this check's own, named by its long name (CI's temporary folder sits under an 8.3 name).
+/// A new empty folder of this check's own, named by its real path: its long name (CI's temporary folder sits under an 8.3 name), and
+/// on the Mac past the `/var` → `/private/var` link (the Bedrock reset refuses a settings folder under a link, as C# does).
 pub fn temp(name: &str) -> PathBuf {
+    // The count keeps two checks of one name apart when they read the same clock (tests run in parallel).
+    static NEXT: AtomicU64 = AtomicU64::new(0);
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let path = std::env::temp_dir().join(format!("mighty-accounts-test-{name}-{}-{nanos}", std::process::id()));
+    let count = NEXT.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("mighty-accounts-test-{name}-{}-{nanos}-{count}", std::process::id()));
     std::fs::create_dir_all(&path).unwrap();
     long_path(path)
 }
 
-#[cfg(windows)]
+/// The real path of `path` (`\\?\C:\…` given back as `C:\…`; a verbatim UNC path left as it was given).
 fn long_path(path: PathBuf) -> PathBuf {
     let Ok(real) = std::fs::canonicalize(&path) else { return path };
     let text = real.to_string_lossy().into_owned();
     match text.strip_prefix(r"\\?\") {
         Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
-        _ => path,
+        Some(_) => path,
+        None => real,
     }
-}
-
-#[cfg(not(windows))]
-fn long_path(path: PathBuf) -> PathBuf {
-    path
 }
 
 /// Removes a folder, waiting a little for a child still letting go of it.
