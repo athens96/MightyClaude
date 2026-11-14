@@ -409,8 +409,7 @@ impl SetupScreen {
         environment: &BTreeMap<String, String>,
         files: &dyn SetupFiles,
         terminals: &dyn TerminalLauncher,
-        profile_directory: Option<&Path>,
-        local_app_data: &Path,
+        folder: &Path,
         now: Instant,
     ) -> InstallStart {
         if self.running() || gate == Gate::Smoke || steps.is_empty() {
@@ -422,7 +421,7 @@ impl SetupScreen {
         if self.refuse_when_elevated(files) {
             return InstallStart::Refused;
         }
-        let folder = files::folder(profile_directory, local_app_data);
+        let folder = folder.to_path_buf();
         let prepared = (|| -> Result<(PathBuf, (PathBuf, PathBuf)), String> {
             files::prepare_directory(files, &folder)?;
             // Earlier runs' scripts and markers are of no further use.
@@ -505,6 +504,17 @@ impl SetupScreen {
             }
             _ => false,
         }
+    }
+
+    /// Whether the run that opened at `opened` is still the screen's and still runs (C# `ReferenceEquals(setupRun, run) &&
+    /// !run.Finished`): a watcher of an earlier run stops when it is not.
+    pub fn runs(&self, opened: Instant) -> bool {
+        self.run.as_ref().is_some_and(|run| run.opened == opened && !run.finished)
+    }
+
+    /// [`SetupScreen::finish_run`] for the run that opened at `opened` only (C# `FinishSetupRun(run)`'s `ReferenceEquals`).
+    pub fn finish_run_of(&mut self, opened: Instant) -> bool {
+        self.runs(opened) && self.finish_run()
     }
 
     /// The hint's button: the script never started, so the run is closed by hand (C# `AbandonSetupRun`).

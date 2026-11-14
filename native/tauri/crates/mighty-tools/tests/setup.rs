@@ -1056,7 +1056,15 @@ fn setup_screen_over_the_smokes_fixed_probes() {
     let files = FakeSetupFiles::default();
     let local = common::temp("screen-smoke");
     assert_eq!(
-        screen.start_install(&confirmation.steps, Gate::Smoke, &windows_environment(), &files, &window, None, &local, Instant::now()),
+        screen.start_install(
+            &confirmation.steps,
+            Gate::Smoke,
+            &windows_environment(),
+            &files,
+            &window,
+            &files::folder(None, &local),
+            Instant::now()
+        ),
         InstallStart::Ignored
     );
     assert!(screen.run.is_none() && screen.terminals_opened == 0 && window.opened().is_empty(), "cancelledWithoutTerminal");
@@ -1088,7 +1096,7 @@ fn setup_screen_installs_through_the_ports_only_when_allowed() {
     let local = common::temp("screen-install");
     let now = Instant::now();
     assert_eq!(
-        screen.start_install(&steps, Gate::ReadOnly, &env, &files, &window, None, &local, now),
+        screen.start_install(&steps, Gate::ReadOnly, &env, &files, &window, &files::folder(None, &local), now),
         InstallStart::NotAllowed,
         "read-only installs nothing"
     );
@@ -1099,14 +1107,23 @@ fn setup_screen_installs_through_the_ports_only_when_allowed() {
             && screen.message.as_deref() == Some(strings::get("setup.windows.error.elevated").as_str()),
         "an elevated app refuses before the confirmation"
     );
-    assert_eq!(screen.start_install(&steps, Gate::Allowed, &env, &files, &window, None, &local, now), InstallStart::Refused);
+    assert_eq!(
+        screen.start_install(&steps, Gate::Allowed, &env, &files, &window, &files::folder(None, &local), now),
+        InstallStart::Refused
+    );
     files.set_elevated(false);
     let refusing = RecordingTerminalLauncher::default();
     refusing.refuse();
-    assert_eq!(screen.start_install(&steps, Gate::Allowed, &env, &files, &refusing, None, &local, now), InstallStart::Refused);
+    assert_eq!(
+        screen.start_install(&steps, Gate::Allowed, &env, &files, &refusing, &files::folder(None, &local), now),
+        InstallStart::Refused
+    );
     let why = mighty_platform::PlatformError::Refused("the terminal did not start".into()).to_string();
     assert_eq!(screen.message.as_deref(), Some(strings::get_with("setup.windows.error.terminal", &[("error", &why)]).as_str()));
-    assert_eq!(screen.start_install(&steps, Gate::Allowed, &env, &files, &window, None, &local, now), InstallStart::Started);
+    assert_eq!(
+        screen.start_install(&steps, Gate::Allowed, &env, &files, &window, &files::folder(None, &local), now),
+        InstallStart::Started
+    );
     let folder = local.join("MightyCode").join("setup");
     let opened = window.opened();
     assert_eq!(opened.len(), 1);
@@ -1154,7 +1171,10 @@ fn setup_screen_installs_through_the_ports_only_when_allowed() {
     );
     std::fs::create_dir(&run.done).unwrap();
     assert_eq!(screen.watch_tick(now + Duration::from_secs(24), &files), WatchTick::Ended);
-    assert!(screen.finish_run() && !screen.finish_run() && !screen.running());
+    // A watcher follows its own run only: another opening is not it, and a finished run is followed no further.
+    assert!(screen.runs(run.opened) && !screen.runs(run.opened + Duration::from_secs(1)));
+    assert!(!screen.finish_run_of(run.opened + Duration::from_secs(1)) && screen.running(), "a stale watcher finishes nothing");
+    assert!(screen.finish_run_of(run.opened) && !screen.runs(run.opened) && !screen.finish_run() && !screen.running());
     let gh = SetupProbeResult::missing();
     screen.finish_refresh([("gh".to_string(), gh)], None, true, now);
     assert_eq!(screen.state_of(catalog.item("gh").unwrap()), SetupRowState::Failed, "what the probe still misses after the run failed");

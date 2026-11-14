@@ -272,6 +272,84 @@ impl SetupFiles for WindowsSetupFiles {
 mod tests {
     use super::*;
 
+    /// The folder's owner and access list as Windows reports them back, in SDDL.
+    fn security_of(path: &Path) -> String {
+        use windows_sys::Win32::Security::Authorization::ConvertSecurityDescriptorToStringSecurityDescriptorW;
+        let name = wide(path);
+        let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
+        // SAFETY: the descriptor and the text are LocalAlloc'd by Windows and freed here.
+        unsafe {
+            let read = GetNamedSecurityInfoW(
+                name.as_ptr(),
+                SE_FILE_OBJECT,
+                OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                null_mut(),
+                null_mut(),
+                null_mut(),
+                null_mut(),
+                &mut descriptor,
+            );
+            assert_eq!(read, 0, "the folder's security reads");
+            let mut text: *mut u16 = null_mut();
+            let converted = ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                descriptor,
+                SDDL_REVISION_1,
+                OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                &mut text,
+                null_mut(),
+            );
+            assert_ne!(converted, 0, "the folder's security converts");
+            let length = (0..).take_while(|&at| *text.add(at) != 0).count();
+            let sddl = String::from_utf16_lossy(std::slice::from_raw_parts(text, length));
+            LocalFree(text as HLOCAL);
+            LocalFree(descriptor as HLOCAL);
+            sddl
+        }
+    }
+
+    /// C# `PrepareDirectory`'s folder read back from Windows: this user its owner, a protected list (nothing inherited) of one entry,
+    /// full control for this user inherited by folders and files — made new, and put back after the list was widened.
+    #[test]
+    fn the_setup_folder_is_this_users_alone_as_windows_reads_it_back() {
+        let root = std::env::temp_dir().join(format!("mighty-platform-windows-setup-folder-acl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let folder = root.join("setup");
+        WindowsSetupFiles.prepare_folder(&folder).expect("the folder is prepared");
+        let user = User::current().unwrap();
+        // Protected (P; Windows adds AI, the list written with auto-inheritance), one entry: full control for this user.
+        let user_only = |sddl: String| {
+            sddl == format!("O:{0}D:P(A;OICI;FA;;;{0})", user.text) || sddl == format!("O:{0}D:PAI(A;OICI;FA;;;{0})", user.text)
+        };
+        assert!(user_only(security_of(&folder)), "{}", security_of(&folder));
+        // Widened in between (everyone may read): the next run puts the user-only list back.
+        let everyone = wide(format!("D:(A;OICI;FA;;;{0})(A;OICI;FR;;;WD)", user.text));
+        let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
+        // SAFETY: a NUL-terminated SDDL string; the descriptor is freed by Descriptor's drop.
+        let made = unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(everyone.as_ptr(), SDDL_REVISION_1, &mut descriptor, null_mut())
+        };
+        assert_ne!(made, 0);
+        let wide_list = Descriptor(descriptor);
+        let name = wide(&folder);
+        // SAFETY: the list lives in `wide_list` across the call.
+        let set = unsafe {
+            SetNamedSecurityInfoW(
+                name.as_ptr(),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                null_mut(),
+                null_mut(),
+                wide_list.dacl().unwrap(),
+                null(),
+            )
+        };
+        assert_eq!(set, 0);
+        assert!(!user_only(security_of(&folder)), "the list was widened");
+        WindowsSetupFiles.prepare_folder(&folder).expect("prepared again");
+        assert!(user_only(security_of(&folder)), "the user-only list is back: {}", security_of(&folder));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn this_process_is_no_powershell_and_a_dead_id_runs_nothing() {
         assert!(!WindowsSetupFiles.is_power_shell_running(std::process::id()));

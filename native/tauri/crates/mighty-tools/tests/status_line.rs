@@ -243,6 +243,22 @@ fn status_line_payload_uses_the_cli_field_names_and_transcript_layout() {
         "the leading dash is kept"
     );
     assert_eq!(payload::transcript_path(Path::new("/cfg"), Some("/x"), "s"), Path::new("/cfg").join("projects").join("-x").join("s.jsonl"));
+    // C#'s `char.IsLetterOrDigit` per UTF-16 unit, as .NET 10 computed these slugs (StatusLineSupport.TranscriptPath): Hangul, é and
+    // the Arabic-Indic three are letters or digits; Ⅻ (Nl), ² (No), ⓐ (So), the combining acute and ः (marks), 〇 (Nl) are not, and
+    // 𝔸 is two units, each a dash.
+    for (cwd, slug) in [
+        ("C:\\Users\\me\\프로젝트\\app", "C--Users-me-프로젝트-app"),
+        (
+            "C:\\w\\\u{216B}\\x\u{00B2}\\\u{24D0}\\\u{00E9}\\e\u{0301}x\\\u{0663}\\\u{1D538}\\\u{0903}\\\u{3007}",
+            "C--w---x----\u{00E9}-e-x-\u{0663}-------",
+        ),
+    ] {
+        assert_eq!(
+            payload::transcript_path(Path::new("/c"), Some(cwd), "s"),
+            Path::new("/c").join("projects").join(slug).join("s.jsonl"),
+            "{cwd}"
+        );
+    }
     let r = payload_of(&mac_shape_context(&reset_in_an_hour()));
     assert!(r["hook_event_name"] == "Status" && r["session_id"] == "sess" && r["version"] == "2.1.274" && r["cwd"] == "/repo");
     assert_eq!(

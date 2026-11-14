@@ -6,16 +6,18 @@
 //! run only once the user allowed it for that workspace (the user's runs meanwhile), one command at a time, at most every 2 s. The
 //! status line's clock (every 500 ms) follows the state: a pane that became eligible gets its refresher and a reading; one that is
 //! not any longer loses it (its command let go before another starts); a pane whose record changed asks again (C#'s `Refresh`); and
-//! outside a smoke each asks by itself every 10 s while its run goes on and every 60 s at rest (`TickInterval`). What the card shows
-//! is what was drawn last (C# `webStatusLine`): the refresher's state as it changes, the trust answer's at once.
+//! outside a smoke each pane shown in the active workspace's layout asks by itself every 10 s while its run goes on and every 60 s at
+//! rest (`TickInterval`; C# ticks on-screen panes only). What the card shows is what was drawn last (C# `webStatusLine`): the
+//! refresher's state as it changes, the trust answer's at once. The user's settings are `<home>\.claude`'s, as C# reads them (never
+//! the CLI's `CLAUDE_CONFIG_DIR`).
 //!
 //! A smoke never reads the user's own settings: its home is the folder its step gives ([`smoke_home`]), else none.
 //!
 //! Locks: the status lines' lock is taken after the state's (the cards read it with the state locked), never before.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -25,7 +27,7 @@ use mighty_tools::status_line::refresher::{self, StatusLineRefresher};
 use mighty_tools::status_line::{StatusLineConfig, StatusLineContext, StatusLineResult, card, config, run, trust};
 use tauri::Manager;
 
-use crate::host::Host;
+use crate::host::{Host, View};
 
 /// The clock's pace.
 const CLOCK: Duration = Duration::from_millis(500);
@@ -55,6 +57,8 @@ struct StatusLines {
     /// Refreshers closed whose command may still run: a new one for the same pane waits for it (C# `statusLineStopping`).
     stopping: Mutex<HashMap<String, Arc<StatusLineRefresher>>>,
     clock: AtomicBool,
+    /// Turned each time the switch is set (set_enabled): a pass that read the state before makes nothing new.
+    switched: AtomicU64,
     /// A smoke's home folder (its step's), in place of the user's.
     smoke_home: Mutex<Option<PathBuf>>,
 }
@@ -76,14 +80,6 @@ fn home(host: &Host) -> Option<PathBuf> {
     if host.smoke.is_some() { lock(&of(host).smoke_home).clone() } else { Some(mighty_history::history::user_home()) }
 }
 
-/// The CLI environment (`CLAUDE_CONFIG_DIR`), never in a smoke.
-fn environment(host: &Host) -> Option<BTreeMap<String, String>> {
-    if host.smoke.is_some() {
-        return None;
-    }
-    host.runs().map(|runs| runs.catalog.environment().current().values)
-}
-
 /// C# `LocalPath(workspace)`: the folder of a workspace on this PC.
 fn local_path(snapshot: &AppSnapshot, workspace_id: &str) -> Option<String> {
     snapshot.workspace(workspace_id).filter(|w| w.remote.is_none()).map(|w| w.path().to_string())
@@ -97,7 +93,8 @@ fn context(host: &Host, pane: &RunSession, folder: &str) -> StatusLineContext {
     let (model_id, model_name) = card::model_label(pane, &catalog, &host.locale);
     let elapsed = pane.run_timing.as_ref().map(|timing| (mighty_run::timing::elapsed(timing, None) * 1000.0).max(0.0) as i64);
     let home = home(host).unwrap_or_default();
-    let config_dir = config::config_dir(Some(&home), environment(host).as_ref()).unwrap_or_else(|| home.join(".claude"));
+    // C# passes no environment (MainWindow.StatusLine.cs:135): always `<home>\.claude`, never the CLI's CLAUDE_CONFIG_DIR.
+    let config_dir = config::config_dir(Some(&home), None).unwrap_or_else(|| home.join(".claude"));
     card::context(
         pane,
         &card::ContextInputs {
@@ -115,8 +112,12 @@ fn context(host: &Host, pane: &RunSession, folder: &str) -> StatusLineContext {
 /// the state, its commands run through the host's `ProcessHost`; a change draws the card again.
 fn refresher(host: &Arc<Host>, pane: &str, workspace_id: &str, folder: &str) -> Arc<StatusLineRefresher> {
     let (reader, folder_path) = (host.clone(), PathBuf::from(folder));
-    let discover: refresher::Discover =
-        Arc::new(move || config::discover(Some(&folder_path), home(&reader).as_deref(), environment(&reader).as_ref()));
+    // The settings files read where the run task stands, as blocking work the runtime moves its other tasks away from; no environment,
+    // as C# reads them (MainWindow.StatusLine.cs:64): `<home>\.claude`, never CLAUDE_CONFIG_DIR.
+    let discover: refresher::Discover = Arc::new(move || {
+        let home = home(&reader);
+        tokio::task::block_in_place(|| config::discover(Some(&folder_path), home.as_deref(), None))
+    });
     let state = host.clone();
     let trusted: refresher::Trusted = Arc::new(move || state.view().snapshot.trusted_status_lines.clone());
     let processes = host.processes.clone();
@@ -139,27 +140,46 @@ fn refresher(host: &Arc<Host>, pane: &str, workspace_id: &str, folder: &str) -> 
     refresher
 }
 
+/// The pane views eligible for a status line, each `(id, record, workspace, folder)`, and the panes shown in the active workspace's
+/// layout (each tab group's selected pane).
+#[allow(clippy::type_complexity)]
+fn eligible_panes(host: &Host) -> (Vec<(String, Arc<RunSession>, String, String)>, HashSet<String>) {
+    let mut view = host.view();
+    let View { snapshot, layout_defaults, panes, .. } = &mut *view;
+    let eligible = snapshot
+        .sessions()
+        .iter()
+        .filter(|pane| panes.contains_key(pane.id()))
+        .filter_map(|pane| {
+            let folder = local_path(snapshot, pane.workspace_id());
+            card::eligible(snapshot, pane, folder.as_deref())
+                .then(|| (pane.id().to_string(), pane.clone(), pane.workspace_id().to_string(), folder.unwrap_or_default()))
+        })
+        .collect();
+    let active = snapshot.active_workspace_id.clone().unwrap_or_default();
+    let shown = mighty_core::shell::effective_layout(snapshot, &active, layout_defaults)
+        .map(|root| {
+            mighty_core::layout::groups(&root)
+                .into_iter()
+                .filter_map(|group| group.selected_session_id.clone().or_else(|| group.session_ids().next().map(str::to_string)))
+                .collect()
+        })
+        .unwrap_or_default();
+    (eligible, shown)
+}
+
 /// One pass of the clock (C#'s `RequestStatusLineRefresh` for every pane view, and its tick).
 fn pass(host: &Arc<Host>) {
-    let eligible: Vec<(String, Arc<RunSession>, String, String)> = {
-        let view = host.view();
-        let snapshot = &view.snapshot;
-        snapshot
-            .sessions()
-            .iter()
-            .filter(|pane| view.panes.contains_key(pane.id()))
-            .filter_map(|pane| {
-                let folder = local_path(snapshot, pane.workspace_id());
-                card::eligible(snapshot, pane, folder.as_deref())
-                    .then(|| (pane.id().to_string(), pane.clone(), pane.workspace_id().to_string(), folder.unwrap_or_default()))
-            })
-            .collect()
-    };
     let lines = of(host);
+    let switched = lines.switched.load(Ordering::SeqCst);
+    let (eligible, shown) = eligible_panes(host);
     let mut closed = false;
     let mut asks = vec![];
     {
         let mut map = lock(&lines.lines);
+        // The switch was turned since the panes were read (set_enabled): this pass makes nothing new from what it read then, and
+        // the pass set_enabled runs reads the state again (the state's lock comes before this one, so it is not read here).
+        let stale = lines.switched.load(Ordering::SeqCst) != switched;
         let mut stopping = lock(&lines.stopping);
         stopping.retain(|_, refresher| !refresher.is_stopped());
         map.retain(|id, line| {
@@ -176,15 +196,18 @@ fn pass(host: &Arc<Host>) {
         for (id, pane, workspace, folder) in &eligible {
             match map.get_mut(id) {
                 Some(line) => {
+                    // The timed reading only for a pane shown in the active workspace's layout (C# ticks on-screen panes only).
                     let running = pane.status() == "running";
-                    let ticked = host.smoke.is_none() && now.duration_since(line.asked_at) >= refresher::tick_interval(running);
+                    let ticked = host.smoke.is_none()
+                        && shown.contains(id)
+                        && now.duration_since(line.asked_at) >= refresher::tick_interval(running);
                     if ticked || !Arc::ptr_eq(&line.seen, pane) {
                         line.seen = pane.clone();
                         line.asked_at = now;
                         asks.push((line.refresher.clone(), pane.clone(), folder.clone(), false));
                     }
                 }
-                None if stopping.contains_key(id) => {}
+                None if stale || stopping.contains_key(id) => {}
                 None => {
                     let refresher = refresher(host, id, workspace, folder);
                     asks.push((refresher.clone(), pane.clone(), folder.clone(), true));
@@ -238,6 +261,7 @@ fn start(host: &Host) {
 #[allow(dead_code, reason = "a seam W6-A1 (Settings and the composer's toggle) calls")]
 pub fn set_enabled(host: &Arc<Host>, on: bool) {
     let saved = host.view().update(|state| state.status_line_enabled = on);
+    of(host).switched.fetch_add(1, Ordering::SeqCst);
     if let Err(error) = saved {
         host.log.line(&format!("status line: the setting was not saved: {error}"));
     }
@@ -310,4 +334,13 @@ pub fn smoke_state(host: &Host, pane: &str) -> serde_json::Value {
         "rows": rows,
         "error": shown.result.as_ref().and_then(|r| r.error_text.clone()),
     })
+}
+
+/// The smoke's pane read again at once (its step edited the workspace's command).
+pub fn smoke_refresh(host: &Arc<Host>, pane: &str) {
+    let line = lock(&of(host).lines).get(pane).map(|line| (line.refresher.clone(), line.folder.clone()));
+    let session = host.view().snapshot.session(pane).cloned();
+    if let (Some((refresher, folder)), Some(session)) = (line, session) {
+        refresher.request_refresh(context(host, &session, &folder), true);
+    }
 }

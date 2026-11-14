@@ -131,7 +131,7 @@ impl ToolkitStore {
     /// untouched.
     pub fn import(&self, json: &str) -> Result<(), String> {
         let mut state = self.require_loaded()?;
-        let root: Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
+        let root: Value = serde_json::from_str(file::unmarked(json)).map_err(|error| error.to_string())?;
         let items = match &root {
             Value::Array(items) => items,
             Value::Object(object) => match object.get("entries") {
@@ -262,10 +262,10 @@ fn load(path: &Path, state: &mut State) {
         }
         return;
     };
-    let text = String::from_utf8_lossy(&bytes);
-    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    // `File.ReadAllText`: the encoding the mark names (a UTF-16 file reads too), UTF-8 without one.
+    let text = file::decode_text(&bytes);
     let unreadable = || Some(strings::get("toolkit.error.unreadable"));
-    let Ok(root) = serde_json::from_str::<HashMap<String, &RawValue>>(text) else {
+    let Ok(root) = serde_json::from_str::<HashMap<String, &RawValue>>(&text) else {
         state.file_error = unreadable();
         return;
     };
@@ -279,7 +279,12 @@ fn load(path: &Path, state: &mut State) {
         return;
     };
     for raw in entries {
-        let Ok(item) = serde_json::from_str::<Value>(raw.get()) else { continue };
+        // An item the whole-document reader would refuse (C#'s `JsonDocument` throws for the file) makes the file unreadable, so a
+        // later save never drops it.
+        let Ok(item) = serde_json::from_str::<Value>(raw.get()) else {
+            state.file_error = unreadable();
+            return;
+        };
         let Some(item_id) = item.as_object().and_then(|o| o.get("id")).and_then(Value::as_str) else { continue };
         if item_id.is_empty() {
             continue;
@@ -374,40 +379,72 @@ fn install_json(entry: &ToolkitFileEntry) -> String {
     }
 }
 
-/// An other-OS entry's raw text without its approval, written again compactly (C# `JsonNode.ToJsonString()`).
+/// An other-OS entry's raw text without its approval, written again compactly (C# `JsonNode.ToJsonString()`): every number as its
+/// text in the file (a `JsonValue` over a `JsonElement` writes its raw text: `1.0` stays `1.0`, a number past 64 bits stays whole).
 fn without_approval(raw: &str) -> String {
-    let Ok(Value::Object(mut object)) = serde_json::from_str::<Value>(raw) else { return raw.to_string() };
-    object.shift_remove("approval");
+    let Ok(members) = serde_json::from_str::<Members>(raw) else { return raw.to_string() };
     let mut out = JsonOut::new();
-    write_value(&Value::Object(object), &mut out);
+    out.begin_object();
+    for (name, item) in members.0.iter().filter(|(name, _)| name != "approval") {
+        out.name(name);
+        write_raw(item, &mut out);
+    }
+    out.end_object();
     out.finish()
 }
 
-fn write_value(value: &Value, out: &mut JsonOut) {
-    match value {
-        Value::Null => out.null(),
-        Value::Bool(flag) => out.bool(*flag),
-        Value::Number(number) => match (number.as_i64(), number.as_u64(), number.as_f64()) {
-            (Some(int), _, _) => out.int(int),
-            (None, Some(unsigned), _) => out.float(unsigned as f64),
-            (_, _, Some(float)) => out.float(float),
-            _ => out.null(),
+/// An object's members in their order, each value still its raw text.
+struct Members(Vec<(String, Box<RawValue>)>);
+
+impl<'de> serde::Deserialize<'de> for Members {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Members, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = Members;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a JSON object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Members, A::Error> {
+                let mut members = Vec::new();
+                while let Some(member) = map.next_entry::<String, Box<RawValue>>()? {
+                    members.push(member);
+                }
+                Ok(Members(members))
+            }
+        }
+        deserializer.deserialize_map(Visitor)
+    }
+}
+
+/// One raw value written compactly: strings escaped as the writer escapes them, numbers and literals as their text.
+fn write_raw(raw: &RawValue, out: &mut JsonOut) {
+    let text = raw.get().trim();
+    match text.as_bytes().first() {
+        Some(b'{') => match serde_json::from_str::<Members>(text) {
+            Ok(members) => {
+                out.begin_object();
+                for (name, item) in &members.0 {
+                    out.name(name);
+                    write_raw(item, out);
+                }
+                out.end_object();
+            }
+            Err(_) => out.raw(text),
         },
-        Value::String(text) => out.str(text),
-        Value::Array(items) => {
-            out.begin_array();
-            for item in items {
-                write_value(item, out);
+        Some(b'[') => match serde_json::from_str::<Vec<Box<RawValue>>>(text) {
+            Ok(items) => {
+                out.begin_array();
+                for item in &items {
+                    write_raw(item, out);
+                }
+                out.end_array();
             }
-            out.end_array();
-        }
-        Value::Object(object) => {
-            out.begin_object();
-            for (name, item) in object {
-                out.name(name);
-                write_value(item, out);
-            }
-            out.end_object();
-        }
+            Err(_) => out.raw(text),
+        },
+        Some(b'"') => match serde_json::from_str::<String>(text) {
+            Ok(words) => out.str(&words),
+            Err(_) => out.raw(text),
+        },
+        _ => out.raw(text),
     }
 }

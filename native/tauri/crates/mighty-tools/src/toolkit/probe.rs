@@ -99,9 +99,17 @@ fn probe_mcp(name: &str, home: &Path) -> ProbeResult {
 }
 
 /// The skill's folder name: the URL's last path segment with a trailing `/` and `.git` (any case) taken off (C#
-/// `new Uri(url).Segments.LastOrDefault()?.TrimEnd('/')`). None when the address is no URL or names no segment.
+/// `new Uri(url).Segments.LastOrDefault()?.TrimEnd('/')`). None when the address is no URL, names no segment, or names one that is
+/// no folder name ([`skill_folder`]).
 pub fn skill_folder_name(url: &str) -> Option<String> {
-    let parsed = url::Url::parse(url).ok()?;
+    skill_folder(url).ok().flatten()
+}
+
+/// [`skill_folder_name`] with why it has none: an address that is no URL is an error (C#'s `new Uri` throws), as is a last segment
+/// that is no plain folder name — a drive (`D:evil`), a separator, `.` or `..`, or a character Windows refuses — which joined to
+/// `.claude\skills` would name a folder outside it. Ok(None) when the address names no segment.
+pub fn skill_folder(url: &str) -> Result<Option<String>, String> {
+    let parsed = url::Url::parse(url).map_err(|_| format!("Invalid URI: The format of the URI could not be determined. ({url})"))?;
     let path = parsed.path();
     let trimmed = path.strip_suffix('/').unwrap_or(path);
     let mut component = trimmed.rsplit('/').next().unwrap_or("").to_string();
@@ -111,7 +119,16 @@ pub fn skill_folder_name(url: &str) -> Option<String> {
     {
         component.truncate(component.len() - 4);
     }
-    (!component.is_empty()).then_some(component)
+    if component.is_empty() {
+        return Ok(None);
+    }
+    let plain = component != "."
+        && component != ".."
+        && !component.chars().any(|c| matches!(c, ':' | '\\' | '/' | '<' | '>' | '"' | '|' | '?' | '*') || c.is_control());
+    if !plain {
+        return Err(format!("The skill's folder name is not a folder in .claude\\skills: {component} ({url})"));
+    }
+    Ok(Some(component))
 }
 
 /// skill: `%USERPROFILE%\.claude\skills\<name>\SKILL.md`.
@@ -134,13 +151,26 @@ fn probe_npm(name: &str, path_directories: &[String]) -> ProbeResult {
             return ProbeResult::Installed;
         }
         // e.g. npm in %APPDATA%\npm with node_modules at the same level.
-        if let Some(parent) = folder.parent()
-            && parent.join("node_modules").join(name).is_dir()
+        if let Some(parent) = directory_name(dir)
+            && Path::new(parent).join("node_modules").join(name).is_dir()
         {
             return ProbeResult::Installed;
         }
     }
     ProbeResult::Missing
+}
+
+/// .NET's `Path.GetDirectoryName`: the text before the last separator (a root kept whole), None for a root or a bare name. A
+/// folder written with a trailing separator is its own directory name there (`C:\npm\` gives `C:\npm`), not its parent.
+fn directory_name(path: &str) -> Option<&str> {
+    let at = path.rfind(['\\', '/'])?;
+    let head = &path[..at];
+    let root_len = match head.as_bytes() {
+        [] => return (path.len() > 1).then(|| &path[..1]),
+        [letter, b':'] if letter.is_ascii_alphabetic() => 2,
+        _ => return Some(head),
+    };
+    (path.len() > root_len + 1).then(|| &path[..=root_len])
 }
 
 /// winget: the executable in `%LOCALAPPDATA%\Microsoft\WinGet\Links` or a PATH folder.
