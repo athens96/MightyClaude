@@ -1096,6 +1096,14 @@ fn the_hermes_menu_is_the_picker_the_last_session_offered() {
     assert!(!path.exists() && agents::hermes_cached_catalog(Some(&path)).models.len() == 1, "forgotten without a provider");
     agents::hermes_save_models(Some(&serde_json::json!([])), Some(&path));
     assert!(!path.exists(), "an empty picker changes nothing");
+    // Not C#'s own line: a kept file its deserializer would refuse is no picker at all.
+    std::fs::write(&path, r#"[{"value":"custom:a","displayName":"A","description":""},{"value":5}]"#).unwrap();
+    assert_eq!(agents::hermes_cached_catalog(Some(&path)).models.len(), 1, "a damaged file keeps nothing");
+    std::fs::write(&path, r#"[null,{"Value":"custom:a","DisplayName":"A","Description":""}]"#).unwrap();
+    assert!(
+        agents::hermes_cached_catalog(Some(&path)).models.iter().map(|m| m.value.as_str()).eq(["default", "custom:a"]),
+        "names in any case, a null row left out"
+    );
     let _ = std::fs::remove_dir_all(&folder);
 }
 

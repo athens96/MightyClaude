@@ -131,7 +131,7 @@ impl Runs {
         environment: Arc<dyn ShellEnvironment>,
         fake: Option<FakeClaude>,
         image_dir: PathBuf,
-        hermes_models: PathBuf,
+        catalog_storage: PathBuf,
     ) -> Arc<Runs> {
         mighty_run::strings::set_language(host.locale.language());
         // `{value:N0}` (the attachments' sizes) in the user's regional format, as C#'s current culture writes it.
@@ -170,7 +170,7 @@ impl Runs {
         });
         let catalog = Arc::new(ProviderCatalog::new(processes, environment, finder));
         // The picker the last Hermes session offered (C# `ProviderCatalog.HermesModelCache`) and the agents' shipped files.
-        catalog.set_hermes_model_cache(Some(hermes_models));
+        catalog.set_hermes_storage(Some(catalog_storage));
         if let Some(folder) = agent_files() {
             providers::set_agent_files(Some(folder));
         }

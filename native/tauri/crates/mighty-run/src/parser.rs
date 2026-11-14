@@ -795,12 +795,15 @@ impl OutputParser {
         }
     }
 
-    /// `Flush`: a streamed reply still held (Antigravity's deltas) goes out.
+    /// `Flush`: a streamed reply still held (Antigravity's deltas, an ACP agent's text) goes out; it is the graph's answer too.
     pub fn flush(&self) {
         let mut inner = lock(&self.inner);
         let text = inner.pending.trim_end().to_string();
         if !text.is_empty() {
             self.log("assistant", &text);
+            if let Some(answer) = &self.hooks.answer {
+                answer(&text);
+            }
         }
         if inner.pending_truncated {
             self.log("system", &strings::get("run.notice.messageTruncated"));

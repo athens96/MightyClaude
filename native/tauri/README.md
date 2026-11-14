@@ -203,8 +203,8 @@ it may (read-only through mighty-history's `acp`, `runs.rs` `hermes_session`); t
 2 s after the prompt's answer, a stop sending Hermes `session/cancel` a second before it ends the process. Their approvals are the pane's
 permission cards (`permissionAnswer`), their `elicitation/create` forms and Hermes's clarify the question card (`questionnaireAnswer`; the
 card's Cancel declines the form), and a lost sign-in ends the run with the `authentication` reason. The picker a Hermes session offered is
-Hermes's model list from then on (`HermesAgent.CachedCatalog`: the profile's `hermes-models.json` with `--allow-state-write`, else
-`%LOCALAPPDATA%\dev.mightycode.tauri\hermes-models\<profile>\hermes-models.json`), read again when a Hermes pane's run ends (C#
+Hermes's model list from then on (`HermesAgent.CachedCatalog`: `hermes-models.json` in the catalogue's storage folder, the profile with
+`--allow-state-write`, else `%LOCALAPPDATA%\dev.mightycode.tauri\provider-catalog\<profile>`), read again when a Hermes pane's run ends (C#
 `RefreshModelsAfterHermesRun`). The two agents' sign-in states (`mighty_run::acp::accounts`: `opencode_status` over `opencode auth list`,
 `hermes_probe` and `hermes_status`, as `CliAccountStatus`) are ready for the accounts section and the sign-in card (W6), which do not ask
 them yet.

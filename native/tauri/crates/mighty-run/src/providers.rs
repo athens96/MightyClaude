@@ -5,7 +5,7 @@
 //! Deviations, until their stages: the last list each CLI gave is kept in memory only (C#'s `KeptModelLists` file is W5/W6), so a
 //! restart starts from the built-in lists; pi's shipped question extension (`AgentFiles`) is W5 — pi runs without the `ask_user` tool
 //! unless [`set_agent_files`] names the folder that holds it. Hermes lists the picker its last session offered
-//! (`HermesAgent.CachedCatalog`, kept where [`ProviderCatalog::set_hermes_model_cache`] says; none kept: only its own default).
+//! (`HermesAgent.CachedCatalog`, kept in the folder [`ProviderCatalog::set_hermes_storage`] names; none kept: only its own default).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -859,8 +859,8 @@ pub struct ProviderCatalog {
     gate: tokio::sync::Mutex<RuntimeCache>,
     /// `KeptModelLists` in memory: the newest list each CLI gave, per workspace (None: outside any) and per provider.
     kept: Mutex<HashMap<(String, Option<String>), ModelCatalog>>,
-    /// `HermesModelCache`: where the picker the last Hermes session offered is kept (none: nothing is kept).
-    hermes_model_cache: Mutex<Option<PathBuf>>,
+    /// C#'s `storageDirectory` as far as Hermes reads it: the folder `HermesModelCache` is in (none: nothing is kept).
+    hermes_storage: Mutex<Option<PathBuf>>,
 }
 
 impl ProviderCatalog {
@@ -874,19 +874,19 @@ impl ProviderCatalog {
             overrides: Mutex::new(HashMap::new()),
             gate: tokio::sync::Mutex::new(RuntimeCache { cached: None, directory: None, refreshed: None }),
             kept: Mutex::new(HashMap::new()),
-            hermes_model_cache: Mutex::new(None),
+            hermes_storage: Mutex::new(None),
         }
     }
 
-    /// Where the picker the last Hermes session offered is kept (C#: `hermes-models.json` in the storage folder; none without one, so
-    /// a checks' fake Hermes never writes over a user's).
-    pub fn set_hermes_model_cache(&self, path: Option<PathBuf>) {
-        *lock(&self.hermes_model_cache) = path;
+    /// The catalogue's storage folder for Hermes's picker (C# `new ProviderCatalog(storageDirectory: …)`): `hermes-models.json` is kept
+    /// there; none, so a checks' fake Hermes never writes over a user's. The same folder as the kept model lists' (C# keeps both in it).
+    pub fn set_hermes_storage(&self, directory: Option<PathBuf>) {
+        *lock(&self.hermes_storage) = directory;
     }
 
-    /// `HermesModelCache`.
+    /// `HermesModelCache`: `hermes-models.json` in the storage folder.
     pub fn hermes_model_cache(&self) -> Option<PathBuf> {
-        lock(&self.hermes_model_cache).clone()
+        lock(&self.hermes_storage).as_ref().map(|folder| folder.join(crate::acp::agents::HERMES_MODEL_CACHE_FILE))
     }
 
     pub fn processes(&self) -> Arc<dyn ProcessHost> {

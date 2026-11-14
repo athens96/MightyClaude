@@ -201,16 +201,12 @@ fn main() {
     } else {
         platform.paths.local_dir().join("image-cache").join(platform.paths.profile_key())
     };
-    // The picker the last Hermes session offered likewise (C# `hermes-models.json` in the profile).
-    let hermes_models = if options.allow_state_write {
-        data_dir.join(mighty_run::acp::agents::HERMES_MODEL_CACHE_FILE)
+    // The CLIs' catalogue's storage folder likewise (C# `new ProviderCatalog(storageDirectory: profile)`, where `hermes-models.json`, the
+    // picker the last Hermes session offered, is kept beside the kept model lists).
+    let catalog_storage = if options.allow_state_write {
+        data_dir.clone()
     } else {
-        platform
-            .paths
-            .local_dir()
-            .join("hermes-models")
-            .join(platform.paths.profile_key())
-            .join(mighty_run::acp::agents::HERMES_MODEL_CACHE_FILE)
+        platform.paths.local_dir().join("provider-catalog").join(platform.paths.profile_key())
     };
     // The work map's summaries likewise, and its git's empty hooks folder this machine's own (workmap.rs).
     let workmap_folders = workmap::Folders::new(platform.paths.as_ref(), options.allow_state_write);
@@ -267,7 +263,7 @@ fn main() {
                 platform.environment.clone(),
                 fake_claude.clone(),
                 image_dir.clone(),
-                hermes_models.clone(),
+                catalog_storage.clone(),
             );
             // Terminal panes, the agents' terminals, terminal prompts and shell block runs (terminal.rs).
             terminal::Terminals::start(&host, &platform);

@@ -302,6 +302,19 @@ pub fn hermes_cached_catalog(path: Option<&Path>) -> ModelCatalog {
         .and_then(|p| std::fs::read(p).ok())
         .and_then(|data| serde_json::from_slice::<Value>(&data).ok());
     let Some(Value::Array(rows)) = stored else { return empty };
+    // `JsonSerializer.Deserialize<List<ModelOption>>` refuses the whole file for a row that is not an object, or a field of the record
+    // with another kind of value: then nothing was kept. A null row is left out.
+    let typed = |row: &Map<String, Value>| {
+        row.iter().all(|(key, value)| match key.to_ascii_lowercase().as_str() {
+            "value" | "displayname" | "description" | "resolvedmodel" => value.is_string() || value.is_null(),
+            "supportseffort" => value.is_boolean() || value.is_null(),
+            "supportedeffortlevels" => value.is_null() || value.as_array().is_some_and(|l| l.iter().all(|i| i.is_string() || i.is_null())),
+            _ => true,
+        })
+    };
+    if !rows.iter().all(|row| row.is_null() || row.as_object().is_some_and(typed)) {
+        return empty;
+    }
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::from(["default".to_string()]);
     let mut models = vec![fallback.models[0].clone()];
     for row in rows.iter().take(providers::listed_model_limit("hermes")) {
