@@ -16,11 +16,24 @@ test = false
 doc = false
 
 [dependencies]
+mighty-core.workspace = true
+mighty-platform.workspace = true
+# RuntimeInfo, ProviderRuntime, SupportsMods, CliDiscovery.VersionText and the process language (`strings`, C# `Locale.Get`).
+mighty-run.workspace = true
+# The status line card's input (`StatusLineInput`, `StatusRun`), which `status_line::input` fills.
+mighty-composer.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
 chrono.workspace = true
 regex.workspace = true
 sha2.workspace = true
-base64 = "0.22"
+uuid.workspace = true
+url = "2"
+tokio = { workspace = true, features = ["sync", "time", "rt", "macros", "io-util"] }
 
-# W6 Step 0 lists the dependencies before any code uses them; this table goes once the crate's code does.
-[lints.cargo]
-unused_dependencies = "allow"
+[dev-dependencies]
+tokio = { workspace = true, features = ["sync", "time", "rt", "rt-multi-thread", "macros", "io-util"] }
+
+# The checks that run the stand-in through Windows' own ProcessHost and the setup folder's ACLs.
+[target.'cfg(windows)'.dev-dependencies]
+mighty-platform-windows.workspace = true
