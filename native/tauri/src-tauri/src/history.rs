@@ -247,8 +247,16 @@ pub fn remember_session(host: &Host, id: &str) {
     }
 }
 
-/// `ResumeQuery(workspace)`: the folder's records under the CLI homes, open panes' sessions left out, the app's own never hidden.
-fn query(host: &Host, view: &View, folder: &str) -> ResumableSessionQuery {
+/// C# `LocalFolder(workspace)`: a workspace's folder on this computer; none for a remote workspace, whose sessions are its host's
+/// (M/AppStore+ResumeSession.swift: its agent pane starts new).
+fn local_folder(workspace: &Workspace) -> Option<&str> {
+    (workspace.remote.is_none() && !workspace.path().is_empty()).then(|| workspace.path())
+}
+
+/// `ResumeQuery(workspace)`: the folder's records under the CLI homes, open panes' sessions left out, the app's own never hidden; none
+/// for a remote workspace.
+fn query(host: &Host, view: &View, workspace: &Workspace) -> Option<ResumableSessionQuery> {
+    let folder = local_folder(workspace)?;
     let history = of(host);
     let mut environment = history.environment();
     // opencode's and Hermes's databases move with these as the CLIs' own do; the smoke's own home stands alone.
@@ -266,17 +274,18 @@ fn query(host: &Host, view: &View, folder: &str) -> ResumableSessionQuery {
     query.home = history.home();
     query.excluding = resumable::in_use(view.snapshot.sessions().iter().map(|s| s.as_ref()));
     query.known = known_sessions(host);
-    query
+    Some(query)
 }
 
 /// `AddAgentPane`'s look-up: whether the folder has a session of this agent to continue (the head of one record only, nested runs
 /// hidden, open panes' sessions left out). It reads files: call it off the page's thread. Any failure reading the records means nothing
-/// to offer (`AddPaneMenu.AsksResume` then decides with the panes open when it ends).
+/// to offer (`AddPaneMenu.AsksResume` then decides with the panes open when it ends), and so does a remote workspace.
 pub fn look_up(host: &Host, provider: &str, workspace: &Workspace) -> ResumableSessionListing {
-    let mut query = {
+    let query = {
         let view = host.view();
-        query(host, &view, workspace.path())
+        query(host, &view, workspace)
     };
+    let Some(mut query) = query else { return ResumableSessionListing::default() };
     query.head_only = true;
     query.maximum_sessions = 1;
     resumable::listing_of(&query, provider, &mighty_history::Never)
@@ -312,7 +321,7 @@ pub fn pick(host: &Host, view: &View, listing: &ResumableSessionListing, session
 /// `WebResumeRows`: the rows of the resume list frame.rs says is open (C# `webResume`) for the page's search, read again when "모든
 /// 세션 보기" changed; null when no list is open.
 async fn resume_rows(host: Arc<Host>, search: String, all: bool) -> Result<Value, String> {
-    let Some(crate::frame::OpenResume { provider, path, .. }) = crate::frame::open_resume(&host) else { return Ok(Value::Null) };
+    let Some(crate::frame::OpenResume { provider, workspace_id, .. }) = crate::frame::open_resume(&host) else { return Ok(Value::Null) };
     let history = of(&host);
     let (serial, cached, cached_all) = {
         let list = lock(&history.resume);
@@ -322,10 +331,12 @@ async fn resume_rows(host: Arc<Host>, search: String, all: bool) -> Result<Value
     let listing = match cached {
         Some(listing) if cached_all == all => listing,
         _ => {
-            let mut query = {
+            // The workspace as it is now: one that went, or is another computer's, lists nothing.
+            let query = {
                 let view = host.view();
-                query(&host, &view, &path)
+                view.snapshot.workspace(&workspace_id).cloned().and_then(|workspace| query(&host, &view, &workspace))
             };
+            let Some(mut query) = query else { return Ok(Value::Null) };
             query.include_automated = all;
             let reading = provider.clone();
             let listing = tauri::async_runtime::spawn_blocking(move || resumable::listing_of(&query, &reading, &mighty_history::Never))
@@ -412,4 +423,29 @@ pub fn register(methods: &mut Registry) {
         resume_rows(host, search, flag(&args, "all")).await
     });
     crate::workmap::register(methods);
+}
+
+#[cfg(test)]
+mod tests {
+    use mighty_core::model::RemoteWorkspaceReference;
+
+    use super::*;
+
+    /// C# `ResumeQuery(LocalFolder(workspace))`: only a workspace on this computer has sessions to continue here (W4 review C10).
+    #[test]
+    fn only_a_local_workspace_is_asked_for_its_sessions() {
+        let local = Workspace { id: Some("w".into()), path: Some("C:\\work".into()), ..Workspace::default() };
+        assert_eq!(local_folder(&local), Some("C:\\work"));
+        let remote = Workspace {
+            remote: Some(RemoteWorkspaceReference {
+                connection_id: Some("c".into()),
+                workspace_id: Some("w".into()),
+                host_name: Some("mac".into()),
+                version: 2,
+            }),
+            ..local.clone()
+        };
+        assert_eq!(local_folder(&remote), None, "a remote workspace's sessions are its host's");
+        assert_eq!(local_folder(&Workspace { path: Some(String::new()), ..local }), None, "no folder, nothing to read");
+    }
 }
