@@ -320,6 +320,8 @@ fn main() {
             app.manage(host.clone());
             // The user's settings outside the state (the text setting: frame.rs).
             app.manage(platform.prefs.clone());
+            // W6's ports: the terminal window, the font families, the HTTPS GET (platform.rs; a smoke's fakes).
+            app.manage(platform::ports(host.smoke.is_some()));
             let dispatcher = host.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(message) = calls.recv().await {
