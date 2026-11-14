@@ -8,7 +8,8 @@
 //! | `ProviderCatalog.cs` | [`providers`] |
 //! | `KeptModelLists.cs` (`KeptModelLists`, `ModelListNotices`) | [`kept_lists`] |
 //! | `ModelSelection.cs` (`ModelSelectionSupport`, `ModelCatalogRefresh`), `ClaudeModelReset.cs` | [`model_selection`] |
-//! | `PhaseModelPreferences.cs` (the run's part) | [`phase_models`] |
+//! | `PhaseModelPreferences.cs`, `PhaseModelRouting.cs`, `PhaseModelSection.cs` (its data; W6 draws the screen) | [`phase_models`], [`phase_routing`], [`phase_section`] |
+//! | `ModelSettingsFileStore.cs`, `OmcAgentCatalog.cs` | [`model_settings`] |
 //! | `ToolPermissions.cs`, `ToolPermissionPresentation.cs`, `ToolPermissionStrings.cs` | [`permissions`], [`presentation`] |
 //! | `UserQuestionnaire.cs`, `QuestionnaireProgress.cs`, `AgentQuestions.cs` | [`questionnaire`] |
 //! | `OutputParser.cs` (Claude), `ClaudeStream` | [`parser`], [`stream`] |
@@ -36,11 +37,14 @@ pub mod manager;
 pub mod meta;
 pub mod model;
 pub mod model_selection;
+pub mod model_settings;
 pub mod mods;
 pub mod os;
 pub mod parser;
 pub mod permissions;
 pub mod phase_models;
+pub mod phase_routing;
+pub mod phase_section;
 pub mod plan_mode;
 pub mod presentation;
 pub mod providers;
