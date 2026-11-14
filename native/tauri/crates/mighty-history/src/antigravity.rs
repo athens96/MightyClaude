@@ -5,68 +5,20 @@
 //! sub-agents, their parent. Read-only.
 
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 
 use mighty_core::json;
 use mighty_core::locale::Locale;
-use mighty_core::time::{self, DateTimeOffset};
-use regex::Regex;
 use serde_json::{Map, Value, json};
 
 use crate::scan::{self, contains, text};
 use crate::{files, sqlite};
 
-static UUID: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\A[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\z").expect("regex"));
-static SPAWNED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""conversationId":\s*"(?<id>[0-9A-Fa-f-]{36})""#).expect("regex"));
-
-/// `%USERPROFILE%\.gemini\antigravity-cli`.
-pub fn folder(home: &Path) -> PathBuf {
-    home.join(".gemini").join("antigravity-cli")
-}
-
-pub fn brain(home: &Path) -> PathBuf {
-    folder(home).join("brain")
-}
-
-pub fn database(home: &Path) -> PathBuf {
-    folder(home).join("conversation_summaries.db")
-}
-
-/// `ConversationID`: None for anything that is not a conversation id.
-pub fn conversation_id(value: Option<&str>) -> Option<&str> {
-    value.filter(|v| UUID.is_match(v))
-}
-
-/// `Transcript`: None for anything that is not a conversation id, so no path leaves the brain folder.
-pub fn transcript(brain: &Path, conversation: &str) -> Option<PathBuf> {
-    conversation_id(Some(conversation))?;
-    Some(brain.join(conversation).join(".system_generated").join("logs").join("transcript_full.jsonl"))
-}
-
-/// `BrainOf`: the brain folder a transcript lies in.
-pub fn brain_of(transcript: &Path) -> PathBuf {
-    let mut path = transcript.to_path_buf();
-    for _ in 0..4 {
-        if let Some(parent) = path.parent() {
-            path = parent.to_path_buf();
-        }
-    }
-    path
-}
-
-/// `Request`: what the user typed, the `<USER_REQUEST>` part of a USER_INPUT step.
-pub fn request(content: Option<&str>) -> Option<String> {
-    let content = content?;
-    let mut text = content;
-    if let Some(start) = content.find("<USER_REQUEST>") {
-        let from = start + "<USER_REQUEST>".len();
-        let end = content[from..].find("</USER_REQUEST>").map_or(content.len(), |e| e + from);
-        text = &content[from..end];
-    }
-    let trimmed = text.trim();
-    (!trimmed.is_empty()).then(|| trimmed.to_string())
-}
+/// The records' helpers the live parser and the sub-agent watcher read too (mighty-run's `antigravity::records`, C#
+/// `AntigravityRecords`): the paths, the steps' parts and their outcome.
+pub use mighty_run::antigravity::records::{
+    Outcome, brain, brain_of, conversation_id, database, date, error_text, folder, message, outcome_of, parameters, request,
+    spawned_conversations, stream_state, title, tool_text, transcript,
+};
 
 /// `Opening`: the request a USER_INPUT line opens, with when it was written and its key ("step<index>"). Lines without the word are
 /// rejected on their raw bytes first; however agy spaces its JSON, a line that has it is parsed.
@@ -81,116 +33,6 @@ pub fn opening(line: &[u8]) -> Option<(String, Option<String>, Option<String>)> 
     let prompt = request(json::text(&value, "content"))?;
     let key = json::integer(&value, "step_index").map(|index| format!("step{index}"));
     Some((prompt, json::text(&value, "created_at").map(str::to_string), key))
-}
-
-/// `Message`: the text of a `[Message] … sender=<id> … content=…` system message from `sender`.
-pub fn message(content: Option<&str>, sender: &str) -> Option<String> {
-    let content = content?;
-    let needle = format!("sender={sender} ");
-    // `IndexOf(…, OrdinalIgnoreCase)`: the ids and the marker are ASCII.
-    let start = (0..=content.len().checked_sub(needle.len())?)
-        .find(|at| content.as_bytes()[*at..*at + needle.len()].eq_ignore_ascii_case(needle.as_bytes()))?;
-    let after = start + 8 + sender.len();
-    let body = content.get(after..)?.find(" content=")? + after;
-    let mut text = &content[body + " content=".len()..];
-    if let Some(end) = text.rfind("</SYSTEM_MESSAGE>") {
-        text = &text[..end];
-    }
-    let trimmed = text.trim();
-    (!trimmed.is_empty()).then(|| trimmed.to_string())
-}
-
-/// `ToolText`: a tool step's text without agy's "Created At:" / "Completed At:" header.
-pub fn tool_text(content: Option<&str>) -> Option<String> {
-    let content = content?;
-    let cut: String = if content.encode_utf16().count() > 65_536 {
-        String::from_utf16_lossy(&content.encode_utf16().take(65_536).collect::<Vec<_>>())
-    } else {
-        content.to_string()
-    };
-    let mut lines: Vec<&str> = cut.split('\n').collect();
-    while let Some(first) = lines.first() {
-        if first.starts_with("Created At: ") || first.starts_with("Completed At: ") || first.trim().is_empty() {
-            lines.remove(0);
-        } else {
-            break;
-        }
-    }
-    let text = lines.join("\n").trim().to_string();
-    (!text.is_empty()).then_some(text)
-}
-
-/// `Outcome`: DONE (or none) went through, ERROR failed, anything else (CANCELED, INTERRUPTED, …) was cut short.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Outcome {
-    Done,
-    Failed,
-    Stopped,
-}
-
-pub fn outcome_of(status: Option<&str>) -> Outcome {
-    match status.unwrap_or("DONE").to_uppercase().as_str() {
-        "DONE" => Outcome::Done,
-        "ERROR" => Outcome::Failed,
-        _ => Outcome::Stopped,
-    }
-}
-
-/// `StreamState`: the stream state the live parser reads for that status.
-pub fn stream_state(outcome: Outcome) -> &'static str {
-    match outcome {
-        Outcome::Done => "DONE",
-        Outcome::Failed => "ERROR",
-        Outcome::Stopped => "CANCELED",
-    }
-}
-
-/// `Date`: when a step was written, None when it does not say.
-pub fn date(step: &Value) -> Option<DateTimeOffset> {
-    time::parse(json::text(step, "created_at"))
-}
-
-/// `ErrorText`.
-pub fn error_text(value: Option<&Value>) -> Option<String> {
-    let text = match value {
-        Some(Value::String(s)) => Some(s.as_str()),
-        other => text(other, "message"),
-    };
-    text.filter(|t| !t.is_empty()).map(str::to_string)
-}
-
-/// `Title(role, typeName)`: "File Reader (research)", as agy names a sub-agent's messages.
-pub fn title(role: Option<&str>, type_name: Option<&str>) -> Option<String> {
-    let name = role.map(str::trim).unwrap_or("");
-    let kind = type_name.map(str::trim).unwrap_or("");
-    if name.is_empty() {
-        return (!kind.is_empty()).then(|| kind.to_string());
-    }
-    Some(if kind.is_empty() || kind == name { name.to_string() } else { format!("{name} ({kind})") })
-}
-
-/// `Parameters`: a recorded tool call's arguments as the live stream's parameters (no `toolAction` / `toolSummary`).
-pub fn parameters(args: Option<&Value>) -> Value {
-    let mut result = Map::new();
-    if let Some(Value::Object(fields)) = args {
-        for (name, value) in fields {
-            if name != "toolAction" && name != "toolSummary" {
-                result.insert(name.clone(), value.clone());
-            }
-        }
-    }
-    Value::Object(result)
-}
-
-/// `SpawnedConversations`: the conversation ids an `invoke_subagent` result step names.
-pub fn spawned_conversations(content: Option<&str>) -> Vec<String> {
-    let Some(content) = content else { return vec![] };
-    let cut: String = if content.encode_utf16().count() > 65_536 {
-        String::from_utf16_lossy(&content.encode_utf16().take(65_536).collect::<Vec<_>>())
-    } else {
-        content.to_string()
-    };
-    SPAWNED.captures_iter(&cut).filter_map(|c| c.name("id")).filter_map(|m| conversation_id(Some(m.as_str())).map(str::to_string)).collect()
 }
 
 fn step(fields: Map<String, Value>) -> Value {

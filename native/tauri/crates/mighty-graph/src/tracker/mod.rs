@@ -18,7 +18,7 @@ mod advisor;
 mod claude;
 mod codex;
 mod notices;
-mod others;
+pub(crate) mod others;
 
 use std::collections::{HashMap, HashSet};
 

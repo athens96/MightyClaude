@@ -4,6 +4,8 @@
 //! `RunManagerOptions.graph` a [`TrackerFactory`]; the runner then publishes each request's graph run every second and at its end, with
 //! the notice runs its background work opened, as C#'s does.
 
+use std::path::Path;
+
 use mighty_core::graph::MightyGraphRun;
 use mighty_core::json::Wire;
 use mighty_core::locale::Locale;
@@ -11,6 +13,7 @@ use mighty_core::model::{AgentActivity, LogEntry};
 use mighty_run::graph::{GraphFactory, GraphSink, GraphStart};
 use serde_json::Value;
 
+use crate::antigravity::{AntigravitySubagentWatcher, Limits};
 use crate::tracker::{ModGraphMetadata, ModMetadata};
 use crate::{ExecutionGraphNode, ExecutionGraphTracker};
 
@@ -69,13 +72,20 @@ impl GraphFactory for TrackerFactory {
             None,
             locale,
         );
-        Box::new(TrackerSink { tracker })
+        Box::new(TrackerSink::new(tracker))
     }
 }
 
-/// One run's tracker behind the runner's calls.
+/// One run's tracker behind the runner's calls, with the watcher of an Antigravity run's sub-agents once the stream named one.
 pub struct TrackerSink {
     pub tracker: ExecutionGraphTracker,
+    antigravity: Option<AntigravitySubagentWatcher>,
+}
+
+impl TrackerSink {
+    pub fn new(tracker: ExecutionGraphTracker) -> TrackerSink {
+        TrackerSink { tracker, antigravity: None }
+    }
 }
 
 impl GraphSink for TrackerSink {
@@ -114,6 +124,20 @@ impl GraphSink for TrackerSink {
     }
     fn antigravity_answer(&mut self, text: &str) {
         self.tracker.antigravity_answer(text);
+    }
+    /// C# `ReadChildren`'s Antigravity half: the watcher made once the stream named a sub-agent (the run's own conversation never
+    /// followed), each snapshot it reads handed to `AntigravitySession`.
+    fn antigravity_children(&mut self, brain: &Path, namespace: &str, closing: bool) {
+        let known = self.tracker.antigravity_subagents().to_vec();
+        if self.antigravity.is_none() && !known.is_empty() {
+            let root = self.tracker.antigravity_conversation().map(str::to_string);
+            self.antigravity = Some(AntigravitySubagentWatcher::new(brain, namespace, root.as_deref(), None, Limits::default()));
+        }
+        let Some(watcher) = self.antigravity.as_mut() else { return };
+        let children = if closing { watcher.finish(&known) } else { watcher.poll(&known) };
+        for child in children {
+            self.tracker.antigravity_session(&child);
+        }
     }
     fn codex_root_thread(&self) -> Option<String> {
         self.tracker.codex_root_thread().map(str::to_string)

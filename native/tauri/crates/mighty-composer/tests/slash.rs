@@ -482,3 +482,27 @@ fn a_typed_builtin_is_submitted_as_the_app_action() {
     assert!(sub("/clear", true).is_none() && sub("hello", false).is_none());
     assert!(palette::submitted("claude", "shell", "/clear", false, None, &l).is_none());
 }
+
+/// AntigravityVerification.cs:493 `TheConversationListAndSkills`, its skills: agy's own, the user's, and the workspace's
+/// `.agents/skills` (the project's wins over the user's of the same name).
+#[test]
+fn antigravity_skills() {
+    let l = en();
+    let root = Temp::new("agy-skills");
+    let home = root.path().join("home");
+    let workspace = root.path().join("work").join("demo project");
+    let agy = home.join(".gemini").join("antigravity-cli");
+    write(
+        &agy.join("builtin").join("skills").join("automation").join("SKILL.md"),
+        "---\nname: automation\ndescription: Schedule a task\n---\n",
+    );
+    write(&agy.join("skills").join("review").join("SKILL.md"), "---\nname: review\ndescription: Mine\n---\n");
+    write(
+        &workspace.join(".agents").join("skills").join("review").join("SKILL.md"),
+        "---\nname: review\ndescription: The project's\n---\n",
+    );
+    let commands = slash::commands("gemini", Some(&workspace), &home, &DiskFiles, &l);
+    assert_eq!(invocations(&commands), ["automation", "review"], "skills");
+    assert_eq!(commands[0].source, strings::antigravity_skill_source(&l), "agy's own skill");
+    assert!(commands[1].description == "The project's" && commands[1].origin == SlashCommandOrigin::Project, "the project's wins");
+}

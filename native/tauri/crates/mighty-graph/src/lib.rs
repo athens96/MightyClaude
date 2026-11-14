@@ -8,6 +8,7 @@
 
 pub mod activity;
 pub mod agent_definitions;
+pub mod antigravity;
 pub mod block_prefs;
 pub mod camera;
 pub mod dot_grid;
