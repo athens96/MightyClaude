@@ -215,6 +215,7 @@ fn confirm_and_input_are_cards_a_timed_dialog_closes_itself_and_an_editor_is_sti
     let card = run.pending().first().cloned().unwrap();
     let timers = run.lists().timers.clone();
     assert!(timers.len() == 1 && timers[0].0 == card.id && timers[0].1 == 1.5, "a deadline");
+    // What the deadline does once it passes; the run's own timer that calls it is pi.rs's `a_timed_dialogs_card_goes_when_the_runs_deadline_passes`.
     run.dialogs.timed_out(&card.id);
     assert!(
         run.pending().is_empty()

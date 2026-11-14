@@ -1039,7 +1039,7 @@ impl Exec {
             && request.kind != "shell"
             && let Some(permission) = inner.options.permission_requested.clone()
         {
-            let (write_run, emit_run, timer_run) = (run.clone(), run.clone(), run.clone());
+            let (write_run, emit_run, timer_run) = (run.clone(), run.clone(), Arc::downgrade(&run));
             let row = Arc::downgrade(&parser);
             let (warning_run, warning_emit) = (run.clone(), emit.clone());
             let dialogs = Arc::new(PiDialogChannel::new(
@@ -1057,12 +1057,17 @@ impl Exec {
                         }
                     }),
                     warning: Arc::new(move |message| Exec::log(&warning_run, &warning_emit, "system", message)),
-                    // pi answers a dialog with a deadline itself when it passes: the card goes then too.
+                    // pi answers a dialog with a deadline itself when it passes: the card goes then too. The wait holds no run (its
+                    // stdin among it) and ends with the run.
                     timer: Some(Arc::new(move |id: &str, seconds: f64| {
+                        let Some(mut ended) = timer_run.upgrade().map(|run| run.done.subscribe()) else { return };
                         let (run, id) = (timer_run.clone(), id.to_string());
                         tokio::spawn(async move {
-                            tokio::time::sleep(Duration::from_secs_f64(seconds.min(86_400.0))).await;
-                            if let Some(dialogs) = run.pi_dialogs() {
+                            tokio::select! {
+                                _ = tokio::time::sleep(Duration::from_secs_f64(seconds.min(86_400.0))) => {}
+                                _ = ended.wait_for(|done| *done) => return,
+                            }
+                            if let Some(dialogs) = run.upgrade().and_then(|run| run.pi_dialogs()) {
                                 dialogs.timed_out(&id);
                             }
                         });

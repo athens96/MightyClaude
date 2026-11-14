@@ -4,7 +4,8 @@
 //! - `--fake-cli <provider> <record> [args…]`: records its arguments in `<record>.args` (a JSON array) and plays C#'s fake: with
 //!   `--permission-prompt-tool` Claude's stdio control protocol (the handshake, one tool request, the plan, resumed-agent and
 //!   background fixtures); with `app-server` or `--safe-mode` the model-list sessions; as `pi`, `pi --mode rpc` answering from
-//!   `--pi-fixture <recording>` (`--pi-hang`, `--pi-steer`); otherwise reads stdin to its end into `<record>.prompt` and answers as
+//!   `--pi-fixture <recording>` (`--pi-hang`, `--pi-steer`, `--pi-hold-start`, `--pi-pause-before-end`); otherwise reads stdin to its
+//!   end into `<record>.prompt` and answers as
 //!   Codex's exec (or agy) would; with `--agy-denied <settings>` as C#'s `FakeAgy` (refused `echo hi` on a new conversation, continued
 //!   it says whether the settings allow it), with `--agy-signin-lost` or `--agy-quoted` agy's lost sign-in on stderr or as its answer.
 //! - `--model-list-cli <provider> <state> [args…]`: each CLI's model-list read, answered with the real CLI's recorded output
@@ -21,7 +22,7 @@
 
 use std::fs::OpenOptions;
 use std::io::{BufRead, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -186,10 +187,13 @@ fn fake_cli(provider: &str, record: &str, args: &[String]) {
 /// A pi that answers on stdin as `pi --mode rpc` does, from a fixture (`--pi-fixture <file>`), and exits when stdin ends
 /// (PiVerification.cs:360 `FakeAsync`): `get_state` answered with the first line; a prompt with the next three, then (after
 /// `--pi-hang`'s minute, or the steer `--pi-steer` reads) the rest; with `--pi-dialogs` (the app's smoke) it waits for the answer to
-/// each dialog it shows (`extension_ui_request` but `notify`) as pi does. Every line it reads is kept in `<record>.stdin`.
+/// each dialog it shows (`extension_ui_request` but `notify`) as pi does. Every line it reads is kept in `<record>.stdin`. Not C#'s:
+/// `--pi-hold-start <file>` holds `agent_start` back until the file exists, and `--pi-pause-before-end <ms>` waits that long before
+/// `agent_end`; stdin is read on a thread of its own, so `<record>.eof` says whether its end came before `agent_end` was written.
 fn fake_pi(record: &str, args: &[String]) {
     let has = |flag: &str| args.iter().any(|a| a == flag);
-    let path = args.iter().position(|a| a == "--pi-fixture").and_then(|at| args.get(at + 1)).cloned().unwrap_or_default();
+    let value = |flag: &str| args.iter().position(|a| a == flag).and_then(|at| args.get(at + 1)).cloned();
+    let path = value("--pi-fixture").unwrap_or_default();
     let fixture: Vec<String> = std::fs::read_to_string(&path)
         .unwrap_or_default()
         .split('\n')
@@ -197,7 +201,23 @@ fn fake_pi(record: &str, args: &[String]) {
         .filter(|line| !line.is_empty())
         .collect();
     let stdin = format!("{record}.stdin");
-    while let Some(line) = read_line() {
+    let eof = format!("{record}.eof");
+    let hold = value("--pi-hold-start");
+    let pause = value("--pi-pause-before-end").and_then(|ms| ms.parse::<u64>().ok());
+    let ended = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (lines, incoming) = std::sync::mpsc::channel::<String>();
+    let reader = ended.clone();
+    std::thread::spawn(move || {
+        while let Some(line) = read_line() {
+            if lines.send(line).is_err() {
+                return;
+            }
+        }
+        reader.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    let next = || incoming.recv().ok();
+    let mut agent_end = false;
+    while let Some(line) = next() {
         append(&stdin, &format!("{line}\n"));
         if line.contains("\"get_state\"") {
             if let Some(first) = fixture.first() {
@@ -205,33 +225,47 @@ fn fake_pi(record: &str, args: &[String]) {
             }
         } else if line.contains("\"prompt\"") {
             for output in fixture.iter().skip(1).take(3) {
+                if output.contains("\"type\":\"agent_start\"")
+                    && let Some(file) = &hold
+                {
+                    let until = std::time::Instant::now() + Duration::from_secs(30);
+                    while !Path::new(file).exists() && std::time::Instant::now() < until {
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                }
                 say(output);
             }
             if has("--pi-hang") {
                 std::thread::sleep(Duration::from_secs(60));
             }
             if has("--pi-steer")
-                && let Some(steer) = read_line()
+                && let Some(steer) = next()
             {
                 append(&stdin, &format!("{steer}\n"));
             }
             for output in fixture.iter().skip(4) {
+                if output.contains("\"type\":\"agent_end\"") {
+                    if let Some(ms) = pause {
+                        std::thread::sleep(Duration::from_millis(ms));
+                    }
+                    if ended.load(std::sync::atomic::Ordering::SeqCst) && !agent_end {
+                        let _ = std::fs::write(&eof, "before agent_end");
+                    }
+                    agent_end = true;
+                }
                 say(output);
                 let asks = output.contains("\"extension_ui_request\"") && !output.contains("\"method\":\"notify\"");
                 if has("--pi-dialogs")
                     && asks
-                    && let Some(answer) = read_line()
+                    && let Some(answer) = next()
                 {
-                    append(
-                        &stdin,
-                        &format!(
-                            "{answer}
-"
-                        ),
-                    );
+                    append(&stdin, &format!("{answer}\n"));
                 }
             }
         }
+    }
+    if !Path::new(&eof).exists() {
+        let _ = std::fs::write(&eof, if agent_end { "after agent_end" } else { "without agent_end" });
     }
 }
 
