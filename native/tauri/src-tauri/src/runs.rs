@@ -23,7 +23,7 @@ use mighty_run::antigravity::AntigravityRuleLeases;
 use mighty_run::model::{CliCommand, ModelCatalog, ProviderRuntime};
 use mighty_run::parser::{ImageError, ImageStore};
 use mighty_run::providers::{self, Finder, ProviderCatalog};
-use mighty_run::service::{Configure, RunService, RunServiceOptions};
+use mighty_run::service::{Configure, RunService, RunServiceOptions, ServiceEvent};
 
 use crate::host::Host;
 
@@ -32,8 +32,9 @@ const IMAGE_CACHE_BYTES: u64 = 200 * 1_048_576;
 
 /// The smoke's stand-in Claude (mighty-run's `mighty-fake-cli --replay-cli`): asks one Bash permission and one plan, then replays a
 /// recording; its stand-in pi (`--fake-cli pi … --pi-fixture pi-rpc-question.jsonl --pi-dialogs`), which asks one question through the
-/// app's `ask_user` tool; and its Antigravity, the same binary as C#'s fake agy (`--agy-denied`, refused `echo hi` on a new
-/// conversation) over the smoke's own agy settings ([`FakeClaude::agy_settings`]). Every other provider is missing.
+/// app's `ask_user` tool; its Antigravity, the same binary as C#'s fake agy (`--agy-denied`, refused `echo hi` on a new conversation)
+/// over the smoke's own agy settings ([`FakeClaude::agy_settings`]); and the ACP step's opencode (`--fake-acp`, smoke_acp.rs). Every
+/// other provider is missing.
 #[derive(Debug, Clone)]
 pub struct FakeClaude {
     pub binary: PathBuf,
@@ -79,6 +80,29 @@ impl ImageStore for CacheStore {
     }
 }
 
+/// What Hermes's `state.db` says of a session a run would continue (C# `HermesSessions.MessageCount`, `StartedWithFullAccess` of
+/// `StateDatabase(environment)`), read through mighty-history; read-only.
+fn hermes_session(environment: &std::collections::BTreeMap<String, String>, session: &str) -> (Option<i32>, Option<bool>) {
+    let environment: HashMap<String, String> = environment.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let database = mighty_history::acp::hermes_state_database(&environment, None);
+    (
+        mighty_history::acp::hermes_message_count(&database, session),
+        mighty_history::acp::hermes_started_with_full_access(&database, session),
+    )
+}
+
+/// A Hermes pane's run ended (C# `RefreshModelsAfterHermesRun`): the folder whose model list is read again, so the models its session
+/// offered are in the menu. None for anything else, and in a smoke (which asks no CLI).
+fn hermes_run_ended(host: &Host, event: &ServiceEvent) -> Option<Option<String>> {
+    let ServiceEvent::Run { event, .. } = event else { return None };
+    if host.smoke.is_some() || event.kind != "status" || !matches!(event.status.as_deref(), Some("completed" | "error" | "stopped")) {
+        return None;
+    }
+    let view = host.view();
+    let pane = view.snapshot.session(&event.session_id).filter(|s| s.kind() == "claude" && s.provider() == "hermes")?;
+    Some(view.snapshot.workspace(pane.workspace_id()).filter(|w| w.remote.is_none()).map(|w| w.path().to_string()))
+}
+
 /// The mighty-bridge plugin the Claude runs load (C#: `mods/mighty-bridge` copied next to the app as `claude-mods`): beside the exe
 /// when it was put there, else the repository's own (a development build).
 pub fn plugin_directory() -> String {
@@ -97,8 +121,8 @@ pub fn plugin_directory() -> String {
 }
 
 /// The agents' files the app ships (C# `AgentFiles`: the Mac bundle's Resources/Agents, which the C# build copies next to its exe as
-/// `Agents`; pi's `ask_user` extension among them): beside the exe when they were put there, else the repository's own (a development
-/// build).
+/// `Agents`; pi's `ask_user` extension and opencode's question instructions among them): beside the exe when they were put there, else
+/// the repository's own (a development build).
 pub fn agents_directory() -> PathBuf {
     let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join("Agents")));
     match beside.filter(|dir| dir.is_dir()) {
@@ -159,11 +183,26 @@ impl Runs {
                 ],
                 Some("1.4.4"),
             );
+            // The ACP step's opencode: the stand-in replaying a recorded session that asks one question (smoke_acp.rs).
+            let state = crate::smoke_acp::state(&fake.record);
+            let _ = std::fs::create_dir_all(&state);
+            let opencode = CliCommand::new(
+                fake.binary.to_string_lossy().into_owned(),
+                vec![
+                    "--fake-acp".into(),
+                    state.to_string_lossy().into_owned(),
+                    crate::smoke_acp::fixture().to_string_lossy().into_owned(),
+                    // The question waits for the page's answer, as a real agent's does.
+                    "--fake-await-answers".into(),
+                ],
+                Some("opencode v2.2.7"),
+            );
             let finder: Finder = Arc::new(move |provider: String| {
                 let found = match provider.as_str() {
                     "claude" => Some(command.clone()),
                     "pi" => Some(pi.clone()),
                     "gemini" => Some(agy.clone()),
+                    "opencode" => Some(opencode.clone()),
                     _ => None,
                 };
                 Box::pin(async move { found })
@@ -193,6 +232,7 @@ impl Runs {
             options.images = Some(store);
             options.file_originals = originals;
             options.antigravity_rules = Some(antigravity);
+            options.hermes_session = Some(Arc::new(hermes_session));
         });
         let snapshot = host.view().snapshot.clone();
         let (service, mut events) = RunService::new(
@@ -211,7 +251,17 @@ impl Runs {
         let pump = host.clone();
         tauri::async_runtime::spawn(async move {
             while let Some(event) = events.recv().await {
+                let hermes = hermes_run_ended(&pump, &event);
                 pump.service_event(event);
+                if let Some(folder) = hermes {
+                    let host = pump.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Some(runs) = host.runs().cloned() {
+                            runs.refresh("hermes", folder.as_deref()).await;
+                            host.panes_changed();
+                        }
+                    });
+                }
             }
         });
         let reader = host.clone();

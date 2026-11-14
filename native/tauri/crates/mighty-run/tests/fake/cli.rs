@@ -13,6 +13,11 @@
 //!   answers, then replays the recording (native/contracts/fixtures/<recording>.jsonl) and ends once its input closes.
 //! - `--codex-approval-fixture [args…]`: Codex's `app-server` for one approval turn (CodexApprovalVerification.cs:141 `FakeCliAsync`):
 //!   the handshake, one command approval that must be accepted, the answer, the turn's end, then stdin must end.
+//! - `--fake-acp <state> <fixture> [--fake-linger|--fake-stall|--fake-await-answers] [args…]` (C# AcpRunVerification.FakeAcpAsync): an ACP agent that answers
+//!   the channel's requests with a recorded opencode or Hermes session (each `mighty-…` answer only after one request line), records its
+//!   argv, its environment and its stdin in `<state>`, and plays Hermes's `config get/set` over `<state>/hermes-config.json`.
+//! - `--hermes-acp-cli <state> <mode> [args…]` (C# AcpAgentAccountVerification.FakeHermesAsync): `hermes acp` as 0.23.1 answers the
+//!   sign-in probe, by `<mode>` (`answer`, `unconfigured`, `error`, `missing`, `silent`; `file` reads it from `<state>/mode.txt`).
 
 use std::fs::OpenOptions;
 use std::io::{BufRead, Read, Write};
@@ -60,6 +65,8 @@ fn main() {
         Some("--model-list-cli") if args.len() >= 3 => model_list_cli(&args[1], &args[2], &args[3..]),
         Some("--replay-cli") if args.len() >= 3 => replay_cli(&args[1], &args[2], &args[3..]),
         Some("--codex-approval-fixture") => codex_approval_fixture(&args[1..]),
+        Some("--fake-acp") if args.len() >= 3 => fake_acp(&args[1], &args[2], &args[3..]),
+        Some("--hermes-acp-cli") if args.len() >= 3 => fake_hermes(&args[1], &args[2], &args[3..]),
         // C# `--long-child <pid file>`: a shell pane's command that writes its id and runs until it is stopped.
         Some("--long-child") if args.len() >= 2 => {
             let _ = std::fs::write(&args[1], std::process::id().to_string());
@@ -661,4 +668,137 @@ fn replay_cli(recording: &str, record: &str, args: &[String]) {
             _ => {}
         }
     }
+}
+
+/// An ACP agent replaying a recorded session (C# `AcpRunVerification.FakeAcpAsync`): each answer to one of the channel's requests
+/// (`"id":"mighty-…"`) goes only after one request line was read; `--fake-stall` stops before the prompt's answer and `--fake-linger`
+/// keeps the server up after its input ended, both for a minute. `--fake-await-answers` (not C#'s: its checks answer no card) also waits,
+/// after each request of the agent's own (a permission, a form), for the client's answer line before it goes on, as a real agent does.
+fn fake_acp(state: &str, fixture_path: &str, rest: &[String]) {
+    let linger = rest.iter().any(|a| a == "--fake-linger");
+    let stall = rest.iter().any(|a| a == "--fake-stall");
+    let await_answers = rest.iter().any(|a| a == "--fake-await-answers");
+    let args: Vec<&String> = rest.iter().filter(|a| !a.starts_with("--fake-")).collect();
+    let state = PathBuf::from(state);
+    if args.len() == 1 && args[0] == "--version" {
+        let version = std::fs::read_to_string(state.join("version")).unwrap_or_else(|_| "opencode v2.2.7".into());
+        say(&version);
+        return;
+    }
+    let config = state.join("hermes-config.json");
+    let values = || -> serde_json::Map<String, Value> {
+        std::fs::read_to_string(&config).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    };
+    let log = state.join("config.log").to_string_lossy().into_owned();
+    if args.len() == 4 && args[0] == "config" && args[1] == "get" && args[2] == "--json" {
+        let key = args[3];
+        append(&log, &format!("get {key}\n"));
+        match values().get(key.as_str()) {
+            Some(value) => say(&value.to_string()),
+            None => {
+                eprintln!("Config key not set: {key}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    if args.len() == 4 && args[0] == "config" && args[1] == "set" {
+        let mut stored = values();
+        stored.insert(args[2].clone(), serde_json::from_str(args[3]).unwrap_or(Value::Null));
+        let _ = std::fs::write(&config, Value::Object(stored).to_string());
+        append(&log, &format!("set {} {}\n", args[2], args[3]));
+        return;
+    }
+    let _ = std::fs::write(state.join("argv.json"), serde_json::to_string(&args).unwrap_or_default());
+    let env = json!({
+        "OPENCODE_CONFIG_CONTENT": std::env::var("OPENCODE_CONFIG_CONTENT").ok(),
+        "HERMES_YOLO_MODE": std::env::var("HERMES_YOLO_MODE").ok(),
+    });
+    let _ = std::fs::write(state.join("env.json"), env.to_string());
+    let stdin = state.join("stdin.txt").to_string_lossy().into_owned();
+    let recorded = std::fs::read_to_string(fixture_path).unwrap_or_default();
+    // The client's requests read while waiting for an answer, each still owed its recorded answer.
+    let mut requests: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    let frame = |line: &str| serde_json::from_str::<Value>(line).unwrap_or(Value::Null);
+    let method = |line: &str| frame(line).get("method").is_some();
+    let is_request = |line: &str| method(line) && frame(line).get("id").is_some_and(|id| !id.is_null());
+    for line in recorded.split('\n').map(|l| l.trim_end_matches('\r')).filter(|l| !l.is_empty()) {
+        if stall && line.contains("\"stopReason\"") {
+            break;
+        }
+        if line.contains("\"id\":\"mighty-") && requests.pop_front().is_none() {
+            let Some(request) = read_line() else { return };
+            append(&stdin, &format!("{request}\n"));
+        }
+        say(line);
+        if await_answers && is_request(line) {
+            // The recording's updates came before the client's next request: a request read here waits for its own answer, and a
+            // notification is no answer.
+            loop {
+                let Some(next) = read_line() else { return };
+                append(&stdin, &format!("{next}\n"));
+                if is_request(&next) {
+                    requests.push_back(next);
+                } else if !method(&next) {
+                    break;
+                }
+            }
+        }
+    }
+    while let Some(extra) = read_line() {
+        append(&stdin, &format!("{extra}\n"));
+    }
+    if linger || stall {
+        std::thread::sleep(Duration::from_secs(60));
+    }
+}
+
+/// The first line of a fixture that is not empty.
+fn fixture_line(name: &str) -> String {
+    fixture(name).split('\n').map(|l| l.trim_end_matches('\r')).find(|l| !l.is_empty()).unwrap_or("").to_string()
+}
+
+/// `hermes acp` as 0.23.1 answers the sign-in probe (C# `AcpAgentAccountVerification.FakeHermesAsync`): it reads the one request, answers
+/// with the recorded line (after a log line on standard error), then serves until its input ends.
+fn fake_hermes(state: &str, mode: &str, args: &[String]) {
+    let state = PathBuf::from(state);
+    let mode = if mode == "file" {
+        std::fs::read_to_string(state.join("mode.txt")).unwrap_or_default().trim().to_string()
+    } else {
+        mode.to_string()
+    };
+    let _ = std::fs::write(state.join(format!("{mode}.argv.json")), serde_json::to_string(args).unwrap_or_default());
+    let folder = state.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let marker = std::env::current_dir().unwrap_or_default().join(format!("mighty-hermes-probe-{folder}.marker"));
+    let run = json!({"NO_COLOR": std::env::var("NO_COLOR").ok(), "inTemporaryFolder": if marker.exists() { "yes" } else { "no" }});
+    let _ = std::fs::write(state.join(format!("{mode}.run.json")), run.to_string());
+    if args.len() != 1 || args[0] != "acp" {
+        eprintln!("hermes: error: argument command: invalid choice: '{}'", args.join(" "));
+        std::process::exit(2);
+    }
+    if mode == "missing" {
+        eprintln!("The ACP server can't start: its protocol packages are missing from this install.");
+        eprintln!("From the Hermes environment, run: hermes pm install --extra acp");
+        std::process::exit(1);
+    }
+    let request = read_line();
+    let _ = std::fs::write(state.join(format!("{mode}.stdin")), request.as_deref().unwrap_or("<none>"));
+    eprintln!("2026-11-11 01:18:54 [INFO] acp_adapter.entry: serving ACP on stdio");
+    let answer = match mode.as_str() {
+        "answer" => Some(format!("warning line\n{}", fixture_line("hermes-acp-answer.jsonl"))),
+        "unconfigured" => Some(fixture_line("hermes-acp-unconfigured.jsonl")),
+        "error" => Some(
+            "{\"jsonrpc\":\"2.0\",\"id\":\"mighty-1\",\"error\":{\"code\":-32603,\"message\":\"Internal error\",\"data\":{\"details\":\"boom\"}}}"
+                .to_string(),
+        ),
+        _ => None,
+    };
+    if let Some(answer) = answer {
+        say(&answer);
+    }
+    let mut more = 0;
+    while read_line().is_some() {
+        more += 1;
+    }
+    let _ = std::fs::write(state.join(format!("{mode}.closed")), format!("input ended after {more} more line(s)"));
 }

@@ -30,8 +30,6 @@ pub(super) struct PiState {
     /// The latest assistant message pi ended with `stopReason: error`, until a retry or a later message answers it; still set at
     /// `Flush`, it fails the run.
     error: Option<String>,
-    /// `AuthenticationFailure`: pi's own sign-in failure as its stream said it last.
-    pub(super) authentication_failure: bool,
     /// The app's `ask_user` calls that are running: a dialog titled with one's question belongs to it.
     asking: IndexMap<String, (String, bool)>,
 }
@@ -96,7 +94,7 @@ impl OutputParser {
                 if matches!(meta::prop(root, "success"), Some(Value::Bool(false))) {
                     let rejected = Self::error_text(meta::prop(root, "error"), &failed_words());
                     inner.failed = true;
-                    inner.pi.authentication_failure = failure::pi(&rejected);
+                    inner.authentication_failure = failure::pi(&rejected);
                     self.log("error", &rejected);
                 } else if meta::text(root, "command") == Some("get_state")
                     && let Some(data) = meta::prop(root, "data").filter(|d| d.is_object())
@@ -146,7 +144,7 @@ impl OutputParser {
                 }
                 inner.pi.error = (meta::text(message, "stopReason") == Some("error"))
                     .then(|| Self::error_text(meta::prop(message, "errorMessage"), &failed_words()));
-                inner.pi.authentication_failure = inner.pi.error.as_deref().is_some_and(failure::pi);
+                inner.authentication_failure = inner.pi.error.as_deref().is_some_and(failure::pi);
             }
             Some(event @ ("tool_execution_start" | "tool_execution_update" | "tool_execution_end")) => {
                 let ended = event == "tool_execution_end";
@@ -191,7 +189,7 @@ impl OutputParser {
             Some("auto_retry_start") => {
                 inner.pi.retrying = true;
                 inner.pi.error = None;
-                inner.pi.authentication_failure = false;
+                inner.authentication_failure = false;
                 let attempt = meta::integer(root, "attempt").unwrap_or(0).to_string();
                 let maximum = meta::integer(root, "maxAttempts").unwrap_or(0).to_string();
                 let error = activity::clean(Some(meta::text(root, "errorMessage").unwrap_or("")), 512, true);
@@ -205,7 +203,7 @@ impl OutputParser {
                 if matches!(meta::prop(root, "success"), Some(Value::Bool(false))) {
                     let last = Self::error_text(meta::prop(root, "finalError"), &failed_words());
                     inner.failed = true;
-                    inner.pi.authentication_failure = failure::pi(&last);
+                    inner.authentication_failure = failure::pi(&last);
                     self.log("error", &last);
                 }
             }

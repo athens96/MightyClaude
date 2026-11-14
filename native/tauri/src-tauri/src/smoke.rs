@@ -17,8 +17,9 @@
 //! - the work map and the resume flow end to end, from the add menu's Claude entry to the resumed pane's older requests (smoke_history.rs);
 //! - with git on PATH, a clone through the Git sheet, then a rename sheet that survives a page reload (smoke_frame.rs).
 //!
-//! With `--smoke-fake-cli` the run steps follow (smoke_runs.rs: the composer, the permission and plan cards, the Mighty diagram, the
-//! progress panel and a stop, against mighty-run's stand-in CLI); with `--smoke-real-claude` one real request to the installed
+//! With `--smoke-fake-cli` an opencode run's question card answered from the page (smoke_acp.rs) and the run steps follow (smoke_runs.rs:
+//! the composer, the permission and plan cards, the Mighty diagram, the progress panel and a stop, against mighty-run's stand-in CLI);
+//! with `--smoke-real-claude` one real request to the installed
 //! `claude` CLI follows the first probe instead of the page's steps.
 //!
 //! The host adds whether its own state took the click, the calls it saw and the methods it answered "unimplemented", and writes
@@ -70,12 +71,14 @@ enum Stage {
     Create,
     /// A rename sheet open while the page loads again: drawn again and answered (smoke_frame.rs).
     Reload,
+    /// An opencode run's question card answered from the page (smoke_acp.rs), with the stand-in CLI.
+    Acp,
     Runs,
 }
 
 /// The steps after the first probe, in their order: each one that can start does (`Smoke::start`), the run steps last.
-const STEPS: [Stage; 8] =
-    [Stage::Frame, Stage::Browser, Stage::Terminal, Stage::Files, Stage::History, Stage::Create, Stage::Reload, Stage::Runs];
+const STEPS: [Stage; 9] =
+    [Stage::Frame, Stage::Browser, Stage::Terminal, Stage::Files, Stage::History, Stage::Create, Stage::Reload, Stage::Acp, Stage::Runs];
 
 const PROBE: &str = r#"(async () => {
   const until = async (test, ms) => { const end = performance.now() + ms; while (performance.now() < end) { const v = test(); if (v) return v; await new Promise((r) => setTimeout(r, 50)); } return test(); };
@@ -223,6 +226,7 @@ struct Progress {
     /// The `gitProgress` pushes the page was sent.
     git_progress: usize,
     reload: Option<Value>,
+    acp: Option<Value>,
     /// The reload step's page is loading again: its `ready` brings the probe.
     reload_waiting: bool,
     reload_ready: bool,
@@ -244,6 +248,7 @@ impl Progress {
             Stage::History => Some(&mut self.history),
             Stage::Create => Some(&mut self.create),
             Stage::Reload => Some(&mut self.reload),
+            Stage::Acp => Some(&mut self.acp),
             Stage::Runs => None,
         }
     }
@@ -394,6 +399,7 @@ impl Smoke {
             Stage::History => page_steps && crate::smoke_history::start(host),
             Stage::Create => page_steps && self.start_create(host),
             Stage::Reload => page_steps && self.start_reload(host),
+            Stage::Acp => self.mode == Mode::FakeClaude && crate::smoke_acp::start(host),
             Stage::Runs => self.start_runs(host),
         }
     }
@@ -659,6 +665,10 @@ impl Smoke {
         match self.mode {
             Mode::Page => {}
             Mode::FakeClaude => {
+                let acp = self.progress().acp.clone().unwrap_or_else(|| json!({"error": "the ACP step did not report"}));
+                for (name, passed) in crate::smoke_acp::checks(host, &acp) {
+                    checks[name] = json!(passed);
+                }
                 let empty = json!({"error": "the run steps did not report"});
                 let r = runs.as_ref().unwrap_or(&empty);
                 let yes = |key: &str| r.get(key) == Some(&Value::Bool(true));
@@ -727,6 +737,7 @@ impl Smoke {
             "gitCreate": create,
             "gitProgressPushes": git_progress,
             "reload": reload,
+            "acp": self.progress().acp.clone(),
             "runs": runs,
             "mode": format!("{:?}", self.mode),
             "host": {"workspaces": workspaces, "panes": panes, "theme": theme, "activeSessionId": active, "language": host.locale.language()},

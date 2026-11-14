@@ -447,7 +447,7 @@ async fn fake_cli_receives_attachment_bytes_and_staging_is_removed() {
         mighty_run::attachments::make("source.cs", b"attachment-fixture-contents").unwrap(),
     ];
     let events = Events::default();
-    // pi and the ACP agents take their attachments in their own channels (tests/pi.rs, PiVerification; AcpVerification).
+    // pi and the ACP agents take their attachments in their own channels (tests/pi.rs, PiVerification; tests/acp.rs, AcpVerification).
     for provider in mighty_core::wire::PROVIDERS.iter().copied().filter(|p| *p != "pi" && !mighty_run::providers::is_acp(p)) {
         let record = directory.join(provider);
         let catalog = common::fake_catalog(&["--fake-cli", provider, &record.to_string_lossy(), "--verify-attachments"]);

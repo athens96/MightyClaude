@@ -21,19 +21,20 @@ to mighty-run's `OutputParser`, its tool rows routed by `ExecutionGraphTracker.a
 | RuntimeParityVerification.cs:103-126 `ChildActivitiesStayInTheirGraph` (whole; not listed here before) | tests/runtime_parity.rs `child_activities_stay_in_their_graph` |
 | FlowStepsVerification.cs:98-108 `ThePaneKeepsTheStepsThroughItsEvents`, FlowStepsVerification.cs:219-224 `AnACPAgentsPlanIsTheRequestsSteps` | mighty-run tests/flow_steps.rs (the W2-A port already held both whole) |
 | ResumedAgentVerification.cs:116-131 and :136-164 | mighty-run tests/stream_parser.rs `an_agent_resumed_from_a_steered_turn_waits_once_that_turn_ends`, tests/runner.rs `the_runner_keeps_the_input_open_for_a_resumed_agent` |
+| AcpGraphVerification.cs:67-79 `EveryRecordingIsTheMacsGraph` (whole; ported in W5-B) | tests/acp_graphs.rs `every_recording_is_the_macs_graph` |
+| AcpRunVerification.cs:71-132, the graph parts (`LastGraph`, the pane's block of `AnOpencodeRunsBlockKeepsItsRepliesAndToolRows`; W5-B) | tests/acp_graphs.rs `runs::*`, over real runs: this crate builds mighty-run's stand-in CLI as its own `[[bin]]` (`mighty-graph-fake-cli`) |
 
 Still left (each needs more than the two crates' public rules, or a fixture the port has not made):
 
-- AcpGraphVerification.cs:67-79 `EveryRecordingIsTheMacsGraph` (whole): opencode/hermes recordings through `AcpChannel`, which mighty-run
-  does not have yet (W5). `OpencodeAndHermesPanesDrawTheGraph` is ported (tests/tracker_views.rs).
 - ResumedAgentVerification.cs:82, 84-86, 88-91 (inside `AnAgentResumedFromANoticeTurnKeepsThePaneWaitingUntilItsNotification`): the queue
   policy's answers on the replayed pane (`BackgroundQueuePolicy.WaitsOnBackground`, `SteersRunNext`, `StopKeepsQueue`, `QueueRunNow.Decide`
   giving Steer) and the strip's rows. The rules are mighty-composer's (`queue::background`, `queue::decide`) and the replay mighty-run's
   (tests/stream_parser.rs:540); the strip's rows are `PlanCardSupport.BackgroundStripRows` (the phone's module, below).
 - GraphVectorVerification.cs:503-551 `RecordedFromARun` (whole): Claude, Codex, Gemini and shell runs through `RunManager` over a real
   child (C#'s fake in its `--fake-cli <provider>` mode) with the real tracker. mighty-run's `mighty-fake-cli` plays that mode, but it is a
-  `[[bin]]` only mighty-run's own tests can name, and those cannot reach the tracker without a dependency cycle; a mighty-graph test needs
-  a way to find (and build) the binary first.
+  `[[bin]]` only mighty-run's own tests can name, and those cannot reach the tracker without a dependency cycle. Since W5-B this crate
+  builds the same source as its own `[[bin]]` (`mighty-graph-fake-cli`, `env!("CARGO_BIN_EXE_mighty-graph-fake-cli")`, as tests/acp_graphs.rs
+  uses it), so the check can be ported here; it has not been yet.
 - RuntimeParityVerification.cs:128-200 `ChildImagesReachTheirGraphAndGallery` and :202-260 `RunnerPreservesChildOwnershipAndImagesAcrossRestore`:
   the parser's picture path into the tracker (`graphImages`) with the picture cache, and C#'s fake in its `--runtime-parity-cli` mode
   (not in `mighty-fake-cli`), with the same binary question as `RecordedFromARun`.

@@ -3,11 +3,12 @@
 //! (`ReadModelsAsync` for Claude and Codex, `ReadListCommandAsync` for agy, pi and opencode, `GetRuntimeAsync`).
 //!
 //! The last list each CLI gave is kept ([`crate::kept_lists`], C# `KeptModelLists`): in memory, and in the storage folder when the
-//! catalog has one ([`ProviderCatalog::with_storage`], C#'s `storageDirectory`), so a restart still has it.
+//! catalog has one ([`ProviderCatalog::with_storage`], C#'s `storageDirectory`), so a restart still has it. Hermes lists the picker its
+//! last session offered (`HermesAgent.CachedCatalog`, `hermes-models.json` in the same folder: [`ProviderCatalog::hermes_model_cache`];
+//! none kept, only its own default).
 //!
-//! Deviations, until their stages: Hermes's model picker (`HermesAgent.CachedCatalog`) is W5 — Hermes lists only its own default
-//! here. The agents' shipped files (`AgentFiles`: pi's `ask_user` extension) are looked up in `Agents` beside the executable, or in
-//! the folder [`set_agent_files`] names (the app names the repository's own in a development build).
+//! The agents' shipped files (`AgentFiles`: pi's `ask_user` extension, opencode's question instructions) are looked up in `Agents`
+//! beside the executable, or in the folder [`set_agent_files`] names (the app names the repository's own in a development build).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -906,6 +907,12 @@ impl ProviderCatalog {
         self.storage.as_deref()
     }
 
+    /// `HermesModelCache`: `hermes-models.json` in the storage folder, beside the kept model lists as C# keeps both; none without one,
+    /// so a checks' fake Hermes never writes over a user's.
+    pub fn hermes_model_cache(&self) -> Option<PathBuf> {
+        self.storage_directory().map(|folder| folder.join(crate::acp::agents::HERMES_MODEL_CACHE_FILE))
+    }
+
     pub fn processes(&self) -> Arc<dyn ProcessHost> {
         self.processes.clone()
     }
@@ -1245,7 +1252,8 @@ impl ProviderCatalog {
             None => {
                 fallback(id).with_failure(strings::get_with("run.error.cliExecutableMissing", &[("name", strings::provider_label(id))]))
             }
-            Some(_) if id == "hermes" => fallback("hermes"),
+            // Hermes lists models only inside a session: the picker its last session offered is kept and read here.
+            Some(_) if id == "hermes" => crate::acp::agents::hermes_cached_catalog(self.hermes_model_cache().as_deref()),
             Some(command) if matches!(id, "gemini" | "pi" | "opencode") => self.read_list_command(id, command, Some(directory)).await,
             Some(command) => self.read_models(id, command, Some(directory), None).await,
         };

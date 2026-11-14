@@ -24,6 +24,7 @@ mod panes;
 mod platform;
 mod runs;
 mod smoke;
+mod smoke_acp;
 mod smoke_files;
 mod smoke_frame;
 mod smoke_history;
@@ -204,8 +205,9 @@ fn main() {
     } else {
         platform.paths.local_dir().join("image-cache").join(platform.paths.profile_key())
     };
-    // The CLIs' catalogue's storage (C# ProviderCatalog's storageDirectory: the last list each CLI gave, `model-lists.json`) likewise:
-    // the profile folder, else this machine's local folder for the profile.
+    // The CLIs' catalogue's storage (C# ProviderCatalog's storageDirectory: the last list each CLI gave, `model-lists.json`, and beside
+    // it the picker the last Hermes session offered, `hermes-models.json`) likewise: the profile folder, else this machine's local folder
+    // for the profile.
     let catalog_dir = if options.allow_state_write {
         data_dir.clone()
     } else {
