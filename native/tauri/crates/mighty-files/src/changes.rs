@@ -622,21 +622,37 @@ fn blob(number: usize) -> String {
     format!("{number}.txt")
 }
 
+/// A blob name as [`blob`] writes it (`<number>.txt`); C# refuses only separators and `..`, which still let a stream name
+/// (`1.txt:hidden`) or a device name through.
 fn safe_blob(blob: &str) -> bool {
-    !blob.contains('/') && !blob.contains('\\') && !blob.contains("..")
+    blob.strip_suffix(".txt").is_some_and(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// The folders directly in `folder` (none when it cannot be read).
+/// A folder of the store itself: never a link, a junction or any other reparse point, which prune would walk into (and delete
+/// through) elsewhere on the disk.
+fn real_folder(item: &std::fs::DirEntry) -> bool {
+    // The entry's own type and attributes: neither follows a link.
+    let plain = item.file_type().is_ok_and(|t| t.is_dir() && !t.is_symlink());
+    #[cfg(windows)]
+    let plain = plain && {
+        use std::os::windows::fs::MetadataExt as _;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        item.metadata().is_ok_and(|m| m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0)
+    };
+    plain
+}
+
+/// The folders directly in `folder` (none when it cannot be read), links left out.
 fn folders(folder: &Path) -> Vec<PathBuf> {
-    std::fs::read_dir(folder).map(|items| items.flatten().map(|i| i.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default()
+    std::fs::read_dir(folder).map(|items| items.flatten().filter(real_folder).map(|i| i.path()).collect()).unwrap_or_default()
 }
 
 fn temporary_files(folder: &Path, out: &mut Vec<PathBuf>) {
     for item in std::fs::read_dir(folder).into_iter().flatten().flatten() {
         let path = item.path();
-        if path.is_dir() {
+        if real_folder(&item) {
             temporary_files(&path, out);
-        } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("tmp")) {
+        } else if item.file_type().is_ok_and(|t| t.is_file()) && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("tmp")) {
             out.push(path);
         }
     }
@@ -687,6 +703,24 @@ pub fn not_in_head(error: &str) -> bool {
     error.contains("does not exist in 'HEAD'") || error.contains("exists on disk, but not in 'HEAD'")
 }
 
+/// One git command as `run_git` starts it: no hooks, no fsmonitor, no optional locks, no automatic gc, nothing fetched (a partial
+/// clone fetches a missing blob from its remote on `cat-file`: `GIT_NO_LAZY_FETCH` and no transport allowed), and no GIT_* from the
+/// app's environment.
+fn git_request(binary: &Path, root: &str, arguments: &[&str]) -> SpawnRequest {
+    let hooks = if ignores_case() { "core.hooksPath=NUL" } else { "core.hooksPath=/dev/null" };
+    let mut all = vec!["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", hooks, "-c", "gc.auto=0", "-c", "protocol.allow=never"];
+    all.extend_from_slice(&["-C", root]);
+    all.extend_from_slice(arguments);
+    let mut request = SpawnRequest::new(binary.to_path_buf(), all, root);
+    for (key, _) in std::env::vars_os() {
+        let key = key.to_string_lossy().into_owned();
+        if key.to_ascii_uppercase().starts_with("GIT_") {
+            request = request.without(key);
+        }
+    }
+    request.env("GIT_OPTIONAL_LOCKS", "0").env("GIT_TERMINAL_PROMPT", "0").env("GIT_NO_LAZY_FETCH", "1").env("LC_ALL", "C")
+}
+
 /// One git command's exit code, its first `limit` bytes (and whether there were more) and the start of its stderr; None when it did
 /// not finish in 2 s or did not start.
 async fn run_git(
@@ -697,17 +731,7 @@ async fn run_git(
     limit: usize,
 ) -> Option<(i32, Vec<u8>, bool, String)> {
     use tokio::io::AsyncReadExt;
-    let hooks = if ignores_case() { "core.hooksPath=NUL" } else { "core.hooksPath=/dev/null" };
-    let mut all = vec!["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", hooks, "-c", "gc.auto=0", "-C", root];
-    all.extend_from_slice(arguments);
-    let mut request = SpawnRequest::new(binary.to_path_buf(), all, root);
-    for (key, _) in std::env::vars_os() {
-        let key = key.to_string_lossy().into_owned();
-        if key.to_ascii_uppercase().starts_with("GIT_") {
-            request = request.without(key);
-        }
-    }
-    let request = request.env("GIT_OPTIONAL_LOCKS", "0").env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C");
+    let request = git_request(binary, root, arguments);
     let mut child = processes.spawn(request).await.ok()?;
     drop(child.stdin.take());
     let control = child.control();
@@ -892,4 +916,64 @@ pub async fn read(
         head_sha: head.short_sha,
         created: head.untracked.then_some(true),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A blob is only ever `<number>.txt`: no stream (`:`), device or path name reaches a read or a delete.
+    #[test]
+    fn only_numbered_blobs_are_read() {
+        for good in ["0.txt", "17.txt"] {
+            assert!(safe_blob(good), "{good}");
+        }
+        for bad in ["1.txt:hidden", "1.txt::$DATA", "CON.txt", "../1.txt", "a\\1.txt", ".txt", "1.TXT ", "1.txt.", "1.tmp", "x1.txt"] {
+            assert!(!safe_blob(bad), "{bad}");
+        }
+    }
+
+    /// HEAD's copy is read with nothing fetched: a partial clone's missing blob is no reason to reach its remote.
+    #[test]
+    fn git_reads_fetch_nothing() {
+        let request = git_request(Path::new("git"), "C:\\work", &["cat-file", "blob", "HEAD:./a.txt"]);
+        let args = request.args.join(" ");
+        assert!(args.contains("-c protocol.allow=never"), "{args}");
+        assert!(args.ends_with("-C C:\\work cat-file blob HEAD:./a.txt"), "{args}");
+        assert_eq!(request.env.get("GIT_NO_LAZY_FETCH").map(String::as_str), Some("1"));
+        assert_eq!(request.env.get("GIT_TERMINAL_PROMPT").map(String::as_str), Some("0"));
+    }
+
+    /// Prune walks the store's own folders only: a junction in it (to a folder elsewhere) is neither walked into nor deleted through.
+    #[cfg(windows)]
+    #[test]
+    #[allow(clippy::disallowed_methods, reason = "the check's own mklink, no child of the app")]
+    fn prune_never_follows_a_junction_out_of_the_store() {
+        let base = std::env::temp_dir().join(format!("mighty-prune-links-{}", wire::new_id()));
+        let (store_dir, outside) = (base.join("originals"), base.join("outside"));
+        std::fs::create_dir_all(outside.join("run")).unwrap();
+        std::fs::create_dir_all(&store_dir).unwrap();
+        std::fs::write(outside.join("keep.tmp"), "x").unwrap();
+        std::fs::write(outside.join("run").join("keep.txt"), "x").unwrap();
+        // Named as the kept pane's folder, so prune would walk its "runs" (and delete the one with no manifest).
+        let junction = store_dir.join(hash("pane"));
+        let made = std::process::Command::new("cmd")
+            .arg("/c")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&junction)
+            .arg(&outside)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if made {
+            let store = FileOriginalStore::new(store_dir.clone(), MAXIMUM_BYTES, Arc::new(mighty_platform::unsupported::Unsupported));
+            store.prune(&HashMap::from([("pane".to_string(), HashSet::from(["run-1".to_string()]))]));
+            assert!(outside.join("keep.tmp").exists(), "a temporary file through the junction is not the store's");
+            assert!(outside.join("run").join("keep.txt").exists(), "a folder through the junction is not the store's");
+        } else {
+            eprintln!("  (junction check skipped: no junction could be made here)");
+        }
+        let _ = std::fs::remove_dir(&junction);
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }
