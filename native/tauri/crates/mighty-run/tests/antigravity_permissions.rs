@@ -15,12 +15,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use mighty_core::json::Wire;
+use mighty_platform::fake::{PathProbeCall, RecordingPathProbe};
 use mighty_run::antigravity::leases::ApplyError;
 use mighty_run::antigravity::permissions::{
     self as flow, AllowGrant, DenialCollector, DeniedAction, OnceReason, PermissionBoard, PermissionDecision, PermissionRequest,
     RuleVerdict,
 };
-use mighty_run::antigravity::{AntigravityRuleLeases, settings};
+use mighty_run::antigravity::{AntigravityRuleLeases, leases, settings};
 use mighty_run::model::{RunEvent, StartRunRequest};
 use mighty_run::parser::{OutputParser, ParserHooks};
 use mighty_run::strings;
@@ -85,6 +86,18 @@ fn grant(id: &str, temporary: bool, rules: &[&str]) -> AllowGrant {
     AllowGrant::new(id, rules, temporary)
 }
 
+/// The fixture's name for this computer's paths: a case or stream marked with the other one holds there only.
+fn platform() -> &'static str {
+    if cfg!(windows) { "windows" } else { "mac" }
+}
+
+/// What a stream gives on this computer: its own expectations, or its platform's where it has them (a Mac path is no plain local one on
+/// Windows).
+fn expected_of(stream: &Value) -> (Vec<DeniedAction>, Option<bool>) {
+    let here = stream.get(platform()).unwrap_or(stream);
+    (actions_of(&here["actions"]), here.get("canAllowAlways").and_then(Value::as_bool))
+}
+
 // ── parsing ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /// AntigravityPermissionVerification.cs:46 `EveryFixtureTurnGivesItsActions`.
@@ -93,7 +106,7 @@ fn every_fixture_turn_gives_its_actions() {
     english();
     for stream in fixture()["streams"].as_array().unwrap() {
         let name = stream["name"].as_str().unwrap();
-        let expected = actions_of(&stream["actions"]);
+        let (expected, can_allow_always) = expected_of(stream);
         let (logs, cards) = parse(&lines(stream), "gemini", true);
         if expected.is_empty() {
             assert!(
@@ -105,7 +118,12 @@ fn every_fixture_turn_gives_its_actions() {
         assert_eq!(cards.len(), 1, "{name}: one card");
         let card = &cards[0];
         assert_eq!(card.actions, expected, "{name}: the fixture's actions");
-        assert_eq!(card.can_allow_always(), stream["canAllowAlways"].as_bool().unwrap(), "{name}: 항상 허용 offered or not");
+        assert_eq!(Some(card.can_allow_always()), can_allow_always, "{name}: 항상 허용 offered or not");
+        // The parser judged every action by its text and kept the verdict; a rule it refused is no rule.
+        assert!(
+            card.actions.iter().all(|a| a.verdict.is_some() && (a.rule.is_some() == (a.verdict != Some(RuleVerdict::Refused)))),
+            "{name}: each action's verdict is kept on it"
+        );
         assert!(card.run_id == "run-1" && card.id.starts_with("agy-") && mighty_core::wire::identifier(&card.id), "{name}: the card's ids");
         // One short transcript line, not the old how-to notice.
         let notices: Vec<&(String, String)> =
@@ -170,6 +188,43 @@ fn rules_are_well_formed_or_absent() {
     );
 }
 
+/// S-L9: a turn keeps its first [`flow::MAXIMUM_STEPS`] denied steps; one past them is not kept (its permission still reaches the card from
+/// the result's list, without the step's target or rule), so a turn denied thousands of times does not grow the collector.
+#[test]
+fn a_turn_keeps_its_first_denied_steps_only() {
+    english();
+    let step = |index: usize, tool: &str, parameters: Value, rule: &str| {
+        serde_json::json!({
+            "step_index": index,
+            "state": "ERROR",
+            "tool_info": {
+                "name": tool,
+                "parameters": parameters,
+                "error": {"message": format!("permission check failed: user denied permission for {rule}")}
+            }
+        })
+    };
+    let mut collector = DenialCollector::new();
+    for index in 0..flow::MAXIMUM_STEPS {
+        collector.observe(Some(&step(index, "run_command", serde_json::json!({"CommandLine": "echo hi"}), "command(echo hi)")));
+    }
+    collector.observe(Some(&step(
+        99_999,
+        "read_url_content",
+        serde_json::json!({"Url": "https://example.com/x"}),
+        "read_url(example.com)",
+    )));
+    let result = serde_json::json!({"denied_actions": [{"action": "command", "display_name": "RunCommand"}, {"action": "read_url", "display_name": "ReadUrl"}]});
+    let actions = collector.finish(Some(&result));
+    assert_eq!(actions.len(), 2, "{actions:?}");
+    assert_eq!(actions[0].rule.as_deref(), Some("command(echo hi)"), "the steps kept give their rule");
+    assert!(actions[1].action == "read_url" && actions[1].target.is_none() && actions[1].rule.is_none(), "the step past them was not kept");
+    // The next turn starts over with room again.
+    collector.observe(Some(&step(1, "read_url_content", serde_json::json!({"Url": "https://example.com/x"}), "read_url(example.com)")));
+    let actions = collector.finish(Some(&serde_json::json!({"denied_actions": [{"action": "read_url", "display_name": "ReadUrl"}]})));
+    assert_eq!(actions[0].rule.as_deref(), Some("read_url(example.com)"));
+}
+
 /// AntigravityPermissionVerification.cs:98 `WhichRulesACardMayOfferFollowsTheSharedCases`.
 #[test]
 fn which_rules_a_card_may_offer_follows_the_shared_cases() {
@@ -177,12 +232,14 @@ fn which_rules_a_card_may_offer_follows_the_shared_cases() {
     let fixture = fixture();
     let context = strings_of(&fixture["rules"]["context"]["protected"]);
     for item in fixture["rules"]["cases"].as_array().unwrap() {
+        // A case of the other platform names a path that is no plain local path here.
         let rule = item["rule"].as_str().unwrap();
-        let verdict = item["verdict"].as_str().unwrap();
-        let got = flow::verdict(rule, Some(&context), None);
+        let here = item.get("platform").and_then(Value::as_str).is_none_or(|only| only == platform());
+        let verdict = if here { item["verdict"].as_str().unwrap() } else { "refused" };
+        let got = flow::verdict(rule, Some(&context));
         assert!(got.name().eq_ignore_ascii_case(verdict), "{rule}: {verdict}, got {}", got.name());
         let reason = flow::once_reason_of(rule, Some(&context));
-        let expected = item.get("reason").and_then(Value::as_str);
+        let expected = item.get("reason").and_then(Value::as_str).filter(|_| here);
         assert!(
             match (reason, expected) {
                 (None, None) => true,
@@ -191,6 +248,12 @@ fn which_rules_a_card_may_offer_follows_the_shared_cases() {
             },
             "{rule}: reason {expected:?}, got {reason:?}"
         );
+    }
+    // The host a card shows for a URL is the one a WHATWG parser reads (S-M2).
+    for item in fixture["rules"]["hosts"].as_array().unwrap() {
+        let url = item["url"].as_str().unwrap();
+        let host = item["host"].as_str();
+        assert_eq!(flow::host(url).as_deref(), host, "{url}");
     }
     let tools = &fixture["tools"];
     let map = tools["map"].as_object().unwrap();
@@ -209,6 +272,247 @@ fn which_rules_a_card_may_offer_follows_the_shared_cases() {
             && grant("agy-1", true, &["command(echo hi && date)"]).keeps_only_allowed_rules(),
         "a chained command only once"
     );
+}
+
+// ── the paths, commands and addresses a rule may name (S-H1, S-H2, S-M1, S-M2, S-L1) ──────────────────────────────────────────
+
+/// This computer's root and a path under it (`C:\a\b` on Windows, `/a/b` elsewhere), for a disk the checks make up.
+fn rooted(parts: &[&str]) -> PathBuf {
+    let mut path = PathBuf::from(if cfg!(windows) { "C:\\" } else { "/" });
+    for part in parts {
+        path.push(part);
+    }
+    path
+}
+
+fn text_of(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+/// S-H1, S-H2 (AntigravityPermissionVerification.cs `AFileRuleNamesOnlyAPlainLocalPath`): a file rule's path is read as text before
+/// anything on disk is asked, so a UNC, device, stream or 8.3 name gets no rule and the disk is never asked about it (Windows would
+/// connect to the host it names, send the user's NetNTLM hash, and stall 21 s on one that does not answer): not by the text verdict, not
+/// when the card is judged, not when a grant is applied. The probe records every question; it is asked none.
+#[test]
+fn nothing_on_disk_is_asked_for_a_path_that_is_no_plain_local_one() {
+    english();
+    let bypasses = [
+        r"\\attacker\share\x",
+        r"\\192.0.2.1\share\x.txt",
+        r"\\?\C:\Users\me\project\a.txt",
+        r"\\.\C:\Users\me\project\a.txt",
+        r"\\localhost\C$\Users\me\.gemini\x",
+        r"\\?\UNC\attacker\share\x",
+        r"C:\Users\me\.gemini::$INDEX_ALLOCATION\x",
+        r"C:\Users\me\project\a.txt:hidden",
+        r"C:\Users\me\GEMINI~1\x",
+        r"C:Users\me\a.txt",
+        "//?/C:/Users/me/.gemini/x",
+        "//attacker/share/x",
+        "//Users/me/project/a.txt",
+    ];
+    let probe = Arc::new(RecordingPathProbe::default());
+    let folder = Folder::new("unc");
+    folder.make(Some(&real()));
+    let leases = folder.leases_through(10, 0, leases::portable_replace, probe.clone());
+    for path in bypasses {
+        for name in ["write_file", "read_file"] {
+            let rule = format!("{name}({path})");
+            assert_eq!(flow::verdict(&rule, None), RuleVerdict::Refused, "{rule}");
+            assert_eq!(flow::text_verdict(&rule), RuleVerdict::Refused, "{rule}: a host's card too");
+            assert_eq!(flow::checked_verdict(&rule, probe.as_ref(), &[]), RuleVerdict::Refused, "{rule}: with the disk");
+            assert_eq!(kind(leases.apply(&grant("agy-1", true, &[&rule]))).as_deref(), Some("badRule"), "{rule}: applied");
+            let action = DeniedAction::new("file", name, "WriteFile", Some(path), Some(&rule));
+            let judged = leases.judge(PermissionRequest::make("run-1", vec![action]));
+            assert!(judged.actions[0].rule.is_none() && !judged.can_allow(), "{rule}: the card offers no rule");
+        }
+    }
+    // agy's stream naming one: the parser's card shows the path and no rule, and judging it asks nothing either.
+    let (_, cards) = parse(&lines(&stream("uncFile")), "gemini", true);
+    assert!(
+        cards.len() == 1
+            && cards[0].actions[0].rule.is_none()
+            && cards[0].actions[0].target.as_deref() == Some(r"\\attacker\share\notes.txt"),
+        "the stream's card: {cards:?}"
+    );
+    assert!(leases.judge(cards[0].clone()).actions[0].rule.is_none(), "judged, still none");
+    assert_eq!(probe.calls(), vec![], "nothing on disk was asked");
+    assert_eq!(folder.text().unwrap(), real(), "nothing was added");
+}
+
+/// S-H1: a drive that is not a fixed one (a removable, network or CD drive, or none at all) gets no rule; asking which it is is the only
+/// question.
+#[cfg(windows)]
+#[test]
+fn a_drive_that_is_not_fixed_gets_no_rule() {
+    let probe = RecordingPathProbe { fixed: vec!['C'], ..RecordingPathProbe::default() };
+    assert_eq!(flow::checked_verdict(r"write_file(Z:\project\a.txt)", &probe, &[]), RuleVerdict::Refused);
+    assert_eq!(probe.calls(), vec![PathProbeCall::FixedDrive('Z')], "the drive alone was asked");
+    // This computer's own: a letter no drive has, and the system drive.
+    let real = common::path_probe();
+    let free = ('D'..='Z').find(|letter| !Path::new(&format!("{letter}:\\")).exists()).unwrap();
+    assert_eq!(flow::checked_verdict(&format!(r"write_file({free}:\project\a.txt)"), real.as_ref(), &[]), RuleVerdict::Refused, "no drive");
+    assert_eq!(flow::checked_verdict(r"write_file(C:\mighty-no-such-folder\a.txt)", real.as_ref(), &[]), RuleVerdict::Always, "fixed");
+}
+
+/// S-H2: a protected folder is compared by what the file system calls the longest part of a path that exists (`GetFinalPathNameByHandleW`:
+/// its case, long names for 8.3 ones, no trailing dots or spaces), not only by its text; and a link is read, never followed — where it
+/// leads must itself be a local path before anything there is asked, so one leading to a share refuses the rule and the share is never asked.
+#[test]
+fn a_protected_folder_is_compared_as_the_file_system_names_it() {
+    let gemini = rooted(&["home", ".gemini"]);
+    let protected = [text_of(&gemini)];
+    let root = rooted(&[]);
+    let share = PathBuf::from(if cfg!(windows) { r"\\attacker\share" } else { "//attacker/share" });
+    let probe = RecordingPathProbe {
+        finals: vec![
+            (root.clone(), root.clone()),
+            (rooted(&["work"]), rooted(&["work"])),
+            // Another name the file system gives agy's folder (an 8.3 name, a trailing dot, a mount point).
+            (rooted(&["work", "alias"]), gemini.clone()),
+        ],
+        links: vec![(rooted(&["work", "share"]), share), (rooted(&["work", "up"]), rooted(&["home"]))],
+        ..RecordingPathProbe::default()
+    };
+    let rule = |path: PathBuf| format!("write_file({})", text_of(&path));
+    let verdict = |path: PathBuf| flow::checked_verdict(&rule(path), &probe, &protected);
+    assert_eq!(verdict(rooted(&["work", "alias", "settings.json"])), RuleVerdict::Refused, "named agy's folder by the file system");
+    assert_eq!(verdict(rooted(&["work", "up", ".gemini", "x"])), RuleVerdict::Refused, "through a link to its parent");
+    assert_eq!(verdict(rooted(&["work", "up"])), RuleVerdict::Refused, "a link to a folder above it");
+    assert_eq!(verdict(rooted(&["work", "other", "a.txt"])), RuleVerdict::Always, "a path beside it");
+    assert_eq!(verdict(rooted(&["work", "share", "x"])), RuleVerdict::Refused, "a link to a share");
+    let share_asked = probe.calls().iter().any(|call| match call {
+        PathProbeCall::LinkTarget(path) | PathProbeCall::FinalPath(path) => text_of(path).contains("attacker"),
+        PathProbeCall::FixedDrive(_) => false,
+    });
+    assert!(!share_asked, "the share was never asked: {:?}", probe.calls());
+    // By its text alone (a host's card, the parser) the alias is no protected folder: the card is judged with the disk once it is made.
+    assert_eq!(flow::verdict(&rule(rooted(&["work", "alias", "settings.json"])), Some(&protected)), RuleVerdict::Always);
+    // An OS that cannot ask offers no file rule at all.
+    let cannot = RecordingPathProbe { cannot: true, ..RecordingPathProbe::default() };
+    assert_eq!(flow::checked_verdict(&rule(rooted(&["work", "a.txt"])), &cannot, &[]), RuleVerdict::Refused);
+    assert_eq!(flow::checked_verdict("command(echo hi)", &cannot, &[]), RuleVerdict::Always, "commands ask no disk");
+}
+
+/// S-H2 / C10 on this computer's disk: agy's folder named in another case, with a trailing dot or trailing spaces (Windows drops them), or
+/// through a junction (which any account may make; C10: a junction's target read as `\\?\C:\…` is still that folder), and the app's data
+/// folder a junction names, are refused as the folder itself; a junction to a folder beside them is fine.
+#[cfg(windows)]
+#[test]
+#[allow(clippy::disallowed_methods, reason = "the check's own mklink, no child of the app")]
+fn an_alias_of_a_protected_folder_is_refused() {
+    english();
+    let folder = Folder::new("alias");
+    folder.make(Some(&real()));
+    let leases = folder.leases();
+    let gemini = folder.root.join(".gemini");
+    let refused = |path: PathBuf| kind(leases.apply(&grant("agy-1", true, &[&format!("write_file({})", text_of(&path))])));
+    assert_eq!(refused(folder.root.join(".GEMINI").join("antigravity-cli")).as_deref(), Some("badRule"), "another case");
+    let dotted = PathBuf::from(format!("{}.", text_of(&gemini))).join("antigravity-cli").join("settings.json");
+    assert_eq!(refused(dotted).as_deref(), Some("badRule"), "a trailing dot");
+    assert_eq!(refused(PathBuf::from(format!("{}  ", text_of(&gemini)))).as_deref(), Some("badRule"), "trailing spaces");
+    let junction = |at: &Path, target: &Path| {
+        std::process::Command::new("cmd").arg("/c").arg("mklink").arg("/J").arg(at).arg(target).output().is_ok_and(|o| o.status.success())
+    };
+    let (through, data, named, beside) =
+        (folder.root.join("junction"), folder.root.join("data"), folder.root.join("named"), folder.root.join("beside"));
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::create_dir_all(folder.root.join("project")).unwrap();
+    assert!(
+        junction(&through, &gemini) && junction(&named, &data) && junction(&beside, &folder.root.join("project")),
+        "a junction could not be made here"
+    );
+    let probe = common::path_probe();
+    assert!(
+        probe.link_target(&through).is_some_and(|target| !text_of(&target).starts_with(r"\\?\")),
+        "a junction's target is read as a drive path"
+    );
+    assert_eq!(refused(through.join("antigravity-cli").join("settings.json")).as_deref(), Some("badRule"), "through a junction");
+    assert_eq!(refused(through.clone()).as_deref(), Some("badRule"), "the junction itself");
+    let saved = flow::app_folders();
+    flow::set_app_folders(vec![named.clone()]);
+    let data_verdict = flow::checked_verdict(&format!("write_file({})", text_of(&data.join("ledger.json"))), probe.as_ref(), &[]);
+    flow::set_app_folders(saved);
+    assert_eq!(data_verdict, RuleVerdict::Refused, "the data folder a junction names");
+    let fine = leases.apply(&grant("agy-2", true, &[&format!("write_file({})", text_of(&beside.join("a.txt")))])).unwrap().unwrap();
+    leases.release(&fine);
+    leases.settled();
+    assert_eq!(folder.text().unwrap(), real(), "nothing else was added");
+    // A junction goes by itself before the folder (a recursive delete of the folder would follow it).
+    for link in [&through, &named, &beside] {
+        let _ = std::fs::remove_dir(link);
+    }
+}
+
+/// S-M1 (AntigravityPermissionVerification.cs `ACommandRuleIsKeptOnlyForAPlainAsciiLine`): every hidden character — whitespace other than
+/// space and tab, a format or bidi character — refuses a rule, and only a plain ASCII line may be kept; the shared cases hold the
+/// bypasses (`b''ash -c`, `~/.ge''mini`, `~/.gem?ni`, `GEMINI~1`, `b\ash`, `${x}bash`, NBSP, `ri`, `iex`, `start`).
+#[test]
+fn a_command_rule_is_kept_only_for_a_plain_ascii_line() {
+    english();
+    let hidden: Vec<u32> = [0x85, 0xA0, 0x1680, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF]
+        .into_iter()
+        .chain(0x2000..=0x200F)
+        .chain(0x202A..=0x202E)
+        .chain(0x2066..=0x2069)
+        .collect();
+    for code in hidden {
+        let c = char::from_u32(code).unwrap();
+        for rule in [format!("command(echo{c}hi)"), format!("read_url(example.com{c})"), format!("write_file(/tmp/a{c}b)")] {
+            assert_eq!(flow::verdict(&rule, None), RuleVerdict::Refused, "U+{code:04X} refuses {rule}");
+            assert_eq!(flow::text_verdict(&rule), RuleVerdict::Refused, "U+{code:04X} refuses a host's {rule}");
+        }
+    }
+    for c in (0x21u8..0x7F).map(char::from).filter(|c| !matches!(c, '*' | '(' | ')')) {
+        let plain = c.is_ascii_alphanumeric() || "._/:=@+,-".contains(c);
+        let expected = if plain { RuleVerdict::Always } else { RuleVerdict::Once };
+        assert_eq!(flow::verdict(&format!("command(echo {c})"), None), expected, "echo {c}");
+    }
+    let accented = DeniedAction::new("command", "command", "RunCommand", Some("echo hé"), Some("command(echo hé)"));
+    let quoted = DeniedAction::new("command", "command", "RunCommand", Some("echo 'hi'"), Some("command(echo 'hi')"));
+    assert!(
+        accented.once_only() && accented.once_only_reason().is_none() && quoted.once_only() && quoted.once_only_reason().is_none(),
+        "beyond plain ASCII once, without a reason"
+    );
+    assert_eq!(flow::once_only_text(&quoted), Some(strings::get("antigravity.permission.onceOnly")), "the card says the general words");
+    for (rule, reason) in [
+        ("command(ri build)", OnceReason::Risky),
+        ("command(iex x)", OnceReason::Interpreter),
+        ("command(start x)", OnceReason::Interpreter),
+    ] {
+        assert_eq!(flow::once_reason_of(rule, None), Some(reason), "{rule}");
+    }
+}
+
+/// S-M2: a URL rule whose authority holds `\`, `@`, `%`, whitespace or anything beyond ASCII is none — a WHATWG parser reads
+/// `https://evil.example\@docs.python.org/x` as evil.example, which the card showed as docs.python.org; the card shows such a URL as agy
+/// wrote it. The host shown otherwise is the one a WHATWG parser reads (the shared `hosts`).
+#[test]
+fn a_url_rule_names_only_a_plain_host() {
+    english();
+    for url in [r"https://evil.example\@docs.python.org/x", "https://user@docs.python.org/x", "https://docs.python.org%2F@evil.example/x"] {
+        assert_eq!(flow::verdict(&format!("read_url({url})"), None), RuleVerdict::Refused, "{url}");
+        assert_eq!(flow::host(url), None, "{url}: no host is shown");
+    }
+    let (_, cards) = parse(&lines(&stream("backslashUrl")), "gemini", true);
+    let action = &cards[0].actions[0];
+    assert!(
+        action.rule.is_none() && action.target.as_deref() == Some(r"https://evil.example\@docs.python.org/3/"),
+        "the card shows the address as agy wrote it, with no rule: {action:?}"
+    );
+    assert_eq!(flow::host("https://Docs.Python.org:443/3/").as_deref(), Some("docs.python.org"));
+}
+
+/// S-L1: paths are compared without case one character at a time (C# `ToLowerInvariant`): a word's last `Σ` lowers to `σ` as any other,
+/// so `ΑΣ` and `Ασ` are one folder, never a way past it.
+#[test]
+fn a_folder_in_greek_capitals_is_the_same_folder() {
+    assert_eq!(flow::normalized_path("/Users/me/ΑΣ"), flow::normalized_path("/Users/me/Ασ"));
+    assert_eq!(flow::normalized_path("C:\\X\\ΑΣ"), flow::normalized_path("C:\\x\\ασ"));
+    assert_eq!(flow::normalized_path("/a/İ").as_deref(), Some("/a/İ"), "a character whose lower case is two is kept");
+    let protected = [text_of(&rooted(&["Users", "me", "ΑΣ"]))];
+    let rule = format!("write_file({})", text_of(&rooted(&["Users", "me", "Ασ", "x"])));
+    assert_eq!(flow::verdict(&rule, Some(&protected)), RuleVerdict::Refused);
 }
 
 // ── settings bytes ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -313,12 +617,24 @@ impl Folder {
         }
         None
     }
+    /// Leases over this folder's settings and ledger, a file rule's path asked of this computer's disk.
     fn leases_with(&self, retry_ms: u64, recheck_ms: u64) -> AntigravityRuleLeases {
-        AntigravityRuleLeases::new(
+        self.leases_through(retry_ms, recheck_ms, leases::portable_replace, common::path_probe())
+    }
+    fn leases_through(
+        &self,
+        retry_ms: u64,
+        recheck_ms: u64,
+        replace: leases::Replace,
+        probe: Arc<dyn mighty_platform::PathProbe>,
+    ) -> AntigravityRuleLeases {
+        AntigravityRuleLeases::with_ports(
             &self.settings_path(),
             Some(&self.ledger()),
             Some(vec![Duration::from_millis(retry_ms), Duration::from_millis(retry_ms * 2)]),
             Some(Duration::from_millis(recheck_ms)),
+            replace,
+            probe,
         )
     }
     fn leases(&self) -> AntigravityRuleLeases {
@@ -476,18 +792,49 @@ fn no_file_rule_reaches_agys_own_folder_or_the_apps_data() {
     // The real profile's .gemini and the app's own data folder are never a rule's, wherever the leases point.
     let home = flow::user_profile().unwrap();
     let real_settings = text(&home.join(".gemini").join("antigravity-cli").join("settings.json"));
-    assert_eq!(flow::verdict(&format!("write_file({real_settings})"), None, None), RuleVerdict::Refused, "the real .gemini");
-    assert_eq!(flow::verdict(&format!("read_file({})", text(&home)), None, None), RuleVerdict::Refused, "the profile folder");
-    let saved = flow::app_data_folder();
-    flow::set_app_data_folder(folder.ledger().parent().map(Path::to_path_buf));
-    let refused = flow::verdict(&format!("write_file({})", text(&folder.ledger())), None, None);
-    flow::set_app_data_folder(saved);
-    assert_eq!(refused, RuleVerdict::Refused, "the app's data folder");
-    assert_eq!(
-        flow::verdict(&format!("command(cat {real_settings})"), None, None),
-        RuleVerdict::Once,
-        "a command naming .gemini runs once"
+    assert_eq!(flow::verdict(&format!("write_file({real_settings})"), None), RuleVerdict::Refused, "the real .gemini");
+    assert_eq!(flow::verdict(&format!("read_file({})", text(&home)), None), RuleVerdict::Refused, "the profile folder");
+    assert_eq!(flow::verdict(&format!("command(cat {real_settings})"), None), RuleVerdict::Once, "a command naming .gemini runs once");
+}
+
+/// S-L7 / C6: the app's folders are protected, its profile and this machine's local folder (the ledger without `--allow-state-write`, the
+/// browser's data, the file originals) alike, and a card made here never offers a file rule its apply would refuse: it is judged with the
+/// same folders, the leases' ledger folder among them.
+#[test]
+fn the_apps_folders_are_protected_and_a_card_offers_only_what_apply_adds() {
+    english();
+    let folder = Folder::new("app-folders");
+    folder.make(Some(&real()));
+    let text = |path: &Path| path.to_string_lossy().into_owned();
+    let profile = folder.root.join("profile");
+    let local = folder.root.join("local");
+    let saved = flow::app_folders();
+    flow::set_app_folders(vec![profile.clone(), local.clone()]);
+    let probe = common::path_probe();
+    let verdicts = [
+        flow::verdict(&format!("write_file({})", text(&profile.join("state.json"))), None),
+        flow::verdict(&format!("write_file({})", text(&local.join("EBWebView").join("x"))), None),
+        flow::checked_verdict(&format!("read_file({})", text(&local.join("file-originals"))), probe.as_ref(), &[]),
+        flow::checked_verdict(&format!("write_file({})", text(&folder.root)), probe.as_ref(), &[]),
+    ];
+    let beside = flow::checked_verdict(&format!("write_file({})", text(&folder.root.join("project").join("a.txt"))), probe.as_ref(), &[]);
+    flow::set_app_folders(saved);
+    assert!(verdicts.iter().all(|v| *v == RuleVerdict::Refused), "the profile, the local folder and above them: {verdicts:?}");
+    assert_eq!(beside, RuleVerdict::Always, "a file beside them");
+    // The ledger here is outside every app folder: the card is judged with it anyway, as apply is.
+    let leases = folder.leases();
+    let rule = format!("write_file({})", text(&folder.ledger()));
+    let card = PermissionRequest::make(
+        "run-1",
+        vec![DeniedAction::new("file", "write_file", "WriteFile", Some(&text(&folder.ledger())), Some(&rule))],
     );
+    assert!(card.can_allow(), "by its text the rule is one");
+    let judged = leases.judge(card);
+    assert!(
+        judged.actions[0].rule.is_none() && judged.actions[0].verdict == Some(RuleVerdict::Refused) && !judged.can_allow(),
+        "judged here, the card offers no rule into the ledger's folder"
+    );
+    assert_eq!(kind(leases.apply(&grant("agy-1", true, &[&rule]))).as_deref(), Some("badRule"), "and apply refuses it alike");
 }
 
 /// AntigravityPermissionVerification.cs:289 `AMissingFileIsCreatedWithTheRuleAloneAndGoesWithIt`.
@@ -653,6 +1000,79 @@ fn what_a_crash_left_is_removed_at_the_next_launch() {
     last.remove_leftovers();
     last.settled();
     assert!(folder.text().unwrap() == real() && !folder.ledger().exists(), "taken out once they can");
+}
+
+/// C4: what a launch with `--allow-state-write` the other way round recorded in the other place's ledger is taken out at launch too —
+/// that ledger pruned when it may be written, read and left byte for byte as it was when it may not (the profile's without the flag).
+#[test]
+fn what_a_crash_left_in_the_other_ledger_goes_too() {
+    english();
+    let folder = Folder::new("other-ledger");
+    folder.make(Some(&real()));
+    let other = folder.root.join("local").join("antigravity-temporary-rules.json");
+    let elsewhere = |path: &Path| {
+        AntigravityRuleLeases::with_ports(
+            &folder.settings_path(),
+            Some(path),
+            Some(vec![Duration::from_millis(10)]),
+            Some(Duration::from_millis(0)),
+            leases::portable_replace,
+            common::path_probe(),
+        )
+    };
+    // A launch that kept its ledger in the other place crashed holding a rule.
+    elsewhere(&other).apply(&grant("agy-1", true, &["command(echo hi)"])).unwrap();
+    assert!(folder.text().unwrap().contains("command(echo hi)") && other.exists(), "left behind in the other ledger");
+    let written = std::fs::read(&other).unwrap();
+    // A launch that may not write it: the rule leaves agy's settings, the other ledger is left as it is.
+    let read_only = folder.leases().with_other_ledger(&other, false);
+    read_only.remove_leftovers();
+    read_only.settled();
+    assert_eq!(folder.text().unwrap(), real(), "taken out of agy's settings");
+    assert_eq!(std::fs::read(&other).unwrap(), written, "the other ledger, which may not be written, as it was");
+    // One that may write it: taken out and the other ledger pruned.
+    elsewhere(&other).apply(&grant("agy-2", true, &["command(ls)"])).unwrap();
+    let writing = folder.leases().with_other_ledger(&other, true);
+    writing.remove_leftovers();
+    writing.settled();
+    assert!(folder.text().unwrap() == real() && !other.exists(), "taken out and the ledger let go");
+}
+
+/// S-L4: a swap that left the temporary as the only copy (`ReplaceFileW` 1176 or 1177, marked [`leases::KeptTemporary`]) never deletes it;
+/// any other failed swap leaves the settings as they were, so its temporary goes.
+#[test]
+fn a_failed_swap_keeps_the_only_copy() {
+    english();
+    fn lost(temporary: &Path, target: &Path) -> std::io::Result<()> {
+        // As 1176 does: the settings are gone, the temporary keeps its own name.
+        std::fs::remove_file(target)?;
+        let _ = temporary;
+        Err(leases::KeptTemporary::error(std::io::Error::other("unable to move the replacement (1176)")))
+    }
+    fn refused(_temporary: &Path, _target: &Path) -> std::io::Result<()> {
+        Err(std::io::Error::other("the settings are open elsewhere"))
+    }
+    let temporaries = |folder: &Folder| -> Vec<PathBuf> {
+        std::fs::read_dir(folder.settings_path().parent().unwrap())
+            .unwrap()
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .filter(|path| path.to_string_lossy().ends_with(".tmp"))
+            .collect()
+    };
+    let folder = Folder::new("kept-temporary");
+    folder.make(Some(&real()));
+    let leases = folder.leases_through(10, 0, lost, common::path_probe());
+    assert_eq!(kind(leases.apply(&grant("agy-1", true, &["command(echo hi)"]))).as_deref(), Some("writeFailed"));
+    let kept = temporaries(&folder);
+    assert!(
+        kept.len() == 1 && std::fs::read_to_string(&kept[0]).unwrap().contains("\"command(echo hi)\""),
+        "the temporary, the only copy, is kept: {kept:?}"
+    );
+    let folder = Folder::new("refused-swap");
+    folder.make(Some(&real()));
+    let leases = folder.leases_through(10, 0, refused, common::path_probe());
+    assert_eq!(kind(leases.apply(&grant("agy-1", true, &["command(echo hi)"]))).as_deref(), Some("writeFailed"));
+    assert!(temporaries(&folder).is_empty() && folder.text().unwrap() == real(), "a refused swap's temporary goes, the settings stay");
 }
 
 /// AntigravityPermissionVerification.cs:393 `QuitReleasesEverythingAndALinkedFileStaysLinked`.
@@ -866,7 +1286,11 @@ fn the_card_rides_a_run_event_and_an_unknown_kind_reads_as_other() {
     let event = RunEvent { antigravity_permission: Some(card.clone()), ..RunEvent::new("pane", "antigravityPermission") };
     let mut node: Value = serde_json::from_str(&event.to_json()).unwrap();
     let back = PermissionRequest::read(&node["antigravityPermission"]).unwrap();
-    assert!(back == card && event.valid(), "the card travels and reads back");
+    let travelled = RunEvent { antigravity_permission: Some(back.clone()), ..RunEvent::new("pane", "antigravityPermission") };
+    assert!(
+        back == card && back.actions.iter().all(|a| a.verdict.is_none()) && travelled.valid(),
+        "the card travels and reads back, and the event it rides in is valid there, judged by its text"
+    );
     node["antigravityPermission"]["actions"][0]["kind"] = Value::from("network");
     assert_eq!(PermissionRequest::read(&node["antigravityPermission"]).unwrap().actions[0].kind, "other", "an unknown kind reads as other");
     assert!(flow::valid_card(&card), "the card is in bounds");
@@ -894,7 +1318,7 @@ fn the_card_rides_a_run_event_and_an_unknown_kind_reads_as_other() {
 /// AntigravityPermissionVerification.cs:534 `ThePhoneSampleIsWhatTheMacSends`, the card's own words: each once-only reason, an interpreter
 /// alone, and the answers' decisions. The phone's permission itself (`MobilePermission`, `MobileAntigravityCard`) is W8's.
 #[test]
-fn the_phone_sample_is_what_this_host_sends() {
+fn the_phone_samples_words_and_answers_read_as_here() {
     english();
     let mobile = fixture()["mobile"].clone();
     let reasons = mobile["onceOnlyReasons"].as_object().unwrap();
@@ -927,6 +1351,27 @@ fn the_phone_sample_is_what_this_host_sends() {
             None => assert!(always && !allow && answer["status"] == 400, "always without allow is refused"),
         }
     }
+}
+
+/// C5: a service the host gave no Antigravity settings refuses every grant and every check, before anything is read: no rule ever lands
+/// in the user's real settings without a ledger. Its launch's leftover removal finds nothing to do, and runs may start.
+#[tokio::test]
+async fn a_service_given_no_settings_refuses_every_grant() {
+    english();
+    let options = mighty_run::service::RunServiceOptions {
+        plugin_directory: String::new(),
+        permission_card: false,
+        remote: None,
+        configure: None,
+        admitting: None,
+    };
+    let (service, _events) =
+        mighty_run::service::RunService::new(mighty_core::model::AppSnapshot::default(), common::absent_catalog(), options);
+    service.antigravity_leftovers_removed().await;
+    let rules = service.antigravity_rules();
+    assert!(rules.ledger_path().is_none(), "no ledger");
+    assert_eq!(kind(rules.apply(&grant("agy-1", true, &["command(echo hi)"]))).as_deref(), Some("unreadable"), "a grant is refused");
+    assert_eq!(service.check_antigravity_settings().await.unwrap_err().kind, "unreadable", "and the check before it");
 }
 
 // ── runs (the fake agy through the Windows ProcessHost) ─────────────────────────────────────────────────────────────────────────
@@ -1159,8 +1604,8 @@ mod runs {
         service.take_antigravity_card(&pane_id);
         std::fs::write(folder.settings_path(), "{ broken").unwrap();
         let refused = service.start(continuing(&workspace, &once.prompt, once.grant, Some(card.clone()))).await;
-        assert!(refused.is_err(), "a start whose rules cannot go in place");
         let words = strings::get_with("antigravity.settings.error.notJSON", &[("path", &folder.settings_path().to_string_lossy())]);
+        assert!(matches!(&refused, Err(error) if error.message() == words), "a start whose rules cannot go in place: {refused:?}");
         assert!(
             service.antigravity_card(&pane_id) == Some(card) && service.antigravity_error(&pane_id) == Some(words),
             "the card is back with the reason"

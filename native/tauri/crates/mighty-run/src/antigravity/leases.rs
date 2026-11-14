@@ -17,9 +17,10 @@ use std::time::Duration;
 
 use mighty_core::json;
 use mighty_core::wire;
+use mighty_platform::PathProbe;
 use serde_json::Value;
 
-use super::permissions::{self, AllowGrant, RuleVerdict};
+use super::permissions::{self, AllowGrant, PermissionRequest, RuleVerdict};
 use super::settings::{self, SettingsError};
 use crate::lock;
 use crate::os;
@@ -55,6 +56,40 @@ pub fn portable_replace(temporary: &Path, target: &Path) -> std::io::Result<()> 
     let permissions = std::fs::metadata(target)?.permissions();
     std::fs::set_permissions(temporary, permissions)?;
     std::fs::rename(temporary, target)
+}
+
+/// What a failed [`Replace`] wraps its error in when the temporary is the only copy left (S-L4: `ReplaceFileW` failing with 1176 took the
+/// settings away and could not move the temporary in, nor could the move tried after it; 1177 left both): the temporary is kept then,
+/// never deleted.
+#[derive(Debug)]
+pub struct KeptTemporary(pub std::io::Error);
+
+impl std::fmt::Display for KeptTemporary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::error::Error for KeptTemporary {}
+
+impl KeptTemporary {
+    /// The error a [`Replace`] returns for it.
+    pub fn error(error: std::io::Error) -> std::io::Error {
+        std::io::Error::new(error.kind(), KeptTemporary(error))
+    }
+
+    /// `error` says the temporary must be kept.
+    pub fn is(error: &std::io::Error) -> bool {
+        error.get_ref().is_some_and(|inner| inner.is::<KeptTemporary>())
+    }
+}
+
+/// C# `File.Move(temporary, target)` (S-L2): the temporary takes the name only while nothing has it — a file agy made meanwhile is never
+/// replaced. A hard link then the temporary's name removed, as std has no rename that refuses an existing name.
+fn move_new(temporary: &Path, target: &Path) -> std::io::Result<()> {
+    std::fs::hard_link(temporary, target)?;
+    let _ = std::fs::remove_file(temporary);
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -173,6 +208,14 @@ struct Inner {
     retry_delays: Vec<Duration>,
     recheck_delay: Duration,
     replace: Replace,
+    /// What a file rule's path is asked of the disk with ([`permissions::checked_verdict`]).
+    probe: Arc<dyn PathProbe>,
+    /// Refuses every grant and every check (S-C5: the service was given no settings to put rules in).
+    refuses: bool,
+    /// The ledger is read, never written (another place's, [`AntigravityRuleLeases::with_other_ledger`]).
+    reads_ledger_only: bool,
+    /// The leases over the other places a ledger may be, whose leftovers go at launch too.
+    others: Mutex<Vec<AntigravityRuleLeases>>,
     gate: Mutex<State>,
 }
 
@@ -193,23 +236,46 @@ impl AntigravityRuleLeases {
 
     /// `ledger_path`: where the rules added for a while are recorded (the app's data folder); None keeps no record. `retry_delays`: the
     /// pauses before each new try of a failed removal (None: 250 ms, 1 s, 3 s). `recheck_delay`: how long after a removal the settings
-    /// are looked at again (None: 5 s).
+    /// are looked at again (None: 5 s). Nothing asks the disk about a file rule's path here, so no file rule is added
+    /// ([`AntigravityRuleLeases::with_ports`] gives the OS's probe).
     pub fn new(
         settings_path: &Path,
         ledger_path: Option<&Path>,
         retry_delays: Option<Vec<Duration>>,
         recheck_delay: Option<Duration>,
     ) -> AntigravityRuleLeases {
-        AntigravityRuleLeases::with_replace(settings_path, ledger_path, retry_delays, recheck_delay, portable_replace)
+        let probe: Arc<dyn PathProbe> = Arc::new(mighty_platform::unsupported::Unsupported);
+        AntigravityRuleLeases::with_ports(settings_path, ledger_path, retry_delays, recheck_delay, portable_replace, probe)
     }
 
-    /// [`AntigravityRuleLeases::new`] with the swap the platform does ([`Replace`]).
-    pub fn with_replace(
+    /// [`AntigravityRuleLeases::new`] with the swap the platform does ([`Replace`]) and what it asks the disk about a file rule's path
+    /// ([`PathProbe`]).
+    pub fn with_ports(
         settings_path: &Path,
         ledger_path: Option<&Path>,
         retry_delays: Option<Vec<Duration>>,
         recheck_delay: Option<Duration>,
         replace: Replace,
+        probe: Arc<dyn PathProbe>,
+    ) -> AntigravityRuleLeases {
+        AntigravityRuleLeases::make(settings_path, ledger_path, retry_delays, recheck_delay, replace, probe, false)
+    }
+
+    /// Leases that refuse every grant and every check (S-C5): what a service the host gave no settings has, so nothing ever lands in the
+    /// user's real settings without a ledger. They say the settings cannot be read.
+    pub fn refusing(settings_path: &Path) -> AntigravityRuleLeases {
+        let probe: Arc<dyn PathProbe> = Arc::new(mighty_platform::unsupported::Unsupported);
+        AntigravityRuleLeases::make(settings_path, None, None, None, portable_replace, probe, true)
+    }
+
+    fn make(
+        settings_path: &Path,
+        ledger_path: Option<&Path>,
+        retry_delays: Option<Vec<Duration>>,
+        recheck_delay: Option<Duration>,
+        replace: Replace,
+        probe: Arc<dyn PathProbe>,
+        refuses: bool,
     ) -> AntigravityRuleLeases {
         AntigravityRuleLeases {
             inner: Arc::new(Inner {
@@ -219,9 +285,48 @@ impl AntigravityRuleLeases {
                     .unwrap_or_else(|| vec![Duration::from_millis(250), Duration::from_secs(1), Duration::from_secs(3)]),
                 recheck_delay: recheck_delay.unwrap_or(Duration::from_secs(5)),
                 replace,
+                probe,
+                refuses,
+                reads_ledger_only: false,
+                others: Mutex::new(vec![]),
                 gate: Mutex::new(State::default()),
             }),
         }
+    }
+
+    /// S-C4: also takes out at launch what a ledger at `ledger` recorded for these settings — the other place a ledger is kept, when
+    /// `--allow-state-write` changed between launches. `writes` false reads that ledger and never changes it (the profile's without the
+    /// flag: its rules leave agy's settings, the file stays as it is).
+    pub fn with_other_ledger(self, ledger: &Path, writes: bool) -> AntigravityRuleLeases {
+        let inner = &self.inner;
+        let other = AntigravityRuleLeases {
+            inner: Arc::new(Inner {
+                settings_path: inner.settings_path.clone(),
+                ledger_path: Some(ledger.to_path_buf()),
+                retry_delays: inner.retry_delays.clone(),
+                recheck_delay: inner.recheck_delay,
+                replace: inner.replace,
+                probe: inner.probe.clone(),
+                refuses: inner.refuses,
+                reads_ledger_only: !writes,
+                others: Mutex::new(vec![]),
+                gate: Mutex::new(State::default()),
+            }),
+        };
+        lock(&inner.others).push(other);
+        self
+    }
+
+    /// The ledger's path, when it keeps one.
+    pub fn ledger_path(&self) -> Option<&Path> {
+        self.inner.ledger_path.as_deref()
+    }
+
+    /// `Judge` (S-H1): a card made from agy's stream on this computer with its verdicts worked out once, the disk asked about its file rules
+    /// as [`AntigravityRuleLeases::apply`] would ask it (the same folders: this computer's, these settings' and this ledger's). It reads
+    /// the disk: callers keep it off the parser's and the page's threads.
+    pub fn judge(&self, card: PermissionRequest) -> PermissionRequest {
+        permissions::judged(card, self.inner.probe.as_ref(), &self.inner.own_folders())
     }
 
     /// `SettingsPath`.
@@ -236,12 +341,19 @@ impl AntigravityRuleLeases {
 
     /// `Check`: reads the settings the way adding would, and changes nothing.
     pub fn check(&self) -> Result<(), SettingsError> {
+        if self.inner.refuses {
+            return Err(self.inner.refusal());
+        }
         let _gate = lock(&self.inner.gate);
         self.inner.read().map(|_| ())
     }
 
-    /// `Settled`: waits for the looks-again removals started.
+    /// `Settled`: waits for the looks-again removals started (the other places' too).
     pub fn settled(&self) {
+        let others = lock(&self.inner.others).clone();
+        for other in others {
+            other.settled();
+        }
         loop {
             let pending = std::mem::take(&mut lock(&self.inner.gate).rechecks);
             if pending.is_empty() {
@@ -261,13 +373,16 @@ impl AntigravityRuleLeases {
         if state.closed {
             return Err(ApplyError::Cancelled);
         }
+        if inner.refuses {
+            return Err(inner.refusal().into());
+        }
         if !grant.is_valid() {
             return Err(SettingsError::of("badRule", None, None).into());
         }
-        // Never a file rule into (or above) these settings' own folder or this ledger's, wherever they are.
-        let mut guarded = permissions::protected_folders();
-        guarded.extend(inner.own_folders());
-        if grant.rules.iter().any(|rule| permissions::verdict(rule, Some(&guarded), Some(true)) == RuleVerdict::Refused) {
+        // Judged again here with the disk asked, whatever the card said: never a file rule into (or above) agy's folder, the app's, these
+        // settings' own folder or this ledger's, wherever they are and whatever they are called.
+        let guarded = inner.own_folders();
+        if grant.rules.iter().any(|rule| permissions::checked_verdict(rule, inner.probe.as_ref(), &guarded) == RuleVerdict::Refused) {
             return Err(SettingsError::of("badRule", None, None).into());
         }
         if !grant.keeps_only_allowed_rules() {
@@ -376,8 +491,16 @@ impl AntigravityRuleLeases {
         self.remove(&gone);
     }
 
-    /// `RemoveLeftovers`: launch — what a previous run of the app added for a while and could not take out.
+    /// `RemoveLeftovers`: launch — what a previous run of the app added for a while and could not take out, recorded in this ledger or
+    /// another place's ([`AntigravityRuleLeases::with_other_ledger`]).
     pub fn remove_leftovers(&self) {
+        let others = lock(&self.inner.others).clone();
+        for other in others {
+            other.remove_leftovers();
+        }
+        if self.inner.refuses {
+            return;
+        }
         let left: Vec<String> = {
             let state = lock(&self.inner.gate);
             let left: Vec<String> = self
@@ -498,9 +621,44 @@ impl AntigravityRuleLeases {
     }
 }
 
+/// `Path.GetFullPath`: absolute, `.` and `..` taken out.
+fn lexically_full(path: &Path) -> Option<PathBuf> {
+    let absolute = std::path::absolute(path).ok()?;
+    let mut result = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                result.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => result.push(other.as_os_str()),
+        }
+    }
+    Some(result)
+}
+
+/// The settings file a symbolic link at `path` leads to, followed to its last link (`ResolveLinkTarget(returnFinalTarget: true)`), with
+/// every link along the way resolved; None when `path` is no link or it cannot be read. These are the app's own settings path, never a
+/// path agy named.
 fn link_target(path: &Path) -> Option<PathBuf> {
     std::fs::symlink_metadata(path).ok().filter(|m| m.file_type().is_symlink())?;
-    permissions::resolved_path(&path.to_string_lossy()).map(PathBuf::from)
+    let full = lexically_full(path)?;
+    let mut current = PathBuf::new();
+    for component in full.components() {
+        current.push(component.as_os_str());
+        if !matches!(component, std::path::Component::Normal(_)) {
+            continue;
+        }
+        for _ in 0..40 {
+            if !std::fs::symlink_metadata(&current).is_ok_and(|m| m.file_type().is_symlink()) {
+                break;
+            }
+            let target = std::fs::read_link(&current).ok()?;
+            let joined = current.parent().map(|parent| parent.join(&target)).unwrap_or(target);
+            current = lexically_full(&joined)?;
+        }
+    }
+    Some(current)
 }
 
 impl Inner {
@@ -508,29 +666,25 @@ impl Inner {
         Path::new(&self.settings_path)
     }
 
+    /// What refused leases say ([`AntigravityRuleLeases::refusing`]).
+    fn refusal(&self) -> SettingsError {
+        SettingsError::of("unreadable", Some(&self.settings_path), None)
+    }
+
     /// `OwnFolders`: agy's folder these settings are in (`.gemini`, two up from `antigravity-cli\settings.json`) and the ledger's folder,
-    /// as written and resolved.
+    /// as written; [`permissions::checked_verdict`] compares them as the file system names them too.
     fn own_folders(&self) -> Vec<String> {
         let full = |path: &Path| std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-        let mut folders: Vec<PathBuf> = vec![];
+        let mut folders: Vec<String> = vec![];
         if let Some(agy) = full(self.settings()).parent().and_then(Path::parent) {
-            folders.push(agy.to_path_buf());
+            folders.push(agy.to_string_lossy().into_owned());
         }
         if let Some(ledger) = &self.ledger_path
             && let Some(folder) = full(ledger).parent()
         {
-            folders.push(folder.to_path_buf());
+            folders.push(folder.to_string_lossy().into_owned());
         }
-        let mut result = vec![];
-        for folder in folders {
-            let written = folder.to_string_lossy().into_owned();
-            let resolved = permissions::resolved_path(&written);
-            result.push(written);
-            if let Some(resolved) = resolved {
-                result.push(resolved);
-            }
-        }
-        result
+        folders
     }
 
     fn remove_once(&self, rules: &[String]) -> Result<(), SettingsError> {
@@ -621,7 +775,8 @@ impl Inner {
     }
 
     /// `Save`: writes beside the file and puts it in the file's place. On Windows the swap keeps the file's ACL, attributes and creation
-    /// time; elsewhere its mode is copied. A symbolic link keeps pointing where it did.
+    /// time; elsewhere its mode is copied. A symbolic link keeps pointing where it did. With no file yet, the new one takes the name only
+    /// while nothing has it (S-L2); a swap that left the temporary as the only copy keeps it (S-L4, [`KeptTemporary`]).
     fn save(&self, data: &[u8]) -> Result<(), SettingsError> {
         let target = self.target();
         let folder = target.parent().map(Path::to_path_buf).unwrap_or_default();
@@ -641,11 +796,13 @@ impl Inner {
                     use std::os::unix::fs::PermissionsExt;
                     std::fs::set_permissions(&temporary, std::fs::Permissions::from_mode(0o644))?;
                 }
-                std::fs::rename(&temporary, &target)
+                move_new(&temporary, &target)
             }
         })();
         if let Err(error) = outcome {
-            let _ = std::fs::remove_file(&temporary);
+            if !KeptTemporary::is(&error) {
+                let _ = std::fs::remove_file(&temporary);
+            }
             return Err(SettingsError::of("writeFailed", Some(&self.settings_path), Some(&error.to_string())));
         }
         Ok(())
@@ -671,7 +828,7 @@ impl Inner {
     }
 
     fn write_ledger(&self, ledger: &Ledger) -> std::io::Result<()> {
-        let Some(path) = &self.ledger_path else { return Ok(()) };
+        let Some(path) = self.ledger_path.as_ref().filter(|_| !self.reads_ledger_only) else { return Ok(()) };
         if ledger.is_empty() {
             if path.exists() {
                 std::fs::remove_file(path)?;
@@ -747,5 +904,24 @@ mod tests {
         assert_eq!(String::from_utf8(empty.write()).unwrap(), format!("{{{nl}  \"version\": 1,{nl}  \"entries\": []{nl}}}"));
         assert_eq!(Ledger::read(b"{\"version\":1}"), None, "no entries list");
         assert_eq!(Ledger::read(b"{ broken"), None);
+    }
+
+    /// S-L2: with no settings yet, the new file takes the name only while nothing has it (C# `File.Move`): a file agy made meanwhile is
+    /// never replaced, and the temporary is left to be deleted.
+    #[test]
+    fn a_new_file_never_replaces_one_made_meanwhile() {
+        let folder = std::env::temp_dir().join(format!("mighty-run-move-new-{}-{}", std::process::id(), wire::new_id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let (temporary, target) = (folder.join("new.tmp"), folder.join("settings.json"));
+        std::fs::write(&temporary, b"ours").unwrap();
+        std::fs::write(&target, b"agy's").unwrap();
+        let refused = move_new(&temporary, &target).unwrap_err();
+        assert_eq!(refused.kind(), std::io::ErrorKind::AlreadyExists, "{refused}");
+        assert_eq!(std::fs::read(&target).unwrap(), b"agy's", "agy's file stays");
+        assert!(temporary.exists(), "ours is still there, to be deleted");
+        std::fs::remove_file(&target).unwrap();
+        move_new(&temporary, &target).unwrap();
+        assert!(std::fs::read(&target).unwrap() == b"ours" && !temporary.exists(), "with nothing there it takes the name");
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }

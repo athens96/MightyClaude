@@ -243,6 +243,9 @@ struct Run {
     last_output: Mutex<Instant>,
     node_gate: Mutex<()>,
     done: watch::Sender<bool>,
+    /// Antigravity cards the parser made and the stdout pump has not judged and sent yet (S-H1: their file rules are asked of the disk
+    /// off the parser's thread, [`Exec::publish_antigravity_cards`]).
+    antigravity_cards: Mutex<Vec<crate::antigravity::PermissionRequest>>,
 }
 
 impl Run {
@@ -437,6 +440,7 @@ impl RunManager {
                 last_output: Mutex::new(Instant::now()),
                 node_gate: Mutex::new(()),
                 done: watch::channel(false).0,
+                antigravity_cards: Mutex::new(vec![]),
             });
             runs.insert(request.session_id.clone(), run.clone());
             let inner = self.inner.clone();
@@ -1185,14 +1189,12 @@ impl Exec {
         // The parser's shown reply is the graph's answer (Antigravity's reply, an ACP agent's streamed text).
         let answer =
             tracker.clone().map(|tracker| Arc::new(move |text: &str| lock(&tracker).antigravity_answer(text)) as crate::parser::AnswerHook);
-        // The card goes out before the run's last status (M/ProcessRunner.swift antigravityPermission).
-        let (card_run, card_emit) = (run.clone(), emit.clone());
+        // The card goes out before the run's last status (M/ProcessRunner.swift antigravityPermission), once the stdout pump has judged it
+        // off the parser's thread.
+        let card_run = run.clone();
         let antigravity_permission: crate::parser::AntigravityCardHook = Arc::new(move |card| {
             if !card_run.finished.load(Ordering::SeqCst) && card_run.request.kind == "claude" {
-                card_emit(RunEvent {
-                    antigravity_permission: Some(card),
-                    ..RunEvent::new(&card_run.request.session_id, "antigravityPermission")
-                });
+                lock(&card_run.antigravity_cards).push(card);
             }
         });
         let requested_resume = if run.request.provider == "gemini" { run.request.resume_id.clone() } else { None };
@@ -1976,6 +1978,29 @@ impl Exec {
         }
     }
 
+    /// The cards an Antigravity turn left (S-H1), each judged on a blocking thread — its file rules asked of the disk as the leases ask it
+    /// before adding them, never on the parser's thread — then sent before the pump reads on, so before the run's last status.
+    async fn publish_antigravity_cards(exec: &Arc<Exec>) {
+        let cards = std::mem::take(&mut *lock(&exec.run.antigravity_cards));
+        for card in cards {
+            let rules = exec.inner.options.antigravity_rules.clone();
+            let judged = tokio::task::spawn_blocking(move || match rules {
+                Some(rules) => rules.judge(card),
+                // No leases: nothing asks the disk, so no file rule is offered.
+                None => crate::antigravity::permissions::judged(card, &mighty_platform::unsupported::Unsupported, &[]),
+            })
+            .await;
+            let Ok(card) = judged else { continue };
+            let run = &exec.run;
+            if !run.finished.load(Ordering::SeqCst) && !run.finalizing.load(Ordering::SeqCst) {
+                (exec.emit)(RunEvent {
+                    antigravity_permission: Some(card),
+                    ..RunEvent::new(&run.request.session_id, "antigravityPermission")
+                });
+            }
+        }
+    }
+
     async fn pump_output(exec: Arc<Exec>, reader: Option<ChildReader>, limit: usize) {
         let mut lines = Lines::new(reader, limit);
         let request = &exec.run.request;
@@ -2025,6 +2050,9 @@ impl Exec {
                         }
                     }
                     exec.consume(&line);
+                    if request.provider == "gemini" {
+                        Self::publish_antigravity_cards(&exec).await;
+                    }
                     // EOF only after the CLI's own turn result; background tasks still running keep it open longer.
                     exec.run.touch();
                     if exec.run.channel().is_some() && stream::is_settle_point(&line) {

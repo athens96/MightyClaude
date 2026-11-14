@@ -74,6 +74,34 @@ pub fn json(text: &str) -> Value {
     serde_json::from_str(text).unwrap_or_else(|e| panic!("{e}: {text}"))
 }
 
+/// What a file rule's path is asked of this computer's disk with: Windows' own probe (`GetDriveTypeW`, links, `GetFinalPathNameByHandleW`).
+#[cfg(windows)]
+pub fn path_probe() -> std::sync::Arc<dyn mighty_platform::PathProbe> {
+    mighty_platform_windows::path_probe()
+}
+
+/// Elsewhere the checks' own: links read and paths resolved by std, as the Mac's probe does (no drive letters).
+#[cfg(not(windows))]
+pub fn path_probe() -> std::sync::Arc<dyn mighty_platform::PathProbe> {
+    struct StdProbe;
+    impl mighty_platform::PathProbe for StdProbe {
+        fn checks_paths(&self) -> bool {
+            true
+        }
+        fn fixed_drive(&self, _letter: char) -> bool {
+            false
+        }
+        fn link_target(&self, path: &Path) -> Option<PathBuf> {
+            std::fs::symlink_metadata(path).ok().filter(|m| m.file_type().is_symlink())?;
+            std::fs::read_link(path).ok()
+        }
+        fn final_path(&self, path: &Path) -> Option<PathBuf> {
+            std::fs::canonicalize(path).ok()
+        }
+    }
+    std::sync::Arc::new(StdProbe)
+}
+
 /// The stand-in CLI (C# `Verification.Self`).
 pub fn fake_cli() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_mighty-fake-cli"))

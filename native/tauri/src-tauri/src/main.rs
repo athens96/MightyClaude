@@ -218,6 +218,8 @@ fn main() {
     // The Antigravity rules' ledger (antigravity.rs, C# `AntigravityRuleLeases`) likewise.
     let antigravity_ledger =
         antigravity::ledger_path(&data_dir, platform.paths.local_dir(), platform.paths.profile_key(), options.allow_state_write);
+    let (local_dir, profile_key, allow_state_write) =
+        (platform.paths.local_dir().to_path_buf(), platform.paths.profile_key().to_string(), options.allow_state_write);
     // The file originals (files.rs, C# `FileOriginalStore`) likewise: the profile's `file-originals`, else this machine's own.
     let originals_dir = if options.allow_state_write {
         platform.paths.file_originals_dir()
@@ -271,7 +273,16 @@ fn main() {
                 Some(home) => home.join(antigravity::LEDGER),
                 None => antigravity_ledger.clone(),
             };
-            let agy_rules = antigravity::rules(agy_settings.as_deref(), &agy_ledger, &data_dir);
+            // The user's own settings: what a launch with `--allow-state-write` the other way round recorded goes too (C4), the profile's
+            // ledger read, never written, without the flag.
+            let other_ledger =
+                agy_settings.is_none().then(|| antigravity::ledger_path(&data_dir, &local_dir, &profile_key, !allow_state_write));
+            let agy_rules = antigravity::rules(
+                agy_settings.as_deref(),
+                &agy_ledger,
+                other_ledger.as_deref().map(|other| (other, allow_state_write)),
+                &[data_dir.clone(), local_dir.clone()],
+            );
             runs::Runs::start(
                 &host,
                 platform.processes.clone(),

@@ -25,16 +25,22 @@ use crate::panes;
 pub const LEDGER: &str = "antigravity-temporary-rules.json";
 
 /// `DesktopService`'s `AntigravityRules` and `AntigravityRuleSafety.AppDataFolder`: agy's settings at `settings` (None: the user's own,
-/// `%USERPROFILE%\.gemini\antigravity-cli\settings.json`), the ledger at `ledger`; no file rule may reach the app's `data_dir`. The
-/// swap that keeps the settings' ACL and attributes is `ReplaceFileW` on Windows.
-pub fn rules(settings: Option<&Path>, ledger: &Path, data_dir: &Path) -> AntigravityRuleLeases {
-    flow::set_app_data_folder(Some(data_dir.to_path_buf()));
+/// `%USERPROFILE%\.gemini\antigravity-cli\settings.json`), the ledger at `ledger`, and the other place a ledger may be (`other`: its path
+/// and whether it may be written), whose leftovers go at launch too (C4). No file rule may reach the app's folders (`app_folders`: the
+/// profile and this machine's local folder, C6/L7). The swap that keeps the settings' ACL and attributes is `ReplaceFileW` on Windows;
+/// a file rule's path is asked of the disk through the OS's probe.
+pub fn rules(settings: Option<&Path>, ledger: &Path, other: Option<(&Path, bool)>, app_folders: &[PathBuf]) -> AntigravityRuleLeases {
+    flow::set_app_folders(app_folders.to_vec());
     let settings = settings.map(Path::to_path_buf).unwrap_or_else(|| AntigravityRuleLeases::default_settings_path(None));
     #[cfg(windows)]
     let replace: leases::Replace = crate::host::replace_file_keeping;
     #[cfg(not(windows))]
     let replace: leases::Replace = leases::portable_replace;
-    AntigravityRuleLeases::with_replace(&settings, Some(ledger), None, None, replace)
+    let leases = AntigravityRuleLeases::with_ports(&settings, Some(ledger), None, None, replace, crate::platform::path_probe());
+    match other {
+        Some((other, writes)) if other != ledger => leases.with_other_ledger(other, writes),
+        _ => leases,
+    }
 }
 
 /// Where the ledger goes: the profile's own with `--allow-state-write`, else this machine's local folder for the profile.
@@ -126,13 +132,15 @@ pub async fn answer(host: &Arc<Host>, id: &str, request: &PermissionRequest, dec
     let not_pending = host.locale.get("remote.error.notPendingPermission");
     let Ok(engine) = host.engine() else { return Some(not_pending) };
     let service = engine.service.clone();
-    if !panes::alive(&host.view(), id) || service.antigravity_answering(id, request) {
+    // Quitting answers nothing (C7, C# `owner.closing`).
+    if host.closing() || !panes::alive(&host.view(), id) || service.antigravity_answering(id, request) {
         return Some(not_pending);
     }
     let Some(card) = service.pending_antigravity_card(id, &request.id, &request.run_id) else { return Some(not_pending) };
     service.set_antigravity_error(id, None);
     if decision == PermissionDecision::Deny {
         service.take_antigravity_card(id);
+        revoke_queued(host, id, &card.id);
         return None;
     }
     let refuse = |reason: String| {
@@ -157,7 +165,8 @@ pub async fn answer(host: &Arc<Host>, id: &str, request: &PermissionRequest, dec
         let pane = session(&host.view(), id).ok();
         let pane = match pane {
             Some(pane)
-                if panes::alive(&host.view(), id)
+                if !host.closing()
+                    && panes::alive(&host.view(), id)
                     && service.pending_antigravity_card(id, &card.id, &card.run_id).is_some()
                     && pane.kind() == "claude"
                     && pane.provider() == "gemini" =>
@@ -224,9 +233,11 @@ pub async fn answer(host: &Arc<Host>, id: &str, request: &PermissionRequest, dec
         match started {
             Ok(_) => None,
             Err(error) => {
-                // It did not start (agy's settings refused the rules meanwhile): the card comes back with the reason.
-                if !panes::alive(&host.view(), id) {
-                    return Some(error.message().to_string());
+                // It did not start (agy's settings refused the rules meanwhile): the card comes back with the reason. Quitting (the
+                // start cancelled, with no words) or a pane gone: nothing comes back and the card shows no reason (C7).
+                if host.closing() || !panes::alive(&host.view(), id) || error.message().is_empty() {
+                    let message = error.message();
+                    return Some(if message.is_empty() { not_pending } else { message.to_string() });
                 }
                 service.restore_antigravity_card(id, card.clone());
                 refuse(error.message().to_string())
@@ -236,6 +247,27 @@ pub async fn answer(host: &Arc<Host>, id: &str, request: &PermissionRequest, dec
     .await;
     service.end_antigravity_answer(id, &card);
     outcome
+}
+
+/// S-L3: a denied card's queued continuation loses its grant: the item and its rules leave the queue, so no later start puts in place
+/// rules the user refused.
+pub fn revoke_queued(host: &Host, id: &str, card_id: &str) {
+    if let Some(ui) = host.view().panes.get_mut(id)
+        && ui.revoke_continuations(card_id)
+    {
+        ui.dirty = true;
+    }
+}
+
+/// S-L3: a queued continuation that could not start lost its grant with its place in the queue ([`crate::composer::drain_queue`]); its
+/// card comes back with the reason and decides again — unless quit began, the pane went or it has another card now.
+pub fn continuation_failed(host: &Host, id: &str, card: PermissionRequest, reason: &str) {
+    let Some(runs) = host.runs().filter(|_| !host.closing()) else { return };
+    runs.service.restore_antigravity_card(id, card.clone());
+    if !reason.is_empty() && runs.service.antigravity_card(id).as_ref() == Some(&card) {
+        runs.service.set_antigravity_error(id, Some(reason));
+    }
+    mark(host, id);
 }
 
 /// The page method's arguments read as `RegisterCardMethods` reads them.
