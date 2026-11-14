@@ -69,6 +69,75 @@ pub fn pi(text: &str) -> bool {
     ["no api key", "no models available", "use /login", "run /login", "please /login"].iter().any(|phrase| value.contains(phrase))
 }
 
+/// `CliAuthFailure.Opencode`: OpenCode 2's own sign-in failures, as an ACP error or a failed call's words — its `provider.auth` error
+/// (ACP -32000 "provider authentication required", "Authorization failed"), the free models' limit, a provider's 401 or an invalid key,
+/// and its hint to run `opencode auth login`. A proxy's "407 Proxy Authentication Required" is not a lost sign-in.
+pub fn opencode(text: &str) -> bool {
+    let value = bounded(text);
+    if value.contains("proxy authentication") {
+        return false;
+    }
+    [
+        "provider authentication required",
+        "provider.auth",
+        "authorization failed",
+        "free usage limit reached",
+        "connect a provider",
+        "providerautherror",
+        "authentication required",
+        "auth required",
+        "api key is missing",
+        "invalid api key",
+        "invalid x-api-key",
+        "incorrect api key",
+        "opencode auth login",
+        "token has expired",
+        "please log in",
+        "not logged in",
+    ]
+    .iter()
+    .any(|phrase| value.contains(phrase))
+        || value.contains("401") && (value.contains("unauthorized") || value.contains("authentication"))
+}
+
+/// `CliAuthFailure.Hermes`: Hermes's own words for a missing or lost model provider, in a failed turn's reply or an ACP error ("provider
+/// 'auto' has no endpoint configured", "No LLM provider configured", its hints to run `hermes model` / `hermes setup` / `hermes auth add`,
+/// a provider's 401 or an invalid key). A proxy's "407 Proxy Authentication Required" is not a lost sign-in.
+pub fn hermes(text: &str) -> bool {
+    let value = bounded(text);
+    if value.contains("proxy authentication") {
+        return false;
+    }
+    [
+        "has no endpoint configured",
+        "no endpoint configured",
+        "not connected to any ai provider",
+        "no llm provider configured",
+        "no inference provider",
+        "run `hermes model`",
+        "run hermes model",
+        "run `hermes setup`",
+        "run hermes setup",
+        "hermes auth add",
+        "run `hermes auth`",
+        "not logged into",
+        "credentials available",
+        "configure an api key",
+        "api key is missing",
+        "invalid api key",
+        "invalid x-api-key",
+        "incorrect api key",
+        "authentication_error",
+        "token has expired",
+        "needs refresh",
+        "please log in",
+        "not logged in",
+    ]
+    .iter()
+    .any(|phrase| value.contains(phrase))
+        || value.contains("401") && (value.contains("unauthorized") || value.contains("authentication"))
+}
+
 /// `CliAuthFailure.AntigravitySucceeded`.
 pub fn antigravity_succeeded(line: &str) -> bool {
     if !line.contains("\"result\"") || !line.trim_start().starts_with('{') {

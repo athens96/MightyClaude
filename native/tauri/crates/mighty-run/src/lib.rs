@@ -16,9 +16,11 @@
 //! | `ClaudePlanMode.cs`, `FlowSteps.cs` (recording), `BackgroundOutputTail.cs` | [`plan_mode`], [`flow_steps`], [`background_output`] |
 //! | `ModBridge.cs`, `HttpHost.cs` | [`mods`] |
 //! | `AttachmentSupport.cs` | [`attachments`] |
+//! | `AcpChannel.cs`, `AcpAgents.cs`, `AgentQuestions.cs` (`AcpElicitationForm`), `OpencodeAccounts.cs`, `HermesAccounts.cs` | [`acp`] (and the parser's `acp` part, OutputParser.Acp.cs) |
 //! | `RunManager.cs` | [`manager`] (with the [`graph::GraphSink`] the graph tracker plugs into) |
 //! | `DesktopService.cs` (runs) | [`service`] |
 
+pub mod acp;
 pub mod activity;
 pub mod apply;
 pub mod attachments;

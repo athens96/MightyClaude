@@ -446,7 +446,8 @@ async fn fake_cli_receives_attachment_bytes_and_staging_is_removed() {
         mighty_run::attachments::make("source.cs", b"attachment-fixture-contents").unwrap(),
     ];
     let events = Events::default();
-    // pi, Antigravity and the ACP agents are read through their own channels and streams (W5): their runs are refused until then.
+    // pi and the ACP agents take their attachments in their own channels (tests/acp.rs for the ACP prompt, as C#'s loop leaves them
+    // out); Antigravity's stream is W5's, and its runs are refused until then.
     for provider in
         mighty_core::wire::PROVIDERS.iter().copied().filter(|p| !matches!(*p, "pi" | "gemini") && !mighty_run::providers::is_acp(p))
     {
@@ -791,8 +792,8 @@ async fn a_panic_in_a_run_ends_it_and_frees_its_pane() {
     common::remove_when_free(&directory).await;
 }
 
-/// pi and Antigravity are read by streams of their own (W5): until then their runs are refused with the reason, as the ACP agents'
-/// are, instead of launching a CLI whose answer would never be read.
+/// pi and Antigravity are read by streams of their own (W5): until then their runs are refused with the reason, instead of launching
+/// a CLI whose answer would never be read. (The ACP agents run: tests/acp_run.rs.)
 #[tokio::test(flavor = "multi_thread")]
 async fn pi_and_antigravity_runs_are_refused_until_their_streams() {
     common::korean();

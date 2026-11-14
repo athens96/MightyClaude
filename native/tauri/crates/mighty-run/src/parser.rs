@@ -1,8 +1,9 @@
 //! C# `OutputParser` (OutputParser.cs:10-615): an agent's stream as the pane's transcript — its answers, its tool rows with their
 //! durations, its resume id, its usage, the pictures it showed.
 //!
-//! Claude's stream-json and Codex's `exec --json` are read here. pi's RPC, the ACP agents' frames and Antigravity's stream are W5's:
-//! a [`ProviderStream`] plugs each in, and without one their frames are left unread. Codex's `collab_tool_call` rows need the graph
+//! Claude's stream-json and Codex's `exec --json` are read here, and the ACP agents' (opencode, Hermes) `acp.*` events in its `acp`
+//! part (C# OutputParser.Acp.cs). pi's RPC and Antigravity's stream are W5's: a [`ProviderStream`] plugs each in, and without one
+//! their frames are left unread. Codex's `collab_tool_call` rows need the graph
 //! tracker's `CodexCollaborationItem` (mighty-graph) and its `image_view` pictures the image paths (W4): both go to the hooks.
 //!
 //! Every callback runs under the parser's lock, as C#'s do; none may call back into the parser.
@@ -25,6 +26,9 @@ use crate::permissions::ToolPermissionRequest;
 use crate::stream;
 use crate::strings;
 use crate::usage::SessionUsageTracker;
+
+mod acp;
+pub use acp::acp_output;
 
 /// Why a picture was refused (C# `AgentImageError`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,6 +134,9 @@ pub type GraphImagesHook = Arc<dyn Fn(&LogEntry, Option<&str>, Option<&str>) -> 
 /// An Edit, Write or MultiEdit result the run read (`FileOriginal`): the path as the tool named it, the tool, and the line's
 /// `tool_use_result`, for the file originals (FileChanges, W4) to make their `FileEdit` of.
 pub type FileOriginalHook = Arc<dyn Fn(&str, &str, &Value) + Send + Sync>;
+/// Hears each reply the transcript shows of an agent whose request's answer the graph takes from the parser (an ACP agent's streamed
+/// text): the latest one is the request's answer (C# `answer`, the tracker's `AntigravityAnswer`).
+pub type AnswerHook = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// The parser's callbacks (C#'s constructor arguments).
 #[derive(Clone, Default)]
@@ -143,6 +150,7 @@ pub struct ParserHooks {
     pub graph_images: Option<GraphImagesHook>,
     pub images: Option<Arc<dyn ImageStore>>,
     pub file_original: Option<FileOriginalHook>,
+    pub answer: Option<AnswerHook>,
 }
 
 struct Inner {
@@ -164,6 +172,12 @@ struct Inner {
     stored_images: usize,
     image_limit_noted: bool,
     other: Option<Box<dyn ProviderStream>>,
+    /// `AuthenticationFailure`: the run's failure is a lost sign-in, as the stream says (an ACP agent's error).
+    authentication_failure: bool,
+    /// The message the streamed ACP text belongs to: a new one ends the previous reply.
+    acp_message: Option<String>,
+    /// The tail of the turn's reply text: Hermes says why a turn failed in the reply, and the error that follows only says that it failed.
+    acp_reply_tail: String,
 }
 
 /// C# `OutputParser`.
@@ -216,6 +230,9 @@ impl OutputParser {
                 stored_images: 0,
                 image_limit_noted: false,
                 other: None,
+                authentication_failure: false,
+                acp_message: None,
+                acp_reply_tail: String::new(),
             }),
             suppress_interrupted_result: AtomicBool::new(false),
             image_root: Mutex::new(None),
@@ -235,6 +252,11 @@ impl OutputParser {
 
     pub fn failed(&self) -> bool {
         lock(&self.inner).failed
+    }
+
+    /// `AuthenticationFailure`: the stream read the run's failure as a lost sign-in (an ACP agent's error; a later turn clears it).
+    pub fn authentication_failure(&self) -> bool {
+        lock(&self.inner).authentication_failure
     }
 
     pub fn pi_turn_open(&self) -> bool {
@@ -485,6 +507,7 @@ impl OutputParser {
         match self.provider.as_str() {
             "claude" => self.claude(&mut inner, &root, kind),
             "codex" => self.codex(&mut inner, &root, kind),
+            "opencode" | "hermes" => self.acp(&mut inner, &root, kind),
             _ => {
                 if let Some(mut other) = inner.other.take() {
                     let mut resumed: Vec<String> = Vec::new();

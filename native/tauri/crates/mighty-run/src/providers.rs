@@ -3,9 +3,9 @@
 //! (`ReadModelsAsync` for Claude and Codex, `ReadListCommandAsync` for agy, pi and opencode, `GetRuntimeAsync`).
 //!
 //! Deviations, until their stages: the last list each CLI gave is kept in memory only (C#'s `KeptModelLists` file is W5/W6), so a
-//! restart starts from the built-in lists; Hermes's model picker (`HermesAgent.CachedCatalog`) and pi's shipped question extension
-//! (`AgentFiles`) are W5 — Hermes lists only its own default here, and pi runs without the `ask_user` tool unless
-//! [`set_agent_files`] names the folder that holds it.
+//! restart starts from the built-in lists; pi's shipped question extension (`AgentFiles`) is W5 — pi runs without the `ask_user` tool
+//! unless [`set_agent_files`] names the folder that holds it. Hermes lists the picker its last session offered
+//! (`HermesAgent.CachedCatalog`, kept where [`ProviderCatalog::set_hermes_model_cache`] says; none kept: only its own default).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -859,6 +859,8 @@ pub struct ProviderCatalog {
     gate: tokio::sync::Mutex<RuntimeCache>,
     /// `KeptModelLists` in memory: the newest list each CLI gave, per workspace (None: outside any) and per provider.
     kept: Mutex<HashMap<(String, Option<String>), ModelCatalog>>,
+    /// `HermesModelCache`: where the picker the last Hermes session offered is kept (none: nothing is kept).
+    hermes_model_cache: Mutex<Option<PathBuf>>,
 }
 
 impl ProviderCatalog {
@@ -872,7 +874,19 @@ impl ProviderCatalog {
             overrides: Mutex::new(HashMap::new()),
             gate: tokio::sync::Mutex::new(RuntimeCache { cached: None, directory: None, refreshed: None }),
             kept: Mutex::new(HashMap::new()),
+            hermes_model_cache: Mutex::new(None),
         }
+    }
+
+    /// Where the picker the last Hermes session offered is kept (C#: `hermes-models.json` in the storage folder; none without one, so
+    /// a checks' fake Hermes never writes over a user's).
+    pub fn set_hermes_model_cache(&self, path: Option<PathBuf>) {
+        *lock(&self.hermes_model_cache) = path;
+    }
+
+    /// `HermesModelCache`.
+    pub fn hermes_model_cache(&self) -> Option<PathBuf> {
+        lock(&self.hermes_model_cache).clone()
     }
 
     pub fn processes(&self) -> Arc<dyn ProcessHost> {
@@ -1214,7 +1228,8 @@ impl ProviderCatalog {
             None => {
                 fallback(id).with_failure(strings::get_with("run.error.cliExecutableMissing", &[("name", strings::provider_label(id))]))
             }
-            Some(_) if id == "hermes" => fallback("hermes"),
+            // Hermes lists models only inside a session: the picker its last session offered is kept and read here.
+            Some(_) if id == "hermes" => crate::acp::agents::hermes_cached_catalog(self.hermes_model_cache().as_deref()),
             Some(command) if matches!(id, "gemini" | "pi" | "opencode") => self.read_list_command(id, command, Some(directory)).await,
             Some(command) => self.read_models(id, command, Some(directory), None).await,
         };
