@@ -2,10 +2,13 @@
 //! arguments a run gets (`Arguments`, every provider, pure), where its CLI is (`FindAsync`, `DiscoverAsync`) and its model list
 //! (`ReadModelsAsync` for Claude and Codex, `ReadListCommandAsync` for agy, pi and opencode, `GetRuntimeAsync`).
 //!
-//! Deviations, until their stages: the last list each CLI gave is kept in memory only (C#'s `KeptModelLists` file is W5/W6), so a
-//! restart starts from the built-in lists; Hermes's model picker (`HermesAgent.CachedCatalog`) and pi's shipped question extension
-//! (`AgentFiles`) are W5 — Hermes lists only its own default here, and pi runs without the `ask_user` tool unless
-//! [`set_agent_files`] names the folder that holds it.
+//! The last list each CLI gave is kept ([`crate::kept_lists`], C# `KeptModelLists`): in memory, and in the storage folder when the
+//! catalog has one ([`ProviderCatalog::with_storage`], C#'s `storageDirectory`), so a restart still has it. Hermes lists the picker its
+//! last session offered (`HermesAgent.CachedCatalog`, `hermes-models.json` in the same folder: [`ProviderCatalog::hermes_model_cache`];
+//! none kept, only its own default).
+//!
+//! The agents' shipped files (`AgentFiles`: pi's `ask_user` extension, opencode's question instructions) are looked up in `Agents`
+//! beside the executable, or in the folder [`set_agent_files`] names (the app names the repository's own in a development build).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -22,6 +25,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::activity::clean;
+use crate::kept_lists::{self, KeptModelLists};
 use crate::lines::{Lines, Next};
 use crate::meta;
 use crate::model::{CliCommand, ModelCatalog, ModelOption, ModsInfo, ProviderCapabilities, ProviderRuntime, RuntimeInfo, StartRunRequest};
@@ -857,8 +861,16 @@ pub struct ProviderCatalog {
     commands: Mutex<HashMap<String, Option<CliCommand>>>,
     overrides: Mutex<HashMap<String, CliCommand>>,
     gate: tokio::sync::Mutex<RuntimeCache>,
-    /// `KeptModelLists` in memory: the newest list each CLI gave, per workspace (None: outside any) and per provider.
-    kept: Mutex<HashMap<(String, Option<String>), ModelCatalog>>,
+    /// `storageDirectory`: where the last list each CLI gave is kept ([`kept_lists::FILE_NAME`]); None keeps them in memory only.
+    storage: Option<PathBuf>,
+    /// `keptLists` (loaded from the storage folder on first use) and `keptWrittenAt`, under C#'s `keptGate`.
+    kept: Mutex<Kept>,
+}
+
+#[derive(Default)]
+struct Kept {
+    lists: Option<KeptModelLists>,
+    written_at: Option<mighty_core::time::DateTimeOffset>,
 }
 
 impl ProviderCatalog {
@@ -871,8 +883,27 @@ impl ProviderCatalog {
             commands: Mutex::new(HashMap::new()),
             overrides: Mutex::new(HashMap::new()),
             gate: tokio::sync::Mutex::new(RuntimeCache { cached: None, directory: None, refreshed: None }),
-            kept: Mutex::new(HashMap::new()),
+            storage: None,
+            kept: Mutex::new(Kept::default()),
         }
+    }
+
+    /// C#'s `storageDirectory`: the folder the last list each CLI gave is kept in (the profile folder, or this machine's own when the
+    /// app may not write its profile); None (the checks, helpers) keeps the lists in memory only.
+    pub fn with_storage(mut self, directory: Option<PathBuf>) -> ProviderCatalog {
+        self.storage = directory;
+        self
+    }
+
+    /// The storage folder [`with_storage`](Self::with_storage) gave.
+    pub fn storage_directory(&self) -> Option<&Path> {
+        self.storage.as_deref()
+    }
+
+    /// `HermesModelCache`: `hermes-models.json` in the storage folder, beside the kept model lists as C# keeps both; none without one,
+    /// so a checks' fake Hermes never writes over a user's.
+    pub fn hermes_model_cache(&self) -> Option<PathBuf> {
+        self.storage_directory().map(|folder| folder.join(crate::acp::agents::HERMES_MODEL_CACHE_FILE))
     }
 
     pub fn processes(&self) -> Arc<dyn ProcessHost> {
@@ -1214,11 +1245,18 @@ impl ProviderCatalog {
             None => {
                 fallback(id).with_failure(strings::get_with("run.error.cliExecutableMissing", &[("name", strings::provider_label(id))]))
             }
-            Some(_) if id == "hermes" => fallback("hermes"),
+            // Hermes lists models only inside a session: the picker its last session offered is kept and read here (on a blocking
+            // thread: a file read).
+            Some(_) if id == "hermes" => {
+                let kept = self.hermes_model_cache();
+                tokio::task::spawn_blocking(move || crate::acp::agents::hermes_cached_catalog(kept.as_deref()))
+                    .await
+                    .unwrap_or_else(|_| crate::acp::agents::hermes_cached_catalog(None))
+            }
             Some(command) if matches!(id, "gemini" | "pi" | "opencode") => self.read_list_command(id, command, Some(directory)).await,
             Some(command) => self.read_models(id, command, Some(directory), None).await,
         };
-        let catalog = self.settle(id, read, workspace);
+        let catalog = self.settle(id, read, workspace).await;
         let version = command.as_ref().and_then(|c| c.version.clone());
         let available = command.is_some() && (id != "claude" || supports_mods(version.as_deref()));
         let detail = if command.is_none() {
@@ -1240,24 +1278,64 @@ impl ProviderCatalog {
     }
 
     /// `SettleAsync`: a list the CLI gave is kept as its newest; a failed read answers with the list kept for this workspace (else the
-    /// provider's newest anywhere), or the built-in list, marked with why.
-    fn settle(&self, provider: &str, read: ModelCatalog, workspace: Option<&str>) -> ModelCatalog {
+    /// provider's newest anywhere), or the built-in list, either marked with why the read failed (M/MightyCore/ProviderService.swift
+    /// settle). Hermes's picker is its own kept list: one forgotten for a Hermes with no provider is not brought back as an earlier list.
+    async fn settle(&self, provider: &str, read: ModelCatalog, workspace: Option<&str>) -> ModelCatalog {
         if provider == "hermes" {
             return read;
         }
-        let mut kept = lock(&self.kept);
         if read.is_fresh() {
-            let listed =
-                ModelCatalog { listed_at: Some(crate::plan_mode::timestamp(mighty_core::time::DateTimeOffset::now())), ..read.clone() };
-            kept.insert((provider.into(), workspace.map(str::to_string)), listed.clone());
-            kept.insert((provider.into(), None), listed);
+            self.keep(&read, provider, workspace).await;
             return read;
         }
         let reason =
             read.read_failure.clone().unwrap_or_else(|| read_failure(provider, &strings::get("provider.catalog.failure.noModels"), ""));
-        match kept.get(&(provider.into(), workspace.map(str::to_string))).or_else(|| kept.get(&(provider.into(), None))) {
-            Some(entry) => ModelCatalog { read_failure: Some(reason), ..entry.clone() },
+        let entry = if self.load_kept().await {
+            lock(&self.kept).lists.as_ref().and_then(|lists| lists.list(provider, workspace).cloned())
+        } else {
+            None
+        };
+        match entry {
+            Some(entry) => kept_lists::kept(&entry, &reason),
             None => fallback(provider).with_failure(reason),
+        }
+    }
+
+    /// `LoadedKeptLists()`: the kept lists, read from the storage folder the first time, off the async worker. A file that is there and
+    /// could not be read (another program holding it, access refused) is not taken for "no lists" (C# would): false, nothing kept, and
+    /// it is read again next time, so a keep never writes over the lists it holds.
+    async fn load_kept(&self) -> bool {
+        if lock(&self.kept).lists.is_some() {
+            return true;
+        }
+        let read = match KeptModelLists::file_path(self.storage.as_deref()) {
+            None => Ok(KeptModelLists::default()),
+            Some(path) => tokio::task::spawn_blocking(move || KeptModelLists::read(Some(&path)))
+                .await
+                .unwrap_or_else(|e| Err(std::io::Error::other(e))),
+        };
+        let Ok(lists) = read else { return false };
+        lock(&self.kept).lists.get_or_insert(lists);
+        true
+    }
+
+    /// `KeepAsync`: keeps a list the CLI just gave, writing the file (in the storage folder only) when it changed or is five minutes
+    /// old. A write that fails leaves the list kept in memory; the next change writes it. While the kept lists' file cannot be read,
+    /// nothing is kept.
+    async fn keep(&self, catalog: &ModelCatalog, provider: &str, workspace: Option<&str>) {
+        if !self.load_kept().await {
+            return;
+        }
+        let now = mighty_core::time::DateTimeOffset::now();
+        let data = {
+            let mut kept = lock(&self.kept);
+            let written_at = kept.written_at;
+            let Some(lists) = kept.lists.as_mut() else { return };
+            (lists.remember(catalog, provider, workspace, now, written_at) && self.storage.is_some()).then(|| lists.encoded())
+        };
+        let (Some(data), Some(path)) = (data, KeptModelLists::file_path(self.storage.as_deref())) else { return };
+        if let Ok(Ok(())) = tokio::task::spawn_blocking(move || kept_lists::write(&path, &data)).await {
+            lock(&self.kept).written_at = Some(now);
         }
     }
 

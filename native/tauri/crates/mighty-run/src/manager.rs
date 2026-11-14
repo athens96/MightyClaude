@@ -2,13 +2,25 @@
 //! events. A run starts (`Begin`), its process is found, launched with its arguments and environment through the platform's
 //! `ProcessHost`, read line by line (`ExecuteAsync`), steered (`TrySteer`), answered (permissions, plans, questions) and stopped
 //! (`Stop`, 10 s). Its timers are C#'s: the graph published every second, a Claude run's input closed after 120 s of silence once
-//! the request answered and no background task runs (`BackgroundIdleClose`), the permission handshake given 15 s.
+//! the request answered and no background task runs (`BackgroundIdleClose`), the permission handshake given 15 s (Claude's, and a
+//! Codex `onRequest` run's app-server turn: `CodexApprovalChannel`, whose approvals are the pane's tool-permission requests).
 //!
-//! Until their stages: Codex's approval channel (`onRequest`), the ACP agents (opencode, Hermes), pi's RPC and dialogs and
-//! Antigravity's stream are W5 — a run of opencode, Hermes, pi or Antigravity, or a Codex run in `onRequest`, is refused with the
-//! reason (pi and Antigravity are read through the parser's `ProviderStream` once W5 plugs it in). A sharing host's PowerShell
-//! commands are W8. The Agent IO / delegation binding (W7) plugs in through [`RunBinding`]; the file originals (W4) through
-//! [`FileOriginals`].
+//! pi (`pi --mode rpc`) reads `get_state` and the prompt and keeps its stdin for a steer until its turn ended and it went quiet for
+//! a second (`ClosePiWhenIdle`); its extensions' dialogs are the pane's question cards (`PiDialogChannel`), a deadline pi gives one
+//! closing its card when it passes.
+//!
+//! An Antigravity run reads agy's stream through the parser, sends its card before the run's last status (`antigravityPermission`),
+//! says a missing conversation once (`AntigravityStderr`) and follows the sub-agents' own transcripts about once a second, as a Codex
+//! run's session files are, through the graph's [`GraphSink::read_children`] (C# `ReadChildren`).
+//!
+//! opencode and Hermes runs speak the Agent Client Protocol through [`AcpChannel`] (C# `StartAcp`, `EndAcp`, `StopHermes`): one
+//! `opencode acp` / `hermes acp` per request, the pane's mode as OpenCode 2's rules (`OPENCODE_CONFIG_CONTENT`) or Hermes's edit
+//! policy and `HERMES_YOLO_MODE`, the initialize given 45 s (Hermes 90 s), the server ended 2 s after the prompt's answer, Hermes told
+//! `session/cancel` a second before a stop ends it. What Hermes's `state.db` says of a session to continue comes from the host
+//! ([`HermesSessionReader`]: mighty-history reads it, which this crate cannot name).
+//!
+//! Until their stages: a sharing host's PowerShell commands are W8. The Agent IO / delegation binding (W7) plugs in through
+//! [`RunBinding`]; the file originals (W4) through [`FileOriginals`].
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -25,10 +37,14 @@ use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, oneshot, watch};
 
+use crate::acp::agents::{self, HermesStderrFilter, QuestionOutcome, QuestionTool};
+use crate::acp::{self, AcpChannel, AcpHooks, AcpRequest};
 use crate::activity;
+use crate::antigravity::records as antigravity_records;
 use crate::attachments::StagedAttachments;
+use crate::codex_approval::{self, CodexApprovalChannel, CodexHooks};
 use crate::failure;
-use crate::graph::{GraphFactory, GraphSink, GraphStart};
+use crate::graph::{ChildSources, GraphFactory, GraphSink, GraphStart};
 use crate::lines::{Lines, Next};
 use crate::meta;
 use crate::model::{RunEvent, StartRunRequest};
@@ -36,6 +52,7 @@ use crate::mods::{Connection, ModBridge, ModMetadata};
 use crate::parser::{ImageStore, OutputParser, ParserHooks, maximum_line_bytes};
 use crate::permissions::{ChannelHooks, ClaudePermissionChannel, ProviderInput, ToolPermissionRequest};
 use crate::phase_models;
+use crate::pi_dialogs::{PiDialogChannel, PiDialogHooks};
 use crate::plan_mode::{BackgroundTaskTracker, PlanDecision, TodoProgressTracker, work};
 use crate::presentation::strings as copy;
 use crate::providers::{self, ProviderCatalog};
@@ -63,6 +80,14 @@ pub type BindingFactory = Arc<dyn Fn(&StartRunRequest, &Workspace) -> Option<Run
 /// run works in, and what an Edit, Write or MultiEdit result said (the parser's `FileOriginalHook` arguments).
 pub type FileOriginals = Arc<dyn Fn(&str, &str, &str, &str, &str, &Value) + Send + Sync>;
 
+/// Whether pi keeps the record of a session (C# `PiAgent.SessionFile(id, workspacePath, home, environment) is not null`, mighty-history's
+/// `pi::session_file`): the session id, the folder the run works in and the CLI's environment.
+pub type PiSessions = Arc<dyn Fn(&str, &str, &BTreeMap<String, String>) -> bool + Send + Sync>;
+/// What Hermes's `state.db` says of a session before a run continues it (C# `HermesSessions.MessageCount` and `StartedWithFullAccess`
+/// of `HermesSessions.StateDatabase(environment)`): given the run's CLI environment and the session id, its message count and whether it
+/// started with `--yolo`, each None when it cannot be read (a pane that asks then starts a new session: `agents::hermes_resume`).
+pub type HermesSessionReader = Arc<dyn Fn(&BTreeMap<String, String>, &str) -> (Option<i32>, Option<bool>) + Send + Sync>;
+
 /// `RunManager`'s constructor arguments and settable properties.
 #[derive(Clone)]
 pub struct RunManagerOptions {
@@ -79,6 +104,18 @@ pub struct RunManagerOptions {
     pub background_idle_close: Duration,
     pub binding: Option<BindingFactory>,
     pub file_originals: Option<FileOriginals>,
+    /// pi exits on a session it cannot find (one that never got an answer is not written): a run asked to continue a session this
+    /// says pi has no record of starts a new one. None keeps every resume as asked.
+    pub pi_sessions: Option<PiSessions>,
+    /// agy's settings and the app's ledger the desktop service's Antigravity continuations hold rules in (C# `DesktopService.AntigravityRules`);
+    /// the service takes them from here (the runner never reads them). None is the user's own settings without a ledger.
+    pub antigravity_rules: Option<crate::antigravity::AntigravityRuleLeases>,
+    /// The home an Antigravity run's sub-agents keep their transcripts under (`AntigravityRecords.Brain(home)`); None is the user's
+    /// profile (C#'s `Environment.SpecialFolder.UserProfile`). Checks pass a fake one.
+    pub antigravity_home: Option<PathBuf>,
+    /// Hermes's session facts (None: nothing is read, as for a record that cannot be read: a pane that asks starts a new session, a
+    /// full-access one continues it as asked).
+    pub hermes_session: Option<HermesSessionReader>,
 }
 
 impl RunManagerOptions {
@@ -94,6 +131,10 @@ impl RunManagerOptions {
             background_idle_close: Duration::from_secs(120),
             binding: None,
             file_originals: None,
+            pi_sessions: None,
+            antigravity_rules: None,
+            antigravity_home: None,
+            hermes_session: None,
         }
     }
 }
@@ -170,6 +211,18 @@ struct Run {
     input: Mutex<Option<Arc<InputPipe>>>,
     input_gate: Mutex<()>,
     permissions: Mutex<Option<Arc<ClaudePermissionChannel>>>,
+    /// A Codex run in `onRequest`: the app-server channel its stdio carries.
+    codex: Mutex<Option<Arc<CodexApprovalChannel>>>,
+    /// A pi run's extension dialogs (its `ask_user` tool among them) as the pane's question card.
+    pi_dialogs: Mutex<Option<Arc<PiDialogChannel>>>,
+    /// pi's stdin was closed after its turn ended (or never opened): no steer follows.
+    pi_input_closed: AtomicBool,
+    /// An ACP agent's run (opencode, Hermes): the JSON-RPC channel its stdio carries.
+    acp: Mutex<Option<Arc<AcpChannel>>>,
+    /// The ACP prompt was answered and the runner ended the agent's server itself (not a failure).
+    acp_ending: AtomicBool,
+    /// stdin of an ACP run was closed after its prompt's answer.
+    acp_input_closed: AtomicBool,
     parser: Mutex<Option<Arc<OutputParser>>>,
     tracker: Mutex<Option<SharedSink>>,
     redact: Mutex<Option<Redact>>,
@@ -191,6 +244,9 @@ struct Run {
     last_output: Mutex<Instant>,
     node_gate: Mutex<()>,
     done: watch::Sender<bool>,
+    /// Antigravity cards the parser made and the stdout pump has not judged and sent yet (S-H1: their file rules are asked of the disk
+    /// off the parser's thread, [`Exec::publish_antigravity_cards`]).
+    antigravity_cards: Mutex<Vec<crate::antigravity::PermissionRequest>>,
 }
 
 impl Run {
@@ -207,6 +263,29 @@ impl Run {
 
     fn channel(&self) -> Option<Arc<ClaudePermissionChannel>> {
         lock(&self.permissions).clone()
+    }
+
+    fn codex(&self) -> Option<Arc<CodexApprovalChannel>> {
+        lock(&self.codex).clone()
+    }
+
+    fn pi_dialogs(&self) -> Option<Arc<PiDialogChannel>> {
+        lock(&self.pi_dialogs).clone()
+    }
+
+    /// pi's stdin while it is open (C#'s writes under `InputGate`: never after the run's end or the close after its turn).
+    fn pi_write(&self, text: &str) {
+        let _gate = lock(&self.input_gate);
+        if self.finished.load(Ordering::SeqCst) || self.pi_input_closed.load(Ordering::SeqCst) {
+            return;
+        }
+        if let Some(input) = lock(&self.input).as_ref() {
+            let _ = input.write(text);
+        }
+    }
+
+    fn acp(&self) -> Option<Arc<AcpChannel>> {
+        lock(&self.acp).clone()
     }
 }
 
@@ -306,8 +385,10 @@ impl RunManager {
     /// (a stop finds it from now on) and its task started. The [`Admitted`] waits for the process when the request asks for that.
     pub fn admit(&self, value: StartRunRequest, awaited: bool) -> Result<Admitted> {
         let request = value.validate()?;
-        if request.provider == "codex" && request.settings().permission_mode == "onRequest" {
-            // CodexApprovalChannel is W5: until then a run that needs it has no surface to answer it, as C# says without one.
+        if request.provider == "codex"
+            && request.settings().permission_mode == "onRequest"
+            && self.inner.options.permission_requested.is_none()
+        {
             return Err(RunError::State("Codex approval requests require a local approval surface.".into()));
         }
         let receiver;
@@ -334,6 +415,12 @@ impl RunManager {
                 input: Mutex::new(None),
                 input_gate: Mutex::new(()),
                 permissions: Mutex::new(None),
+                codex: Mutex::new(None),
+                pi_dialogs: Mutex::new(None),
+                pi_input_closed: AtomicBool::new(false),
+                acp: Mutex::new(None),
+                acp_ending: AtomicBool::new(false),
+                acp_input_closed: AtomicBool::new(false),
                 parser: Mutex::new(None),
                 tracker: Mutex::new(None),
                 redact: Mutex::new(None),
@@ -354,6 +441,7 @@ impl RunManager {
                 last_output: Mutex::new(Instant::now()),
                 node_gate: Mutex::new(()),
                 done: watch::channel(false).0,
+                antigravity_cards: Mutex::new(vec![]),
             });
             runs.insert(request.session_id.clone(), run.clone());
             let inner = self.inner.clone();
@@ -368,18 +456,49 @@ impl RunManager {
         lock(&self.inner.runs).get(id).cloned()
     }
 
-    /// `RespondToToolPermission`: 이번만 허용 / 거부 for one waiting request of one run.
+    /// `RespondToToolPermission`: 이번만 허용 / 거부 for one waiting request of one run. Once a stop has begun no answer goes (as
+    /// `AnswerQuestionnaire`): an Allow pressed in Hermes's second between its `session/cancel` and its end never reaches it.
     pub fn respond_to_tool_permission(&self, session_id: &str, request_id: &str, allow: bool) -> Result<()> {
-        let Some(run) = self.run(session_id) else { return Err(RunError::State(copy::already_settled())) };
+        let Some(run) = self.run(session_id).filter(|run| !run.cancel.is_cancelled()) else {
+            return Err(RunError::State(copy::already_settled()));
+        };
+        if let Some(codex) = run.codex() {
+            return codex.respond(request_id, allow);
+        }
+        if let Some(acp) = run.acp() {
+            return acp.respond(request_id, allow);
+        }
+        if let Some(dialogs) = run.pi_dialogs() {
+            return dialogs.respond(request_id, allow);
+        }
         match run.channel() {
             Some(channel) => channel.respond(request_id, allow),
             None => Err(RunError::State(copy::already_settled())),
         }
     }
 
-    /// `TrySteerAsync`: a follow-up joins a running Claude turn's open stdin (after the request's result it opens a new turn).
+    /// `TrySteerAsync`: a follow-up joins a running Claude turn's open stdin (after the request's result it opens a new turn); pi takes
+    /// it as a `steer` command while its turn is open (read after the current tool calls, before the next model call).
     pub fn try_steer(&self, session_id: &str, text: &str) -> bool {
         let Some(run) = self.run(session_id) else { return false };
+        if run.request.provider == "pi" {
+            let _gate = lock(&run.input_gate);
+            let open = lock(&run.parser).as_ref().is_some_and(|parser| parser.pi_turn_open());
+            if run.finalizing.load(Ordering::SeqCst)
+                || run.finished.load(Ordering::SeqCst)
+                || run.cancel.is_cancelled()
+                || run.pi_input_closed.load(Ordering::SeqCst)
+                || !open
+                || lock(&run.child).is_none()
+            {
+                return false;
+            }
+            let written = lock(&run.input).as_ref().is_some_and(|input| input.write(&ProviderInput::pi_steer(text)).is_ok());
+            if written {
+                run.touch();
+            }
+            return written;
+        }
         if run.finalizing.load(Ordering::SeqCst)
             || run.finished.load(Ordering::SeqCst)
             || run.cancel.is_cancelled()
@@ -439,7 +558,8 @@ impl RunManager {
         answer
     }
 
-    /// `AnswerQuestionnaire`: Claude's AskUserQuestion answered.
+    /// `AnswerQuestionnaire`: Claude's AskUserQuestion, an ACP agent's form or clarify (opencode, Hermes), or a pi extension's dialog,
+    /// answered.
     pub fn answer_questionnaire(
         &self,
         session_id: &str,
@@ -448,11 +568,16 @@ impl RunManager {
     ) -> Result<()> {
         let gone = || RunError::State(copy::already_settled());
         let run = self.run(session_id).ok_or_else(gone)?;
-        if run.finalizing.load(Ordering::SeqCst)
-            || run.finished.load(Ordering::SeqCst)
-            || run.cancel.is_cancelled()
-            || run.request.provider != "claude"
-        {
+        if run.finalizing.load(Ordering::SeqCst) || run.finished.load(Ordering::SeqCst) || run.cancel.is_cancelled() {
+            return Err(gone());
+        }
+        if let Some(acp) = run.acp() {
+            return acp.answer_questions(request_id, answers);
+        }
+        if let Some(dialogs) = run.pi_dialogs() {
+            return dialogs.answer_questions(request_id, answers);
+        }
+        if run.request.provider != "claude" {
             return Err(gone());
         }
         run.channel().ok_or_else(gone)?.answer_questions(request_id, answers)
@@ -465,8 +590,11 @@ impl RunManager {
         }
         let Some(run) = self.run(session_id) else { return Ok(()) };
         run.cancel.cancel();
-        let child = lock(&run.child).clone();
-        if let Some(child) = &child {
+        // Hermes's turn runs in its gateway: session/cancel goes first and the process ends a second later (C#'s token registration,
+        // StopHermes). Ending it here as well would close its stdin before Hermes read the cancel.
+        if run.request.provider == "hermes" {
+            Exec::stop_hermes(&run);
+        } else if let Some(child) = lock(&run.child).clone() {
             child.kill();
         }
         let mut done = run.done.subscribe();
@@ -536,7 +664,29 @@ struct Exec {
     background: Mutex<BackgroundTaskTracker>,
     plan_gate: Mutex<()>,
     todo_run_id: Option<String>,
+    /// Where `ReadChildren` finds the run's sub-agents (set once the run is under way), and whether reading them failed.
+    children: Mutex<Children>,
+    hermes_saves: HermesSaves,
     emit: Emit,
+}
+
+/// The Hermes pickers being written ([`Exec::save_hermes_models`]): numbered as asked for, the newest written last, each awaited at the
+/// run's end.
+#[derive(Default)]
+struct HermesSaves {
+    next: std::sync::atomic::AtomicU64,
+    written: Arc<Mutex<u64>>,
+    pending: Mutex<Vec<std::thread::JoinHandle<()>>>,
+}
+
+/// C#'s `codexHome` (here the CLI's environment the run started with, which says where Codex keeps it), `antigravityBrain` and
+/// `watcherDisabled`; `closed` once the closing read began (nothing is read after it).
+#[derive(Default)]
+struct Children {
+    environment: Option<BTreeMap<String, String>>,
+    antigravity_brain: Option<PathBuf>,
+    disabled: bool,
+    closed: bool,
 }
 
 enum Failure {
@@ -616,6 +766,224 @@ impl Exec {
         }
     }
 
+    /// `StopHermes`: Hermes's turn runs in its gateway — `session/cancel` goes first, and the process ends a second later
+    /// (M/ProcessRunner.swift cancelGrace). Without a turn in flight the process ends at once. Before the cancel every approval still
+    /// waiting is answered `cancelled`, as ACP's prompt turn says the client must ([`AcpChannel::cancel_permissions`]).
+    fn stop_hermes(run: &Arc<Run>) {
+        let control = lock(&run.child).clone();
+        let acp = run.acp();
+        let frame = acp.as_ref().and_then(|acp| acp.cancellation.take());
+        let Some(frame) = frame else {
+            if let Some(control) = control {
+                control.kill();
+            }
+            return;
+        };
+        if let Some(acp) = &acp {
+            acp.cancel_permissions();
+        }
+        {
+            let _gate = lock(&run.input_gate);
+            if !run.acp_input_closed.load(Ordering::SeqCst)
+                && let Some(input) = lock(&run.input).as_ref()
+            {
+                let _ = input.write(&frame);
+            }
+        }
+        if let Some(control) = control {
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                control.kill();
+            });
+        }
+    }
+
+    /// `EndAcp`: the ACP prompt was answered (or failed) — stdin closes, and an agent server still up two seconds later is ended by the
+    /// runner, which does not fail the run.
+    fn end_acp(run: &Arc<Run>, pipe: &Arc<InputPipe>, control: &Arc<dyn ChildControl>) {
+        {
+            let _gate = lock(&run.input_gate);
+            if run.finished.load(Ordering::SeqCst) || run.acp_input_closed.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            pipe.close();
+        }
+        let (run, control) = (run.clone(), control.clone());
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            let exited = tokio::time::timeout(Duration::ZERO, control.wait()).await.is_ok();
+            if run.finished.load(Ordering::SeqCst) || exited {
+                return;
+            }
+            run.acp_ending.store(true, Ordering::SeqCst);
+            control.kill();
+        });
+    }
+
+    /// The ACP channel failed closed: the run ends in an error that says why, and its process is ended (Hermes's after its cancel).
+    fn acp_failed(run: &Arc<Run>, emit: &Emit, message: &str) {
+        run.protocol_failed.store(true, Ordering::SeqCst);
+        Self::log(run, emit, "error", message);
+        if run.request.provider == "hermes" {
+            Self::stop_hermes(run);
+        } else if let Some(control) = lock(&run.child).clone() {
+            control.kill();
+        }
+    }
+
+    /// `StartAcp`: the ACP channel of an opencode or Hermes run (M/MightyCore/ProcessRunner.swift) — its prompt (the request, the
+    /// attachments' copies and pictures, Hermes's clarify note), its settings, the notices the run starts with, Hermes's admission (no
+    /// provider, no session) and picker, and where its frames, events, cards and end go.
+    fn start_acp(
+        self: &Arc<Self>,
+        launch: &StartRunRequest,
+        workspace_path: &str,
+        staged: Option<&StagedAttachments>,
+        questions: &QuestionTool,
+        pipe: &Arc<InputPipe>,
+        control: &Arc<dyn ChildControl>,
+    ) -> Arc<AcpChannel> {
+        let run = self.run.clone();
+        let request = &run.request;
+        let hermes = request.provider == "hermes";
+        let models = if hermes { self.inner.providers.hermes_model_cache() } else { None };
+        match questions.first {
+            Some(QuestionOutcome::Enabled) => {
+                let value = questions.list.clone().unwrap_or_default().join(", ");
+                let notice =
+                    strings::get_with("run.notice.hermesClarifyEnabled", &[("key", agents::HERMES_QUESTION_KEY), ("value", &value)]);
+                Self::log(&run, &self.emit, "system", &notice);
+            }
+            Some(QuestionOutcome::Missing) => {
+                let notice = strings::get_with("run.notice.hermesClarifyMissing", &[("key", agents::HERMES_QUESTION_KEY)]);
+                Self::log(&run, &self.emit, "system", &notice);
+            }
+            _ => {}
+        }
+        let files = staged.map(|s| s.files.as_slice()).unwrap_or(&[]);
+        let picture = |media_type: &str| media_type.starts_with("image/");
+        // Each copy by its plain path (a staged path never holds a quote), as Antigravity and pi read theirs.
+        let references: Vec<String> = files
+            .iter()
+            .filter(|(attachment, _)| !picture(&attachment.media_type))
+            .map(|(attachment, path)| {
+                format!(
+                    "Attached file {}: \"{}\" (read this copy as needed).",
+                    mighty_core::json::escape(&attachment.name),
+                    path.to_string_lossy()
+                )
+            })
+            .collect();
+        let note = (hermes && questions.asks).then_some(agents::HERMES_PROMPT_NOTE);
+        let prompt = acp::prompt_text(&request.input, &references, note);
+        let images = files
+            .iter()
+            .filter(|(attachment, _)| picture(&attachment.media_type))
+            .map(|(attachment, _)| (attachment.media_type.clone(), attachment.data_base64.clone()))
+            .collect();
+        let config_values = if hermes { agents::hermes_config_values(launch) } else { agents::opencode_config_values(launch) };
+        let (write_run, write_pipe) = (run.clone(), pipe.clone());
+        let (consume_exec, consume_models) = (self.clone(), models.clone());
+        let (emit_run, permission) = (run.clone(), self.inner.options.permission_requested.clone());
+        let parser = self.parser.clone();
+        let (warning_run, warning_emit) = (run.clone(), self.emit.clone());
+        let (fail_run, fail_emit) = (run.clone(), self.emit.clone());
+        let (end_run, end_pipe, end_control) = (run.clone(), pipe.clone(), control.clone());
+        let hooks = AcpHooks {
+            write: Arc::new(move |text| {
+                let _gate = lock(&write_run.input_gate);
+                if write_run.finished.load(Ordering::SeqCst) || write_run.acp_input_closed.load(Ordering::SeqCst) {
+                    return;
+                }
+                let _ = write_pipe.write(text);
+            }),
+            consume: Arc::new(move |line| {
+                if consume_exec.run.finished.load(Ordering::SeqCst) {
+                    return;
+                }
+                // The picker a Hermes session offers is the model menu's list from then on.
+                if let Some(models) = &consume_models
+                    && let Ok(value) = serde_json::from_str::<Value>(line)
+                {
+                    match value.get("type").and_then(Value::as_str) {
+                        Some("acp.session") => consume_exec.save_hermes_models(value.get("configOptions"), models),
+                        Some("acp.update")
+                            if value.get("update").and_then(|u| u.get("sessionUpdate")).and_then(Value::as_str)
+                                == Some("config_option_update") =>
+                        {
+                            consume_exec.save_hermes_models(value["update"].get("configOptions"), models);
+                        }
+                        _ => {}
+                    }
+                }
+                consume_exec.consume(line);
+            }),
+            // Under the node gate, which the run's last status is sent under too: a card is handed over before that status or not at all.
+            // (The channel delivers one callback at a time, so a sink answering at once never comes back in here while it is held.)
+            emit: Arc::new(move |value| {
+                let _gate = lock(&emit_run.node_gate);
+                if !emit_run.finished.load(Ordering::SeqCst)
+                    && let Some(sink) = &permission
+                {
+                    sink(value);
+                }
+            }),
+            activity: Arc::new(move |value, state| parser.permission_activity(value, state)),
+            warning: Arc::new(move |message| Exec::log(&warning_run, &warning_emit, "system", message)),
+            fail: Arc::new(move |message| Exec::acp_failed(&fail_run, &fail_emit, message)),
+            completed: Arc::new(move || Exec::end_acp(&end_run, &end_pipe, &end_control)),
+            // Hermes without a provider would open a session that can never answer: the run stops as a missing sign-in.
+            admit: hermes.then(|| {
+                let models = models.clone();
+                Arc::new(move |result: &Value| {
+                    if agents::hermes_provider(result).is_some() {
+                        return None;
+                    }
+                    agents::hermes_forget_models(models.as_deref());
+                    Some(strings::get("run.error.hermesNoProvider"))
+                }) as acp::AdmitHook
+            }),
+        };
+        Arc::new(AcpChannel::new(
+            AcpRequest {
+                run_id: request.session_id.clone(),
+                resume_id: launch.resume_id.clone(),
+                workspace_path: workspace_path.to_string(),
+                prompt_text: prompt,
+                images,
+                config_values,
+                free_choices: hermes,
+            },
+            hooks,
+        ))
+    }
+
+    /// `HermesAgent.SaveModels` off the run's own threads (a file read and write, asked for from the stdout pump): when two overlap the
+    /// newer picker is the one kept, and the run's end waits for every save ([`Exec::saved_hermes_models`]), so the menu read after a
+    /// Hermes run has it.
+    fn save_hermes_models(&self, options: Option<&Value>, path: &Path) {
+        let Some(options) = options.cloned() else { return };
+        let saves = &self.hermes_saves;
+        let number = saves.next.fetch_add(1, Ordering::SeqCst) + 1;
+        let (written, path) = (saves.written.clone(), path.to_path_buf());
+        let save = std::thread::spawn(move || {
+            let mut last = lock(&written);
+            if *last < number {
+                *last = number;
+                agents::hermes_save_models(Some(&options), Some(&path));
+            }
+        });
+        lock(&saves.pending).push(save);
+    }
+
+    /// Waits for every Hermes picker save begun so far (on a blocking thread).
+    fn saved_hermes_models(&self) {
+        let pending = std::mem::take(&mut *lock(&self.hermes_saves.pending));
+        for save in pending {
+            let _ = save.join();
+        }
+    }
+
     /// `HandOver`: one graph node to the host, unless the run's last status is already out.
     fn hand_over(inner: &Inner, run: &Run, node: Value) {
         let _gate = lock(&run.node_gate);
@@ -671,6 +1039,19 @@ impl Exec {
         if let Some(channel) = channel {
             channel.cancel_all();
         }
+        let codex = lock(&run.codex).take();
+        if let Some(codex) = codex {
+            codex.cancel_all();
+        }
+        let dialogs = lock(&run.pi_dialogs).take();
+        if let Some(dialogs) = dialogs {
+            dialogs.cancel_all();
+        }
+        let acp = lock(&run.acp).take();
+        if let Some(acp) = acp {
+            acp.cancel_all();
+            acp.drain();
+        }
         let child = lock(&run.child).take();
         if let Some(child) = child {
             let _ = child.close().await;
@@ -706,6 +1087,49 @@ impl Exec {
         *lock(&run.tracker) = tracker.clone();
         let parser = Arc::new(OutputParser::new(&provider, &run.activity_id, Self::parser_hooks(&inner, &run, tracker.clone())));
         *lock(&run.parser) = Some(parser.clone());
+        // pi's dialogs reach the pane's question card where a pane can answer it; a headless run cancels them.
+        if provider == "pi"
+            && request.kind != "shell"
+            && let Some(permission) = inner.options.permission_requested.clone()
+        {
+            let (write_run, emit_run, timer_run) = (run.clone(), run.clone(), Arc::downgrade(&run));
+            let row = Arc::downgrade(&parser);
+            let (warning_run, warning_emit) = (run.clone(), emit.clone());
+            let dialogs = Arc::new(PiDialogChannel::new(
+                &request.session_id,
+                PiDialogHooks {
+                    write: Arc::new(move |text| write_run.pi_write(text)),
+                    emit: Arc::new(move |value| {
+                        if !emit_run.finished.load(Ordering::SeqCst) {
+                            permission(value);
+                        }
+                    }),
+                    activity: Arc::new(move |value, state| {
+                        if let Some(parser) = row.upgrade() {
+                            parser.permission_activity(value, state);
+                        }
+                    }),
+                    warning: Arc::new(move |message| Exec::log(&warning_run, &warning_emit, "system", message)),
+                    // pi answers a dialog with a deadline itself when it passes: the card goes then too. The wait holds no run (its
+                    // stdin among it) and ends with the run.
+                    timer: Some(Arc::new(move |id: &str, seconds: f64| {
+                        let Some(mut ended) = timer_run.upgrade().map(|run| run.done.subscribe()) else { return };
+                        let (run, id) = (timer_run.clone(), id.to_string());
+                        tokio::spawn(async move {
+                            tokio::select! {
+                                _ = tokio::time::sleep(Duration::from_secs_f64(seconds.min(86_400.0))) => {}
+                                _ = ended.wait_for(|done| *done) => return,
+                            }
+                            if let Some(dialogs) = run.upgrade().and_then(|run| run.pi_dialogs()) {
+                                dialogs.timed_out(&id);
+                            }
+                        });
+                    })),
+                },
+            ));
+            *lock(&run.pi_dialogs) = Some(dialogs.clone());
+            parser.set_pi_dialogs(Some(dialogs));
+        }
         let todo_run_id = match &tracker {
             Some(tracker) => Some(lock(tracker).run_id()),
             None => request.graph_run_id.clone().filter(|id| wire::identifier(id)),
@@ -722,6 +1146,8 @@ impl Exec {
             background: Mutex::new(BackgroundTaskTracker::new(None)),
             plan_gate: Mutex::new(()),
             todo_run_id,
+            children: Mutex::new(Children::default()),
+            hermes_saves: HermesSaves::default(),
             emit: emit.clone(),
         });
         let reopened = exec.clone();
@@ -740,12 +1166,12 @@ impl Exec {
         let start_failure = match outcome {
             Ok(()) => None,
             Err(Failure::Cancelled) => {
-                exec.finish(if run.protocol_failed.load(Ordering::SeqCst) { "error" } else { "stopped" });
+                exec.end(if run.protocol_failed.load(Ordering::SeqCst) { "error" } else { "stopped" }).await;
                 Some(RunError::Cancelled(strings::get("run.activity.stopped")))
             }
             Err(Failure::Error(message)) => {
                 Self::log(&run, &emit, "error", &message);
-                exec.finish(if run.cancel.is_cancelled() && !run.protocol_failed.load(Ordering::SeqCst) { "stopped" } else { "error" });
+                exec.end(if run.cancel.is_cancelled() && !run.protocol_failed.load(Ordering::SeqCst) { "stopped" } else { "error" }).await;
                 Some(RunError::State(message))
             }
         };
@@ -761,6 +1187,21 @@ impl Exec {
         let channel = lock(&run.permissions).take();
         if let Some(channel) = channel {
             channel.cancel_all();
+        }
+        let codex = lock(&run.codex).take();
+        if let Some(codex) = codex {
+            codex.cancel_all();
+        }
+        let dialogs = lock(&run.pi_dialogs).take();
+        if let Some(dialogs) = dialogs {
+            dialogs.cancel_all();
+        }
+        exec.parser.set_pi_dialogs(None);
+        // The channel's callbacks hold the run: let them go with it, once every one it queued is delivered.
+        let acp = lock(&run.acp).take();
+        if let Some(acp) = acp {
+            acp.cancel_all();
+            acp.drain();
         }
         if let Some(connection) = mod_connection {
             connection.dispose();
@@ -802,6 +1243,18 @@ impl Exec {
             }
             _ => None,
         };
+        // The parser's shown reply is the graph's answer (Antigravity's reply, an ACP agent's streamed text).
+        let answer =
+            tracker.clone().map(|tracker| Arc::new(move |text: &str| lock(&tracker).antigravity_answer(text)) as crate::parser::AnswerHook);
+        // The card goes out before the run's last status (M/ProcessRunner.swift antigravityPermission), once the stdout pump has judged it
+        // off the parser's thread.
+        let card_run = run.clone();
+        let antigravity_permission: crate::parser::AntigravityCardHook = Arc::new(move |card| {
+            if !card_run.finished.load(Ordering::SeqCst) && card_run.request.kind == "claude" {
+                lock(&card_run.antigravity_cards).push(card);
+            }
+        });
+        let requested_resume = if run.request.provider == "gemini" { run.request.resume_id.clone() } else { None };
         let (graph_activity, graph_images) = (tracker.clone(), tracker);
         ParserHooks {
             log: Some(Arc::new(move |kind, text| Exec::log(&log_run, &log_emit, kind, text))),
@@ -829,6 +1282,13 @@ impl Exec {
             }),
             images: if run.request.kind == "shell" { None } else { inner.options.images.clone() },
             file_original,
+            pi_reply: (run.request.provider == "pi").then(|| {
+                let reply_run = run.clone();
+                Arc::new(move |text: &str| reply_run.pi_write(text)) as crate::parser::PiReplyHook
+            }),
+            answer,
+            antigravity_permission: Some(antigravity_permission),
+            requested_resume,
         }
     }
 
@@ -868,7 +1328,8 @@ impl Exec {
         !work::running(&lock(&self.background).work()).is_empty()
     }
 
-    /// `PublishGraph`: the live graph when it changed since the last one sent; false once the run is ending.
+    /// `PublishGraph`: the live graph when it changed since the last one sent; false once the run is ending. The graph's loop reads the
+    /// sub-agents' files first, on a blocking thread of its own ([`Exec::read_children`]).
     fn publish_graph(&self) -> bool {
         let _gate = lock(&self.graph_gate);
         if self.run.finalizing.load(Ordering::SeqCst) || self.run.finished.load(Ordering::SeqCst) {
@@ -888,6 +1349,53 @@ impl Exec {
         true
     }
 
+    /// `ReadChildren(closing)`: the run's sub-agents read from the CLI's own files through the graph ([`GraphSink::read_children`]):
+    /// agy's stream names each sub-agent's conversation but not its work (M/ProcessRunner.swift watchAntigravitySubagents), and Codex's
+    /// sub-agents are in its session files. Called on a blocking thread (the graph's loop gives it one, `finish` runs on one): the
+    /// tracker is locked only to ask what is due and to merge what was read, never while the files are read, so the run's output, its
+    /// cards and their answers go on meanwhile (C#'s watchers poll outside the tracker's lock and lock it only in `CodexSession` /
+    /// `AntigravitySession`). One read at a time, `children` held throughout; none once the run is ending but the closing one, and
+    /// none after it. Observation is optional: a file changing under it must never fail the actual CLI turn, so a failed read stops the
+    /// reading for the rest of the run (C#'s `watcherDisabled`; the watcher the read took along is dropped with it).
+    fn read_children(&self, closing: bool) {
+        let Some(tracker) = &self.tracker else { return };
+        let mut children = lock(&self.children);
+        if children.disabled || children.closed || !closing && self.run.finalizing.load(Ordering::SeqCst) {
+            return;
+        }
+        if closing {
+            children.closed = true;
+        }
+        let failed = {
+            let Some(environment) = &children.environment else { return };
+            let sources =
+                ChildSources { environment, antigravity_brain: children.antigravity_brain.as_deref(), namespace: &self.run.activity_id };
+            let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let read = lock(tracker).read_children(&sources, closing)?;
+                Some(read())
+            }));
+            match read {
+                Ok(Some(found)) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lock(tracker).merge_children(found))).is_err(),
+                Ok(None) => false,
+                Err(_) => true,
+            }
+        };
+        if failed {
+            children.disabled = true;
+        }
+    }
+
+    /// [`Exec::finish`] on a blocking thread: its closing read of the sub-agents' files can be large (C#'s `Finish` runs on a pool
+    /// thread). A panic in it is the run's own, as before.
+    async fn end(self: &Arc<Self>, state: &'static str) {
+        let exec = self.clone();
+        if let Err(failed) = tokio::task::spawn_blocking(move || exec.finish(state)).await
+            && let Ok(panic) = failed.try_into_panic()
+        {
+            std::panic::resume_unwind(panic);
+        }
+    }
+
     /// `Finish`: the run's last events — background work that never reported an end, the rows still open, the turn, the graph,
     /// and its status (with "authentication" when an error is a lost sign-in).
     fn finish(&self, state: &str) {
@@ -895,6 +1403,12 @@ impl Exec {
         let request = &run.request;
         run.finalizing.store(true, Ordering::SeqCst);
         self.graph_stop.cancel();
+        // The pump takes no line from now on: what the ACP channel queued before (a card, the end of a reply) goes out first, and the
+        // picker a Hermes session offered is on disk before the run's end is told.
+        if let Some(acp) = run.acp() {
+            acp.drain();
+        }
+        self.saved_hermes_models();
         if request.provider == "claude" && request.kind != "shell" {
             let _gate = lock(&self.plan_gate);
             if !run.finished.load(Ordering::SeqCst)
@@ -914,6 +1428,7 @@ impl Exec {
             };
             Self::activity(run, &self.emit, &activity::make(&run.activity_id, &request.provider, "turn", state, &summary));
         }
+        self.read_children(true);
         if let Some(tracker) = &self.tracker {
             let mut sink = lock(tracker);
             sink.finish(state);
@@ -926,7 +1441,10 @@ impl Exec {
         }
         let _node = lock(&run.node_gate);
         run.finished.store(true, Ordering::SeqCst);
-        let authentication = state == "error" && run.authentication_failure.load(Ordering::SeqCst);
+        // pi's and an ACP agent's lost sign-in is read from their stream, where a later message, a retry or a later turn clears it
+        // (OutputParser.AuthenticationFailure).
+        let authentication =
+            state == "error" && (run.authentication_failure.load(Ordering::SeqCst) || self.parser.authentication_failure());
         (self.emit)(RunEvent::state(&request.session_id, state, authentication.then_some("authentication")));
     }
 
@@ -1045,6 +1563,7 @@ impl Exec {
         let inner = self.inner.clone();
         let mut request = run.request.clone();
         let provider = request.provider.clone();
+        let codex_approvals = provider == "codex" && request.settings().permission_mode == "onRequest";
         // The request's diagram block appears the moment the run starts, before the workspace, the CLI or the environment is found.
         if self.tracker.is_some() {
             self.graph_dirty.store(true, Ordering::SeqCst);
@@ -1071,6 +1590,17 @@ impl Exec {
             _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
         }
         let mut environment = providers.quiet_environment();
+        {
+            let mut children = lock(&self.children);
+            if request.kind != "shell" {
+                children.environment = Some(environment.clone());
+            }
+            if provider == "gemini" {
+                let home =
+                    inner.options.antigravity_home.clone().or_else(crate::antigravity::permissions::user_profile).unwrap_or_default();
+                children.antigravity_brain = Some(antigravity_records::brain(&home));
+            }
+        }
         if self.tracker.is_some() {
             let exec = self.clone();
             *graph_task = Some(tokio::spawn(async move {
@@ -1079,6 +1609,9 @@ impl Exec {
                         _ = tokio::time::sleep(Duration::from_secs(1)) => {}
                         _ = exec.graph_stop.cancelled() => return,
                     }
+                    // `PublishGraph(true)`: the sub-agents' files first, read on a blocking thread, then the graph.
+                    let reader = exec.clone();
+                    let _ = tokio::task::spawn_blocking(move || reader.read_children(false)).await;
                     if !exec.publish_graph() {
                         return;
                     }
@@ -1087,24 +1620,14 @@ impl Exec {
         }
         let mut interactive = false;
         let mut input = request.input.clone();
+        // An ACP run's request as launched (a Hermes session that cannot be continued is started anew), Hermes's notice about its
+        // session and its clarify tool.
+        let mut acp_launch: Option<StartRunRequest> = None;
+        let mut hermes_notice: Option<String> = None;
+        let mut hermes_questions = QuestionTool::default();
         let launch: mighty_platform::SpawnRequest = if request.kind == "shell" {
             providers.processes().shell_request(&request.input, Path::new(&workspace_path), &environment)
         } else {
-            if providers::is_acp(&provider) {
-                // AcpChannel (opencode acp, hermes acp) is W5.
-                return Err(Failure::Error(format!(
-                    "{} runs through the Agent Client Protocol, which this build does not run yet.",
-                    providers::name(&provider)
-                )));
-            }
-            if matches!(provider.as_str(), "pi" | "gemini") {
-                // pi's RPC and Antigravity's stream are read by the parser's ProviderStream (W5): without it the run's answer would
-                // never reach the pane, so it is refused as the ACP agents are.
-                return Err(Failure::Error(format!(
-                    "{} runs through its own stream, which this build does not read yet.",
-                    providers::name(&provider)
-                )));
-            }
             let command = tokio::select! {
                 command = providers.find(&provider) => command,
                 _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
@@ -1112,6 +1635,21 @@ impl Exec {
             let command = command
                 .ok_or_else(|| Failure::Error(strings::get_with("run.error.cliNotInstalled", &[("name", providers::name(&provider))])))?;
             self.cancelled()?;
+            if codex_approvals && !providers::supports_codex_approvals(command.version.as_deref()) {
+                return Err(Failure::Error("Codex approval requests require stable Codex CLI 0.153.4 or later.".into()));
+            }
+            // OpenCode 1 (`opencode-ai`) shares the command but not the files, permissions or credentials: it is replaced, not run.
+            if provider == "opencode" && !agents::opencode_supported(command.version.as_deref()) {
+                let version = command.version.clone().unwrap_or_default();
+                return Err(Failure::Error(strings::get_with("run.error.opencodeV1", &[("version", &version)])));
+            }
+            // Hermes asks questions only with its clarify tool on for editor sessions: looked at once per launch.
+            if provider == "hermes" {
+                hermes_questions = tokio::select! {
+                    found = agents::hermes_ensure_question_tool(&providers, &command, &environment, &workspace_path) => found,
+                    _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
+                };
+            }
             let settings = request.settings();
             if settings.effort != "default" || phase_models::main_effort(&request).is_some() {
                 let runtime = providers.get_runtime(false, Some(&workspace_path)).await;
@@ -1179,9 +1717,53 @@ impl Exec {
             if provider == "pi" && staged.is_none() {
                 input = ProviderInput::pi_startup(&input, &[]);
             }
-            let mut arguments = match staged.as_ref() {
-                Some(staged) => staged.arguments_for(&request, &inner.options.plugin_directory)?,
-                None => providers::arguments(&request, &inner.options.plugin_directory, None)?,
+            // pi exits on a session it cannot find (one that never got an answer is not written): such a pane starts a new session.
+            let mut launch = request.clone();
+            if provider == "pi"
+                && let (Some(resume), Some(sessions)) = (&request.resume_id, &inner.options.pi_sessions)
+                && !sessions(resume, &workspace_path, &environment)
+            {
+                launch.resume_id = None;
+            }
+            let mut arguments = if providers::is_acp(&provider) {
+                let mode = request.settings().permission_mode;
+                // Hermes fixes `--yolo` when a session starts: a session that started with it is not continued by a pane that asks (it
+                // would not ask), one that started without it keeps asking; a session whose first request never got an answer is not
+                // continued (it keeps the provider it was made with and fails again); a pane that asks does not continue one whose
+                // receipt cannot be read. `state.db` is read on a blocking thread.
+                if provider == "hermes"
+                    && let Some(resume) = launch.resume_id.clone()
+                {
+                    let (count, full) = match inner.options.hermes_session.clone() {
+                        Some(read) => {
+                            let (environment, session) = (environment.clone(), resume.clone());
+                            tokio::task::spawn_blocking(move || read(&environment, &session)).await.unwrap_or((None, None))
+                        }
+                        None => (None, None),
+                    };
+                    self.cancelled()?;
+                    let (resume_id, notice) = agents::hermes_resume(&resume, &mode, count, full);
+                    launch.resume_id = resume_id;
+                    hermes_notice = notice.map(strings::get);
+                }
+                // OpenCode 2's rules for this run only, read after the user's own config; Hermes's `--yolo` for a session this run
+                // creates.
+                if provider == "opencode" {
+                    let instructions = providers::agent_file(agents::OPENCODE_QUESTION_INSTRUCTIONS);
+                    environment.insert("OPENCODE_CONFIG_CONTENT".into(), agents::opencode_config_content(&mode, instructions.as_deref()));
+                } else {
+                    agents::hermes_apply(&mode, &mut environment);
+                }
+                // The attachments travel in the channel's prompt, not as arguments.
+                let arguments = providers::arguments(&launch, &inner.options.plugin_directory, None)?;
+                acp_launch = Some(launch);
+                arguments
+            } else {
+                // An approval run's pictures go in its turn (`localImage`), not as `--image`.
+                match staged.as_ref().filter(|_| !codex_approvals) {
+                    Some(staged) => staged.arguments_for(&launch, &inner.options.plugin_directory)?,
+                    None => providers::arguments(&launch, &inner.options.plugin_directory, None)?,
+                }
             };
             if matches!(provider.as_str(), "claude" | "codex")
                 && let Some(factory) = &inner.options.binding
@@ -1259,6 +1841,56 @@ impl Exec {
             let channel = ClaudePermissionChannel::new(&request.session_id, &prompt, hooks, &request.settings().permission_mode);
             *lock(&run.permissions) = Some(Arc::new(channel));
         }
+        if codex_approvals {
+            let images: Vec<String> = staged
+                .as_ref()
+                .map(|staged| {
+                    let pictures = staged.files.iter().filter(|(attachment, _)| attachment.media_type.starts_with("image/"));
+                    pictures.map(|(_, path)| path.to_string_lossy().into_owned()).collect()
+                })
+                .unwrap_or_default();
+            let (write_run, write_pipe) = (run.clone(), pipe.clone());
+            let consumer = Arc::downgrade(self);
+            let emit_run = run.clone();
+            let permission = inner.options.permission_requested.clone();
+            let parser = self.parser.clone();
+            let (warning_run, warning_emit) = (run.clone(), self.emit.clone());
+            let (fail_run, fail_emit) = (run.clone(), self.emit.clone());
+            let completed_pipe = pipe.clone();
+            let hooks = CodexHooks {
+                write: Arc::new(move |text| {
+                    if !write_run.finished.load(Ordering::SeqCst) {
+                        let _ = write_pipe.write(text);
+                    }
+                }),
+                consume: Arc::new(move |line| {
+                    if let Some(exec) = consumer.upgrade() {
+                        exec.consume(line);
+                    }
+                }),
+                // The channel's callbacks run in its caller right after its lock, none deferred (so none is left once the pumps are
+                // done, and nothing needs draining as the ACP channel's queue does); a sink may answer at once, inside this call.
+                emit: Arc::new(move |value| {
+                    if !emit_run.finished.load(Ordering::SeqCst)
+                        && let Some(sink) = &permission
+                    {
+                        sink(value);
+                    }
+                }),
+                activity: Arc::new(move |value, state| parser.permission_activity(value, state)),
+                warning: Arc::new(move |message| Exec::log(&warning_run, &warning_emit, "system", message)),
+                fail: Arc::new(move |message| Exec::fail_protocol(&fail_run, &fail_emit, message)),
+                completed: Arc::new(move || completed_pipe.close()),
+            };
+            *lock(&run.codex) = Some(Arc::new(CodexApprovalChannel::new(&request, &workspace_path, &input, images, hooks)));
+        }
+        if let Some(notice) = &hermes_notice {
+            Self::log(&run, &self.emit, "system", notice);
+        }
+        if let Some(launch) = &acp_launch {
+            let channel = self.start_acp(launch, &workspace_path, staged.as_ref(), &hermes_questions, &pipe, &control);
+            *lock(&run.acp) = Some(channel);
+        }
         (self.emit)(RunEvent::state(&request.session_id, "running", None));
         if request.kind != "shell" {
             let summary = strings::get_with("run.activity.running", &[("name", providers::name(&provider))]);
@@ -1267,10 +1899,33 @@ impl Exec {
         if self.tracker.is_some() {
             self.publish_graph();
         }
-        let line_limit = if request.kind == "shell" { 1024 * 1024 } else { maximum_line_bytes(&provider) };
+        let line_limit = if request.kind == "shell" {
+            1024 * 1024
+        } else if codex_approvals {
+            codex_approval::MAXIMUM_FRAME_BYTES
+        } else if run.acp().is_some() {
+            acp::MAXIMUM_FRAME_BYTES
+        } else {
+            maximum_line_bytes(&provider)
+        };
         let output = tokio::spawn(Self::pump_output(self.clone(), child.stdout.take(), line_limit));
         let error = tokio::spawn(Self::pump_error(self.clone(), child.stderr.take()));
-        if interactive {
+        let hermes = provider == "hermes";
+        if let Some(channel) = run.acp() {
+            channel.start();
+            // An ACP agent boots its own server (and may refresh its model list) before it answers; Hermes may have to start its gateway
+            // first.
+            let exec = self.clone();
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(if hermes { 90 } else { 45 })) => {}
+                    _ = exec.run.cancel.cancelled() => return,
+                }
+                if !exec.run.finished.load(Ordering::SeqCst) {
+                    channel.initialization_timed_out();
+                }
+            });
+        } else if interactive {
             if let Some(channel) = run.channel() {
                 channel.start()?;
             }
@@ -1312,22 +1967,45 @@ impl Exec {
                     channel.initialization_timed_out();
                 }
             });
+        } else if let Some(codex) = run.codex() {
+            // The channel writes the request itself, once its thread and turn are open; a turn not started in 15 s fails closed.
+            codex.start();
+            let exec = self.clone();
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(15)) => {}
+                    _ = exec.run.cancel.cancelled() => return,
+                }
+                if !exec.run.finished.load(Ordering::SeqCst)
+                    && let Some(codex) = exec.run.codex()
+                {
+                    codex.initialization_timed_out();
+                }
+            });
         } else {
             if request.kind != "shell" {
                 let first = if provider == "gemini" { ProviderInput::antigravity_user_message(&input) } else { input.clone() };
                 let _ = pipe.write(&first);
             }
-            // pi reads get_state and the prompt, then keeps reading for a steer (its close after the turn is W5's pi stream).
-            if provider != "pi" {
+            // pi reads get_state and the prompt, then keeps reading for a steer: stdin stays open until its turn ended and went quiet.
+            if provider == "pi" {
+                tokio::spawn(Self::close_pi_when_idle(self.clone()));
+            } else {
                 pipe.close();
             }
         }
         if let Some(sender) = lock(&run.accepted).take() {
             let _ = sender.send(Ok(()));
         }
-        let code = tokio::select! {
-            code = control.wait() => code.map_err(|e| Failure::Error(e.to_string()))?,
-            _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
+        // Hermes's turn runs in its gateway: a stop sends session/cancel first and ends the process a second later (stop_hermes), so the
+        // run waits for the exit itself.
+        let code = if hermes {
+            control.wait().await.map_err(|e| Failure::Error(e.to_string()))?
+        } else {
+            tokio::select! {
+                code = control.wait() => code.map_err(|e| Failure::Error(e.to_string()))?,
+                _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
+            }
         };
         self.cancelled()?;
         // Close descendants that inherited stdout after their parent exited.
@@ -1344,20 +2022,83 @@ impl Exec {
             }
             _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
         }
+        // What the ACP channel queued from the agent's last lines reaches the parser before its flush.
+        if let Some(acp) = run.acp() {
+            acp.drain();
+        }
         self.parser.flush();
+        let codex = run.codex();
+        if let Some(codex) = &codex {
+            codex.flush();
+        }
+        let acp = run.acp();
+        let acp_ending = run.acp_ending.load(Ordering::SeqCst);
+        if let Some(acp) = &acp
+            && !acp_ending
+        {
+            acp.flush();
+        }
         self.close_channel();
         if mod_connection.as_ref().is_some_and(|c| c.received() == 0) {
             Self::log(&run, &self.emit, "system", &strings::get("run.warning.noModEvents"));
         }
+        // An ACP server the runner ended after the prompt's answer did not fail (M/ProcessRunner.swift acpEnding).
+        let exited_cleanly = code == 0 || acp_ending && acp.as_ref().is_some_and(|a| a.turn_completed());
         let state = if run.plan_cancelled.load(Ordering::SeqCst) {
             "stopped"
-        } else if code == 0 && !self.parser.failed() && !run.protocol_failed.load(Ordering::SeqCst) {
+        } else if exited_cleanly
+            && !self.parser.failed()
+            && !run.protocol_failed.load(Ordering::SeqCst)
+            && (!codex_approvals || codex.is_some_and(|c| c.turn_completed()))
+            && acp.as_ref().is_none_or(|a| a.turn_completed() && !a.failed())
+        {
             "completed"
         } else {
             "error"
         };
-        self.finish(state);
+        self.end(state).await;
         Ok(())
+    }
+
+    /// `ClosePiWhenIdle`: closes a pi run's stdin (pi then exits) once its turn is over and it has been silent for a second:
+    /// compaction and an automatic retry come right after `agent_end`.
+    async fn close_pi_when_idle(exec: Arc<Exec>) {
+        let run = &exec.run;
+        while !run.finished.load(Ordering::SeqCst) && !run.cancel.is_cancelled() {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            if !exec.parser.pi_turn_ended() || exec.parser.pi_turn_open() || lock(&run.last_output).elapsed() < Duration::from_secs(1) {
+                continue;
+            }
+            let _gate = lock(&run.input_gate);
+            run.pi_input_closed.store(true, Ordering::SeqCst);
+            if let Some(input) = lock(&run.input).as_ref() {
+                input.close();
+            }
+            return;
+        }
+    }
+
+    /// The cards an Antigravity turn left (S-H1), each judged on a blocking thread — its file rules asked of the disk as the leases ask it
+    /// before adding them, never on the parser's thread — then sent before the pump reads on, so before the run's last status.
+    async fn publish_antigravity_cards(exec: &Arc<Exec>) {
+        let cards = std::mem::take(&mut *lock(&exec.run.antigravity_cards));
+        for card in cards {
+            let rules = exec.inner.options.antigravity_rules.clone();
+            let judged = tokio::task::spawn_blocking(move || match rules {
+                Some(rules) => rules.judge(card),
+                // No leases: nothing asks the disk, so no file rule is offered.
+                None => crate::antigravity::permissions::judged(card, &mighty_platform::unsupported::Unsupported, &[]),
+            })
+            .await;
+            let Ok(card) = judged else { continue };
+            let run = &exec.run;
+            if !run.finished.load(Ordering::SeqCst) && !run.finalizing.load(Ordering::SeqCst) {
+                (exec.emit)(RunEvent {
+                    antigravity_permission: Some(card),
+                    ..RunEvent::new(&run.request.session_id, "antigravityPermission")
+                });
+            }
+        }
     }
 
     async fn pump_output(exec: Arc<Exec>, reader: Option<ChildReader>, limit: usize) {
@@ -1368,7 +2109,10 @@ impl Exec {
                 Next::End => break,
                 Next::TooLong => {
                     if request.kind != "shell" && !exec.run.finalizing.load(Ordering::SeqCst) {
-                        Self::log(&exec.run, &exec.emit, "system", &strings::get("run.notice.lineTooLong"));
+                        match exec.run.acp() {
+                            Some(acp) => acp.frame_too_large(),
+                            None => Self::log(&exec.run, &exec.emit, "system", &strings::get("run.notice.lineTooLong")),
+                        }
                     }
                 }
                 Next::Line(line) => {
@@ -1377,6 +2121,15 @@ impl Exec {
                     }
                     if request.kind == "shell" {
                         Self::log(&exec.run, &exec.emit, "output", &line);
+                        continue;
+                    }
+                    if let Some(codex) = exec.run.codex() {
+                        codex.receive(&line);
+                        continue;
+                    }
+                    if let Some(acp) = exec.run.acp() {
+                        exec.run.touch();
+                        acp.receive(&line);
                         continue;
                     }
                     if let Some(channel) = exec.run.channel()
@@ -1397,6 +2150,9 @@ impl Exec {
                         }
                     }
                     exec.consume(&line);
+                    if request.provider == "gemini" {
+                        Self::publish_antigravity_cards(&exec).await;
+                    }
                     // EOF only after the CLI's own turn result; background tasks still running keep it open longer.
                     exec.run.touch();
                     if exec.run.channel().is_some() && stream::is_settle_point(&line) {
@@ -1412,14 +2168,26 @@ impl Exec {
 
     async fn pump_error(exec: Arc<Exec>, reader: Option<ChildReader>) {
         let mut lines = Lines::new(reader, 1024 * 1024);
+        let request = &exec.run.request;
+        let mut hermes = (request.kind != "shell" && request.provider == "hermes").then(HermesStderrFilter::default);
         loop {
             match lines.next().await {
                 Next::End => break,
                 Next::TooLong => {}
                 Next::Line(line) => {
-                    // Only Antigravity reports a lost sign-in on stderr.
-                    if exec.run.request.kind != "shell" && exec.run.request.provider == "gemini" && failure::antigravity(&line) {
-                        exec.run.authentication_failure.store(true, Ordering::SeqCst);
+                    // Only Antigravity reports a lost sign-in on stderr ("Error: authentication required. Run 'agy' to log in, then
+                    // retry."), and that the conversation it was asked to continue is gone.
+                    if exec.run.request.kind != "shell" && exec.run.request.provider == "gemini" {
+                        if failure::antigravity(&line) {
+                            exec.run.authentication_failure.store(true, Ordering::SeqCst);
+                        }
+                        exec.parser.antigravity_stderr(&line);
+                    }
+                    // Hermes logs to stderr (INFO lines, a traceback for every failed request): kept out of the pane.
+                    if let Some(filter) = hermes.as_mut()
+                        && !filter.keep(&line)
+                    {
+                        continue;
                     }
                     Self::log(&exec.run, &exec.emit, "output", &line);
                 }

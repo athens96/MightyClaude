@@ -1,13 +1,17 @@
 //! C# `HistoryReplay` (SessionHistory.cs:716-982): one recorded request fed through a fresh `ExecutionGraphTracker`, the one a live run
 //! uses, and built into its graph run and the notice runs its background work opened.
 
+use std::sync::{Arc, Mutex};
+
 use mighty_core::graph::MightyGraphRun;
 use mighty_core::json;
 use mighty_core::locale::Locale;
-use mighty_core::model::LogEntry;
+use mighty_core::model::{AgentActivity, LogEntry};
 use mighty_core::time::{self, DateTimeOffset};
 use mighty_core::wire;
 use mighty_graph::ExecutionGraphTracker;
+use mighty_graph::antigravity::{AntigravitySubagentWatcher, Limits};
+use mighty_run::parser::{OutputParser, ParserHooks};
 use serde_json::{Map, Value, json};
 
 use crate::antigravity;
@@ -49,7 +53,7 @@ pub fn runs(turn: &HistoryTurn, format: &HistoryFormat, child_bytes: &mut i64, l
             "codex" => codex(&turn.lines, format.thread.as_deref().unwrap_or(""), &mut tracker, &mut at),
             "gemini" => {
                 let mut stamped: Option<DateTimeOffset> = None;
-                let status = antigravity_replay(turn, format, &mut tracker, child_bytes, &mut |date| stamped = Some(date), locale);
+                let status = antigravity_replay(turn, format, &id, &mut tracker, child_bytes, &mut |date| stamped = Some(date), locale);
                 if stamped.is_some() {
                     latest = stamped;
                 }
@@ -365,25 +369,50 @@ fn codex(lines: &[Vec<u8>], thread: &str, tracker: &mut ExecutionGraphTracker, a
     if failed { "error" } else { "stopped" }
 }
 
-/// An Antigravity transcript step mapped back to the stream-json event agy printed for it (`AntigravityRecords.StreamEvents`) and fed to
-/// the tracker; each answer step's text is the request's answer as the live parser hands it on (`tracker.AntigravityAnswer`). Each step's
-/// event carries that step's time; the result the last one's.
-///
-/// Not yet as C# (W5, with Antigravity's live parser and sub-agent watcher): the tool rows the parser makes of each tool step, and the
-/// sub-agents' own transcripts read up to the next request (`AntigravitySubagentWatcher`); the sub-agents' blocks are there, from the
-/// stream's `subagent` steps, without their work.
+/// What the replay's parser hands the tracker, in order (C# calls the tracker from the parser's callbacks).
+enum ParserCall {
+    Activity(AgentActivity),
+    Answer(String),
+}
+
+/// `HistoryReplay.Antigravity`: an Antigravity transcript step is mapped back to the stream-json event agy printed for it
+/// (`AntigravityRecords.StreamEvents`) and goes through the live parser, whose tool rows and replies the graph takes as a live run's do;
+/// the request's sub-agents are read from their own transcripts, as a live run's watcher reads them, up to when the next request was sent
+/// (M/MightyCore/SessionHistory.swift HistoryReplay.antigravity). Each step's event carries that step's time; the result the last one's.
 fn antigravity_replay(
     turn: &HistoryTurn,
     format: &HistoryFormat,
+    run_id: &str,
     tracker: &mut ExecutionGraphTracker,
     child_bytes: &mut i64,
     at: &mut dyn FnMut(DateTimeOffset),
     locale: &Locale,
 ) -> &'static str {
-    let _ = child_bytes;
     let steps: Vec<Value> = turn.lines.iter().filter_map(|l| scan::parse(l)).collect();
     let conversation = format.thread.as_deref().unwrap_or("");
     let (events, status) = antigravity::stream_events(&steps, conversation, locale);
+    let calls: Arc<Mutex<Vec<ParserCall>>> = Arc::new(Mutex::new(vec![]));
+    let (rows, answers) = (calls.clone(), calls.clone());
+    let hooks = ParserHooks {
+        log: Some(Arc::new(|_: &str, _: &str| {})),
+        resume: Some(Arc::new(|_: &str| {})),
+        activity: Some(Arc::new(move |value| rows.lock().unwrap_or_else(|p| p.into_inner()).push(ParserCall::Activity(value)))),
+        answer: Some(Arc::new(move |text: &str| {
+            answers.lock().unwrap_or_else(|p| p.into_inner()).push(ParserCall::Answer(text.to_string()))
+        })),
+        ..ParserHooks::default()
+    };
+    let parser = OutputParser::new("gemini", run_id, hooks);
+    let hand_over = |tracker: &mut ExecutionGraphTracker| {
+        for call in std::mem::take(&mut *calls.lock().unwrap_or_else(|p| p.into_inner())) {
+            match call {
+                ParserCall::Activity(value) => {
+                    tracker.activity(&value, None);
+                }
+                ParserCall::Answer(text) => tracker.antigravity_answer(&text),
+            }
+        }
+    };
     let mut stamps = 0;
     for value in &events {
         if json::text(value, "event") == Some("step_update")
@@ -401,12 +430,23 @@ fn antigravity_replay(
             }
         }
         tracker.consume(value);
-        if let Some(update) = value.get("step_update")
-            && json::text(update, "step_type") == Some("agent_response")
-            && let Some(answer) = json::text(update, "text_delta").map(str::trim_end).filter(|t| !t.is_empty())
-        {
-            tracker.antigravity_answer(answer);
+        parser.parse(&value.to_string());
+        hand_over(tracker);
+    }
+    parser.flush();
+    parser.finish_activities(true);
+    hand_over(tracker);
+    let subagents = tracker.antigravity_subagents().to_vec();
+    if *child_bytes > 0
+        && let Some(brain) = &format.brain
+        && !subagents.is_empty()
+    {
+        let limits = Limits { final_bytes: *child_bytes, ..Limits::default() };
+        let mut children = AntigravitySubagentWatcher::new(brain, run_id, Some(conversation), turn.until, limits);
+        for child in children.finish(&subagents) {
+            tracker.antigravity_session(&child);
         }
+        *child_bytes -= children.bytes_read;
     }
     status
 }

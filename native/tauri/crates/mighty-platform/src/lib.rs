@@ -34,7 +34,7 @@ pub mod update;
 pub use clipboard::Clipboard;
 pub use environment::{CliEnvironment, EnvironmentSource, ShellEnvironment};
 pub use error::{PlatformError, Result};
-pub use files::{ClipboardImage, Desktop, FileHandles, FilePorts, PdfPage, PdfRaster, SaveDialog, SaveRequest};
+pub use files::{ClipboardImage, Desktop, FileHandles, FilePorts, PathProbe, PdfPage, PdfRaster, SaveDialog, SaveRequest};
 pub use firewall::{Firewall, FirewallChange, FirewallRule};
 pub use notify::{ActivationHandler, Notification, Notifier};
 pub use pairing::{PairedDevice, PairingIdentity, PairingStore, PushRegistration};

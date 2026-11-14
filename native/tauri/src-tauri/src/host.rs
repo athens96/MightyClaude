@@ -353,6 +353,11 @@ impl Host {
         self.runs.get()
     }
 
+    /// C# `owner.closing`: quit began ([`Host::close`]).
+    pub fn closing(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
+    }
+
     /// Every pane view's composer and cards are looked at again on the next tick (a runtime read, a setting).
     pub fn panes_changed(&self) {
         for pane in self.view().panes.values_mut() {
@@ -404,6 +409,12 @@ impl Host {
             ServiceEvent::RequestStarting(_) => {}
             // The resume list never hides a session the app's own pane started or resumed (history.rs).
             ServiceEvent::RememberSession(id) => crate::history::remember_session(self, &id),
+            // A pane's Antigravity card came, went, or its answer moved: the card over its composer follows (MainWindow.cs:93).
+            ServiceEvent::AntigravityCard(id) => {
+                if let Some(pane) = self.view().panes.get_mut(&id) {
+                    pane.dirty = true;
+                }
+            }
         }
     }
 
@@ -812,12 +823,94 @@ pub fn replace_file(source: &std::path::Path, destination: &std::path::Path, bac
     if done != 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
 }
 
+/// What a failed `ReplaceFileW` without a backup left (S-L4).
+#[cfg(windows)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplaceFailure {
+    /// 1176 `ERROR_UNABLE_TO_MOVE_REPLACEMENT`: the replaced file is gone and the temporary still has its own name — it is moved into place.
+    MoveIn,
+    /// 1177 `ERROR_UNABLE_TO_MOVE_REPLACEMENT_2`: both are still there under other names — the temporary is kept.
+    Keep,
+    /// Anything else left the replaced file as it was.
+    Other,
+}
+
+#[cfg(windows)]
+impl ReplaceFailure {
+    pub fn of(code: Option<i32>) -> ReplaceFailure {
+        match code {
+            Some(1176) => ReplaceFailure::MoveIn,
+            Some(1177) => ReplaceFailure::Keep,
+            _ => ReplaceFailure::Other,
+        }
+    }
+}
+
+/// `File.Replace(source, destination, null, ignoreMetadataErrors: true)` on Windows: `ReplaceFileW` without a backup, the replaced
+/// file's ACL, attributes and creation time kept (agy's settings, C# `AntigravityRuleLeases.Save`). A failure that left `source` as the
+/// only copy never loses it ([`ReplaceFailure`]): moved into place (`MoveFileExW`, std's rename) after 1176, kept after 1177 or a failed
+/// move, the error then marked [`mighty_run::antigravity::leases::KeptTemporary`].
+#[cfg(windows)]
+pub fn replace_file_keeping(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+    use mighty_run::antigravity::leases::KeptTemporary;
+    let Err(error) = replace_file_once(source, destination) else { return Ok(()) };
+    match ReplaceFailure::of(error.raw_os_error()) {
+        ReplaceFailure::MoveIn => std::fs::rename(source, destination).map_err(KeptTemporary::error),
+        ReplaceFailure::Keep => Err(KeptTemporary::error(error)),
+        ReplaceFailure::Other => Err(error),
+    }
+}
+
+/// One `ReplaceFileW` call without a backup.
+#[cfg(windows)]
+fn replace_file_once(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn ReplaceFileW(
+            replaced: *const u16,
+            replacement: *const u16,
+            backup: *const u16,
+            flags: u32,
+            exclude: *mut std::ffi::c_void,
+            reserved: *mut std::ffi::c_void,
+        ) -> i32;
+    }
+    const REPLACEFILE_IGNORE_MERGE_ERRORS: u32 = 0x2;
+    let wide = |path: &std::path::Path| path.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let (replaced, replacement) = (wide(destination), wide(source));
+    // SAFETY: two NUL-terminated paths that live across the call; no backup, and the two reserved pointers are null as documented.
+    let done = unsafe {
+        ReplaceFileW(
+            replaced.as_ptr(),
+            replacement.as_ptr(),
+            std::ptr::null(),
+            REPLACEFILE_IGNORE_MERGE_ERRORS,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if done != 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn failing_handler() -> Reply {
         panic!("a handler failed")
+    }
+
+    /// S-L4: `ReplaceFileW` failing with 1176 took agy's settings away and left the temporary under its own name (moved in), with 1177 left
+    /// both (kept); any other failure left the settings, so the temporary may go.
+    #[cfg(windows)]
+    #[test]
+    fn a_failed_swap_never_loses_the_only_copy() {
+        assert_eq!(ReplaceFailure::of(Some(1176)), ReplaceFailure::MoveIn);
+        assert_eq!(ReplaceFailure::of(Some(1177)), ReplaceFailure::Keep);
+        assert_eq!(ReplaceFailure::of(Some(5)), ReplaceFailure::Other, "access denied left the settings as they were");
+        assert_eq!(ReplaceFailure::of(Some(1175)), ReplaceFailure::Other, "the replaced file could not be removed: both kept their names");
+        assert_eq!(ReplaceFailure::of(None), ReplaceFailure::Other);
     }
 
     /// Runs `calls` as the dispatcher does: each its own task, the next started once the one before first returned.

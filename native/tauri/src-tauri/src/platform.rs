@@ -47,6 +47,11 @@ pub fn file_ports() -> mighty_platform::FilePorts {
     os::file_ports()
 }
 
+/// What the Antigravity rule safety asks the disk about a path agy named (a link, what the file system calls it, a fixed drive).
+pub fn path_probe() -> Arc<dyn mighty_platform::PathProbe> {
+    os::path_probe()
+}
+
 /// C# `ToLocalTime().ToString("g", CultureInfo.CurrentCulture)`, when the OS says.
 pub fn short_date_time(at: std::time::SystemTime) -> Option<String> {
     os::short_date_time(at)
@@ -60,6 +65,12 @@ pub fn decimal_separator() -> Option<String> {
 /// A workspace's folder opened in the OS's file manager (C# `ShowWorkspaceInExplorer`).
 pub fn show_in_explorer(folder: &std::path::Path) -> std::result::Result<(), String> {
     os::show_in_explorer(folder)
+}
+
+/// Each copy of the command `name` this computer has along `environment`'s PATH (C# `SetupProber.Executables`: with PATHEXT and the
+/// installers' folders on Windows).
+pub fn cli_copies(name: &str, environment: &std::collections::BTreeMap<String, String>) -> Vec<String> {
+    os::cli_copies(name, environment)
 }
 
 /// The browser engine's installed version (C# `WebView2RuntimeLocator`), or none when the pane must offer its install.

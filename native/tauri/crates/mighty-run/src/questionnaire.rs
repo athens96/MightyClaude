@@ -1,7 +1,7 @@
 //! A question card: C# `UserQuestionnaire` (UserQuestionnaire.cs), the complete bounded AskUserQuestion input and its answers;
 //! `QuestionnaireProgress` and `GuidedQuestions` (QuestionnaireProgress.cs), answering one question at a time; and `AgentQuestions`
 //! (AgentQuestions.cs:12-69), the card other agents' questions are drawn in. ACP's `elicitation/create` form (`AcpElicitationForm`)
-//! is the ACP channel's, W5.
+//! is the ACP channel's ([`crate::acp::elicitation`]).
 
 use std::collections::HashSet;
 

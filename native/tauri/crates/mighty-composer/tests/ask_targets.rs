@@ -83,8 +83,8 @@ fn a_choice_falls_back_only_when_known_to_be_gone() {
     assert!(fallback.0 == s(&["codex", "agy"]) && !fallback.1);
 }
 
-/// Verification.cs:1267 "ask targets: a wrapped send titles its pane by the question" (TheQuestionTitlesThePane). The pane-title
-/// part reads mighty-core's `PaneTitle.AutoTitle` port; `PaneTitle.Requested` (the send's title) is the run engine's (W2).
+/// Verification.cs:1267 "ask targets: a wrapped send titles its pane by the question" (TheQuestionTitlesThePane), over mighty-core's
+/// `PaneTitle.AutoTitle` and `PaneTitle.Requested` ports.
 #[test]
 fn the_question_titles_the_pane() {
     let wrapped = ask_targets::wrap("  왜 느린지 봐줘 ", target(Some("codex"))).unwrap();
@@ -94,8 +94,81 @@ fn the_question_titles_the_pane() {
     let pane = RunSession {
         id: Some("p".into()),
         workspace_id: Some("w".into()),
-        logs: Some(vec![LogEntry::new("u".into(), "user", wrapped, mighty_core::time::now_o(), None)]),
+        logs: Some(vec![LogEntry::new("u".into(), "user", wrapped.clone(), mighty_core::time::now_o(), None)]),
         ..RunSession::default()
     };
-    assert_eq!(mighty_core::normalize::auto_title(&pane, "Claude"), "왜 느린지 봐줘");
+    assert_eq!(mighty_core::normalize::auto_title(&pane, "Claude"), "왜 느린지 봐줘", "the restored title is the question");
+    let fresh = RunSession { logs: Some(vec![]), ..pane.clone() };
+    assert_eq!(mighty_core::rename::requested(&fresh, &wrapped).title(), "왜 느린지 봐줘", "a send's title is the question");
+    assert_eq!(mighty_core::rename::requested(&fresh, "/clear").title(), "/clear", "a slash command titles as before");
+}
+
+/// Verification.cs:1268 "ask targets: the choice is saved per pane and kept only on a Claude agent pane"
+/// (TheChoiceIsSavedPerPaneAndKeptOnlyOnAClaudeAgentPane). Its provider switch (`SessionTemplate.SwitchProvider`, which drops the
+/// choice) is the host's composer.rs `switch_provider`.
+#[test]
+fn the_choice_is_saved_per_pane_and_kept_only_on_a_claude_agent_pane() {
+    use mighty_core::json::{JsonOut, Wire};
+    use mighty_core::model::{AppSnapshot, RemoteWorkspaceReference, Workspace};
+    let encode = |session: &RunSession| {
+        let mut out = JsonOut::new();
+        session.write(&mut out);
+        out.finish()
+    };
+    let session =
+        RunSession { id: Some("p".into()), workspace_id: Some("w".into()), ask_target: Some("codex".into()), ..RunSession::default() };
+    let json = encode(&session);
+    assert!(json.contains("\"askTarget\":\"codex\""), "saved as askTarget: {json}");
+    let read = |text: &str| RunSession::read(&serde_json::from_str(text).unwrap()).unwrap();
+    assert_eq!(read(&json).ask_target.as_deref(), Some("codex"), "read back");
+    let mut node: serde_json::Map<String, Value> = serde_json::from_str(&json).unwrap();
+    node.shift_remove("askTarget");
+    assert!(read(&Value::Object(node.clone()).to_string()).ask_target.is_none(), "an old save reads as Claude");
+    node.insert("askTarget".into(), Value::from(7));
+    assert!(read(&Value::Object(node).to_string()).ask_target.is_none(), "a damaged value reads as Claude and keeps the pane");
+    assert!(
+        !encode(&RunSession { id: Some("q".into()), workspace_id: Some("w".into()), ..RunSession::default() }).contains("askTarget"),
+        "Claude writes nothing"
+    );
+
+    let workspace =
+        Workspace { id: Some("w".into()), path: Some(std::env::temp_dir().to_string_lossy().into_owned()), ..Workspace::default() };
+    let remote_workspace = Workspace {
+        id: Some("r".into()),
+        path: Some("/Users/someone/project".into()),
+        remote: Some(RemoteWorkspaceReference {
+            connection_id: Some("conn".into()),
+            workspace_id: Some("host-ws".into()),
+            host_name: Some("Host".into()),
+            version: 2,
+        }),
+        ..Workspace::default()
+    };
+    let pane = |id: &str, workspace: &str, kind: &str, provider: &str, target: &str| {
+        std::sync::Arc::new(RunSession {
+            id: Some(id.into()),
+            workspace_id: Some(workspace.into()),
+            kind: Some(kind.into()),
+            provider: Some(provider.into()),
+            ask_target: Some(target.into()),
+            ..RunSession::default()
+        })
+    };
+    let state = AppSnapshot {
+        workspaces: Some(vec![workspace, remote_workspace]),
+        sessions: Some(vec![
+            pane("claude", "w", "claude", "claude", "codex"),
+            pane("stale", "w", "claude", "claude", "no-such-target"),
+            pane("codex", "w", "claude", "codex", "codex"),
+            pane("shell", "w", "shell", "claude", "codex"),
+            pane("remote", "r", "claude", "claude", "codex"),
+        ]),
+        ..AppSnapshot::default()
+    };
+    let restored = mighty_core::normalize::normalize(&state, true).unwrap();
+    let target_of = |id: &str| restored.session(id).map(|s| s.ask_target.clone());
+    assert_eq!(target_of("claude"), Some(Some("codex".into())), "a Claude agent pane keeps its choice");
+    assert_eq!(target_of("stale"), Some(Some("no-such-target".into())), "one no longer offered is kept, and reads as Claude when sent");
+    assert!(target_of("codex") == Some(None) && target_of("shell") == Some(None), "every other pane drops it");
+    assert_eq!(target_of("remote"), Some(None), "a remote workspace's Claude pane drops it too");
 }

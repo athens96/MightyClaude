@@ -19,11 +19,13 @@ doc = false
 mighty-core.workspace = true
 mighty-platform.workspace = true
 serde_json.workspace = true
+serde.workspace = true
 indexmap.workspace = true
 chrono.workspace = true
 sys-locale.workspace = true
 tokio = { workspace = true, features = ["sync", "time", "rt", "macros", "io-util", "net"] }
 regex = "1"
+url = "2"
 sha2 = "0.10"
 base64 = "0.22"
 getrandom = "0.3"

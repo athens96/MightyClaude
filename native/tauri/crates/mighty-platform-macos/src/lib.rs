@@ -100,6 +100,34 @@ mod imp {
         mighty_platform::FilePorts::unsupported()
     }
 
+    /// What the Antigravity rule safety asks the disk (mighty-platform `PathProbe`, Swift `AntigravityRuleSafety`): a link read
+    /// without following it, what the file system calls a path (`realpath`); the Mac has no drive letters.
+    pub struct MacPathProbe;
+
+    impl mighty_platform::PathProbe for MacPathProbe {
+        fn checks_paths(&self) -> bool {
+            true
+        }
+        fn fixed_drive(&self, _letter: char) -> bool {
+            false
+        }
+        fn link_target(&self, path: &std::path::Path) -> Option<PathBuf> {
+            let meta = std::fs::symlink_metadata(path).ok()?;
+            if !meta.file_type().is_symlink() {
+                return None;
+            }
+            std::fs::read_link(path).ok()
+        }
+        fn final_path(&self, path: &std::path::Path) -> Option<PathBuf> {
+            std::fs::canonicalize(path).ok()
+        }
+    }
+
+    /// The Antigravity rule safety's disk questions on the Mac.
+    pub fn path_probe() -> Arc<dyn mighty_platform::PathProbe> {
+        Arc::new(MacPathProbe)
+    }
+
     /// The user's short date and time: not yet on the Mac.
     pub fn short_date_time(_at: std::time::SystemTime) -> Option<String> {
         None
@@ -117,6 +145,25 @@ mod imp {
     /// The pasteboard (`NSPasteboard.general`): not yet on the Mac, whose terminal (Ghostty) copies and pastes by itself.
     pub fn clipboard() -> Arc<dyn mighty_platform::Clipboard> {
         Arc::new(Unsupported)
+    }
+
+    /// Each copy of the command `name` along the environment's PATH (M/AppStore+AskTargets.swift reads the login shell's PATH): an
+    /// executable file of that name in each folder, once.
+    pub fn cli_copies(name: &str, environment: &std::collections::BTreeMap<String, String>) -> Vec<String> {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut copies: Vec<String> = Vec::new();
+        for folder in environment.get("PATH").map(String::as_str).unwrap_or("").split(':').take(64) {
+            if folder.is_empty() || !folder.starts_with('/') {
+                continue;
+            }
+            let path = std::path::Path::new(folder).join(name);
+            let runnable = std::fs::metadata(&path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0);
+            let text = path.to_string_lossy().into_owned();
+            if runnable && !copies.contains(&text) {
+                copies.push(text);
+            }
+        }
+        copies
     }
 
     #[cfg(test)]

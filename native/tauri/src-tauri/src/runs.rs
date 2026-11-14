@@ -1,7 +1,9 @@
 //! The run engine in the app: one [`RunService`] (the run half of C# `DesktopService`) for every pane, with mighty-graph's tracker
 //! plugged into its runner (`mighty_graph::TrackerFactory`: each request's graph run published every second and at its end, with the
-//! notice runs its background work opened), the picture cache (`AgentImageCache`) and the CLIs' catalogue (`ProviderCatalog`), whose
-//! readings the composer's pills and menus show.
+//! notice runs its background work opened, and a Codex run's sub-agents read live from its session files through mighty-history's
+//! `CodexSessionWatcher`), the picture cache (`AgentImageCache`) and the CLIs' catalogue (`ProviderCatalog`), whose readings the
+//! composer's pills and menus show. pi runs load the app's `ask_user` extension (`agents_directory`) and start a new session when pi
+//! has no record of the one asked for (mighty-history's `pi::session_file`).
 //!
 //! The service owns the state from here on: every change the host makes goes through it (`View::update` → `RunService::update`), and
 //! each [`ServiceEvent`] it hands back is applied to the page's copy by [`Host::service_event`] (host.rs), which pushes `event` and
@@ -15,11 +17,13 @@ use mighty_composer::images::{AgentImageCache, AgentImageError, CacheError};
 use mighty_composer::runtime as composer_runtime;
 use mighty_core::model::{AgentImageRef, AppSnapshot, RegisteredModelEntry, RunSession, Workspace};
 use mighty_graph::TrackerFactory;
+use mighty_history::{codex_sessions, history};
 use mighty_platform::{ProcessHost, ShellEnvironment};
+use mighty_run::antigravity::AntigravityRuleLeases;
 use mighty_run::model::{CliCommand, ModelCatalog, ProviderRuntime};
 use mighty_run::parser::{ImageError, ImageStore};
 use mighty_run::providers::{self, Finder, ProviderCatalog};
-use mighty_run::service::{Configure, RunService, RunServiceOptions};
+use mighty_run::service::{Configure, RunService, RunServiceOptions, ServiceEvent};
 
 use crate::host::Host;
 
@@ -27,13 +31,29 @@ use crate::host::Host;
 const IMAGE_CACHE_BYTES: u64 = 200 * 1_048_576;
 
 /// The smoke's stand-in Claude (mighty-run's `mighty-fake-cli --replay-cli`): asks one Bash permission and one plan, then replays a
-/// recording. Every other provider is missing.
+/// recording; its stand-in pi (`--fake-cli pi … --pi-fixture pi-rpc-question.jsonl --pi-dialogs`), which asks one question through the
+/// app's `ask_user` tool; its Antigravity, the same binary as C#'s fake agy (`--agy-denied`, refused `echo hi` on a new conversation)
+/// over the smoke's own agy settings ([`FakeClaude::agy_settings`]); and the ACP step's opencode (`--fake-acp`, smoke_acp.rs). Every
+/// other provider is missing.
 #[derive(Debug, Clone)]
 pub struct FakeClaude {
     pub binary: PathBuf,
     pub recording: String,
     /// Where the fake writes what it was sent (`<record>.args`, `.input`, `.answers`).
     pub record: PathBuf,
+}
+
+impl FakeClaude {
+    /// The smoke's own agy settings (never the user's): beside the fake's record.
+    pub fn agy_settings(&self) -> PathBuf {
+        fake_agy_settings(&self.record)
+    }
+}
+
+/// The stand-in agy's settings for the fake's record `record`: `<record's folder>\agy-home\.gemini\antigravity-cli\settings.json`.
+pub fn fake_agy_settings(record: &Path) -> PathBuf {
+    let folder = record.parent().map(Path::to_path_buf).unwrap_or_default();
+    folder.join("agy-home").join(".gemini").join("antigravity-cli").join("settings.json")
 }
 
 pub struct Runs {
@@ -65,6 +85,29 @@ impl ImageStore for CacheStore {
     }
 }
 
+/// What Hermes's `state.db` says of a session a run would continue (C# `HermesSessions.MessageCount`, `StartedWithFullAccess` of
+/// `StateDatabase(environment)`), read through mighty-history; read-only.
+fn hermes_session(environment: &std::collections::BTreeMap<String, String>, session: &str) -> (Option<i32>, Option<bool>) {
+    let environment: HashMap<String, String> = environment.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let database = mighty_history::acp::hermes_state_database(&environment, None);
+    (
+        mighty_history::acp::hermes_message_count(&database, session),
+        mighty_history::acp::hermes_started_with_full_access(&database, session),
+    )
+}
+
+/// A Hermes pane's run ended (C# `RefreshModelsAfterHermesRun`): the pane whose model list is read again, so the models its session
+/// offered are in the menu. None for anything else.
+fn hermes_run_ended(host: &Host, event: &ServiceEvent) -> Option<String> {
+    let ServiceEvent::Run { event, .. } = event else { return None };
+    if event.kind != "status" || !matches!(event.status.as_deref(), Some("completed" | "error" | "stopped")) {
+        return None;
+    }
+    let view = host.view();
+    view.snapshot.session(&event.session_id).filter(|s| s.kind() == "claude" && s.provider() == "hermes")?;
+    Some(event.session_id.clone())
+}
+
 /// The mighty-bridge plugin the Claude runs load (C#: `mods/mighty-bridge` copied next to the app as `claude-mods`): beside the exe
 /// when it was put there, else the repository's own (a development build).
 pub fn plugin_directory() -> String {
@@ -82,6 +125,26 @@ pub fn plugin_directory() -> String {
     }
 }
 
+/// The agents' files the app ships (C# `AgentFiles`: the Mac bundle's Resources/Agents, which the C# build copies next to its exe as
+/// `Agents`; pi's `ask_user` extension and opencode's question instructions among them): beside the exe when they were put there, else
+/// in the app's resources (`resources`: Tauri's resource folder, the Mac bundle's Contents/Resources), else — a development build only
+/// — the repository's own. A release build never reads the build machine's paths: None when neither place has them.
+pub fn agents_directory(resources: Option<PathBuf>) -> Option<PathBuf> {
+    let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf));
+    #[cfg(debug_assertions)]
+    let repository = Some(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("macos").join("Sources").join("MightyCore").join("Resources"),
+    );
+    #[cfg(not(debug_assertions))]
+    let repository = None;
+    agents_directory_among(beside, resources, repository)
+}
+
+/// The first of the folders' `Agents` that is there: beside the exe, in the resources, in the repository's resources.
+fn agents_directory_among(beside: Option<PathBuf>, resources: Option<PathBuf>, repository: Option<PathBuf>) -> Option<PathBuf> {
+    [beside, resources, repository].into_iter().flatten().map(|folder| folder.join("Agents")).find(|dir| dir.is_dir())
+}
+
 impl Runs {
     /// The service over the loaded state, its events pumped into the host, and the CLIs read once in the background.
     pub fn start(
@@ -90,6 +153,8 @@ impl Runs {
         environment: Arc<dyn ShellEnvironment>,
         fake: Option<FakeClaude>,
         image_dir: PathBuf,
+        catalog_dir: PathBuf,
+        antigravity: AntigravityRuleLeases,
     ) -> Arc<Runs> {
         mighty_run::strings::set_language(host.locale.language());
         // `{value:N0}` (the attachments' sizes) in the user's regional format, as C#'s current culture writes it.
@@ -102,21 +167,78 @@ impl Runs {
                 vec!["--replay-cli".into(), fake.recording.clone(), fake.record.to_string_lossy().into_owned()],
                 Some("2.1.322"),
             );
+            let pi = CliCommand::new(
+                fake.binary.to_string_lossy().into_owned(),
+                vec![
+                    "--fake-cli".into(),
+                    "pi".into(),
+                    format!("{}-pi", fake.record.to_string_lossy()),
+                    "--pi-fixture".into(),
+                    crate::smoke_runs::pi_fixture().to_string_lossy().into_owned(),
+                    "--pi-dialogs".into(),
+                ],
+                Some("0.70.2"),
+            );
+            let agy = CliCommand::new(
+                fake.binary.to_string_lossy().into_owned(),
+                vec![
+                    "--fake-cli".into(),
+                    "gemini".into(),
+                    format!("{}-agy", fake.record.display()),
+                    "--agy-denied".into(),
+                    fake.agy_settings().to_string_lossy().into_owned(),
+                ],
+                Some("1.4.4"),
+            );
+            // The ACP step's opencode: the stand-in replaying a recorded session that asks one question (smoke_acp.rs).
+            let state = crate::smoke_acp::state(&fake.record);
+            let _ = std::fs::create_dir_all(&state);
+            let opencode = CliCommand::new(
+                fake.binary.to_string_lossy().into_owned(),
+                vec![
+                    "--fake-acp".into(),
+                    state.to_string_lossy().into_owned(),
+                    crate::smoke_acp::fixture().to_string_lossy().into_owned(),
+                    // The question waits for the page's answer, as a real agent's does.
+                    "--fake-await-answers".into(),
+                ],
+                Some("opencode v2.2.7"),
+            );
             let finder: Finder = Arc::new(move |provider: String| {
-                let found = (provider == "claude").then(|| command.clone());
+                let found = match provider.as_str() {
+                    "claude" => Some(command.clone()),
+                    "pi" => Some(pi.clone()),
+                    "gemini" => Some(agy.clone()),
+                    "opencode" => Some(opencode.clone()),
+                    _ => None,
+                };
                 Box::pin(async move { found })
             });
             finder
         });
-        let catalog = Arc::new(ProviderCatalog::new(processes, environment, finder));
+        // The last list each CLI gave is kept in `catalog_dir` (C#'s storageDirectory, KeptModelLists), so a restart still has it.
+        let catalog = Arc::new(ProviderCatalog::new(processes, environment, finder).with_storage(Some(catalog_dir)));
         let images = Arc::new(AgentImageCache::new(image_dir, IMAGE_CACHE_BYTES));
         let store: Arc<dyn ImageStore> = Arc::new(CacheStore(images.clone()));
         // A Claude run's Edit, Write and MultiEdit results keep the files' originals (files.rs, C# FileOriginalStore).
         let originals = crate::files::originals_hook(&host.app);
+        providers::set_agent_files(agents_directory(tauri::Manager::path(&host.app).resource_dir().ok()));
+        // The CLIs' own records are read, never written: a Codex run's session files, pi's session list.
+        let home = history::user_home();
+        let pi_home = home.clone();
+        // Temporary Antigravity rules a crash left in agy's settings go first (C# `InitializeAsync`, M/AppStore.swift:433-434): the run
+        // service takes them out as it starts and no agy run starts before (C2).
         let configure: Configure = Box::new(move |options| {
-            options.graph = Some(Arc::new(TrackerFactory::new()));
+            options.graph =
+                Some(Arc::new(TrackerFactory { codex_sessions: Some(codex_sessions::watcher_factory(home)), ..TrackerFactory::default() }));
+            options.pi_sessions = Some(Arc::new(move |id, workspace, environment| {
+                let environment: HashMap<String, String> = environment.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                mighty_history::pi::session_file(id, workspace, &pi_home, &environment).is_some()
+            }));
             options.images = Some(store);
             options.file_originals = originals;
+            options.antigravity_rules = Some(antigravity);
+            options.hermes_session = Some(Arc::new(hermes_session));
         });
         let snapshot = host.view().snapshot.clone();
         let (service, mut events) = RunService::new(
@@ -135,7 +257,13 @@ impl Runs {
         let pump = host.clone();
         tauri::async_runtime::spawn(async move {
             while let Some(event) = events.recv().await {
+                let hermes = hermes_run_ended(&pump, &event);
                 pump.service_event(event);
+                // C# `RefreshModels(sessionId, invalidate: true)` through the model lists' own refresh (models.rs), which reconciles the
+                // pane with the new list and asks no CLI in a smoke.
+                if let Some(id) = hermes {
+                    crate::models::refresh(&pump, &pump.view().snapshot, &id, true);
+                }
             }
         });
         let reader = host.clone();
@@ -166,11 +294,9 @@ impl Runs {
         crate::host::lock(&self.runtime).get(provider).cloned()
     }
 
-    /// One provider read again for a folder (`RefreshProviderAsync`), kept as its runtime.
-    pub async fn refresh(&self, provider: &str, folder: Option<&str>) -> ProviderRuntime {
-        let value = self.catalog.refresh_provider(provider, folder, false).await;
-        crate::host::lock(&self.runtime).insert(provider.to_string(), value.clone());
-        value
+    /// A provider's newer reading taken as its runtime (C# `runtime = ProviderCatalog.With(runtime, refreshed)`, models.rs).
+    pub fn keep(&self, value: ProviderRuntime) {
+        crate::host::lock(&self.runtime).insert(value.id.clone(), value);
     }
 
     /// The runtime as the composer reads it (mighty-composer's mirror of C# `ProviderRuntime`).
@@ -210,8 +336,9 @@ pub fn composer_runtime(value: &ProviderRuntime) -> composer_runtime::ProviderRu
                     resolved_model: m.resolved_model.clone(),
                 })
                 .collect(),
-            // `ModelListNotices.Notice` is the model list's (W5's catalogue settings); none until then.
-            notice: None,
+            // `ModelListNotices.Notice`: the built-in list after a read that failed, or the last list the CLI gave, kept.
+            notice: mighty_run::kept_lists::notice(&value.model_catalog, None)
+                .map(|n| composer_runtime::ModelListNotice { line: n.line, help: n.help }),
         },
         capabilities: composer_runtime::ProviderCapabilities {
             effort: caps.effort,
@@ -243,4 +370,33 @@ pub fn registered_models_for(provider: &str, workspace: Option<&Workspace>, snap
     }
     let names: Vec<Option<String>> = from_workspace.iter().map(|e| e.name.clone()).collect();
     from_workspace.iter().cloned().chain(from_app.into_iter().filter(|e| !names.contains(&e.name))).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The agents' files: beside the exe first, then the app's resources (the Mac bundle's Contents/Resources), then the repository's —
+    /// which a release build does not pass, so without the other two it finds none rather than the build machine's.
+    #[test]
+    fn the_agents_files_are_beside_the_exe_then_in_the_resources_and_the_repository_only_in_development() {
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("mighty-agents-{}-{nanos}", std::process::id()));
+        let (exe, resources, repository) = (root.join("exe"), root.join("Resources"), root.join("repository"));
+        for folder in [&exe, &resources, &repository] {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        let among = |beside: &Path, repository: Option<&Path>| {
+            agents_directory_among(Some(beside.to_path_buf()), Some(resources.clone()), repository.map(Path::to_path_buf))
+        };
+        assert_eq!(among(&exe, None), None, "a release build without the files anywhere finds none");
+        std::fs::create_dir_all(repository.join("Agents")).unwrap();
+        assert_eq!(among(&exe, Some(&repository)), Some(repository.join("Agents")), "a development build falls back to the repository");
+        assert_eq!(among(&exe, None), None, "a release build never reads the repository");
+        std::fs::create_dir_all(resources.join("Agents")).unwrap();
+        assert_eq!(among(&exe, Some(&repository)), Some(resources.join("Agents")), "the resources come before the repository");
+        std::fs::create_dir_all(exe.join("Agents")).unwrap();
+        assert_eq!(among(&exe, Some(&repository)), Some(exe.join("Agents")), "beside the exe comes first");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

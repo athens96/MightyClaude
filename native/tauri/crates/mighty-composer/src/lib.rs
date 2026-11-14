@@ -12,6 +12,7 @@ pub mod ask_targets;
 pub mod attachments;
 pub mod cards;
 pub mod composer;
+pub mod custom_model;
 pub mod files;
 pub mod html;
 pub mod images;

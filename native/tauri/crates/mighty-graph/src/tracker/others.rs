@@ -1,32 +1,12 @@
 //! The other agents' streams: Antigravity's stream-json (ExecutionGraphTracker.Antigravity.cs), pi's RPC events (PiSupport.cs:112-133)
 //! and an ACP agent's prompt result (ExecutionGraphTracker.Acp.cs, opencode; Hermes's block carries no tokens).
 
-use std::sync::LazyLock;
-
-use regex::Regex;
 use serde_json::Value;
 
 use super::{AntigravitySubagent, CodexSessionAgent, ExecutionGraphTracker, Owner, key, prop, text};
 use crate::node::{self, ExecutionGraphNode, MAXIMUM_NODES};
 use mighty_core::wire;
-
-static UUID: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\A[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\z").expect("regex"));
-
-/// `AntigravityRecords.ConversationID`: none for anything that is not a conversation id.
-pub fn conversation_id(value: Option<&str>) -> Option<&str> {
-    value.filter(|v| UUID.is_match(v))
-}
-
-/// `AntigravityRecords.Title(role, typeName)`: "role (type)", the one that is there, or none.
-pub fn antigravity_title(role: Option<&str>, type_name: Option<&str>) -> Option<String> {
-    let name = role.map(str::trim).unwrap_or("");
-    let kind = type_name.map(str::trim).unwrap_or("");
-    if name.is_empty() {
-        return (!kind.is_empty()).then(|| kind.to_string());
-    }
-    Some(if kind.is_empty() || kind == name { name.to_string() } else { format!("{name} ({kind})") })
-}
+use mighty_run::antigravity::records::{conversation_id, title as antigravity_title};
 
 /// `AntigravityRecords.Usage`: an `agent_response` step's usage in agy's names.
 pub fn antigravity_usage(value: Option<&Value>) -> Option<mighty_core::graph::GraphTokenUsage> {

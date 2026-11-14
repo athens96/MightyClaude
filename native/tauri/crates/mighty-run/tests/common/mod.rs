@@ -43,6 +43,20 @@ pub fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("..").join("contracts").join("fixtures")
 }
 
+/// The agents' files the app ships (the Mac bundle's Resources/Agents, which C#'s build copies beside its exe and checks as
+/// `Agents`): pi's `ask_user` extension among them.
+pub fn agents() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("macos")
+        .join("Sources")
+        .join("MightyCore")
+        .join("Resources")
+        .join("Agents")
+}
+
 pub fn fixture(name: &str) -> String {
     std::fs::read_to_string(fixtures().join(name)).unwrap_or_else(|e| panic!("fixture {name}: {e}"))
 }
@@ -58,6 +72,34 @@ pub fn recording(name: &str) -> Vec<String> {
 
 pub fn json(text: &str) -> Value {
     serde_json::from_str(text).unwrap_or_else(|e| panic!("{e}: {text}"))
+}
+
+/// What a file rule's path is asked of this computer's disk with: Windows' own probe (`GetDriveTypeW`, links, `GetFinalPathNameByHandleW`).
+#[cfg(windows)]
+pub fn path_probe() -> std::sync::Arc<dyn mighty_platform::PathProbe> {
+    mighty_platform_windows::path_probe()
+}
+
+/// Elsewhere the checks' own: links read and paths resolved by std, as the Mac's probe does (no drive letters).
+#[cfg(not(windows))]
+pub fn path_probe() -> std::sync::Arc<dyn mighty_platform::PathProbe> {
+    struct StdProbe;
+    impl mighty_platform::PathProbe for StdProbe {
+        fn checks_paths(&self) -> bool {
+            true
+        }
+        fn fixed_drive(&self, _letter: char) -> bool {
+            false
+        }
+        fn link_target(&self, path: &Path) -> Option<PathBuf> {
+            std::fs::symlink_metadata(path).ok().filter(|m| m.file_type().is_symlink())?;
+            std::fs::read_link(path).ok()
+        }
+        fn final_path(&self, path: &Path) -> Option<PathBuf> {
+            std::fs::canonicalize(path).ok()
+        }
+    }
+    std::sync::Arc::new(StdProbe)
 }
 
 /// The stand-in CLI (C# `Verification.Self`).

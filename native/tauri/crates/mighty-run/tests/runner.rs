@@ -4,7 +4,8 @@
 //! ResumedAgentVerification.TheRunnerKeepsTheInputOpenForAResumedAgent, and Verification.cs "provider prompt goes to stdin; shell
 //! output and cancellation execute real children", "fake CLI receives attachment bytes and staging is removed on completion, error
 //! and stop", "pending stop and disposal prevent a late child launch" and "desktop routing retains cancellation before manager
-//! admission", and CliLoginRecoveryVerification.ClaudeFakeCliRunKeepsTheReasonWhenTheResultRepeatsTheMarkedFailure. Windows only: the
+//! admission", CliLoginRecoveryVerification.ClaudeFakeCliRunKeepsTheReasonWhenTheResultRepeatsTheMarkedFailure and
+//! GeminiFakeCliRunRaisesTheReasonFromStderrOnly, and an Antigravity run read through its stream. Windows only: the
 //! Mac ProcessHost is W1-D's.
 #![cfg(windows)]
 
@@ -446,10 +447,8 @@ async fn fake_cli_receives_attachment_bytes_and_staging_is_removed() {
         mighty_run::attachments::make("source.cs", b"attachment-fixture-contents").unwrap(),
     ];
     let events = Events::default();
-    // pi, Antigravity and the ACP agents are read through their own channels and streams (W5): their runs are refused until then.
-    for provider in
-        mighty_core::wire::PROVIDERS.iter().copied().filter(|p| !matches!(*p, "pi" | "gemini") && !mighty_run::providers::is_acp(p))
-    {
+    // pi and the ACP agents take their attachments in their own channels (tests/pi.rs, PiVerification; tests/acp.rs, AcpVerification).
+    for provider in mighty_core::wire::PROVIDERS.iter().copied().filter(|p| *p != "pi" && !mighty_run::providers::is_acp(p)) {
         let record = directory.join(provider);
         let catalog = common::fake_catalog(&["--fake-cli", provider, &record.to_string_lossy(), "--verify-attachments"]);
         let manager = RunManager::new(catalog, RunManagerOptions::new(&plugin, resolve(&workspace), events.emit()));
@@ -791,28 +790,67 @@ async fn a_panic_in_a_run_ends_it_and_frees_its_pane() {
     common::remove_when_free(&directory).await;
 }
 
-/// pi and Antigravity are read by streams of their own (W5): until then their runs are refused with the reason, as the ACP agents'
-/// are, instead of launching a CLI whose answer would never be read.
+/// An Antigravity run (W5-C, Verification.cs "provider prompt goes to stdin" for agy): the prompt is one stream-json line on stdin and never
+/// an argument, agy's stream is read for the answer (once, from its deltas) and the conversation to continue, and the run completes.
 #[tokio::test(flavor = "multi_thread")]
-async fn pi_and_antigravity_runs_are_refused_until_their_streams() {
+async fn an_antigravity_run_reads_its_stream() {
     common::korean();
-    let directory = common::temp("refused");
+    let directory = common::temp("agy-run");
     let workspace = workspace(&directory);
-    let record = directory.join("refused");
-    let catalog = common::fake_catalog(&["--fake-cli", "codex", &record.to_string_lossy()]);
+    let record = directory.join("agy");
+    let catalog = common::fake_catalog(&["--fake-cli", "gemini", &record.to_string_lossy()]);
     let events = Events::default();
     let manager = RunManager::new(catalog, RunManagerOptions::new("", resolve(&workspace), events.emit()));
-    for provider in ["pi", "gemini"] {
-        let refused = manager.start_reached(request(provider, &workspace, "claude", "hello").with_provider(provider)).await;
-        let name = mighty_run::providers::name(provider);
-        assert!(
-            matches!(&refused, Err(error) if error.message().starts_with(name) && error.message().contains("does not read yet")),
-            "{provider}: {refused:?}"
-        );
-        assert_eq!(events.last_status(provider).as_deref(), Some("error"), "{provider} ends in an error");
-    }
+    manager.start(request("agy", &workspace, "claude", "say \"ok\"\nnow").with_provider("gemini")).await.unwrap();
+    common::until(|| events.last_status("agy").is_some_and(|s| s != "running"), 20000, "the run ends").await;
     manager.dispose().await;
-    assert!(!suffixed(&record, ".args").exists(), "no CLI was launched");
+    assert_eq!(events.last_status("agy").as_deref(), Some("completed"), "the run completes");
+    let seen = events.of("agy");
+    assert!(
+        seen.iter().any(|e| e.kind == "resume" && e.resume_id.as_deref() == Some("11111111-2222-4333-8444-555555555555")),
+        "the conversation is the resume id"
+    );
+    let answers: Vec<String> =
+        seen.iter().filter_map(|e| e.entry.as_ref()).filter(|l| l.kind() == "assistant").map(|l| l.text().to_string()).collect();
+    assert_eq!(answers, ["FAKE_CLI_OK"], "one answer from the deltas, its newline trimmed, the result's response not again");
+    let prompt = read(suffixed(&record, ".prompt"));
+    let input = "say \"ok\"\nnow";
+    assert!(
+        prompt == mighty_run::permissions::ProviderInput::antigravity_user_message(input) && prompt.matches('\n').count() == 1,
+        "the prompt is one stdin line: {prompt}"
+    );
+    assert_eq!(common::json(prompt.trim_end())["message"]["content"], input, "the prompt is a user event");
+    let launched = args(&record);
+    assert!(
+        launched.iter().any(|a| a == "--output-format") && !launched.iter().any(|a| a.contains("say")),
+        "the prompt is never an argument"
+    );
+    common::remove_when_free(&directory).await;
+}
+
+/// CliLoginRecoveryVerification.cs:157 `GeminiFakeCliRunRaisesTheReasonFromStderrOnly`: agy's sign-in message on stderr is the reason a
+/// failed run gives; the same words as the model's answer are not.
+#[tokio::test(flavor = "multi_thread")]
+async fn gemini_fake_cli_run_raises_the_reason_from_stderr_only() {
+    common::korean();
+    let directory = common::temp("agy-signin");
+    let workspace = workspace(&directory);
+    for (flag, expected) in [("--agy-signin-lost", Some("authentication")), ("--agy-quoted", None)] {
+        let record = directory.join(flag.trim_start_matches('-'));
+        let catalog = common::fake_catalog(&["--fake-cli", "gemini", &record.to_string_lossy(), flag]);
+        let events = Events::default();
+        let manager = RunManager::new(catalog, RunManagerOptions::new("", resolve(&workspace), events.emit()));
+        manager.start(request("gemini-pane", &workspace, "claude", "fix the bug").with_provider("gemini")).await.unwrap();
+        common::until(|| events.last_status("gemini-pane").is_some_and(|s| s != "running"), 20000, "the run ends").await;
+        manager.dispose().await;
+        let last = events.of("gemini-pane").into_iter().rev().find(|e| e.kind == "status").unwrap();
+        assert!(
+            last.status.as_deref() == Some("error") && last.reason.as_deref() == expected,
+            "{flag}: expected error with reason {expected:?}, got {:?} with {:?}",
+            last.status,
+            last.reason
+        );
+    }
     common::remove_when_free(&directory).await;
 }
 

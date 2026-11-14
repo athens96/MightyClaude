@@ -2009,12 +2009,15 @@ dependencies = [
  "chrono",
  "indexmap 2.14.2",
  "mighty-core",
+ "mighty-platform",
+ "mighty-platform-windows",
  "mighty-run",
  "percent-encoding",
  "regex",
  "serde",
  "serde_json",
  "sha2",
+ "tokio",
  "unicode-segmentation",
 ]
 
@@ -2024,8 +2027,10 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "memchr",
+ "mighty-composer",
  "mighty-core",
  "mighty-graph",
+ "mighty-platform",
  "mighty-run",
  "percent-encoding",
  "regex",
@@ -2084,10 +2089,12 @@ dependencies = [
  "mighty-platform",
  "mighty-platform-windows",
  "regex",
+ "serde",
  "serde_json",
  "sha2",
  "sys-locale",
  "tokio",
+ "url",
  "windows-sys 0.61.2",
 ]
 

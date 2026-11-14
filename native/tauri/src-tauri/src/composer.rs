@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use base64::Engine as _;
+use mighty_composer::ask_targets;
 use mighty_composer::attachments;
 use mighty_composer::menus::{self, MenuAction, MenuInputs, RunSettingsForm};
 use mighty_composer::pending::SubmitReceipt;
@@ -99,16 +100,18 @@ fn with_menu_inputs<T>(host: &Host, view: &View, pane: &RunSession, read: impl F
 // ── starting a request ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /// C# `StartFromComposer`: the pane's request with `text` and `files` through the run service. Ok(Some(entry id, graph run id)) when
-/// it started, Ok(None) when it was stopped before it started.
+/// it started, Ok(None) when it was stopped before it started. `continuation`: a queued Antigravity card's rules and card.
 async fn start_run(
     host: &Arc<Host>,
     id: &str,
     text: &str,
     files: Vec<RunAttachment>,
     permission_override: Option<String>,
+    continuation: Option<(mighty_run::antigravity::AllowGrant, mighty_run::antigravity::PermissionRequest)>,
 ) -> Result<Option<(Option<String>, Option<String>)>, String> {
     let engine = host.engine()?;
     let receipt = Arc::new(Mutex::new(RunStartReceipt::default()));
+    reset_unavailable_agy_model(host, id)?;
     let request = {
         let view = host.view();
         let pane = session(&view, id)?;
@@ -122,6 +125,10 @@ async fn start_run(
         request.attachments = (!files.is_empty()).then_some(files);
         request.permission_mode_override = permission_override;
         request.receipt = Some(receipt.clone());
+        if let Some((grant, card)) = continuation {
+            request.antigravity_grant = Some(grant);
+            request.antigravity_card = Some(card);
+        }
         request
     };
     match engine.service.start(request).await {
@@ -134,22 +141,58 @@ async fn start_run(
     }
 }
 
+/// C# `PrepareStyleRunRequest`'s Antigravity part (MainWindow.Styles.cs:571, M/AppStore.swift:981-988): agy refuses a model its live
+/// list lacks, so the run starts on its default instead, the pane's model set back with a note.
+fn reset_unavailable_agy_model(host: &Host, id: &str) -> Result<(), String> {
+    let mut view = host.view();
+    let pane = session(&view, id)?;
+    if pane.kind() != "claude" || pane.provider() != "gemini" {
+        return Ok(());
+    }
+    let Some(catalog) = host.runs().and_then(|r| r.runtime("gemini")).map(|r| r.model_catalog) else { return Ok(()) };
+    if !mighty_run::antigravity::model_unavailable(pane.model(), &catalog) {
+        return Ok(());
+    }
+    let missing = pane.model().to_string();
+    let note = host.locale.get_with("run.notice.antigravityModelReset", &[("model", &missing)]);
+    change(&mut view, id, |p| {
+        let mut next = p.clone();
+        next.model = Some("default".into());
+        next.logs.get_or_insert_with(Vec::new).push(LogEntry::new(wire::new_id(), "system", note.clone(), time::now_o(), None));
+        next
+    })
+}
+
 /// C# `PaneView.Submit` (MainWindow.cs:533): the editor's text and attachments go the way the spec orders it — a busy pane's queue,
 /// then a start. What happened: started, notStarted, queued, blocked or none, with the request's user entry and graph run when it
 /// started at once.
 async fn submit(host: &Arc<Host>, id: &str) -> Result<SubmitReceipt, String> {
+    // A saved "send to" choice not yet known to stand waits briefly for the pane's catalogue and the PATH read (ask.rs).
+    crate::ask::await_targets(host, id).await;
+    // Asking another CLI carries the words alone, wrapped once here: staged files stay in the composer.
+    let asked = {
+        let view = host.view();
+        if !panes::alive(&view, id) {
+            return Ok(SubmitReceipt::new("none"));
+        }
+        let pane = session(&view, id)?;
+        crate::ask::send_target(host, &view.snapshot, &pane)
+    };
     // DeferBusyComposer: a busy pane (running, starting) always queues the draft as its next request.
     let taken = {
         let mut view = host.view();
         let pane = session(&view, id)?;
         let busy_run = pane.status() == "running" || running(host, id);
         let ui = panes::ui(&mut view, id)?;
+        if asked.is_some() && ask_targets::wrap(&ui.view.draft, asked).is_none() {
+            return Ok(SubmitReceipt::new("none"));
+        }
         if busy_run || ui.view.starting {
             if pane.kind() != "claude" || !ui.has_content() || ui.view.starting || ui.view.attachments_loading {
                 return Ok(SubmitReceipt::new("none"));
             }
-            let text = ui.view.draft.clone();
-            let files = ui.view.attachments.clone();
+            let Some(text) = ask_targets::wrap(&ui.view.draft, asked) else { return Ok(SubmitReceipt::new("none")) };
+            let files = if asked.is_none() { ui.view.attachments.clone() } else { vec![] };
             // The same request validation applies before consuming a draft even though it runs later.
             let mut probe = StartRunRequest::new(pane.id(), pane.workspace_id(), pane.kind(), &text);
             probe.provider = pane.provider().to_string();
@@ -158,8 +201,9 @@ async fn submit(host: &Arc<Host>, id: &str) -> Result<SubmitReceipt, String> {
             probe.attachments = (!files.is_empty()).then(|| files.clone());
             probe.validate().map_err(|e| e.message().to_string())?;
             let override_mode = queue::background::queued_override(ui.view.launches_in_plan_mode);
+            let consumed: HashSet<String> = files.iter().map(|f| f.id.clone()).collect();
             ui.queue.add(&text, files, override_mode, false, false, &host.locale).map_err(|e| e.to_string())?;
-            ui.view.attachments.clear();
+            ui.view.attachments.retain(|a| !consumed.contains(&a.id));
             ui.view.draft.clear();
             ui.dirty = true;
             let drained = matches!(pane.status(), "completed" | "idle");
@@ -184,15 +228,22 @@ async fn submit(host: &Arc<Host>, id: &str) -> Result<SubmitReceipt, String> {
         ui.view.starting = true;
         ui.submission += 1;
         let typed = std::mem::take(&mut ui.view.draft);
-        let files = std::mem::take(&mut ui.view.attachments);
+        let files = if asked.is_none() { std::mem::take(&mut ui.view.attachments) } else { vec![] };
         ui.dirty = true;
         (typed, files, ui.submission)
     };
     let (typed, files, submission) = taken;
-    let outcome = start_run(host, id, &typed, files.clone(), None).await;
+    let submitted = ask_targets::wrap(&typed, asked).unwrap_or_else(|| typed.clone());
+    // The model list as the CLI has it now comes first: the request takes the pane's model and effort after it (models.rs).
+    crate::models::prepare(host, id).await;
+    let moot = {
+        let view = host.view();
+        !panes::alive(&view, id) || view.panes.get(id).is_none_or(|u| u.submission != submission)
+    };
+    let outcome = if moot { None } else { Some(start_run(host, id, &submitted, files.clone(), None, None).await) };
     let mut view = host.view();
     let alive = panes::alive(&view, id);
-    let started = matches!(outcome, Ok(Some(_)));
+    let started = matches!(outcome, Some(Ok(Some(_))));
     if let Some(ui) = view.panes.get_mut(id) {
         ui.view.starting = false;
         ui.dirty = true;
@@ -206,6 +257,8 @@ async fn submit(host: &Arc<Host>, id: &str) -> Result<SubmitReceipt, String> {
             ui.view.attachments.splice(0..0, back);
         }
     }
+    // A send made moot while the models were checked (a stop, another send, the pane gone) starts nothing.
+    let Some(outcome) = outcome else { return Ok(SubmitReceipt::new("none")) };
     match outcome {
         Err(error) => Err(error),
         Ok(None) => {
@@ -241,6 +294,7 @@ pub fn run_event(view: &mut View, event: &RunEvent) -> bool {
     let locale = mighty_run::strings::locale();
     let notice = queue::settle_notice(status, ui.queue.items().len(), kept, &locale);
     let drain = ui.queue.settle(status, kept);
+    ui.forget_unqueued();
     if let Some(notice) = notice {
         let _ = slash_note(view, id, &notice);
     }
@@ -266,26 +320,67 @@ pub fn drain_queue(host: Arc<Host>, id: String) {
                 if status == "running" || status == "error" || ui.view.starting || ui.view.queue_starting || running(&host, &id) {
                     continue;
                 }
-                let item = ui.queue.items()[0].clone();
                 ui.view.queue_starting = true;
                 ui.dirty = true;
-                item
+                ui.queue.items()[0].id.clone()
             };
-            let outcome = start_run(&host, &id, &next.text, next.attachments.clone(), next.permission_mode_override.clone()).await;
-            let mut view = host.view();
-            if let Some(ui) = view.panes.get_mut(&id) {
-                ui.view.queue_starting = false;
-                ui.dirty = true;
-                if matches!(outcome, Ok(Some(_))) {
-                    ui.queue.remove(&next.id);
+            crate::models::prepare(&host, &id).await;
+            // A stop, a removal or the pane's close while the models were checked starts nothing.
+            let taken = {
+                let mut view = host.view();
+                let alive = panes::alive(&view, &id);
+                still_queued(view.panes.get_mut(&id), alive, &next)
+            };
+            let Some((next, continuation)) = taken else { return };
+            let outcome =
+                start_run(&host, &id, &next.text, next.attachments.clone(), next.permission_mode_override.clone(), continuation).await;
+            let failed_card = {
+                let mut view = host.view();
+                let mut failed_card = None;
+                if let Some(ui) = view.panes.get_mut(&id) {
+                    ui.view.queue_starting = false;
+                    ui.dirty = true;
+                    if matches!(outcome, Ok(Some(_))) {
+                        ui.queue.remove(&next.id);
+                        ui.continuations.remove(&next.id);
+                    } else if outcome.is_err()
+                        && let Some((_, card)) = ui.continuations.remove(&next.id)
+                    {
+                        // S-L3: a continuation that could not start loses its grant with its place in the queue; its card decides again.
+                        ui.queue.remove(&next.id);
+                        failed_card = Some(card);
+                    }
                 }
-            }
-            if let Err(error) = outcome {
-                view.error = Some(error);
+                if let Err(error) = &outcome {
+                    view.error = Some(error.clone());
+                }
+                failed_card
+            };
+            if let (Some(card), Err(error)) = (failed_card, &outcome) {
+                crate::antigravity::continuation_failed(&host, &id, card, error);
             }
             return;
         }
     });
+}
+
+/// A queued Antigravity card's rules and card (`QueuedComposerInput.AntigravityGrant`/`AntigravityCard`).
+type Continuation = (mighty_run::antigravity::AllowGrant, mighty_run::antigravity::PermissionRequest);
+
+/// C# `TakeNextQueuedInput` once `PrepareModels` is over (MainWindow.QueuedComposer.cs:456-457): the item the queue's start took, read
+/// again from the queue with its continuation (the decision made when it was queued wins; an Antigravity card's continuation carries
+/// its rules). None when the pane went (`QueuePaneAlive`) or the item left the queue meanwhile (removed, or cancelled by a stop): the
+/// start is given up, `queue_starting` cleared and the composer drawn again.
+fn still_queued(ui: Option<&mut panes::PaneUi>, alive: bool, item: &str) -> Option<(queue::QueuedComposerInput, Option<Continuation>)> {
+    let ui = ui?;
+    let queued = ui.queue.items().iter().find(|q| q.id == item).filter(|_| alive).cloned();
+    let Some(queued) = queued else {
+        ui.view.queue_starting = false;
+        ui.dirty = true;
+        return None;
+    };
+    let continuation = ui.continuations.get(&queued.id).cloned();
+    Some((queued, continuation))
 }
 
 // ── attachments ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -468,16 +563,16 @@ fn validate_settings(pane: &RunSession, setting: &RunSettings) -> Result<(), Str
     probe.validate().map(|_| ()).map_err(|e| e.message().to_string())
 }
 
-/// A pane's models read again in the background (`RefreshPaneModels`), the composer told when they are in.
+/// A pane's models read again in the background (`RefreshPaneModels`) through the model lists' own refresh, which reconciles the panes
+/// with the list (models.rs); the composer told when they are in.
 fn refresh_models(host: &Arc<Host>, view: &View, id: &str) {
-    let Some(pane) = view.snapshot.session(id).cloned() else { return };
-    let folder = view.snapshot.workspace(pane.workspace_id()).filter(|w| w.remote.is_none()).map(|w| w.path().to_string());
-    let host = host.clone();
+    if view.snapshot.session(id).is_none() {
+        return;
+    }
+    let (host, id) = (host.clone(), id.to_string());
     tauri::async_runtime::spawn(async move {
-        if let Some(runs) = host.runs().cloned() {
-            runs.refresh(pane.provider(), folder.as_deref()).await;
-            host.panes_changed();
-        }
+        crate::models::reload(&host, &id).await;
+        host.panes_changed();
     });
 }
 
@@ -492,7 +587,8 @@ fn run_menu_action(host: &Arc<Host>, view: &mut View, id: &str, action: MenuActi
             }
             let next = switch_provider(host, &pane, &value);
             change(view, id, |_| next)?;
-            refresh_models(host, view, id);
+            // The switch reads the new agent's models; the list in hand is another agent's (models.rs, C# RefreshModels).
+            crate::models::refresh(host, &view.snapshot, id, true);
         }
         MenuAction::RefreshModels => refresh_models(host, view, id),
         MenuAction::ChangeModel(value) => change_model(host, view, id, &value)?,
@@ -665,6 +761,7 @@ pub fn register(methods: &mut Registry) {
             let cancelled = (!ui.queue_kept_on_stop).then(|| ui.queue.items().len()).filter(|n| *n > 0);
             if !ui.queue_kept_on_stop {
                 ui.queue.clear();
+                ui.forget_unqueued();
             }
             ui.view.stopping = true;
             ui.dirty = true;
@@ -684,6 +781,7 @@ pub fn register(methods: &mut Registry) {
         let id = ensure(&mut view, pane_id(&args))?;
         let ui = panes::ui(&mut view, &id)?;
         if ui.queue.remove(text(&args, "itemId").unwrap_or("")) {
+            ui.forget_unqueued();
             ui.dirty = true;
         }
         Ok(Value::Null)
@@ -819,12 +917,18 @@ pub fn register(methods: &mut Registry) {
         // The catalogue scanned off the page's thread: the user's and the workspace's commands and skills.
         let locale = host.locale;
         let provider = pane.provider().to_string();
+        let path = root.clone();
         let scanned = tauri::async_runtime::spawn_blocking(move || {
             let home = dirs_home();
             slash::commands(&provider, root.as_deref().map(std::path::Path::new), &home, &slash::DiskFiles, &locale)
         })
-        .await
-        .unwrap_or_default();
+        .await;
+        // The scan is the catalogue the "send to" switch reads too (ask.rs, C# `SetSlashCatalog`); a scan that panicked is no catalogue,
+        // so the one in hand, and a saved "send to" choice it stands for, stay.
+        if let Ok(scanned) = &scanned {
+            crate::ask::set_catalog(&host, pane.provider(), path.as_deref(), scanned.clone());
+        }
+        let scanned = scanned.unwrap_or_default();
         let view = host.view();
         Ok(with_menu_inputs(&host, &view, &pane, |i| serde_json::to_value(menus::slash_catalog(i, &scanned)).unwrap_or(Value::Null)))
     });
@@ -929,27 +1033,20 @@ pub fn register(methods: &mut Registry) {
         }
         Ok(json!(reset))
     });
-    // The 보낼 대상 switch: a target the pane offers (none until the installed CLIs and the ask skill are read), or null for Claude.
+    // The 보낼 대상 switch (ask.rs, C# `SetAskTarget`): a target the pane offers, or null for Claude.
     methods.add("setAskTarget", |host: Arc<Host>, args| async move {
-        let mut view = host.view();
-        let id = ensure(&mut view, pane_id(&args))?;
+        let id = ensure(&mut host.view(), pane_id(&args))?;
         let target = match args.get("target") {
             Some(Value::String(target)) => Some(target.clone()),
             Some(Value::Null) => None,
             _ => return Err(host.locale.get("remote.error.badBody")),
         };
-        if target.is_some() {
-            // AskTargetsFor(pane) offers none yet (README: pending inputs).
-            return Err(host.locale.get("remote.error.badBody"));
-        }
-        if session(&view, &id)?.ask_target.is_some() {
-            change(&mut view, &id, |p| RunSession { ask_target: None, ..p.clone() })?;
-        }
+        crate::ask::set_target(&host, &id, target)?;
         Ok(Value::Null)
     });
-    // No fallback notice is ever raised while no target is offered.
     methods.add("dismissAskNotice", |host: Arc<Host>, args| async move {
-        ensure(&mut host.view(), pane_id(&args))?;
+        let id = ensure(&mut host.view(), pane_id(&args))?;
+        crate::ask::dismiss_notice(&host, &id);
         Ok(Value::Null)
     });
 }
@@ -978,6 +1075,74 @@ fn run_now_rows(host: &Host, view: &mut View, id: &str) -> Vec<(String, QueueRun
 }
 
 /// The user's home folder (the slash catalogue's `~/.claude`).
-fn dirs_home() -> std::path::PathBuf {
+pub(crate) fn dirs_home() -> std::path::PathBuf {
     std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(std::path::PathBuf::from).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use mighty_core::locale::Locale;
+    use mighty_run::antigravity::{AllowGrant, PermissionRequest};
+
+    use super::{panes, queue, still_queued};
+
+    /// A pane view whose queue's start took its first item and waits for the models (`queue_starting`), a second item behind it; the
+    /// first carries an Antigravity card's continuation.
+    fn waiting() -> (panes::PaneUi, String, String) {
+        let locale = Locale::new("en");
+        let mut ui = panes::PaneUi::default();
+        let first = ui.queue.add("first", vec![], None, false, true, &locale).unwrap().id;
+        let second = ui.queue.add("second", vec![], Some("plan"), false, false, &locale).unwrap().id;
+        let grant = AllowGrant { request_id: "agy-1".into(), rules: vec!["run_command(echo hi)".into()], temporary: true };
+        let card = PermissionRequest { id: "agy-1".into(), run_id: "run-1".into(), actions: vec![], received_at: None };
+        ui.continuations.insert(first.clone(), (grant, card));
+        ui.view.queue_starting = true;
+        ui.dirty = false;
+        (ui, first, second)
+    }
+
+    /// Nothing happened while the models were checked: the item starts as it is queued now, with its Antigravity continuation.
+    #[test]
+    fn an_item_still_queued_starts_with_its_continuation() {
+        let (mut ui, first, _) = waiting();
+        let (item, continuation) = still_queued(Some(&mut ui), true, &first).expect("still queued");
+        assert_eq!((item.id.as_str(), item.text.as_str()), (first.as_str(), "first"));
+        let (grant, card) = continuation.expect("the card's continuation goes with it");
+        assert_eq!((grant.request_id.as_str(), card.id.as_str()), ("agy-1", "agy-1"));
+        assert!(ui.view.queue_starting, "the start goes on");
+    }
+
+    /// `queueRemove` while the models were checked (MainWindow.QueuedComposer.cs:457): the removed item never starts, the one behind it
+    /// stays queued, and the composer is free again.
+    #[test]
+    fn an_item_removed_during_the_model_check_does_not_start() {
+        let (mut ui, first, second) = waiting();
+        assert!(ui.queue.remove(&first), "the page's queueRemove");
+        assert!(still_queued(Some(&mut ui), true, &first).is_none(), "nothing starts");
+        assert!(!ui.view.queue_starting && ui.dirty, "queue_starting cleared, the composer drawn again");
+        assert_eq!(ui.queue.items().iter().map(|q| q.id.as_str()).collect::<Vec<_>>(), [second.as_str()], "the next one waits");
+    }
+
+    /// A stop while the models were checked cancels what waited (`StopActiveRun`): no cancelled request starts.
+    #[test]
+    fn a_stop_during_the_model_check_starts_no_cancelled_request() {
+        let (mut ui, first, _) = waiting();
+        // The page's stop, as the `stop` method does it for a turn that does not only wait on background work.
+        ui.submission += 1;
+        ui.queue_kept_on_stop = queue::background::stop_keeps_queue(None);
+        if !ui.queue_kept_on_stop {
+            ui.queue.clear();
+        }
+        assert!(still_queued(Some(&mut ui), true, &first).is_none(), "the cancelled request does not start");
+        assert!(!ui.view.queue_starting && ui.dirty);
+    }
+
+    /// The pane closed while the models were checked (`QueuePaneAlive`): nothing starts, whether its view is gone too or not yet.
+    #[test]
+    fn a_pane_closed_during_the_model_check_starts_nothing() {
+        let (mut ui, first, _) = waiting();
+        assert!(still_queued(Some(&mut ui), false, &first).is_none(), "the pane left the state");
+        assert!(!ui.view.queue_starting && ui.dirty);
+        assert!(still_queued(None, false, &first).is_none(), "its view is gone");
+    }
 }

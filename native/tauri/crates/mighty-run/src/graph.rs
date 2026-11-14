@@ -5,7 +5,15 @@
 //! The tracker hands each node it changed to `GraphStart::node` (as JSON, the remote wire's `graph` event): the runner marks the
 //! graph dirty for its one-second publish and passes the node to a sharing host's `GraphNodes`, never after the run's last status.
 //! A sink is called from the run's task, from the Mods bridge and from the permission channel; calls come one at a time.
+//!
+//! The sub-agents' files are read without the sink: [`GraphSink::read_children`] only hands the runner the read ([`ChildRead`]), which
+//! it runs on a blocking thread with no lock held, and what that read found goes back to the same sink's
+//! [`GraphSink::merge_children`] (C# `RunManager.ReadChildren` polls its watchers outside the tracker's lock and locks it only in
+//! `tracker.CodexSession(child)` / `AntigravitySession(child)`), so the run's output, its cards and their answers never wait on a read.
 
+use std::any::Any;
+use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use mighty_core::graph::MightyGraphRun;
@@ -28,6 +36,24 @@ pub struct GraphStart {
     /// Hears every node the tracker changed.
     pub node: Arc<dyn Fn(Value) + Send + Sync>,
 }
+
+/// Where [`GraphSink::read_children`] reads a run's sub-agents from (C#'s `codexHome`, `antigravityBrain` and `run.ActivityId`).
+#[derive(Debug, Clone, Copy)]
+pub struct ChildSources<'a> {
+    /// The CLI's environment the run started with (where Codex keeps its home: `CODEX_HOME`).
+    pub environment: &'a BTreeMap<String, String>,
+    /// An Antigravity run's `brain` folder, where its sub-agents keep their transcripts (`AntigravityRecords.Brain(home)`).
+    pub antigravity_brain: Option<&'a Path>,
+    /// The run's activity id, which names an Antigravity run's sub-agents' rows.
+    pub namespace: &'a str,
+}
+
+/// What a run's watchers read off the sink's lock, handed back to the same sink's [`GraphSink::merge_children`]: the sink's own type
+/// (its watchers among it), which the runner never looks inside.
+pub type ChildrenFound = Box<dyn Any + Send>;
+
+/// The read [`GraphSink::read_children`] owes: the CLI's files read by the run's watchers, on a blocking thread with no lock held.
+pub type ChildRead = Box<dyn FnOnce() -> ChildrenFound + Send>;
 
 /// C# `ExecutionGraphTracker` as `RunManager` uses it.
 pub trait GraphSink: Send {
@@ -54,12 +80,20 @@ pub trait GraphSink: Send {
     fn build_run(&mut self, include_running: bool) -> Option<MightyGraphRun>;
     /// `TakeNoticeRuns(includeRunning)`: each notice run the run's background work opened.
     fn take_notice_runs(&mut self, include_running: bool) -> Vec<MightyGraphRun>;
-    /// `AntigravityAnswer`: an Antigravity reply as the transcript shows it (W5).
+    /// `AntigravityAnswer`: an Antigravity reply as the transcript shows it.
     fn antigravity_answer(&mut self, _text: &str) {}
-    /// `CodexRootThread`: the Codex thread the run's session files are under (W5).
-    fn codex_root_thread(&self) -> Option<String> {
+    /// `ReadChildren(closing)`'s first step, under the sink's lock and touching no file: the read of the run's sub-agents from the CLI's
+    /// own files that is due now, every second while the run goes on and once more, `closing`, at its end — a Codex run's session files
+    /// (`CodexSessionWatcher`, once the run's root thread is known), an Antigravity run's sub-agents' own transcripts under its `brain`
+    /// and those of the helpers they start (`AntigravitySubagentWatcher.Poll`, or with `closing` its last, larger `Finish`, once the
+    /// stream named a sub-agent). None when there is nothing to read. The runner runs the read without the lock, then hands what it
+    /// found to [`GraphSink::merge_children`]; it asks for no other read before that.
+    fn read_children(&mut self, _sources: &ChildSources<'_>, _closing: bool) -> Option<ChildRead> {
         None
     }
+    /// `ReadChildren`'s last step, under the sink's lock again: what [`GraphSink::read_children`]'s read found (`tracker.CodexSession`,
+    /// `AntigravitySession`), the watchers kept for the next read.
+    fn merge_children(&mut self, _found: ChildrenFound) {}
 }
 
 /// Makes one [`GraphSink`] per run (the lead plugs mighty-graph's tracker in here).

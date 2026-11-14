@@ -30,6 +30,8 @@ mod process;
 #[cfg(windows)]
 pub mod pty;
 #[cfg(windows)]
+pub mod setup_probe;
+#[cfg(windows)]
 pub mod shell_activity;
 #[cfg(windows)]
 mod text;
@@ -58,7 +60,9 @@ mod imp {
     pub use crate::clipboard::WindowsClipboard;
     pub use crate::dpapi::{DpapiVault, FOLDER as REMOTE_KEYS_FOLDER, file_name as remote_key_file_name};
     pub use crate::environment::{CliEnvironmentSnapshot, WindowsShellEnvironment};
-    pub use crate::files::{WindowsDesktop, WindowsFileHandles, WindowsPdf, decimal_separator, file_ports, short_date_time};
+    pub use crate::files::{
+        WindowsDesktop, WindowsFileHandles, WindowsPathProbe, WindowsPdf, decimal_separator, file_ports, path_probe, short_date_time,
+    };
     pub use crate::prefs::RegistryPrefs;
     pub use crate::process::{KILLED_EXIT_CODE, WindowsProcessHost};
     pub use crate::pty::WindowsPtyHost;
@@ -159,6 +163,12 @@ mod imp {
     /// The user's clipboard (a terminal's copy and paste).
     pub fn clipboard() -> Arc<dyn mighty_platform::Clipboard> {
         Arc::new(WindowsClipboard)
+    }
+
+    /// Each copy of the command `name` this PC has (C# `SetupProber.Executables`): along the environment's PATH with PATHEXT, then
+    /// in the installers' folders.
+    pub fn cli_copies(name: &str, environment: &std::collections::BTreeMap<String, String>) -> Vec<String> {
+        crate::setup_probe::executables(name, &Variables::from(environment))
     }
 
     #[cfg(test)]

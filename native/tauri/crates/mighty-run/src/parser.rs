@@ -1,8 +1,9 @@
 //! C# `OutputParser` (OutputParser.cs:10-615): an agent's stream as the pane's transcript — its answers, its tool rows with their
 //! durations, its resume id, its usage, the pictures it showed.
 //!
-//! Claude's stream-json and Codex's `exec --json` are read here. pi's RPC, the ACP agents' frames and Antigravity's stream are W5's:
-//! a [`ProviderStream`] plugs each in, and without one their frames are left unread. Codex's `collab_tool_call` rows need the graph
+//! Claude's stream-json, Codex's `exec --json`, pi's RPC (`pi`, OutputParser.cs:513-597), Antigravity's stream-json ([`antigravity`])
+//! and the ACP agents' (opencode, Hermes) `acp.*` events (its `acp` part, C# OutputParser.Acp.cs) are read here; a [`ProviderStream`]
+//! may plug in an agent it does not read itself, whose frames are otherwise left unread. Codex's `collab_tool_call` rows need the graph
 //! tracker's `CodexCollaborationItem` (mighty-graph) and its `image_view` pictures the image paths (W4): both go to the hooks.
 //!
 //! Every callback runs under the parser's lock, as C#'s do; none may call back into the parser.
@@ -18,13 +19,21 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::activity::{self, MAXIMUM_MESSAGE_BYTES, terminal, valid_duration};
+use crate::antigravity::permissions::{DenialCollector, PermissionRequest};
 use crate::compaction;
 use crate::lock;
 use crate::meta;
 use crate::permissions::ToolPermissionRequest;
+use crate::pi_dialogs::PiDialogChannel;
 use crate::stream;
 use crate::strings;
 use crate::usage::SessionUsageTracker;
+
+mod acp;
+pub mod antigravity;
+mod pi;
+
+pub use acp::acp_output;
 
 /// Why a picture was refused (C# `AgentImageError`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,17 +109,9 @@ pub fn image_entry_text(count: usize, source: &str) -> String {
     }
 }
 
-/// The frames of an agent this parser does not read itself (pi, the ACP agents, Antigravity: W5), handed the parser's sinks.
+/// The frames of an agent this parser does not read itself, handed the parser's sinks.
 pub trait ProviderStream: Send {
     fn frame(&mut self, root: &Value, sinks: &mut StreamSinks<'_>);
-    /// pi: the turn is still going (stdin stays open).
-    fn turn_open(&self) -> bool {
-        false
-    }
-    /// pi: its `agent_end` came.
-    fn turn_ended(&self) -> bool {
-        false
-    }
 }
 
 /// What a [`ProviderStream`] may do with a frame: log a line, name the resume id, report a turn or a tool.
@@ -130,6 +131,13 @@ pub type GraphImagesHook = Arc<dyn Fn(&LogEntry, Option<&str>, Option<&str>) -> 
 /// An Edit, Write or MultiEdit result the run read (`FileOriginal`): the path as the tool named it, the tool, and the line's
 /// `tool_use_result`, for the file originals (FileChanges, W4) to make their `FileEdit` of.
 pub type FileOriginalHook = Arc<dyn Fn(&str, &str, &Value) + Send + Sync>;
+/// `piReply`: one JSON line (newline included) to pi's stdin, the answer to a dialog no pane can show.
+pub type PiReplyHook = Arc<dyn Fn(&str) + Send + Sync>;
+/// Hears each reply the transcript shows of an agent whose request's answer the graph takes from the parser (Antigravity's reply, an
+/// ACP agent's streamed text): the latest one is the request's answer (C# `answer`, the tracker's `AntigravityAnswer`).
+pub type AnswerHook = Arc<dyn Fn(&str) + Send + Sync>;
+/// Hears the card an Antigravity turn leaves when it was refused anything (C#'s `antigravityPermission`).
+pub type AntigravityCardHook = Arc<dyn Fn(PermissionRequest) + Send + Sync>;
 
 /// The parser's callbacks (C#'s constructor arguments).
 #[derive(Clone, Default)]
@@ -143,6 +151,17 @@ pub struct ParserHooks {
     pub graph_images: Option<GraphImagesHook>,
     pub images: Option<Arc<dyn ImageStore>>,
     pub file_original: Option<FileOriginalHook>,
+    /// pi only (`piReply`).
+    pub pi_reply: Option<PiReplyHook>,
+    /// `answer`: each reply the transcript shows of Antigravity (M/MightyCore/CLIStreamParser.swift flushText → antigravityAnswer) or an
+    /// ACP agent.
+    pub answer: Option<AnswerHook>,
+    /// `antigravityPermission`: the card an Antigravity turn leaves; None keeps the older notice that tells how to add an allow rule by
+    /// hand. Only an Antigravity parser hears it.
+    pub antigravity_permission: Option<AntigravityCardHook>,
+    /// `requestedResume`: the Antigravity conversation the run was asked to continue; agy starts a new one when it cannot find it, and
+    /// the transcript says so once.
+    pub requested_resume: Option<String>,
 }
 
 struct Inner {
@@ -164,6 +183,18 @@ struct Inner {
     stored_images: usize,
     image_limit_noted: bool,
     other: Option<Box<dyn ProviderStream>>,
+    pi: pi::PiState,
+    /// Antigravity streamed this turn's text as deltas, so its result's full `response` repeats it.
+    antigravity_streamed: bool,
+    new_conversation_noted: bool,
+    /// The turn's refused actions, for the pane's card.
+    denials: DenialCollector,
+    /// `AuthenticationFailure`: the run's failure is a lost sign-in, as the stream says (an ACP agent's error).
+    authentication_failure: bool,
+    /// The message the streamed ACP text belongs to: a new one ends the previous reply.
+    acp_message: Option<String>,
+    /// The tail of the turn's reply text: Hermes says why a turn failed in the reply, and the error that follows only says that it failed.
+    acp_reply_tail: String,
 }
 
 /// C# `OutputParser`.
@@ -178,6 +209,8 @@ pub struct OutputParser {
     pub suppress_interrupted_result: AtomicBool,
     /// The workspace folder a picture named only by path must lie in.
     pub image_root: Mutex<Option<String>>,
+    /// `PiDialogs`: pi's dialogs as the pane's question card; without it every dialog is cancelled.
+    pi_dialogs: Mutex<Option<Arc<PiDialogChannel>>>,
 }
 
 /// `OutputParser.MaximumLineBytes`: 64 MiB (a line may carry whole pictures), 8 MiB for Antigravity.
@@ -216,9 +249,17 @@ impl OutputParser {
                 stored_images: 0,
                 image_limit_noted: false,
                 other: None,
+                pi: pi::PiState::default(),
+                antigravity_streamed: false,
+                new_conversation_noted: false,
+                denials: DenialCollector::new(),
+                authentication_failure: false,
+                acp_message: None,
+                acp_reply_tail: String::new(),
             }),
             suppress_interrupted_result: AtomicBool::new(false),
             image_root: Mutex::new(None),
+            pi_dialogs: Mutex::new(None),
         }
     }
 
@@ -237,12 +278,26 @@ impl OutputParser {
         lock(&self.inner).failed
     }
 
-    pub fn pi_turn_open(&self) -> bool {
-        lock(&self.inner).other.as_ref().is_some_and(|o| o.turn_open())
+    /// `AuthenticationFailure`: the stream read the run's failure as a lost sign-in — pi's own sign-in failure as its RPC stream said it
+    /// last (a rejected command, an assistant message that ended in such an error or a retry that gave up on one; a later message, or a
+    /// retry starting, clears it), or an ACP agent's error (a later turn clears it).
+    pub fn authentication_failure(&self) -> bool {
+        lock(&self.inner).authentication_failure
     }
 
+    /// `PiTurnOpen`: pi's turn is still going (its stdin stays open).
+    pub fn pi_turn_open(&self) -> bool {
+        lock(&self.inner).pi.turn_open()
+    }
+
+    /// `PiTurnEnded`: pi's `agent_end` has come (stdin closes after the quiet that follows it).
     pub fn pi_turn_ended(&self) -> bool {
-        lock(&self.inner).other.as_ref().is_some_and(|o| o.turn_ended())
+        lock(&self.inner).pi.turn_ended()
+    }
+
+    /// Sets `PiDialogs`.
+    pub fn set_pi_dialogs(&self, dialogs: Option<Arc<PiDialogChannel>>) {
+        *lock(&self.pi_dialogs) = dialogs;
     }
 
     fn now(&self) -> f64 {
@@ -485,6 +540,17 @@ impl OutputParser {
         match self.provider.as_str() {
             "claude" => self.claude(&mut inner, &root, kind),
             "codex" => self.codex(&mut inner, &root, kind),
+            "pi" => {
+                let later = self.pi(&mut inner, &root, kind);
+                drop(inner);
+                self.pi_later(later);
+            }
+            "gemini" => {
+                if let Some(event) = meta::text(&root, "event") {
+                    self.antigravity(&mut inner, &root, event, line);
+                }
+            }
+            "opencode" | "hermes" => self.acp(&mut inner, &root, kind),
             _ => {
                 if let Some(mut other) = inner.other.take() {
                     let mut resumed: Vec<String> = Vec::new();
@@ -772,17 +838,30 @@ impl OutputParser {
         }
     }
 
-    /// `Flush`: a streamed reply still held (Antigravity's deltas) goes out.
+    /// `Flush`: a streamed reply still held (Antigravity's, without the newline agy ends it with; an ACP agent's text) goes out; the
+    /// latest one is also the graph's answer.
     pub fn flush(&self) {
         let mut inner = lock(&self.inner);
-        let text = inner.pending.trim_end().to_string();
+        self.flush_locked(&mut inner);
+    }
+
+    fn flush_locked(&self, inner: &mut Inner) {
+        let text = antigravity::trailing_trimmed(&inner.pending).to_string();
         if !text.is_empty() {
             self.log("assistant", &text);
+            if let Some(answer) = &self.hooks.answer {
+                answer(&text);
+            }
         }
         if inner.pending_truncated {
             self.log("system", &strings::get("run.notice.messageTruncated"));
         }
         inner.pending.clear();
         inner.pending_truncated = false;
+        // An error pi gave up on is the run's failure; one a retry answered was cleared.
+        if let Some(error) = inner.pi.take_error() {
+            inner.failed = true;
+            self.log("error", &error);
+        }
     }
 }

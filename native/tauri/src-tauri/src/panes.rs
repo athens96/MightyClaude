@@ -4,9 +4,10 @@
 //! mighty-composer's rules; [`flush`] pushes each when its JSON changed (`composer` and `cards`, 30 ms, C# `FlushWebComposers`,
 //! `FlushWebCards`), the cards again each second while an open background strip has a task running.
 //!
-//! What later stages give the composer and the cards stays at its resting value (`WindowRules::default`, no Antigravity card, no
-//! terminal prompt, no web-open prompts, no sign-in card, no status line, no style): README "Pending inputs".
+//! What later stages give the composer and the cards stays at its resting value (`WindowRules::default`, no web-open prompts, no sign-in
+//! card, no status line, no style): README "Pending inputs". The Antigravity card is antigravity.rs's.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -41,6 +42,8 @@ pub struct PaneUi {
     pub mighty: MightyPane,
     /// Something the composer or the cards read changed outside the pane's record (a request, a runtime read, a page method).
     pub dirty: bool,
+    /// The queued continuations of Antigravity cards (C# `QueuedComposerInput.AntigravityGrant`/`AntigravityCard`), by queued item.
+    pub continuations: HashMap<String, (mighty_run::antigravity::AllowGrant, mighty_run::antigravity::PermissionRequest)>,
     /// The pane's record the composer and cards were last made from.
     seen: Option<Arc<RunSession>>,
     composer_sent: Option<String>,
@@ -54,6 +57,25 @@ impl PaneUi {
         let mut ui = PaneUi { dirty: true, ..PaneUi::default() };
         ui.view.draft = pane.draft.clone().unwrap_or_default();
         ui
+    }
+
+    /// C8: the grants and cards of queued continuations whose items left the queue (removed, cleared by a stop, settled, started) go with
+    /// them.
+    pub fn forget_unqueued(&mut self) {
+        let queued: std::collections::HashSet<&str> = self.queue.items().iter().map(|item| item.id.as_str()).collect();
+        self.continuations.retain(|item, _| queued.contains(item.as_str()));
+    }
+
+    /// S-L3: the queued continuations of the card `card_id` lose their grant — the items and their rules leave the queue, so no later start
+    /// puts in place rules the user refused. True when one was there.
+    pub fn revoke_continuations(&mut self, card_id: &str) -> bool {
+        let items: Vec<String> =
+            self.continuations.iter().filter(|(_, (_, card))| card.id == card_id).map(|(item, _)| item.clone()).collect();
+        for item in &items {
+            self.queue.remove(item);
+            self.continuations.remove(item);
+        }
+        !items.is_empty()
     }
 
     /// The page loaded again: whatever it gets next is new to it.
@@ -93,12 +115,16 @@ pub fn requests(host: &Host, id: &str) -> Vec<ToolPermissionRequest> {
     host.runs().map(|r| r.service.pending_permissions(id)).unwrap_or_default()
 }
 
-/// What the window knows of the pane that the composer reads (C# `owner.*` members); the later stages' stay at rest.
-fn window_rules(snapshot: &AppSnapshot, pane: &RunSession, pending: usize) -> WindowRules {
+/// What the window knows of the pane that the composer reads (C# `owner.*` members); the later stages' stay at rest. A Claude pane
+/// whose catalogue was never scanned is scanned for its "send to" switch (ask.rs, C# `RefreshAskCatalog(pane, whenStale: false)`).
+fn window_rules(host: &Host, snapshot: &AppSnapshot, pane: &RunSession, pending: usize) -> WindowRules {
+    crate::ask::refresh_catalog(host, snapshot, pane, false);
     WindowRules {
         pending_requests: pending,
         awaits_notice: mighty_graph::notice::awaits_notice(pane),
         status_line_enabled: snapshot.status_line_enabled,
+        ask_targets: crate::ask::targets_for(host, snapshot, pane),
+        ask_notice: crate::ask::notice(host, pane.id()),
         ..WindowRules::default()
     }
 }
@@ -110,8 +136,9 @@ pub fn composer_state(host: &Host, view: &mut View, id: &str) -> Option<Composer
     let runs = host.runs();
     let runtime = runs.and_then(|r| r.composer_runtime(pane.provider()));
     let efforts = runs.map(|r| r.efforts(&pane, workspace.as_ref(), &view.snapshot)).unwrap_or_default();
-    let window = window_rules(&view.snapshot, &pane, requests(host, id).iter().filter(|r| r.state == "pending").count());
+    let window = window_rules(host, &view.snapshot, &pane, requests(host, id).iter().filter(|r| r.state == "pending").count());
     let ui = view.panes.get_mut(id)?;
+    ui.forget_unqueued();
     ui.view.queue = ui.queue.items().to_vec();
     let inputs = ComposerInputs {
         locale: host.locale,
@@ -133,8 +160,9 @@ pub fn refreshed(host: &Host, view: &mut View, id: &str) -> Option<(bool, compos
     let runs = host.runs();
     let runtime = runs.and_then(|r| r.composer_runtime(pane.provider()));
     let efforts = runs.map(|r| r.efforts(&pane, workspace.as_ref(), &view.snapshot)).unwrap_or_default();
-    let window = window_rules(&view.snapshot, &pane, 0);
+    let window = window_rules(host, &view.snapshot, &pane, 0);
     let ui = view.panes.get_mut(id)?;
+    ui.forget_unqueued();
     ui.view.queue = ui.queue.items().to_vec();
     let inputs = ComposerInputs {
         locale: host.locale,
@@ -176,6 +204,8 @@ pub fn cards_of(host: &Host, view: &mut View, id: &str) -> Option<(Vec<Card>, bo
         plan.is_some() && mighty_graph::view::diagram_plan_run_id(true, cards::in_mighty_diagram(&pane), pane.graph_runs()).is_some();
     // A command in the pane's terminal waiting for input (terminal.rs, C# `terminalPrompts`).
     let terminal_prompt = crate::terminal::prompt_input(host, id);
+    // The pane's Antigravity card (antigravity.rs, C# `AntigravityCard`/`AntigravityError`/`AntigravityAnswering`).
+    let antigravity = crate::antigravity::card_input(host, id);
     let inputs = CardInputs {
         locale: host.locale,
         utc_offset_minutes: utc_offset_minutes(),
@@ -188,7 +218,7 @@ pub fn cards_of(host: &Host, view: &mut View, id: &str) -> Option<(Vec<Card>, bo
         plan_draft: ui.plan_draft.as_ref(),
         background_open,
         background_rows: &[],
-        antigravity: None,
+        antigravity: antigravity.as_ref(),
         terminal_prompt: terminal_prompt.as_ref(),
         web_open: &[],
         login: None,
@@ -200,6 +230,8 @@ pub fn cards_of(host: &Host, view: &mut View, id: &str) -> Option<(Vec<Card>, bo
 /// One pass of the composer and cards pushes over the pane views (C# `FlushWebComposers`, `FlushWebCards`): a pane whose record
 /// changed, or that something else marked, is read again; each model goes out when its JSON is not the one last sent.
 pub fn flush(host: &Host) {
+    // A pane selected reads its model list again (models.rs, C# RefreshSelectedPaneModels).
+    crate::models::follow_selection(host);
     let mut view = host.view();
     if !view.ready {
         return;
@@ -238,5 +270,55 @@ pub fn flush(host: &Host) {
                 host.push(&view, "cards", format!("{{\"kind\":\"cards\",\"paneId\":{pane},\"cards\":{text}}}"));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use mighty_core::locale::Locale;
+    use mighty_run::antigravity::{AllowGrant, PermissionRequest};
+
+    use super::*;
+
+    fn card(id: &str) -> PermissionRequest {
+        PermissionRequest { id: id.into(), run_id: "run-1".into(), actions: vec![], received_at: None }
+    }
+
+    /// A pane whose queue holds a plain request and the continuation of the card `card_id`.
+    fn queued(card_id: &str) -> (PaneUi, String, String) {
+        let mut ui = PaneUi::default();
+        let locale = Locale::new("en");
+        let plain = ui.queue.add("plain", vec![], None, false, false, &locale).unwrap().id;
+        let continuation = ui.queue.add("go on", vec![], None, true, true, &locale).unwrap().id;
+        let grant = AllowGrant::new(card_id, &["command(echo hi)"], true);
+        ui.continuations.insert(continuation.clone(), (grant, card(card_id)));
+        (ui, plain, continuation)
+    }
+
+    /// C8: a continuation's grant and card go with its item, whichever way it leaves the queue.
+    #[test]
+    fn a_continuation_leaves_with_its_item() {
+        let (mut ui, plain, continuation) = queued("agy-1");
+        ui.queue.remove(&plain);
+        ui.forget_unqueued();
+        assert!(ui.continuations.contains_key(&continuation), "another item's removal keeps it");
+        ui.queue.remove(&continuation);
+        ui.forget_unqueued();
+        assert!(ui.continuations.is_empty(), "its own removal takes it");
+        let (mut ui, _, _) = queued("agy-1");
+        ui.queue.clear();
+        ui.forget_unqueued();
+        assert!(ui.continuations.is_empty(), "a stop's clear takes it");
+    }
+
+    /// S-L3: denying a card (or its start failing) revokes its queued continuation: the item and its rules leave the queue; another card's
+    /// continuation and the plain requests stay.
+    #[test]
+    fn a_denied_card_revokes_its_queued_continuation() {
+        let (mut ui, plain, continuation) = queued("agy-1");
+        assert!(!ui.revoke_continuations("agy-2"), "another card's deny revokes nothing");
+        assert!(ui.revoke_continuations("agy-1"), "this card's deny revokes its continuation");
+        assert!(ui.continuations.is_empty() && !ui.queue.items().iter().any(|i| i.id == continuation), "its grant and its item are gone");
+        assert!(ui.queue.items().iter().any(|i| i.id == plain), "a plain request stays");
     }
 }

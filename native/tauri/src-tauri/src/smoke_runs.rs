@@ -7,7 +7,12 @@
 //!   card (both answers must reach the CLI), then replays the recording — the diagram must draw the request, the sub-agents and the
 //!   result with the recording's answer. Then a second request is sent; while its permission waits, the progress panel draws a
 //!   three-step plan on it (the newest request, running: 1/3, done, current, pending) and none without it, and the request is stopped
-//!   from the composer (the run ends stopped, its card goes).
+//!   from the composer (the run ends stopped, its card goes). Then a pi pane of its own in the same workspace sends a request to the
+//!   stand-in pi (`--fake-cli pi … --pi-fixture pi-rpc-question.jsonl --pi-dialogs`), whose `ask_user` question is the page's question
+//!   card: its first choice is sent, pi must read it as the dialog's value, and the run completes with pi's reply. Then an Antigravity
+//!   pane (the fake agy over the smoke's own settings): its request is refused `echo hi`, the page draws the Antigravity card with the
+//!   command and its rule, 이번만 허용 continues the conversation with the rule in agy's settings for that run (the fake answers
+//!   "allowed"), and the settings are as they were after.
 //! - With `--smoke-real-claude`: one request to the installed `claude` CLI ("Reply with exactly the word: ok", the pane's default
 //!   permission mode), waited for until its result block shows the answer; the usage the CLI reported is recorded.
 
@@ -24,18 +29,31 @@ use crate::host::Host;
 pub const RECORDING: &str = "claude-stream-subagents";
 /// The pane and workspace the run steps add (UUID-shaped, as the state's ids are).
 pub const PANE: &str = "5a0e0b0b-0000-4000-8000-0000000c1a0d";
+/// The Antigravity pane the run steps add last.
+pub const AGY_PANE: &str = "5a0e0b0b-0000-4000-8000-0000000c1a0f";
+/// What the smoke's agy settings hold before the card is answered (and again after its run).
+pub const AGY_SETTINGS: &str = "{\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\"\n    ]\n  }\n}\n";
+pub const AGY_REQUEST: &str = "say hi";
 const WORKSPACE: &str = "5a0e0b0b-0000-4000-8000-0000000c1a0e";
+/// The pi pane the run steps add after the Claude one.
+pub const PI_PANE: &str = "5a0e0b0b-0000-4000-8000-0000000c1a10";
 /// What the probe types.
 pub const FAKE_REQUEST: &str = "smoke request replay-marker";
 pub const STOP_REQUEST: &str = "smoke request to stop";
 pub const REAL_REQUEST: &str = "Reply with exactly the word: ok";
+pub const PI_REQUEST: &str = "smoke request to pi";
+
+/// The recording the stand-in pi answers from (its `ask_user` question and the reply after it).
+pub fn pi_fixture() -> PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("contracts").join("fixtures").join("pi-rpc-question.jsonl")
+}
 
 /// The probe of the stand-in run (see the module comment); `__PANE__`, `__TYPED__` and `__STOP__` are filled in.
 pub const FAKE_PROBE: &str = r#"(async () => {
   const until = async (test, ms) => { const end = performance.now() + ms; while (performance.now() < end) { const v = await test(); if (v) return v; await new Promise((r) => setTimeout(r, 100)); } return test(); };
   const invoke = (command, args) => window.__TAURI_INTERNALS__.invoke(command, args);
   const step = (name) => invoke('smoke_step', { step: name });
-  const paneId = '__PANE__', typed = '__TYPED__', stopText = '__STOP__';
+  const paneId = '__PANE__', typed = '__TYPED__', stopText = '__STOP__', piId = '__PI_PANE__', piText = '__PI__';
   const scope = () => document.querySelector('.pane-slot:not(.hidden)[data-pane-id="' + paneId + '"]');
   const q = (s) => scope()?.querySelector(s);
   const type = (text) => { const e = q('[data-testid=composer-input]'); if (!e) return false; e.focus(); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(e, text); e.dispatchEvent(new Event('input', { bubbles: true })); return true; };
@@ -85,6 +103,53 @@ pub const FAKE_PROBE: &str = r#"(async () => {
     const stopped = await until(async () => { const s = await step('state'); return s.status === 'stopped' ? s : null; }, 30000);
     report.stopped = !!stopped;
     report.stopCardGone = !!(await until(() => !q('[data-card=permission]'), 10000));
+    // pi: a pane of its own asks one question through the app's ask_user tool; the card's first choice goes back to pi.
+    await step('piPane');
+    const pq = (s) => document.querySelector('.pane-slot:not(.hidden)[data-pane-id="' + piId + '"]')?.querySelector(s);
+    report.piAvailable = !!(await until(async () => (await step('piState')).available, 30000));
+    const piInput = await until(() => pq('[data-testid=composer-input]'), 15000);
+    if (piInput) {
+      piInput.focus();
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(piInput, piText);
+      piInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    await until(() => pq('[data-testid=composer-primary]') && !pq('[data-testid=composer-primary]').disabled, 10000);
+    piInput?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+    report.piOutcome = await until(() => pq('[data-testid=composer]')?.dataset.lastOutcome ?? null, 20000);
+    const option = await until(() => pq('[data-card=questionnaire] [data-answer=option-0-0]'), 30000);
+    report.piQuestion = pq('[data-card=questionnaire] .question-text')?.textContent ?? null;
+    option?.click();
+    const submit = await until(() => { const b = pq('[data-card=questionnaire] [data-answer=submit]'); return b && !b.disabled ? b : null; }, 5000);
+    submit?.click();
+    const piDone = await until(async () => { const s = await step('piState'); return ['completed', 'idle'].includes(s.status) && s.answer ? s : null; }, 30000);
+    const piState = piDone ?? (await step('piState'));
+    report.piStatus = piState.status;
+    report.piAnswer = piState.answer;
+    report.piReply = piState.reply;
+    report.piCardGone = !!(await until(() => !pq('[data-card=questionnaire]'), 10000));
+    // An Antigravity pane: its refused command is the card, and 이번만 허용 continues the conversation with the rule for that run.
+    await step('agyPane');
+    const agyId = '__AGY__';
+    const agy = (s) => document.querySelector('.pane-slot:not(.hidden)[data-pane-id="' + agyId + '"]')?.querySelector(s);
+    const agyState = () => step('agyState');
+    report.agyAvailable = !!(await until(async () => (await agyState()).available, 30000));
+    const agyInput = await until(() => agy('[data-testid=composer-input]'), 15000);
+    if (agyInput) { agyInput.focus(); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(agyInput, '__AGYTYPED__'); agyInput.dispatchEvent(new Event('input', { bubbles: true })); }
+    await until(() => agy('[data-testid=composer-primary]') && !agy('[data-testid=composer-primary]').disabled, 10000);
+    agy('[data-testid=composer-input]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+    const once = await until(() => agy('[data-card=antigravity] [data-answer=once]'), 30000);
+    report.agyCard = !!once;
+    report.agyHeading = agy('[data-card=antigravity] .card-field-label')?.textContent ?? null;
+    report.agyTarget = agy('[data-card=antigravity] .card-field-code')?.textContent ?? null;
+    report.agyRule = agy('[data-card=antigravity] .card-rule')?.textContent ?? null;
+    report.agyAlwaysEnabled = !!agy('[data-card=antigravity] [data-answer=always]') && !agy('[data-card=antigravity] [data-answer=always]').disabled;
+    report.agyFirst = await agyState();
+    once?.click();
+    const continued = await until(async () => { const s = await agyState(); return s.users >= 2 && ['completed', 'idle'].includes(s.status) && s.answers.includes('allowed') ? s : null; }, 30000);
+    report.agyContinued = !!continued;
+    report.agyCardGone = !!(await until(() => !agy('[data-card=antigravity]'), 10000));
+    report.agySettingsRestored = !!(await until(async () => { const s = await agyState(); return s.settingsUnchanged && s.held === 0; }, 15000));
+    report.agyLast = await agyState();
   } catch (error) {
     report.error = String(error);
   }
@@ -154,6 +219,71 @@ pub fn add_pane(host: &Host) -> Result<String, String> {
     Ok(PANE.into())
 }
 
+/// The pi pane (pi's default model and its manual mode) beside the Claude one, made the active one; in memory.
+fn add_pi_pane(host: &Host) -> Result<(), String> {
+    let mut view = host.view();
+    if view.snapshot.session(PI_PANE).is_some() {
+        return Ok(());
+    }
+    let mut state: Value = serde_json::from_str(&view.snapshot.to_json()).map_err(|e| e.to_string())?;
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let pane = json!({
+        "id": PI_PANE, "workspaceId": WORKSPACE, "title": "Smoke pi", "kind": "claude", "status": "idle", "model": "default",
+        "provider": "pi", "settings": {"effort": "default", "permissionMode": "manual", "maxTurns": null, "maxBudgetUsd": null},
+        "logs": [], "draft": "", "createdAt": now, "agentViewMode": "mighty", "graphViewMode": "diagram",
+    });
+    state.get_mut("sessions").and_then(Value::as_array_mut).ok_or("the state has no sessions")?.push(pane);
+    state["activeSessionId"] = json!(PI_PANE);
+    view.replace(AppSnapshot::read(&state).map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// The Antigravity pane in the run steps' workspace, made the active one, and the smoke's own agy settings written as they start — only
+/// the stand-in's file, and only while the run service points at it (C3): a smoke with the real CLI never writes agy's settings.
+fn add_agy_pane(host: &Host, smoke: &crate::smoke::Smoke) -> Result<(), String> {
+    let settings =
+        smoke.fake_record().map(|record| crate::runs::fake_agy_settings(record)).ok_or("the Antigravity step needs the stand-in CLI")?;
+    if agy_settings(host).as_deref() != Some(settings.as_path()) {
+        return Err("the run service's agy settings are not the stand-in's".into());
+    }
+    if let Some(folder) = settings.parent() {
+        std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&settings, AGY_SETTINGS).map_err(|e| e.to_string())?;
+    let mut view = host.view();
+    let mut state: Value = serde_json::from_str(&view.snapshot.to_json()).map_err(|e| e.to_string())?;
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let pane = json!({
+        "id": AGY_PANE, "workspaceId": WORKSPACE, "title": "Smoke Antigravity", "kind": "claude", "status": "idle", "model": "default",
+        "provider": "gemini", "settings": {"effort": "default", "permissionMode": "manual", "maxTurns": null, "maxBudgetUsd": null},
+        "logs": [], "draft": "", "createdAt": now,
+    });
+    state.get_mut("sessions").and_then(Value::as_array_mut).ok_or("the state has no sessions")?.push(pane);
+    state["activeWorkspaceId"] = json!(WORKSPACE);
+    state["activeSessionId"] = json!(AGY_PANE);
+    view.replace(AppSnapshot::read(&state).map_err(|e| e.to_string())?);
+    Ok(())
+}
+
+/// What the stand-in pi read back as its dialog's answer (`<record>-pi.stdin`), and the pane's last reply.
+fn pi_state(host: &Host, smoke: &crate::smoke::Smoke) -> Value {
+    let available = host.runs().and_then(|r| r.runtime("pi")).is_some_and(|r| r.available);
+    let answer = smoke.fake_record().and_then(|record| {
+        let read = std::fs::read_to_string(format!("{}-pi.stdin", record.display())).ok()?;
+        let line = read.lines().find(|l| l.contains("extension_ui_response"))?;
+        serde_json::from_str::<Value>(line).ok()?.get("value").and_then(Value::as_str).map(str::to_string)
+    });
+    let view = host.view();
+    let pane = view.snapshot.session(PI_PANE);
+    let reply = pane.and_then(|p| p.logs().iter().rev().find(|e| e.kind() == "assistant").map(|e| e.text().to_string()));
+    json!({"status": pane.map(|p| p.status().to_string()), "available": available, "answer": answer, "reply": reply})
+}
+
+/// The smoke's agy settings (runs.rs `FakeClaude::agy_settings`), read from the run service's rules.
+fn agy_settings(host: &Host) -> Option<PathBuf> {
+    host.runs().map(|r| PathBuf::from(r.service.antigravity_rules().settings_path()))
+}
+
 /// A three-step plan on the pane's newest request (`RunWebStepsSmoke`'s `Plan()`), or none on every run.
 fn set_steps(host: &Host, on: bool) -> Result<(), String> {
     let start = chrono::Utc::now() - chrono::Duration::minutes(2);
@@ -184,7 +314,8 @@ fn set_steps(host: &Host, on: bool) -> Result<(), String> {
 }
 
 /// What the probe asks the host (smoke only): `state` of the run steps' pane, the progress panel's plan on (`steps`) or off
-/// (`clearSteps`).
+/// (`clearSteps`), the pi pane added (`piPane`) and what pi read back (`piState`), the Antigravity pane added (`agyPane`) and its state
+/// (`agyState`).
 #[tauri::command]
 pub fn smoke_step(step: String, host: tauri::State<'_, Arc<Host>>) -> Result<Value, String> {
     let Some(smoke) = &host.smoke else { return Err("smoke only".into()) };
@@ -217,8 +348,30 @@ pub fn smoke_step(step: String, host: tauri::State<'_, Arc<Host>>) -> Result<Val
                 "finalOutputs": runs.iter().map(|r| r.final_output().map(str::to_string)).collect::<Vec<_>>(),
             }))
         }
+        "piPane" => add_pi_pane(&host).map(|_| Value::Null),
+        "piState" => Ok(pi_state(&host, smoke)),
         "steps" => set_steps(&host, true).map(|_| Value::Null),
         "clearSteps" => set_steps(&host, false).map(|_| Value::Null),
+        "agyPane" => add_agy_pane(&host, smoke).map(|_| Value::Null),
+        "agyState" => {
+            let available = host.runs().and_then(|r| r.runtime("gemini")).is_some_and(|r| r.available);
+            let settings = agy_settings(&host).and_then(|path| std::fs::read_to_string(path).ok());
+            let held = host.runs().map_or(0, |r| r.service.antigravity_rules().held().len());
+            let card = host.runs().is_some_and(|r| r.service.antigravity_card(AGY_PANE).is_some());
+            let view = host.view();
+            let pane = view.snapshot.session(AGY_PANE).cloned();
+            let logs = pane.as_ref().map(|p| p.logs().to_vec()).unwrap_or_default();
+            Ok(json!({
+                "status": pane.as_ref().map(|p| p.status().to_string()),
+                "available": available,
+                "users": logs.iter().filter(|l| l.kind() == "user").count(),
+                "answers": logs.iter().filter(|l| l.kind() == "assistant").map(|l| l.text().to_string()).collect::<Vec<_>>(),
+                "errors": logs.iter().filter(|l| l.kind() == "error").map(|l| l.text().to_string()).collect::<Vec<_>>(),
+                "card": card,
+                "held": held,
+                "settingsUnchanged": settings.as_deref() == Some(AGY_SETTINGS),
+            }))
+        }
         other => Err(format!("unknown smoke step {other}")),
     }
 }
