@@ -101,7 +101,7 @@ module uses those. The host answers 122 methods (`tauri-logs/unimplemented.json`
   MainWindow.SmallParity.cs, MainWindow.TextAppearance.cs): `closeSession` (the run stopped and ended, then the pane gone), `focusPane`
   (`toggle` back to custom), `textSize` (Ctrl+= / Ctrl+- / Ctrl+0 over the saved setting, pushed as `text`, and every open terminal takes
   its size; not saved: W6), `dismissResource`, `renameSession` and `renameWorkspace` (the page's rename sheet; Automatic for an agent pane),
-  `removeWorkspace` (the page's danger confirmation, every pane's run stopped), `showInExplorer` (the folder's real path, `explorer.exe`),
+  `removeWorkspace` (the page's danger confirmation, every pane's run stopped), `showInExplorer` (the folder's real path, ShellExecute's `explore` verb),
   `pickFolder` (the OS's folder picker owned by the main window; the folder approved for saving and added, a Claude pane in a workspace
   without one), `addMenu` (the entries in the Mac's words, the remote menu, Connect), `addPaneEntry` (terminal, browser, files — files.rs's
   pane through `frame::OPEN_FILES` —, an agent with the resume flow below, the three ways to add a workspace, another workspace's entry
@@ -121,7 +121,7 @@ module uses those. The host answers 122 methods (`tauri-logs/unimplemented.json`
 - **Workspace create** (`workspace_create.rs`; C# MainWindow.WorkspaceCreate.cs, `GitTool`, `GitCloneJob`; the rules are mighty-core's
   `workspace_create`, held to native/contracts/fixtures/workspace-create.json): `workspaceCreate`, `createCheck`, `pickLocation`,
   `makeFolder` (`git init` when asked), `repoName`, `gitProbe` (`git ls-remote -- <url> HEAD`, a newer one stops the older), `gitCreate`
-  (`git clone --progress`, pushed as `gitProgress`; a second press answers `busy`) and `gitCreateCancel` (git and everything it started
+  (`git clone --progress`, pushed as `gitProgress`; a second press waits for the running clone's answer, and a finished clone's answer is kept while its sheet is open, so a page loaded again mid-clone gets it on its next press) and `gitCreateCancel` (git and everything it started
   ended, what it wrote removed). git is the user's own, through `ProcessHost`, never prompting (an empty `GIT_ASKPASS`,
   `GCM_INTERACTIVE=never`, BatchMode ssh unless the user has an ssh command); the sheets start at the last location, else the active
   workspace's parent, else home.
