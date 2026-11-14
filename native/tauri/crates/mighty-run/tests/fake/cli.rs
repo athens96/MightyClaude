@@ -3,8 +3,9 @@
 //!
 //! - `--fake-cli <provider> <record> [args…]`: records its arguments in `<record>.args` (a JSON array) and plays C#'s fake: with
 //!   `--permission-prompt-tool` Claude's stdio control protocol (the handshake, one tool request, the plan, resumed-agent and
-//!   background fixtures); with `app-server` or `--safe-mode` the model-list sessions; otherwise reads stdin to its end into
-//!   `<record>.prompt` and answers as Codex's exec (or agy) would.
+//!   background fixtures); with `app-server` or `--safe-mode` the model-list sessions; as `pi`, `pi --mode rpc` answering from
+//!   `--pi-fixture <recording>` (`--pi-hang`, `--pi-steer`); otherwise reads stdin to its end into `<record>.prompt` and answers as
+//!   Codex's exec (or agy) would.
 //! - `--model-list-cli <provider> <state> [args…]`: each CLI's model-list read, answered with the real CLI's recorded output
 //!   (native/contracts/fixtures/model-list-*) for its verified arguments, refused otherwise.
 //! - `--replay-cli <recording> <record> [args…]`: Claude with host prompts that asks one tool permission and one plan, records the
@@ -73,6 +74,10 @@ fn main() {
 fn fake_cli(provider: &str, record: &str, args: &[String]) {
     let _ = std::fs::write(format!("{record}.args"), serde_json::to_string(args).unwrap_or_default());
     let has = |flag: &str| args.iter().any(|a| a == flag);
+    if provider == "pi" && !has("--version") {
+        fake_pi(record, args);
+        return;
+    }
     if has("--version") {
         say("2.1.271");
         return;
@@ -149,6 +154,44 @@ fn fake_cli(provider: &str, record: &str, args: &[String]) {
     }
     if has("--fail-run") {
         std::process::exit(2);
+    }
+}
+
+/// A pi that answers on stdin as `pi --mode rpc` does, from a fixture (`--pi-fixture <file>`), and exits when stdin ends
+/// (PiVerification.cs:360 `FakeAsync`): `get_state` answered with the first line; a prompt with the next three, then (after
+/// `--pi-hang`'s minute, or the steer `--pi-steer` reads) the rest. Every line it reads is kept in `<record>.stdin`.
+fn fake_pi(record: &str, args: &[String]) {
+    let has = |flag: &str| args.iter().any(|a| a == flag);
+    let path = args.iter().position(|a| a == "--pi-fixture").and_then(|at| args.get(at + 1)).cloned().unwrap_or_default();
+    let fixture: Vec<String> = std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .split('\n')
+        .map(|line| line.trim_end_matches('\r').to_string())
+        .filter(|line| !line.is_empty())
+        .collect();
+    let stdin = format!("{record}.stdin");
+    while let Some(line) = read_line() {
+        append(&stdin, &format!("{line}\n"));
+        if line.contains("\"get_state\"") {
+            if let Some(first) = fixture.first() {
+                say(first);
+            }
+        } else if line.contains("\"prompt\"") {
+            for output in fixture.iter().skip(1).take(3) {
+                say(output);
+            }
+            if has("--pi-hang") {
+                std::thread::sleep(Duration::from_secs(60));
+            }
+            if has("--pi-steer")
+                && let Some(steer) = read_line()
+            {
+                append(&stdin, &format!("{steer}\n"));
+            }
+            for output in fixture.iter().skip(4) {
+                say(output);
+            }
+        }
     }
 }
 

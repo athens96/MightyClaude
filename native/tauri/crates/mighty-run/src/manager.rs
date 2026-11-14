@@ -5,9 +5,12 @@
 //! the request answered and no background task runs (`BackgroundIdleClose`), the permission handshake given 15 s (Claude's, and a
 //! Codex `onRequest` run's app-server turn: `CodexApprovalChannel`, whose approvals are the pane's tool-permission requests).
 //!
-//! Until their stages: the ACP agents (opencode, Hermes), pi's RPC and dialogs and Antigravity's stream are W5 — a run of opencode,
-//! Hermes, pi or Antigravity is refused with the reason (pi and Antigravity are read through the parser's `ProviderStream` once W5
-//! plugs it in). A sharing host's PowerShell
+//! pi (`pi --mode rpc`) reads `get_state` and the prompt and keeps its stdin for a steer until its turn ended and it went quiet for
+//! a second (`ClosePiWhenIdle`); its extensions' dialogs are the pane's question cards (`PiDialogChannel`), a deadline pi gives one
+//! closing its card when it passes.
+//!
+//! Until their stages: the ACP agents (opencode, Hermes) and Antigravity's stream are W5 — a run of opencode, Hermes or Antigravity
+//! is refused with the reason (Antigravity is read through the parser's `ProviderStream` once W5 plugs it in). A sharing host's PowerShell
 //! commands are W8. The Agent IO / delegation binding (W7) plugs in through [`RunBinding`]; the file originals (W4) through
 //! [`FileOriginals`].
 
@@ -38,6 +41,7 @@ use crate::mods::{Connection, ModBridge, ModMetadata};
 use crate::parser::{ImageStore, OutputParser, ParserHooks, maximum_line_bytes};
 use crate::permissions::{ChannelHooks, ClaudePermissionChannel, ProviderInput, ToolPermissionRequest};
 use crate::phase_models;
+use crate::pi_dialogs::{PiDialogChannel, PiDialogHooks};
 use crate::plan_mode::{BackgroundTaskTracker, PlanDecision, TodoProgressTracker, work};
 use crate::presentation::strings as copy;
 use crate::providers::{self, ProviderCatalog};
@@ -65,6 +69,10 @@ pub type BindingFactory = Arc<dyn Fn(&StartRunRequest, &Workspace) -> Option<Run
 /// run works in, and what an Edit, Write or MultiEdit result said (the parser's `FileOriginalHook` arguments).
 pub type FileOriginals = Arc<dyn Fn(&str, &str, &str, &str, &str, &Value) + Send + Sync>;
 
+/// Whether pi keeps the record of a session (C# `PiAgent.SessionFile(id, workspacePath, home, environment) is not null`, mighty-history's
+/// `pi::session_file`): the session id, the folder the run works in and the CLI's environment.
+pub type PiSessions = Arc<dyn Fn(&str, &str, &BTreeMap<String, String>) -> bool + Send + Sync>;
+
 /// `RunManager`'s constructor arguments and settable properties.
 #[derive(Clone)]
 pub struct RunManagerOptions {
@@ -81,6 +89,9 @@ pub struct RunManagerOptions {
     pub background_idle_close: Duration,
     pub binding: Option<BindingFactory>,
     pub file_originals: Option<FileOriginals>,
+    /// pi exits on a session it cannot find (one that never got an answer is not written): a run asked to continue a session this
+    /// says pi has no record of starts a new one. None keeps every resume as asked.
+    pub pi_sessions: Option<PiSessions>,
 }
 
 impl RunManagerOptions {
@@ -96,6 +107,7 @@ impl RunManagerOptions {
             background_idle_close: Duration::from_secs(120),
             binding: None,
             file_originals: None,
+            pi_sessions: None,
         }
     }
 }
@@ -174,6 +186,10 @@ struct Run {
     permissions: Mutex<Option<Arc<ClaudePermissionChannel>>>,
     /// A Codex run in `onRequest`: the app-server channel its stdio carries.
     codex: Mutex<Option<Arc<CodexApprovalChannel>>>,
+    /// A pi run's extension dialogs (its `ask_user` tool among them) as the pane's question card.
+    pi_dialogs: Mutex<Option<Arc<PiDialogChannel>>>,
+    /// pi's stdin was closed after its turn ended (or never opened): no steer follows.
+    pi_input_closed: AtomicBool,
     parser: Mutex<Option<Arc<OutputParser>>>,
     tracker: Mutex<Option<SharedSink>>,
     redact: Mutex<Option<Redact>>,
@@ -215,6 +231,21 @@ impl Run {
 
     fn codex(&self) -> Option<Arc<CodexApprovalChannel>> {
         lock(&self.codex).clone()
+    }
+
+    fn pi_dialogs(&self) -> Option<Arc<PiDialogChannel>> {
+        lock(&self.pi_dialogs).clone()
+    }
+
+    /// pi's stdin while it is open (C#'s writes under `InputGate`: never after the run's end or the close after its turn).
+    fn pi_write(&self, text: &str) {
+        let _gate = lock(&self.input_gate);
+        if self.finished.load(Ordering::SeqCst) || self.pi_input_closed.load(Ordering::SeqCst) {
+            return;
+        }
+        if let Some(input) = lock(&self.input).as_ref() {
+            let _ = input.write(text);
+        }
     }
 }
 
@@ -345,6 +376,8 @@ impl RunManager {
                 input_gate: Mutex::new(()),
                 permissions: Mutex::new(None),
                 codex: Mutex::new(None),
+                pi_dialogs: Mutex::new(None),
+                pi_input_closed: AtomicBool::new(false),
                 parser: Mutex::new(None),
                 tracker: Mutex::new(None),
                 redact: Mutex::new(None),
@@ -385,15 +418,37 @@ impl RunManager {
         if let Some(codex) = run.codex() {
             return codex.respond(request_id, allow);
         }
+        if let Some(dialogs) = run.pi_dialogs() {
+            return dialogs.respond(request_id, allow);
+        }
         match run.channel() {
             Some(channel) => channel.respond(request_id, allow),
             None => Err(RunError::State(copy::already_settled())),
         }
     }
 
-    /// `TrySteerAsync`: a follow-up joins a running Claude turn's open stdin (after the request's result it opens a new turn).
+    /// `TrySteerAsync`: a follow-up joins a running Claude turn's open stdin (after the request's result it opens a new turn); pi takes
+    /// it as a `steer` command while its turn is open (read after the current tool calls, before the next model call).
     pub fn try_steer(&self, session_id: &str, text: &str) -> bool {
         let Some(run) = self.run(session_id) else { return false };
+        if run.request.provider == "pi" {
+            let _gate = lock(&run.input_gate);
+            let open = lock(&run.parser).as_ref().is_some_and(|parser| parser.pi_turn_open());
+            if run.finalizing.load(Ordering::SeqCst)
+                || run.finished.load(Ordering::SeqCst)
+                || run.cancel.is_cancelled()
+                || run.pi_input_closed.load(Ordering::SeqCst)
+                || !open
+                || lock(&run.child).is_none()
+            {
+                return false;
+            }
+            let written = lock(&run.input).as_ref().is_some_and(|input| input.write(&ProviderInput::pi_steer(text)).is_ok());
+            if written {
+                run.touch();
+            }
+            return written;
+        }
         if run.finalizing.load(Ordering::SeqCst)
             || run.finished.load(Ordering::SeqCst)
             || run.cancel.is_cancelled()
@@ -453,7 +508,7 @@ impl RunManager {
         answer
     }
 
-    /// `AnswerQuestionnaire`: Claude's AskUserQuestion answered.
+    /// `AnswerQuestionnaire`: Claude's AskUserQuestion, or a pi extension's dialog, answered.
     pub fn answer_questionnaire(
         &self,
         session_id: &str,
@@ -462,11 +517,13 @@ impl RunManager {
     ) -> Result<()> {
         let gone = || RunError::State(copy::already_settled());
         let run = self.run(session_id).ok_or_else(gone)?;
-        if run.finalizing.load(Ordering::SeqCst)
-            || run.finished.load(Ordering::SeqCst)
-            || run.cancel.is_cancelled()
-            || run.request.provider != "claude"
-        {
+        if run.finalizing.load(Ordering::SeqCst) || run.finished.load(Ordering::SeqCst) || run.cancel.is_cancelled() {
+            return Err(gone());
+        }
+        if let Some(dialogs) = run.pi_dialogs() {
+            return dialogs.answer_questions(request_id, answers);
+        }
+        if run.request.provider != "claude" {
             return Err(gone());
         }
         run.channel().ok_or_else(gone)?.answer_questions(request_id, answers)
@@ -689,6 +746,10 @@ impl Exec {
         if let Some(codex) = codex {
             codex.cancel_all();
         }
+        let dialogs = lock(&run.pi_dialogs).take();
+        if let Some(dialogs) = dialogs {
+            dialogs.cancel_all();
+        }
         let child = lock(&run.child).take();
         if let Some(child) = child {
             let _ = child.close().await;
@@ -724,6 +785,44 @@ impl Exec {
         *lock(&run.tracker) = tracker.clone();
         let parser = Arc::new(OutputParser::new(&provider, &run.activity_id, Self::parser_hooks(&inner, &run, tracker.clone())));
         *lock(&run.parser) = Some(parser.clone());
+        // pi's dialogs reach the pane's question card where a pane can answer it; a headless run cancels them.
+        if provider == "pi"
+            && request.kind != "shell"
+            && let Some(permission) = inner.options.permission_requested.clone()
+        {
+            let (write_run, emit_run, timer_run) = (run.clone(), run.clone(), run.clone());
+            let row = Arc::downgrade(&parser);
+            let (warning_run, warning_emit) = (run.clone(), emit.clone());
+            let dialogs = Arc::new(PiDialogChannel::new(
+                &request.session_id,
+                PiDialogHooks {
+                    write: Arc::new(move |text| write_run.pi_write(text)),
+                    emit: Arc::new(move |value| {
+                        if !emit_run.finished.load(Ordering::SeqCst) {
+                            permission(value);
+                        }
+                    }),
+                    activity: Arc::new(move |value, state| {
+                        if let Some(parser) = row.upgrade() {
+                            parser.permission_activity(value, state);
+                        }
+                    }),
+                    warning: Arc::new(move |message| Exec::log(&warning_run, &warning_emit, "system", message)),
+                    // pi answers a dialog with a deadline itself when it passes: the card goes then too.
+                    timer: Some(Arc::new(move |id: &str, seconds: f64| {
+                        let (run, id) = (timer_run.clone(), id.to_string());
+                        tokio::spawn(async move {
+                            tokio::time::sleep(Duration::from_secs_f64(seconds.min(86_400.0))).await;
+                            if let Some(dialogs) = run.pi_dialogs() {
+                                dialogs.timed_out(&id);
+                            }
+                        });
+                    })),
+                },
+            ));
+            *lock(&run.pi_dialogs) = Some(dialogs.clone());
+            parser.set_pi_dialogs(Some(dialogs));
+        }
         let todo_run_id = match &tracker {
             Some(tracker) => Some(lock(tracker).run_id()),
             None => request.graph_run_id.clone().filter(|id| wire::identifier(id)),
@@ -784,6 +883,11 @@ impl Exec {
         if let Some(codex) = codex {
             codex.cancel_all();
         }
+        let dialogs = lock(&run.pi_dialogs).take();
+        if let Some(dialogs) = dialogs {
+            dialogs.cancel_all();
+        }
+        exec.parser.set_pi_dialogs(None);
         if let Some(connection) = mod_connection {
             connection.dispose();
         }
@@ -851,6 +955,10 @@ impl Exec {
             }),
             images: if run.request.kind == "shell" { None } else { inner.options.images.clone() },
             file_original,
+            pi_reply: (run.request.provider == "pi").then(|| {
+                let reply_run = run.clone();
+                Arc::new(move |text: &str| reply_run.pi_write(text)) as crate::parser::PiReplyHook
+            }),
         }
     }
 
@@ -948,7 +1056,9 @@ impl Exec {
         }
         let _node = lock(&run.node_gate);
         run.finished.store(true, Ordering::SeqCst);
-        let authentication = state == "error" && run.authentication_failure.load(Ordering::SeqCst);
+        // pi's sign-in failure is read from its RPC stream, where a later message or a retry clears it.
+        let authentication =
+            state == "error" && (run.authentication_failure.load(Ordering::SeqCst) || self.parser.authentication_failure());
         (self.emit)(RunEvent::state(&request.session_id, state, authentication.then_some("authentication")));
     }
 
@@ -1120,9 +1230,9 @@ impl Exec {
                     providers::name(&provider)
                 )));
             }
-            if matches!(provider.as_str(), "pi" | "gemini") {
-                // pi's RPC and Antigravity's stream are read by the parser's ProviderStream (W5): without it the run's answer would
-                // never reach the pane, so it is refused as the ACP agents are.
+            if provider == "gemini" {
+                // Antigravity's stream is read by the parser's ProviderStream (W5): without it the run's answer would never reach the
+                // pane, so it is refused as the ACP agents are.
                 return Err(Failure::Error(format!(
                     "{} runs through its own stream, which this build does not read yet.",
                     providers::name(&provider)
@@ -1205,10 +1315,18 @@ impl Exec {
             if provider == "pi" && staged.is_none() {
                 input = ProviderInput::pi_startup(&input, &[]);
             }
+            // pi exits on a session it cannot find (one that never got an answer is not written): such a pane starts a new session.
+            let mut launch = request.clone();
+            if provider == "pi"
+                && let (Some(resume), Some(sessions)) = (&request.resume_id, &inner.options.pi_sessions)
+                && !sessions(resume, &workspace_path, &environment)
+            {
+                launch.resume_id = None;
+            }
             // An approval run's pictures go in its turn (`localImage`), not as `--image`.
             let mut arguments = match staged.as_ref().filter(|_| !codex_approvals) {
-                Some(staged) => staged.arguments_for(&request, &inner.options.plugin_directory)?,
-                None => providers::arguments(&request, &inner.options.plugin_directory, None)?,
+                Some(staged) => staged.arguments_for(&launch, &inner.options.plugin_directory)?,
+                None => providers::arguments(&launch, &inner.options.plugin_directory, None)?,
             };
             if matches!(provider.as_str(), "claude" | "codex")
                 && let Some(factory) = &inner.options.binding
@@ -1406,8 +1524,10 @@ impl Exec {
                 let first = if provider == "gemini" { ProviderInput::antigravity_user_message(&input) } else { input.clone() };
                 let _ = pipe.write(&first);
             }
-            // pi reads get_state and the prompt, then keeps reading for a steer (its close after the turn is W5's pi stream).
-            if provider != "pi" {
+            // pi reads get_state and the prompt, then keeps reading for a steer: stdin stays open until its turn ended and went quiet.
+            if provider == "pi" {
+                tokio::spawn(Self::close_pi_when_idle(self.clone()));
+            } else {
                 pipe.close();
             }
         }
@@ -1455,6 +1575,24 @@ impl Exec {
         };
         self.finish(state);
         Ok(())
+    }
+
+    /// `ClosePiWhenIdle`: closes a pi run's stdin (pi then exits) once its turn is over and it has been silent for a second:
+    /// compaction and an automatic retry come right after `agent_end`.
+    async fn close_pi_when_idle(exec: Arc<Exec>) {
+        let run = &exec.run;
+        while !run.finished.load(Ordering::SeqCst) && !run.cancel.is_cancelled() {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            if !exec.parser.pi_turn_ended() || exec.parser.pi_turn_open() || lock(&run.last_output).elapsed() < Duration::from_secs(1) {
+                continue;
+            }
+            let _gate = lock(&run.input_gate);
+            run.pi_input_closed.store(true, Ordering::SeqCst);
+            if let Some(input) = lock(&run.input).as_ref() {
+                input.close();
+            }
+            return;
+        }
     }
 
     async fn pump_output(exec: Arc<Exec>, reader: Option<ChildReader>, limit: usize) {

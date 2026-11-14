@@ -3,9 +3,9 @@
 //! (`ReadModelsAsync` for Claude and Codex, `ReadListCommandAsync` for agy, pi and opencode, `GetRuntimeAsync`).
 //!
 //! Deviations, until their stages: the last list each CLI gave is kept in memory only (C#'s `KeptModelLists` file is W5/W6), so a
-//! restart starts from the built-in lists; Hermes's model picker (`HermesAgent.CachedCatalog`) and pi's shipped question extension
-//! (`AgentFiles`) are W5 — Hermes lists only its own default here, and pi runs without the `ask_user` tool unless
-//! [`set_agent_files`] names the folder that holds it.
+//! restart starts from the built-in lists; Hermes's model picker (`HermesAgent.CachedCatalog`) is W5 — Hermes lists only its own
+//! default here. The agents' shipped files (`AgentFiles`: pi's `ask_user` extension) are looked up in `Agents` beside the executable,
+//! or in the folder [`set_agent_files`] names (the app names the repository's own in a development build).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};

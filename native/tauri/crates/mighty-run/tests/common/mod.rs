@@ -43,6 +43,20 @@ pub fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("..").join("contracts").join("fixtures")
 }
 
+/// The agents' files the app ships (the Mac bundle's Resources/Agents, which C#'s build copies beside its exe and checks as
+/// `Agents`): pi's `ask_user` extension among them.
+pub fn agents() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("macos")
+        .join("Sources")
+        .join("MightyCore")
+        .join("Resources")
+        .join("Agents")
+}
+
 pub fn fixture(name: &str) -> String {
     std::fs::read_to_string(fixtures().join(name)).unwrap_or_else(|e| panic!("fixture {name}: {e}"))
 }
