@@ -20,8 +20,6 @@ pub enum Pending {
     Requests,
     /// The background strip's rows (`PlanCardSupport.BackgroundStripRows`: the style engine's task list and the graph's blocks, W3/W9).
     BackgroundRows,
-    /// `AntigravityCard`/`AntigravityError`/`AntigravityAnswering` and its action words (W5).
-    Antigravity,
     /// A terminal prompt (`terminalPrompts`, W4).
     TerminalPrompt,
     /// `agentUrlPrompts.ForPane` (agent web prompts, W4).
@@ -34,10 +32,9 @@ pub enum Pending {
     Style,
 }
 
-pub const PENDING: [Pending; 8] = [
+pub const PENDING: [Pending; 7] = [
     Pending::Requests,
     Pending::BackgroundRows,
-    Pending::Antigravity,
     Pending::TerminalPrompt,
     Pending::WebOpen,
     Pending::Login,
@@ -78,7 +75,8 @@ pub struct BackgroundTask {
     pub tail_lines: Option<Vec<String>>,
 }
 
-/// One action of the Antigravity card, already in words (`AntigravityPermissionFlow.KindLabel`, `RuleLine`, `OnceOnlyText`; W5).
+/// One action of the Antigravity card, already in words (`AntigravityPermissionFlow.KindLabel`, `RuleLine`, `OnceOnlyText`; the host's
+/// antigravity.rs words it from the run service's card).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AntigravityAction {
@@ -92,7 +90,7 @@ pub struct AntigravityAction {
     pub once_only: Option<String>,
 }
 
-/// The pane's Antigravity card and its state (W5).
+/// The pane's Antigravity card and its state (`AntigravityCard`, `AntigravityError`, `AntigravityAnswering` of the run service).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AntigravityInput {
     pub card_id: String,

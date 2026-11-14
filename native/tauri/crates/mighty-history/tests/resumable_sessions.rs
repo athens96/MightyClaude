@@ -160,6 +160,7 @@ fn parent_lines() -> Vec<String> {
     ]
 }
 
+/// `ChildLines`: the sub-agent reads a file, starts its own helper, sends its answer back.
 fn child_lines() -> Vec<String> {
     vec![
         step_line(0, "SYSTEM", "SYSTEM_MESSAGE", "DONE", 1, json!({"content": message(PARENT, "Read a.txt")})),
@@ -179,7 +180,43 @@ fn child_lines() -> Vec<String> {
             1,
             json!({"content": "Created At: x\nCompleted At: x\nFile Path: `file:///workspace/demo/a.txt`\n1: secret file line"}),
         ),
+        step_line(
+            3,
+            "MODEL",
+            "PLANNER_RESPONSE",
+            "DONE",
+            2,
+            json!({"tool_calls": [call("invoke_subagent", json!({"Subagents": [{"Role": "Checker", "TypeName": "research", "Prompt": "Check it", "Model": "inherit"}]}))]}),
+        ),
+        step_line(4, "MODEL", "GENERIC", "DONE", 2, json!({"content": spawned(GRANDCHILD)})),
+        step_line(5, "SYSTEM", "SYSTEM_MESSAGE", "DONE", 2, json!({"content": message(GRANDCHILD, "Checked.")})),
+        step_line(
+            6,
+            "MODEL",
+            "PLANNER_RESPONSE",
+            "DONE",
+            2,
+            json!({"tool_calls": [call("send_message", json!({"Recipient": PARENT, "Message": "It says hi"}))], "input_tokens": 60, "output_tokens": 7, "cache_read_tokens": 10}),
+        ),
+        step_line(7, "MODEL", "GENERIC", "DONE", 2, json!({"content": "Created At: x\nCompleted At: x\nMessage sent."})),
         step_line(8, "MODEL", "PLANNER_RESPONSE", "DONE", 3, json!({"content": "Sent the content back."})),
+    ]
+}
+
+/// `GrandchildLines`: the reader's own helper.
+fn grandchild_lines() -> Vec<String> {
+    vec![
+        step_line(0, "SYSTEM", "SYSTEM_MESSAGE", "DONE", 2, json!({"content": message(CHILD, "Check it")})),
+        step_line(
+            1,
+            "MODEL",
+            "PLANNER_RESPONSE",
+            "DONE",
+            2,
+            json!({"tool_calls": [call("send_message", json!({"Recipient": CHILD, "Message": "Checked."}))]}),
+        ),
+        step_line(2, "MODEL", "GENERIC", "DONE", 2, json!({"content": "Message sent."})),
+        step_line(3, "MODEL", "PLANNER_RESPONSE", "DONE", 2, json!({"content": "Done checking."})),
     ]
 }
 
@@ -190,13 +227,15 @@ fn write_transcript(home: &Path, conversation: &str, lines: &[String]) -> PathBu
     path
 }
 
-/// AntigravityVerification.cs:449 `OlderRequestsAreReadFromTheConversationTranscript`, without what needs Antigravity's live parser and
-/// sub-agent watcher (W5): the sub-agents' work read from their own transcripts and the tool rows.
+/// AntigravityVerification.cs:449 `OlderRequestsAreReadFromTheConversationTranscript` (whole): the requests through the live parser,
+/// their tool rows, and the sub-agents' own work read from their transcripts up to the next request.
 #[test]
 fn antigravity_older_requests_are_read_from_the_conversation_transcript() {
+    mighty_run::strings::set_language("en");
     let home = temp("agy-history");
     write_transcript(&home, PARENT, &parent_lines());
     write_transcript(&home, CHILD, &child_lines());
+    write_transcript(&home, GRANDCHILD, &grandchild_lines());
     check(history::PROVIDERS.contains(&"gemini"), "Antigravity has history");
     check(
         history::locate("gemini", PARENT, "/workspace/demo", &HashMap::new(), &home).is_some_and(|p| p.ends_with("transcript_full.jsonl")),
@@ -224,10 +263,30 @@ fn antigravity_older_requests_are_read_from_the_conversation_transcript() {
         &format!("the command request's answer and usage: {:?} {:?}", command.final_output(), command.usage),
     );
     let delegated = &chunk.runs[1];
-    check(delegated.final_output() == Some("The file says hi."), "the delegated request's answer");
+    let titles: Vec<&str> = delegated.agents().iter().map(|a| a.title()).collect();
     check(
-        delegated.agents().first().is_some_and(|a| a.title() == "File Reader (research)" && a.input() == "Read a.txt"),
-        "the sub-agent the stream named",
+        delegated.final_output() == Some("The file says hi.") && titles == ["File Reader (research)", "Checker (research)"],
+        &format!("the sub-agents read back: {titles:?}"),
+    );
+    let (reader, checker) = (&delegated.agents()[0], &delegated.agents()[1]);
+    let tools: Vec<&str> = reader.entries().iter().filter_map(|e| e.activity.as_ref()).filter_map(|a| a.tool_name.as_deref()).collect();
+    check(
+        reader.parent_id.is_none()
+            && reader.input() == "Read a.txt"
+            && reader.status() == "completed"
+            && tools == ["view_file", "invoke_subagent", "send_message"],
+        &format!("the reader: {tools:?}"),
+    );
+    check(
+        !reader.entries().iter().any(|e| {
+            e.text().contains("secret file line")
+                || e.activity.as_ref().and_then(|a| a.output.as_deref()).is_some_and(|o| o.contains("secret file line"))
+        }),
+        "file contents are never copied",
+    );
+    check(
+        checker.parent_id.as_deref() == reader.id.as_deref() && checker.input() == "Check it" && checker.status() == "completed",
+        "the checker under the reader",
     );
     check(chunk.runs[2].agents().is_empty(), "the declined edit has no sub-agent");
     // A chunk at a time from the end, and a later chunk above the newer requests.
@@ -239,7 +298,11 @@ fn antigravity_older_requests_are_read_from_the_conversation_transcript() {
     older.file = Some(newest.file.clone());
     older.end = Some(newest.end);
     let older = history::load(&older, &locale, &Never).expect("the older chunk");
-    check(older.runs.iter().map(|r| r.input()).collect::<Vec<_>>() == ["List the files", "Ask a helper to read a.txt"], "the older chunk");
+    check(
+        older.runs.iter().map(|r| r.input()).collect::<Vec<_>>() == ["List the files", "Ask a helper to read a.txt"]
+            && older.runs[1].agents().len() == 2,
+        "the older chunk keeps its sub-agents",
+    );
     // Recorded steps become the events agy printed.
     let steps: Vec<Value> = parent_lines().iter().map(|l| serde_json::from_str(l).unwrap()).collect();
     let (events, status) = antigravity::stream_events(&steps[1..4], PARENT, &locale);
@@ -260,6 +323,24 @@ fn antigravity_older_requests_are_read_from_the_conversation_transcript() {
         serde_json::from_str(&step_line(1, "MODEL", "PLANNER_RESPONSE", "ERROR", 0, json!({"error": "Quota exceeded"}))).unwrap();
     let (events, status) = antigravity::stream_events(&[failed], PARENT, &locale);
     check(status == "error" && events.last().unwrap()["result"]["error"]["message"] == json!("Quota exceeded"), "a failed answer");
+    check(
+        antigravity::request(Some("<USER_REQUEST>\n  hello  \n</USER_REQUEST>\n<ADDITIONAL_METADATA>x</ADDITIONAL_METADATA>")).as_deref()
+            == Some("hello")
+            && antigravity::message(Some(&message(PARENT, "Do it\nnow")), PARENT).as_deref() == Some("Do it\nnow")
+            && antigravity::message(Some(&message("system", "[Notice]")), PARENT).is_none()
+            && antigravity::title(Some(""), Some("research")).as_deref() == Some("research")
+            && antigravity::title(None, None).is_none(),
+        "record helpers",
+    );
+    check(
+        antigravity::opening(
+            br#"{"step_index": 0, "type": "USER_INPUT", "source": "USER_EXPLICIT", "content": "<USER_REQUEST>\nHi\n</USER_REQUEST>"}"#,
+        )
+        .map(|o| o.0)
+        .as_deref()
+            == Some("Hi"),
+        "however agy spaces its JSON",
+    );
     let _ = std::fs::remove_dir_all(home);
 }
 

@@ -182,3 +182,59 @@ fn the_saved_theme_is_read_before_the_load() {
     assert_eq!(store::saved_theme(&dir), "light");
     fs::remove_dir_all(dir).unwrap();
 }
+
+/// AntigravityVerification.cs:222 `ASavedGeminiCliPaneIsMovedOnce`, the load's part (C# `AntigravityMigration` in `StateStore.LoadAsync`):
+/// a Gemini CLI pane's model and session are reset with a note, an agy model stays, other panes are untouched, the move is recorded and
+/// runs once, and a new profile never held Gemini CLI panes. (`ModelUnavailable` is mighty-run's tests/antigravity.rs.)
+#[test]
+fn a_saved_gemini_cli_pane_is_moved_once() {
+    let dir = temp_dir("agy-migration");
+    let folder = serde_json::to_string(&dir.to_string_lossy()).unwrap();
+    let saved = format!(
+        r#"{{"version":1,"workspaces":[{{"id":"space","name":"Fixture","path":{folder}}}],"sessions":[
+        {{"id":"legacy","workspaceId":"space","title":"Gemini","provider":"gemini","model":"gemini-2.5-pro","resumeId":"11111111-2222-4333-8444-555555555555"}},
+        {{"id":"current","workspaceId":"space","title":"Antigravity","provider":"gemini","model":"gemini-3.8-flash-low"}},
+        {{"id":"claude","workspaceId":"space","title":"Claude","model":"opus","resumeId":"claude-session"}}]}}"#
+    );
+    fs::write(dir.join(store::STATE_FILE), saved).unwrap();
+    let mut state = Store::new(dir.clone(), None, true);
+    let migrated = state.load(&en()).unwrap();
+    assert_eq!(migrated.antigravity_migrated, Some(true), "the move is recorded");
+    let pane = migrated.session("legacy").unwrap();
+    assert!(
+        pane.model() == "default"
+            && pane.resume_id.is_none()
+            && pane.logs().iter().map(|l| l.kind()).collect::<Vec<_>>() == ["system", "system"]
+            && pane.logs()[0].text().contains("gemini-2.5-pro"),
+        "a Gemini CLI model and session are reset with a note"
+    );
+    assert_eq!(migrated.session("current").unwrap().model(), "gemini-3.8-flash-low", "an agy model stays");
+    let claude = migrated.session("claude").unwrap();
+    assert!(claude.model() == "opus" && claude.resume_id.as_deref() == Some("claude-session"), "other panes are untouched");
+    // Once: an agy conversation saved after the move is kept.
+    let mut next = migrated.clone();
+    for session in next.sessions_mut().iter_mut().filter(|s| s.id() == "legacy") {
+        let mut changed = (**session).clone();
+        changed.resume_id = Some("agy-conversation".into());
+        changed.model = Some("gemini-4-argon-high".into());
+        *session = std::sync::Arc::new(changed);
+    }
+    state.save(&next).unwrap();
+    let again = Store::new(dir.clone(), None, true).load(&en()).unwrap();
+    let pane = again.session("legacy").unwrap();
+    assert!(
+        again.antigravity_migrated == Some(true)
+            && pane.resume_id.as_deref() == Some("agy-conversation")
+            && pane.model() == "gemini-4-argon-high"
+            && pane.logs().len() == 2,
+        "the move runs once"
+    );
+    let fresh = dir.join("fresh");
+    fs::create_dir_all(&fresh).unwrap();
+    assert_eq!(
+        Store::new(fresh, None, true).load(&en()).unwrap().antigravity_migrated,
+        Some(true),
+        "a new profile never held Gemini CLI panes"
+    );
+    fs::remove_dir_all(dir).unwrap();
+}

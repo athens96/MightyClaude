@@ -9,7 +9,10 @@
 //!   three-step plan on it (the newest request, running: 1/3, done, current, pending) and none without it, and the request is stopped
 //!   from the composer (the run ends stopped, its card goes). Then a pi pane of its own in the same workspace sends a request to the
 //!   stand-in pi (`--fake-cli pi … --pi-fixture pi-rpc-question.jsonl --pi-dialogs`), whose `ask_user` question is the page's question
-//!   card: its first choice is sent, pi must read it as the dialog's value, and the run completes with pi's reply.
+//!   card: its first choice is sent, pi must read it as the dialog's value, and the run completes with pi's reply. Then an Antigravity
+//!   pane (the fake agy over the smoke's own settings): its request is refused `echo hi`, the page draws the Antigravity card with the
+//!   command and its rule, 이번만 허용 continues the conversation with the rule in agy's settings for that run (the fake answers
+//!   "allowed"), and the settings are as they were after.
 //! - With `--smoke-real-claude`: one request to the installed `claude` CLI ("Reply with exactly the word: ok", the pane's default
 //!   permission mode), waited for until its result block shows the answer; the usage the CLI reported is recorded.
 
@@ -26,9 +29,14 @@ use crate::host::Host;
 pub const RECORDING: &str = "claude-stream-subagents";
 /// The pane and workspace the run steps add (UUID-shaped, as the state's ids are).
 pub const PANE: &str = "5a0e0b0b-0000-4000-8000-0000000c1a0d";
+/// The Antigravity pane the run steps add last.
+pub const AGY_PANE: &str = "5a0e0b0b-0000-4000-8000-0000000c1a0f";
+/// What the smoke's agy settings hold before the card is answered (and again after its run).
+pub const AGY_SETTINGS: &str = "{\n  \"permissions\": {\n    \"allow\": [\n      \"command(ls)\"\n    ]\n  }\n}\n";
+pub const AGY_REQUEST: &str = "say hi";
 const WORKSPACE: &str = "5a0e0b0b-0000-4000-8000-0000000c1a0e";
-/// The pi pane the run steps add last.
-pub const PI_PANE: &str = "5a0e0b0b-0000-4000-8000-0000000c1a0f";
+/// The pi pane the run steps add after the Claude one.
+pub const PI_PANE: &str = "5a0e0b0b-0000-4000-8000-0000000c1a10";
 /// What the probe types.
 pub const FAKE_REQUEST: &str = "smoke request replay-marker";
 pub const STOP_REQUEST: &str = "smoke request to stop";
@@ -119,6 +127,29 @@ pub const FAKE_PROBE: &str = r#"(async () => {
     report.piAnswer = piState.answer;
     report.piReply = piState.reply;
     report.piCardGone = !!(await until(() => !pq('[data-card=questionnaire]'), 10000));
+    // An Antigravity pane: its refused command is the card, and 이번만 허용 continues the conversation with the rule for that run.
+    await step('agyPane');
+    const agyId = '__AGY__';
+    const agy = (s) => document.querySelector('.pane-slot:not(.hidden)[data-pane-id="' + agyId + '"]')?.querySelector(s);
+    const agyState = () => step('agyState');
+    report.agyAvailable = !!(await until(async () => (await agyState()).available, 30000));
+    const agyInput = await until(() => agy('[data-testid=composer-input]'), 15000);
+    if (agyInput) { agyInput.focus(); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(agyInput, '__AGYTYPED__'); agyInput.dispatchEvent(new Event('input', { bubbles: true })); }
+    await until(() => agy('[data-testid=composer-primary]') && !agy('[data-testid=composer-primary]').disabled, 10000);
+    agy('[data-testid=composer-input]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+    const once = await until(() => agy('[data-card=antigravity] [data-answer=once]'), 30000);
+    report.agyCard = !!once;
+    report.agyHeading = agy('[data-card=antigravity] .card-field-label')?.textContent ?? null;
+    report.agyTarget = agy('[data-card=antigravity] .card-field-code')?.textContent ?? null;
+    report.agyRule = agy('[data-card=antigravity] .card-rule')?.textContent ?? null;
+    report.agyAlwaysEnabled = !!agy('[data-card=antigravity] [data-answer=always]') && !agy('[data-card=antigravity] [data-answer=always]').disabled;
+    report.agyFirst = await agyState();
+    once?.click();
+    const continued = await until(async () => { const s = await agyState(); return s.users >= 2 && ['completed', 'idle'].includes(s.status) && s.answers.includes('allowed') ? s : null; }, 30000);
+    report.agyContinued = !!continued;
+    report.agyCardGone = !!(await until(() => !agy('[data-card=antigravity]'), 10000));
+    report.agySettingsRestored = !!(await until(async () => { const s = await agyState(); return s.settingsUnchanged && s.held === 0; }, 15000));
+    report.agyLast = await agyState();
   } catch (error) {
     report.error = String(error);
   }
@@ -207,6 +238,29 @@ fn add_pi_pane(host: &Host) -> Result<(), String> {
     Ok(())
 }
 
+/// The Antigravity pane in the run steps' workspace, made the active one, and the smoke's own agy settings written as they start.
+fn add_agy_pane(host: &Host) -> Result<(), String> {
+    if let Some(settings) = agy_settings(host) {
+        if let Some(folder) = settings.parent() {
+            std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&settings, AGY_SETTINGS).map_err(|e| e.to_string())?;
+    }
+    let mut view = host.view();
+    let mut state: Value = serde_json::from_str(&view.snapshot.to_json()).map_err(|e| e.to_string())?;
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let pane = json!({
+        "id": AGY_PANE, "workspaceId": WORKSPACE, "title": "Smoke Antigravity", "kind": "claude", "status": "idle", "model": "default",
+        "provider": "gemini", "settings": {"effort": "default", "permissionMode": "manual", "maxTurns": null, "maxBudgetUsd": null},
+        "logs": [], "draft": "", "createdAt": now,
+    });
+    state.get_mut("sessions").and_then(Value::as_array_mut).ok_or("the state has no sessions")?.push(pane);
+    state["activeWorkspaceId"] = json!(WORKSPACE);
+    state["activeSessionId"] = json!(AGY_PANE);
+    view.replace(AppSnapshot::read(&state).map_err(|e| e.to_string())?);
+    Ok(())
+}
+
 /// What the stand-in pi read back as its dialog's answer (`<record>-pi.stdin`), and the pane's last reply.
 fn pi_state(host: &Host, smoke: &crate::smoke::Smoke) -> Value {
     let available = host.runs().and_then(|r| r.runtime("pi")).is_some_and(|r| r.available);
@@ -219,6 +273,11 @@ fn pi_state(host: &Host, smoke: &crate::smoke::Smoke) -> Value {
     let pane = view.snapshot.session(PI_PANE);
     let reply = pane.and_then(|p| p.logs().iter().rev().find(|e| e.kind() == "assistant").map(|e| e.text().to_string()));
     json!({"status": pane.map(|p| p.status().to_string()), "available": available, "answer": answer, "reply": reply})
+}
+
+/// The smoke's agy settings (runs.rs `FakeClaude::agy_settings`), read from the run service's rules.
+fn agy_settings(host: &Host) -> Option<PathBuf> {
+    host.runs().map(|r| PathBuf::from(r.service.antigravity_rules().settings_path()))
 }
 
 /// A three-step plan on the pane's newest request (`RunWebStepsSmoke`'s `Plan()`), or none on every run.
@@ -251,7 +310,8 @@ fn set_steps(host: &Host, on: bool) -> Result<(), String> {
 }
 
 /// What the probe asks the host (smoke only): `state` of the run steps' pane, the progress panel's plan on (`steps`) or off
-/// (`clearSteps`).
+/// (`clearSteps`), the pi pane added (`piPane`) and what pi read back (`piState`), the Antigravity pane added (`agyPane`) and its state
+/// (`agyState`).
 #[tauri::command]
 pub fn smoke_step(step: String, host: tauri::State<'_, Arc<Host>>) -> Result<Value, String> {
     let Some(smoke) = &host.smoke else { return Err("smoke only".into()) };
@@ -288,6 +348,26 @@ pub fn smoke_step(step: String, host: tauri::State<'_, Arc<Host>>) -> Result<Val
         "piState" => Ok(pi_state(&host, smoke)),
         "steps" => set_steps(&host, true).map(|_| Value::Null),
         "clearSteps" => set_steps(&host, false).map(|_| Value::Null),
+        "agyPane" => add_agy_pane(&host).map(|_| Value::Null),
+        "agyState" => {
+            let available = host.runs().and_then(|r| r.runtime("gemini")).is_some_and(|r| r.available);
+            let settings = agy_settings(&host).and_then(|path| std::fs::read_to_string(path).ok());
+            let held = host.runs().map_or(0, |r| r.service.antigravity_rules().held().len());
+            let card = host.runs().is_some_and(|r| r.service.antigravity_card(AGY_PANE).is_some());
+            let view = host.view();
+            let pane = view.snapshot.session(AGY_PANE).cloned();
+            let logs = pane.as_ref().map(|p| p.logs().to_vec()).unwrap_or_default();
+            Ok(json!({
+                "status": pane.as_ref().map(|p| p.status().to_string()),
+                "available": available,
+                "users": logs.iter().filter(|l| l.kind() == "user").count(),
+                "answers": logs.iter().filter(|l| l.kind() == "assistant").map(|l| l.text().to_string()).collect::<Vec<_>>(),
+                "errors": logs.iter().filter(|l| l.kind() == "error").map(|l| l.text().to_string()).collect::<Vec<_>>(),
+                "card": card,
+                "held": held,
+                "settingsUnchanged": settings.as_deref() == Some(AGY_SETTINGS),
+            }))
+        }
         other => Err(format!("unknown smoke step {other}")),
     }
 }

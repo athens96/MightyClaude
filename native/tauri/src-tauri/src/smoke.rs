@@ -475,7 +475,9 @@ impl Smoke {
                 .replace("__TYPED__", crate::smoke_runs::FAKE_REQUEST)
                 .replace("__STOP__", crate::smoke_runs::STOP_REQUEST)
                 .replace("__PI_PANE__", crate::smoke_runs::PI_PANE)
-                .replace("__PI__", crate::smoke_runs::PI_REQUEST),
+                .replace("__PI__", crate::smoke_runs::PI_REQUEST)
+                .replace("__AGYTYPED__", crate::smoke_runs::AGY_REQUEST)
+                .replace("__AGY__", crate::smoke_runs::AGY_PANE),
             Mode::RealClaude => crate::smoke_runs::REAL_PROBE.replace("__TYPED__", crate::smoke_runs::REAL_REQUEST),
         };
         let pane = match crate::smoke_runs::add_pane(host) {
@@ -685,6 +687,15 @@ impl Smoke {
                         && text("piReply") == "Your favorite color is red."
                         && yes("piCardGone")
                 );
+                checks["antigravityCard"] = json!(
+                    yes("agyAvailable")
+                        && yes("agyCard")
+                        && text("agyHeading").contains("RunCommand")
+                        && text("agyTarget") == "echo hi"
+                        && text("agyRule").contains("command(echo hi)")
+                        && yes("agyAlwaysEnabled")
+                );
+                checks["antigravityAllowOnce"] = json!(yes("agyContinued") && yes("agyCardGone") && yes("agySettingsRestored"));
             }
             Mode::RealClaude => {
                 let empty = json!({"error": "the real request did not report"});

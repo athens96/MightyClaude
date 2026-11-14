@@ -4,9 +4,10 @@
 //! mighty-composer's rules; [`flush`] pushes each when its JSON changed (`composer` and `cards`, 30 ms, C# `FlushWebComposers`,
 //! `FlushWebCards`), the cards again each second while an open background strip has a task running.
 //!
-//! What later stages give the composer and the cards stays at its resting value (`WindowRules::default`, no Antigravity card, no
-//! terminal prompt, no web-open prompts, no sign-in card, no status line, no style): README "Pending inputs".
+//! What later stages give the composer and the cards stays at its resting value (`WindowRules::default`, no web-open prompts, no sign-in
+//! card, no status line, no style): README "Pending inputs". The Antigravity card is antigravity.rs's.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -41,6 +42,8 @@ pub struct PaneUi {
     pub mighty: MightyPane,
     /// Something the composer or the cards read changed outside the pane's record (a request, a runtime read, a page method).
     pub dirty: bool,
+    /// The queued continuations of Antigravity cards (C# `QueuedComposerInput.AntigravityGrant`/`AntigravityCard`), by queued item.
+    pub continuations: HashMap<String, (mighty_run::antigravity::AllowGrant, mighty_run::antigravity::PermissionRequest)>,
     /// The pane's record the composer and cards were last made from.
     seen: Option<Arc<RunSession>>,
     composer_sent: Option<String>,
@@ -180,6 +183,8 @@ pub fn cards_of(host: &Host, view: &mut View, id: &str) -> Option<(Vec<Card>, bo
         plan.is_some() && mighty_graph::view::diagram_plan_run_id(true, cards::in_mighty_diagram(&pane), pane.graph_runs()).is_some();
     // A command in the pane's terminal waiting for input (terminal.rs, C# `terminalPrompts`).
     let terminal_prompt = crate::terminal::prompt_input(host, id);
+    // The pane's Antigravity card (antigravity.rs, C# `AntigravityCard`/`AntigravityError`/`AntigravityAnswering`).
+    let antigravity = crate::antigravity::card_input(host, id);
     let inputs = CardInputs {
         locale: host.locale,
         utc_offset_minutes: utc_offset_minutes(),
@@ -192,7 +197,7 @@ pub fn cards_of(host: &Host, view: &mut View, id: &str) -> Option<(Vec<Card>, bo
         plan_draft: ui.plan_draft.as_ref(),
         background_open,
         background_rows: &[],
-        antigravity: None,
+        antigravity: antigravity.as_ref(),
         terminal_prompt: terminal_prompt.as_ref(),
         web_open: &[],
         login: None,

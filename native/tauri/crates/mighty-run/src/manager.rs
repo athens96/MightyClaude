@@ -9,9 +9,12 @@
 //! a second (`ClosePiWhenIdle`); its extensions' dialogs are the pane's question cards (`PiDialogChannel`), a deadline pi gives one
 //! closing its card when it passes.
 //!
-//! Until their stages: the ACP agents (opencode, Hermes) and Antigravity's stream are W5 — a run of opencode, Hermes or Antigravity
-//! is refused with the reason (Antigravity is read through the parser's `ProviderStream` once W5 plugs it in). A sharing host's PowerShell
-//! commands are W8. The Agent IO / delegation binding (W7) plugs in through [`RunBinding`]; the file originals (W4) through
+//! An Antigravity run reads agy's stream through the parser, sends its card before the run's last status (`antigravityPermission`),
+//! says a missing conversation once (`AntigravityStderr`) and follows the sub-agents' own transcripts about once a second, as a Codex
+//! run's session files are, through the graph's [`GraphSink::read_children`] (C# `ReadChildren`).
+//!
+//! Until their stages: the ACP agents (opencode, Hermes) are W5 — a run of opencode or Hermes is refused with the reason. A sharing
+//! host's PowerShell commands are W8. The Agent IO / delegation binding (W7) plugs in through [`RunBinding`]; the file originals (W4) through
 //! [`FileOriginals`].
 
 use std::collections::{BTreeMap, HashMap};
@@ -30,10 +33,11 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::activity;
+use crate::antigravity::records as antigravity_records;
 use crate::attachments::StagedAttachments;
 use crate::codex_approval::{self, CodexApprovalChannel, CodexHooks};
 use crate::failure;
-use crate::graph::{GraphFactory, GraphSink, GraphStart};
+use crate::graph::{ChildSources, GraphFactory, GraphSink, GraphStart};
 use crate::lines::{Lines, Next};
 use crate::meta;
 use crate::model::{RunEvent, StartRunRequest};
@@ -92,6 +96,12 @@ pub struct RunManagerOptions {
     /// pi exits on a session it cannot find (one that never got an answer is not written): a run asked to continue a session this
     /// says pi has no record of starts a new one. None keeps every resume as asked.
     pub pi_sessions: Option<PiSessions>,
+    /// agy's settings and the app's ledger the desktop service's Antigravity continuations hold rules in (C# `DesktopService.AntigravityRules`);
+    /// the service takes them from here (the runner never reads them). None is the user's own settings without a ledger.
+    pub antigravity_rules: Option<crate::antigravity::AntigravityRuleLeases>,
+    /// The home an Antigravity run's sub-agents keep their transcripts under (`AntigravityRecords.Brain(home)`); None is the user's
+    /// profile (C#'s `Environment.SpecialFolder.UserProfile`). Checks pass a fake one.
+    pub antigravity_home: Option<PathBuf>,
 }
 
 impl RunManagerOptions {
@@ -108,6 +118,8 @@ impl RunManagerOptions {
             binding: None,
             file_originals: None,
             pi_sessions: None,
+            antigravity_rules: None,
+            antigravity_home: None,
         }
     }
 }
@@ -607,9 +619,18 @@ struct Exec {
     background: Mutex<BackgroundTaskTracker>,
     plan_gate: Mutex<()>,
     todo_run_id: Option<String>,
-    /// The CLI's environment the run started with, once read: where `ReadChildren` finds the CLI's own files.
-    children: Mutex<Option<BTreeMap<String, String>>>,
+    /// Where `ReadChildren` finds the run's sub-agents (set once the run is under way), and whether reading them failed.
+    children: Mutex<Children>,
     emit: Emit,
+}
+
+/// C#'s `codexHome` (here the CLI's environment the run started with, which says where Codex keeps it), `antigravityBrain` and
+/// `watcherDisabled`.
+#[derive(Default)]
+struct Children {
+    environment: Option<BTreeMap<String, String>>,
+    antigravity_brain: Option<PathBuf>,
+    disabled: bool,
 }
 
 enum Failure {
@@ -841,7 +862,7 @@ impl Exec {
             background: Mutex::new(BackgroundTaskTracker::new(None)),
             plan_gate: Mutex::new(()),
             todo_run_id,
-            children: Mutex::new(None),
+            children: Mutex::new(Children::default()),
             emit: emit.clone(),
         });
         let reopened = exec.clone();
@@ -931,6 +952,19 @@ impl Exec {
             }
             _ => None,
         };
+        let answer =
+            tracker.clone().map(|tracker| Arc::new(move |text: &str| lock(&tracker).antigravity_answer(text)) as crate::parser::AnswerHook);
+        // The card goes out before the run's last status (M/ProcessRunner.swift antigravityPermission).
+        let (card_run, card_emit) = (run.clone(), emit.clone());
+        let antigravity_permission: crate::parser::AntigravityCardHook = Arc::new(move |card| {
+            if !card_run.finished.load(Ordering::SeqCst) && card_run.request.kind == "claude" {
+                card_emit(RunEvent {
+                    antigravity_permission: Some(card),
+                    ..RunEvent::new(&card_run.request.session_id, "antigravityPermission")
+                });
+            }
+        });
+        let requested_resume = if run.request.provider == "gemini" { run.request.resume_id.clone() } else { None };
         let (graph_activity, graph_images) = (tracker.clone(), tracker);
         ParserHooks {
             log: Some(Arc::new(move |kind, text| Exec::log(&log_run, &log_emit, kind, text))),
@@ -962,6 +996,9 @@ impl Exec {
                 let reply_run = run.clone();
                 Arc::new(move |text: &str| reply_run.pi_write(text)) as crate::parser::PiReplyHook
             }),
+            answer,
+            antigravity_permission: Some(antigravity_permission),
+            requested_resume,
         }
     }
 
@@ -1001,11 +1038,20 @@ impl Exec {
         !work::running(&lock(&self.background).work()).is_empty()
     }
 
-    /// `PublishGraph`: the live graph when it changed since the last one sent; false once the run is ending.
+    /// `PublishGraph(false)`.
     fn publish_graph(&self) -> bool {
+        self.publish_graph_with(false)
+    }
+
+    /// `PublishGraph(readChildren)`: the live graph when it changed since the last one sent (the sub-agents' files read first
+    /// when asked); false once the run is ending.
+    fn publish_graph_with(&self, read_children: bool) -> bool {
         let _gate = lock(&self.graph_gate);
         if self.run.finalizing.load(Ordering::SeqCst) || self.run.finished.load(Ordering::SeqCst) {
             return false;
+        }
+        if read_children {
+            self.read_children(false);
         }
         if self.graph_dirty.swap(false, Ordering::SeqCst)
             && let Some(tracker) = &self.tracker
@@ -1021,15 +1067,22 @@ impl Exec {
         true
     }
 
-    /// `PublishGraph(readChildren: true)`'s first step: the run's sub-agents read from the CLI's own files while it is current.
-    fn read_children(&self) {
-        let _gate = lock(&self.graph_gate);
-        if self.run.finalizing.load(Ordering::SeqCst) || self.run.finished.load(Ordering::SeqCst) {
+    /// `ReadChildren(closing)`: the run's sub-agents read from the CLI's own files through the graph ([`GraphSink::read_children`]):
+    /// agy's stream names each sub-agent's conversation but not its work (M/ProcessRunner.swift watchAntigravitySubagents), and Codex's
+    /// sub-agents are in its session files. Observation is optional: a file changing under it must never fail the actual CLI turn, so a
+    /// failed read stops the reading for the rest of the run.
+    fn read_children(&self, closing: bool) {
+        let Some(tracker) = &self.tracker else { return };
+        let mut children = lock(&self.children);
+        if children.disabled {
             return;
         }
-        let environment = lock(&self.children).clone();
-        if let (Some(tracker), Some(environment)) = (&self.tracker, environment) {
-            lock(tracker).read_children(&environment, false);
+        let Some(environment) = &children.environment else { return };
+        let sources =
+            ChildSources { environment, antigravity_brain: children.antigravity_brain.as_deref(), namespace: &self.run.activity_id };
+        let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| lock(tracker).read_children(&sources, closing)));
+        if read.is_err() {
+            children.disabled = true;
         }
     }
 
@@ -1059,12 +1112,9 @@ impl Exec {
             };
             Self::activity(run, &self.emit, &activity::make(&run.activity_id, &request.provider, "turn", state, &summary));
         }
-        let environment = lock(&self.children).clone();
+        self.read_children(true);
         if let Some(tracker) = &self.tracker {
             let mut sink = lock(tracker);
-            if let Some(environment) = &environment {
-                sink.read_children(environment, true);
-            }
             sink.finish(state);
             if let Some(graph_run) = sink.build_run(false) {
                 (self.emit)(RunEvent { graph_run: Some(graph_run), ..RunEvent::new(&request.session_id, "graph_run") });
@@ -1223,8 +1273,16 @@ impl Exec {
             _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
         }
         let mut environment = providers.quiet_environment();
-        if request.kind != "shell" {
-            *lock(&self.children) = Some(environment.clone());
+        {
+            let mut children = lock(&self.children);
+            if request.kind != "shell" {
+                children.environment = Some(environment.clone());
+            }
+            if provider == "gemini" {
+                let home =
+                    inner.options.antigravity_home.clone().or_else(crate::antigravity::permissions::user_profile).unwrap_or_default();
+                children.antigravity_brain = Some(antigravity_records::brain(&home));
+            }
         }
         if self.tracker.is_some() {
             let exec = self.clone();
@@ -1234,8 +1292,7 @@ impl Exec {
                         _ = tokio::time::sleep(Duration::from_secs(1)) => {}
                         _ = exec.graph_stop.cancelled() => return,
                     }
-                    exec.read_children();
-                    if !exec.publish_graph() {
+                    if !exec.publish_graph_with(true) {
                         return;
                     }
                 }
@@ -1250,14 +1307,6 @@ impl Exec {
                 // AcpChannel (opencode acp, hermes acp) is W5.
                 return Err(Failure::Error(format!(
                     "{} runs through the Agent Client Protocol, which this build does not run yet.",
-                    providers::name(&provider)
-                )));
-            }
-            if provider == "gemini" {
-                // Antigravity's stream is read by the parser's ProviderStream (W5): without it the run's answer would never reach the
-                // pane, so it is refused as the ACP agents are.
-                return Err(Failure::Error(format!(
-                    "{} runs through its own stream, which this build does not read yet.",
                     providers::name(&provider)
                 )));
             }
@@ -1679,9 +1728,13 @@ impl Exec {
                 Next::End => break,
                 Next::TooLong => {}
                 Next::Line(line) => {
-                    // Only Antigravity reports a lost sign-in on stderr.
-                    if exec.run.request.kind != "shell" && exec.run.request.provider == "gemini" && failure::antigravity(&line) {
-                        exec.run.authentication_failure.store(true, Ordering::SeqCst);
+                    // Only Antigravity reports a lost sign-in on stderr ("Error: authentication required. Run 'agy' to log in, then
+                    // retry."), and that the conversation it was asked to continue is gone.
+                    if exec.run.request.kind != "shell" && exec.run.request.provider == "gemini" {
+                        if failure::antigravity(&line) {
+                            exec.run.authentication_failure.store(true, Ordering::SeqCst);
+                        }
+                        exec.parser.antigravity_stderr(&line);
                     }
                     Self::log(&exec.run, &exec.emit, "output", &line);
                 }

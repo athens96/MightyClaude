@@ -8,9 +8,9 @@ use mighty_core::model::{
     AgentActivity, BackgroundWork, LogEntry, PhaseModelsSnapshot, PlanRecord, RegisteredModelEntry, RunSettings, SessionUsage, TodoProgress,
 };
 use mighty_core::{graph::MightyGraphRun, normalize, time, wire};
-use serde_json::Value;
 
 use crate::activity;
+use crate::antigravity::permissions::{self as antigravity, AllowGrant, PermissionRequest};
 use crate::attachments::{self, RunAttachment};
 use crate::permissions::ToolPermissionRequest;
 use crate::plan_mode::outcome;
@@ -49,9 +49,11 @@ pub struct StartRunRequest {
     /// A delegated child pane's worktree folder.
     pub working_folder: Option<String>,
     pub delegation_worktree_root: Option<String>,
-    /// An Antigravity continuation's rules and card (W5): kept as JSON until that port.
-    pub antigravity_grant: Option<Value>,
-    pub antigravity_card: Option<Value>,
+    /// An allowed Antigravity card's rules (`AntigravityGrant`): put in place before the run starts (the desktop service holds them
+    /// while it runs, or keeps them for good). Never saved with the request.
+    pub antigravity_grant: Option<AllowGrant>,
+    /// The card a continuation answers (`AntigravityCard`): put back with the reason when the run cannot start.
+    pub antigravity_card: Option<PermissionRequest>,
     /// The id this run's diagram block carries (`DesktopService.Launch` names it); None lets the runner pick one.
     pub graph_run_id: Option<String>,
     pub receipt: Option<Arc<Mutex<RunStartReceipt>>>,
@@ -203,8 +205,8 @@ pub struct RunEvent {
     pub plan: Option<PlanRecord>,
     pub todos: Option<TodoProgress>,
     pub background: Option<BackgroundWork>,
-    /// An Antigravity turn's refused actions (W5), as JSON until that port.
-    pub antigravity_permission: Option<Value>,
+    /// "antigravityPermission": the actions an Antigravity turn was refused, sent once the turn ended and before its run's final status.
+    pub antigravity_permission: Option<PermissionRequest>,
 }
 
 impl RunEvent {
@@ -254,8 +256,7 @@ impl RunEvent {
                 .is_some_and(|p| wire::is_identifier(p.id.as_deref()) && p.outcome.as_deref().is_some_and(|o| outcome::ALL.contains(&o))),
             "todos" => self.todos.is_some(),
             "background" => self.background.is_some(),
-            // RemoteWorkspaceValidation.AntigravityCard is W5's: until then a card is valid when it is an object.
-            "antigravityPermission" => self.antigravity_permission.as_ref().is_some_and(Value::is_object),
+            "antigravityPermission" => self.antigravity_permission.as_ref().is_some_and(antigravity::valid_card),
             _ => false,
         }
     }
@@ -280,10 +281,7 @@ impl RunEvent {
         out.prop("plan", self.plan.as_ref());
         out.prop("todos", self.todos.as_ref());
         out.prop("background", self.background.as_ref());
-        if let Some(card) = &self.antigravity_permission {
-            out.name("antigravityPermission");
-            out.value(card);
-        }
+        out.prop("antigravityPermission", self.antigravity_permission.as_ref());
         out.end_object();
         out.finish()
     }

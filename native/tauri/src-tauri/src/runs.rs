@@ -19,6 +19,7 @@ use mighty_core::model::{AgentImageRef, AppSnapshot, RegisteredModelEntry, RunSe
 use mighty_graph::TrackerFactory;
 use mighty_history::{codex_sessions, history};
 use mighty_platform::{ProcessHost, ShellEnvironment};
+use mighty_run::antigravity::AntigravityRuleLeases;
 use mighty_run::model::{CliCommand, ModelCatalog, ProviderRuntime};
 use mighty_run::parser::{ImageError, ImageStore};
 use mighty_run::providers::{self, Finder, ProviderCatalog};
@@ -30,14 +31,23 @@ use crate::host::Host;
 const IMAGE_CACHE_BYTES: u64 = 200 * 1_048_576;
 
 /// The smoke's stand-in Claude (mighty-run's `mighty-fake-cli --replay-cli`): asks one Bash permission and one plan, then replays a
-/// recording; and its stand-in pi (`--fake-cli pi … --pi-fixture pi-rpc-question.jsonl --pi-dialogs`), which asks one question through
-/// the app's `ask_user` tool. Every other provider is missing.
+/// recording; its stand-in pi (`--fake-cli pi … --pi-fixture pi-rpc-question.jsonl --pi-dialogs`), which asks one question through the
+/// app's `ask_user` tool; and its Antigravity, the same binary as C#'s fake agy (`--agy-denied`, refused `echo hi` on a new
+/// conversation) over the smoke's own agy settings ([`FakeClaude::agy_settings`]). Every other provider is missing.
 #[derive(Debug, Clone)]
 pub struct FakeClaude {
     pub binary: PathBuf,
     pub recording: String,
     /// Where the fake writes what it was sent (`<record>.args`, `.input`, `.answers`).
     pub record: PathBuf,
+}
+
+impl FakeClaude {
+    /// The smoke's own agy settings (never the user's): beside the fake's record.
+    pub fn agy_settings(&self) -> PathBuf {
+        let folder = self.record.parent().map(Path::to_path_buf).unwrap_or_default();
+        folder.join("agy-home").join(".gemini").join("antigravity-cli").join("settings.json")
+    }
 }
 
 pub struct Runs {
@@ -113,6 +123,7 @@ impl Runs {
         fake: Option<FakeClaude>,
         image_dir: PathBuf,
         catalog_dir: PathBuf,
+        antigravity: AntigravityRuleLeases,
     ) -> Arc<Runs> {
         mighty_run::strings::set_language(host.locale.language());
         // `{value:N0}` (the attachments' sizes) in the user's regional format, as C#'s current culture writes it.
@@ -137,10 +148,22 @@ impl Runs {
                 ],
                 Some("0.70.2"),
             );
+            let agy = CliCommand::new(
+                fake.binary.to_string_lossy().into_owned(),
+                vec![
+                    "--fake-cli".into(),
+                    "gemini".into(),
+                    format!("{}-agy", fake.record.display()),
+                    "--agy-denied".into(),
+                    fake.agy_settings().to_string_lossy().into_owned(),
+                ],
+                Some("1.4.4"),
+            );
             let finder: Finder = Arc::new(move |provider: String| {
                 let found = match provider.as_str() {
                     "claude" => Some(command.clone()),
                     "pi" => Some(pi.clone()),
+                    "gemini" => Some(agy.clone()),
                     _ => None,
                 };
                 Box::pin(async move { found })
@@ -157,6 +180,9 @@ impl Runs {
         // The CLIs' own records are read, never written: a Codex run's session files, pi's session list.
         let home = history::user_home();
         let pi_home = home.clone();
+        // Temporary Antigravity rules a crash left in agy's settings go first (C# `InitializeAsync`, M/AppStore.swift:433-434).
+        let leftovers = antigravity.clone();
+        std::thread::spawn(move || leftovers.remove_leftovers());
         let configure: Configure = Box::new(move |options| {
             options.graph =
                 Some(Arc::new(TrackerFactory { codex_sessions: Some(codex_sessions::watcher_factory(home)), ..TrackerFactory::default() }));
@@ -166,6 +192,7 @@ impl Runs {
             }));
             options.images = Some(store);
             options.file_originals = originals;
+            options.antigravity_rules = Some(antigravity);
         });
         let snapshot = host.view().snapshot.clone();
         let (service, mut events) = RunService::new(

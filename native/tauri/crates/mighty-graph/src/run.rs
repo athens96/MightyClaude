@@ -3,9 +3,11 @@
 //! and never this crate; this crate reads mighty-run and nothing reads this crate back, so the two stay free of a cycle. The host hands
 //! `RunManagerOptions.graph` a [`TrackerFactory`]; the runner then publishes each request's graph run every second and at its end, with
 //! the notice runs its background work opened, as C#'s does. A Codex run's sub-agents come live from Codex's session files through
-//! the [`SessionWatcher`] the factory's [`CodexWatcherFactory`] opens (mighty-history's `codex_sessions`, which reads the files).
+//! the [`SessionWatcher`] the factory's [`CodexWatcherFactory`] opens (mighty-history's `codex_sessions`, which reads the files), an
+//! Antigravity run's from their own transcripts through [`AntigravitySubagentWatcher`].
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use mighty_core::graph::MightyGraphRun;
@@ -13,9 +15,10 @@ use mighty_core::json::Wire;
 use mighty_core::locale::Locale;
 use mighty_core::model::{AgentActivity, LogEntry};
 use mighty_core::time::DateTimeOffset;
-use mighty_run::graph::{GraphFactory, GraphSink, GraphStart};
+use mighty_run::graph::{ChildSources, GraphFactory, GraphSink, GraphStart};
 use serde_json::Value;
 
+use crate::antigravity::{AntigravitySubagentWatcher, Limits};
 use crate::tracker::{CodexSessionAgent, ModGraphMetadata, ModMetadata};
 use crate::{ExecutionGraphNode, ExecutionGraphTracker};
 
@@ -88,17 +91,56 @@ impl GraphFactory for TrackerFactory {
             None,
             locale,
         );
-        Box::new(TrackerSink { tracker, started: DateTimeOffset::now(), codex_sessions: self.codex_sessions.clone(), watcher: None })
+        Box::new(TrackerSink::new(tracker, self.codex_sessions.clone()))
     }
 }
 
-/// One run's tracker behind the runner's calls, with the watcher of its sub-agents' files once there is one.
+/// One run's tracker behind the runner's calls, with the watchers of its sub-agents' files once there are some: a Codex run's session
+/// files once the stream named its root thread, an Antigravity run's sub-agents' transcripts once the stream named one.
 pub struct TrackerSink {
     pub tracker: ExecutionGraphTracker,
     /// When the run started (C#'s `startedAt`): nothing older is read.
     started: DateTimeOffset,
     codex_sessions: Option<CodexWatcherFactory>,
     watcher: Option<Box<dyn SessionWatcher>>,
+    antigravity: Option<AntigravitySubagentWatcher>,
+}
+
+impl TrackerSink {
+    /// `codex_sessions`: where a Codex run's sub-agents are read from; None leaves them to what the stream says.
+    pub fn new(tracker: ExecutionGraphTracker, codex_sessions: Option<CodexWatcherFactory>) -> TrackerSink {
+        TrackerSink { tracker, started: DateTimeOffset::now(), codex_sessions, watcher: None, antigravity: None }
+    }
+
+    /// The Codex half of C#'s `ReadChildren`: the watcher opens once the stream named the root thread, and each sub-agent it read is
+    /// merged (`CodexSession`).
+    fn codex_children(&mut self, environment: &BTreeMap<String, String>, closing: bool) {
+        if self.watcher.is_none()
+            && let (Some(open), Some(root)) = (&self.codex_sessions, self.tracker.codex_root_thread())
+        {
+            self.watcher = open(environment, root, self.started, self.tracker.run_id());
+        }
+        let Some(watcher) = self.watcher.as_mut() else { return };
+        let children = if closing { watcher.finish() } else { watcher.poll() };
+        for child in &children {
+            self.tracker.codex_session(child);
+        }
+    }
+
+    /// The Antigravity half of C#'s `ReadChildren`: the watcher made once the stream named a sub-agent (the run's own conversation never
+    /// followed), each snapshot it reads handed to `AntigravitySession`.
+    fn antigravity_children(&mut self, brain: &Path, namespace: &str, closing: bool) {
+        let known = self.tracker.antigravity_subagents().to_vec();
+        if self.antigravity.is_none() && !known.is_empty() {
+            let root = self.tracker.antigravity_conversation().map(str::to_string);
+            self.antigravity = Some(AntigravitySubagentWatcher::new(brain, namespace, root.as_deref(), None, Limits::default()));
+        }
+        let Some(watcher) = self.antigravity.as_mut() else { return };
+        let children = if closing { watcher.finish(&known) } else { watcher.poll(&known) };
+        for child in children {
+            self.tracker.antigravity_session(&child);
+        }
+    }
 }
 
 impl GraphSink for TrackerSink {
@@ -138,21 +180,15 @@ impl GraphSink for TrackerSink {
     fn antigravity_answer(&mut self, text: &str) {
         self.tracker.antigravity_answer(text);
     }
-    /// The Codex half of C#'s `ReadChildren`: the watcher opens once the stream named the root thread, and each sub-agent it read is
-    /// merged (`CodexSession`).
-    fn read_children(&mut self, environment: &BTreeMap<String, String>, closing: bool) {
-        if self.tracker.provider() != "codex" {
-            return;
-        }
-        if self.watcher.is_none()
-            && let (Some(open), Some(root)) = (&self.codex_sessions, self.tracker.codex_root_thread())
-        {
-            self.watcher = open(environment, root, self.started, self.tracker.run_id());
-        }
-        let Some(watcher) = self.watcher.as_mut() else { return };
-        let children = if closing { watcher.finish() } else { watcher.poll() };
-        for child in &children {
-            self.tracker.codex_session(child);
+    /// C#'s `ReadChildren`: an Antigravity run's sub-agents from their own transcripts under its `brain`, a Codex run's from its session
+    /// files.
+    fn read_children(&mut self, sources: &ChildSources<'_>, closing: bool) {
+        if self.tracker.provider() == "gemini" {
+            if let Some(brain) = sources.antigravity_brain {
+                self.antigravity_children(brain, sources.namespace, closing);
+            }
+        } else if self.tracker.provider() == "codex" {
+            self.codex_children(sources.environment, closing);
         }
     }
 }

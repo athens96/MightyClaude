@@ -7,6 +7,7 @@
 //! A sink is called from the run's task, from the Mods bridge and from the permission channel; calls come one at a time.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use mighty_core::graph::MightyGraphRun;
@@ -28,6 +29,17 @@ pub struct GraphStart {
     pub effort: Option<String>,
     /// Hears every node the tracker changed.
     pub node: Arc<dyn Fn(Value) + Send + Sync>,
+}
+
+/// Where [`GraphSink::read_children`] reads a run's sub-agents from (C#'s `codexHome`, `antigravityBrain` and `run.ActivityId`).
+#[derive(Debug, Clone, Copy)]
+pub struct ChildSources<'a> {
+    /// The CLI's environment the run started with (where Codex keeps its home: `CODEX_HOME`).
+    pub environment: &'a BTreeMap<String, String>,
+    /// An Antigravity run's `brain` folder, where its sub-agents keep their transcripts (`AntigravityRecords.Brain(home)`).
+    pub antigravity_brain: Option<&'a Path>,
+    /// The run's activity id, which names an Antigravity run's sub-agents' rows.
+    pub namespace: &'a str,
 }
 
 /// C# `ExecutionGraphTracker` as `RunManager` uses it.
@@ -55,12 +67,13 @@ pub trait GraphSink: Send {
     fn build_run(&mut self, include_running: bool) -> Option<MightyGraphRun>;
     /// `TakeNoticeRuns(includeRunning)`: each notice run the run's background work opened.
     fn take_notice_runs(&mut self, include_running: bool) -> Vec<MightyGraphRun>;
-    /// `AntigravityAnswer`: an Antigravity reply as the transcript shows it (W5).
+    /// `AntigravityAnswer`: an Antigravity reply as the transcript shows it.
     fn antigravity_answer(&mut self, _text: &str) {}
-    /// `ReadChildren(closing)`: the run's sub-agents read from the CLI's own files (Codex's session files, `CodexSessionWatcher`, once
-    /// the run's root thread is known), every second while the run goes on and once more, `closing`, at its end. `environment`: the
-    /// CLI's environment the run started with (where Codex keeps its home: `CODEX_HOME`).
-    fn read_children(&mut self, _environment: &BTreeMap<String, String>, _closing: bool) {}
+    /// `ReadChildren(closing)`: the run's sub-agents read from the CLI's own files, every second while the run goes on and once more,
+    /// `closing`, at its end — a Codex run's session files (`CodexSessionWatcher`, once the run's root thread is known), an Antigravity
+    /// run's sub-agents' own transcripts under its `brain` and those of the helpers they start (`AntigravitySubagentWatcher.Poll`, or
+    /// with `closing` its last, larger `Finish`, once the stream named a sub-agent).
+    fn read_children(&mut self, _sources: &ChildSources<'_>, _closing: bool) {}
 }
 
 /// Makes one [`GraphSink`] per run (the lead plugs mighty-graph's tracker in here).

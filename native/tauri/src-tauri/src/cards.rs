@@ -1,8 +1,9 @@
 //! The cards' page methods (C# MainWindow.WebShell.Cards.cs `RegisterCardMethods`): the cards themselves (panes.rs makes them), the
 //! answers to the run's requests through the run service — Allow once / Deny (`OnPermissionAllow`, `OnPermissionDeny`), the question
 //! card's answers (`QuestionnaireAnswers`, `ValidateAnswers`, `AnswerQuestionnaire`) and the plan card's four (`AnswerPlanCard`) — a next
-//! action's words into the draft, and the background strip's fold. The sign-in card, the Antigravity card, web-open prompts and the
-//! status line are later stages' (README); their methods answer as C# does with nothing waiting.
+//! action's words into the draft, the background strip's fold, and the Antigravity card's answer (`antigravityAnswer`, antigravity.rs).
+//! The sign-in card, web-open prompts and the status line are later stages' (README); their methods answer as C# does with nothing
+//! waiting.
 
 use std::sync::Arc;
 
@@ -161,6 +162,14 @@ pub fn register(methods: &mut Registry) {
             pane.dirty = true;
         }
         Ok(Value::Null)
+    });
+    // `WebAnswerAntigravity` (MainWindow.WebShell.Cards.cs:135): the card's answer, why nothing happened or null.
+    methods.add("antigravityAnswer", |host: Arc<Host>, args| async move {
+        let (pane, card, decision) = crate::antigravity::arguments(&args);
+        let decision = crate::antigravity::decision(decision).ok_or_else(|| "Unknown decision.".to_string())?;
+        let id = ensure(&mut host.view(), pane)?;
+        let card = card.unwrap_or("").to_string();
+        Ok(crate::antigravity::web_answer(&host, &id, &card, decision).await.map_or(Value::Null, Value::from))
     });
     // The status line's trust question is W6's: with no workspace command waiting for trust, there is nothing to answer (C# returns).
     methods.add("statusLineTrust", |host: Arc<Host>, args| async move {

@@ -7,12 +7,11 @@
 
 mod common;
 
-use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use mighty_core::graph::MightyGraphRun;
 use mighty_core::model::{AgentActivity, LogEntry, Workspace};
-use mighty_run::graph::{GraphFactory, GraphSink, GraphStart};
+use mighty_run::graph::{ChildSources, GraphFactory, GraphSink, GraphStart};
 use mighty_run::model::{RunEvent, StartRunRequest};
 use mighty_run::mods::ModMetadata;
 use mighty_run::{RunManager, RunManagerOptions};
@@ -75,8 +74,8 @@ impl GraphSink for LiveSink {
     fn take_notice_runs(&mut self, _include_running: bool) -> Vec<MightyGraphRun> {
         vec![]
     }
-    fn read_children(&mut self, environment: &BTreeMap<String, String>, closing: bool) {
-        self.reads.lock().unwrap().push((closing, environment.keys().any(|k| k.eq_ignore_ascii_case("PATH"))));
+    fn read_children(&mut self, sources: &ChildSources<'_>, closing: bool) {
+        self.reads.lock().unwrap().push((closing, sources.environment.keys().any(|k| k.eq_ignore_ascii_case("PATH"))));
     }
 }
 
