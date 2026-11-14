@@ -516,6 +516,55 @@ mod real {
         remove(&parent);
     }
 
+    /// A repository's own config must not run a program while the work map reads it: with `log.showSignature=true` and
+    /// `gpg.program` naming a script, a plain `git log` of a signed commit runs the script (checked first, so the check cannot pass
+    /// for want of a reproduction); the work map's reads, and even an explicit `--show-signature` through its git, never do.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn work_map_a_repositorys_signature_settings_run_no_program() {
+        let Some(program) = mighty_workmap::git::executable() else { return };
+        let parent = temp("signature");
+        let git = git(&parent);
+        let folder = parent.join("repo");
+        std::fs::create_dir_all(&folder).unwrap();
+        run_git(&git, &folder, &["init", "-q"]).await;
+        commit(&git, &folder, "a.txt", "(mac) plain", "2026-01-01T00:00:00+00:00").await;
+        // A signed commit on top, its signature a made-up one (the script is asked to check it, whatever it holds).
+        let tree = git.run(&["rev-parse", "HEAD^{tree}"], &folder, 30.0).await.unwrap();
+        let parent_commit = git.run(&["rev-parse", "HEAD"], &folder, 30.0).await.unwrap();
+        let object = format!(
+            "tree {}\nparent {}\nauthor a <a@example.com> 1767225600 +0000\ncommitter a <a@example.com> 1767225600 +0000\ngpgsig -----BEGIN PGP SIGNATURE-----\n \n iQEzBAABCAAdFiEE\n -----END PGP SIGNATURE-----\n\n(windows) signed\n",
+            mighty_workmap::git::line(&tree.stdout),
+            mighty_workmap::git::line(&parent_commit.stdout)
+        );
+        std::fs::write(parent.join("signed.txt"), object).unwrap();
+        let signed_file = parent.join("signed.txt").to_string_lossy().into_owned();
+        let written = git.run(&["hash-object", "-t", "commit", "-w", &signed_file], &folder, 30.0).await.unwrap();
+        run_git(&git, &folder, &["update-ref", "HEAD", mighty_workmap::git::line(&written.stdout)]).await;
+        let marker = parent.join("gpg-ran");
+        let script = parent.join("gpg.bat");
+        std::fs::write(&script, format!("@echo off\r\necho ran> \"{}\"\r\n", marker.display())).unwrap();
+        let script_text = script.to_string_lossy().into_owned();
+        for setting in [["log.showSignature", "true"], ["gpg.program", &script_text], ["gpg.ssh.program", &script_text]] {
+            run_git(&git, &folder, &["config", setting[0], setting[1]]).await;
+        }
+        let plain = std::process::Command::new(&program)
+            .args(["-C", &folder.to_string_lossy(), "log", "-n", "1", "--format=%H"])
+            .output()
+            .expect("git runs");
+        assert!(plain.status.success() && marker.exists(), "the repository's settings run the script under a plain git log");
+        std::fs::remove_file(&marker).unwrap();
+
+        let (empty, none) = (IndexMap::new(), HashMap::new());
+        let model = mighty_workmap::build(&git, &folder, &[], &empty, None, &none).await;
+        assert!(model.available && model.versions.len() == 1, "the map reads the repository: {model:?}");
+        let subjects: Vec<&str> = model.versions[0].commits.iter().map(|c| c.subject.as_str()).collect();
+        assert_eq!(subjects, ["signed", "plain"], "both commits, the signed one first");
+        assert!(!marker.exists(), "the work map's git log ran the repository's gpg program");
+        let explicit = git.run(&["log", "-n", "1", "--show-signature", "--format=%H"], &folder, 30.0).await;
+        assert!(explicit.is_some() && !marker.exists(), "even an explicit --show-signature runs no program of the repository's");
+        remove(&parent);
+    }
+
     /// WorkMapVerification.cs:220 `ClaudeIsAskedOnceInAFolderOfItsOwn`.
     #[tokio::test(flavor = "multi_thread")]
     async fn work_map_claude_is_asked_once_in_a_folder_of_its_own_with_a_time_limit() {

@@ -423,7 +423,19 @@ async fn read_commits(git: &Git, root: &Path, range: &str) -> Option<(Vec<WorkMa
     let limit = MAXIMUM_COMMITS_PER_VERSION.to_string();
     let log = git
         .run(
-            &["-c", "core.quotepath=false", "log", "--no-merges", "--format=%x1e%H%x1f%aI%x1f%s", "--name-only", "-n", &limit, range, "--"],
+            &[
+                "-c",
+                "core.quotepath=false",
+                "log",
+                "--no-merges",
+                "--no-show-signature",
+                "--format=%x1e%H%x1f%aI%x1f%s",
+                "--name-only",
+                "-n",
+                &limit,
+                range,
+                "--",
+            ],
             root,
             GIT_TIMEOUT_SECONDS,
         )
