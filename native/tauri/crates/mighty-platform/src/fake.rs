@@ -58,6 +58,7 @@ pub struct FakeProcessHost {
     scripts: Mutex<VecDeque<FakeScript>>,
     spawned: Mutex<Vec<SpawnRequest>>,
     inputs: Mutex<Vec<Arc<Mutex<Vec<u8>>>>>,
+    children: Mutex<Vec<Arc<FakeChild>>>,
     next_id: Mutex<u32>,
 }
 
@@ -71,6 +72,10 @@ impl FakeProcessHost {
     /// What the `index`th child received on stdin.
     pub fn input(&self, index: usize) -> Vec<u8> {
         lock(&self.inputs).get(index).map(|input| lock(input).clone()).unwrap_or_default()
+    }
+    /// Whether the `index`th child was closed ([`ChildControl::close`]) so far.
+    pub fn closed(&self, index: usize) -> bool {
+        lock(&self.children).get(index).is_some_and(|child| *lock(&child.closed))
     }
 }
 
@@ -162,6 +167,7 @@ impl ProcessHost for FakeProcessHost {
                 1000 + *next
             };
             let control = Arc::new(FakeChild { exit: Exit::new((!script.hang).then_some(script.exit_code)), closed: Mutex::new(false) });
+            lock(&self.children).push(control.clone());
             Ok(Child::new(
                 id,
                 Box::new(Recorder(input)),

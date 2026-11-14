@@ -305,3 +305,32 @@ async fn the_probe_writes_initialize_once_reads_the_answer_and_closes_its_input(
     let _ = std::fs::remove_file(&marker);
     common::remove_when_free(&state).await;
 }
+
+/// C#'s `await using` on the probe's child and on each `hermes config` child: closed, and the close awaited, before the call returns,
+/// not left to a task of its own. On one thread (tokio's current-thread runtime) a close left to a task could not have run yet.
+#[tokio::test]
+async fn the_probe_and_a_config_read_close_their_child_before_they_return() {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use mighty_platform::fake::{FakeProcessHost, FakeScript};
+    use mighty_run::acp::agents::{self, QuestionOutcome};
+    use mighty_run::model::CliCommand;
+    use mighty_run::providers::ProviderCatalog;
+
+    common::korean();
+    let host = Arc::new(FakeProcessHost::default());
+    let catalog = ProviderCatalog::new(host.clone(), common::environment(), None);
+    let folder = std::env::temp_dir();
+    let command = CliCommand::new(folder.join("hermes").to_string_lossy().into_owned(), vec![], None);
+    let environment: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    host.push(FakeScript { stdout: format!("{}\n", fixture_line("hermes-acp-answer.jsonl")).into_bytes(), ..FakeScript::default() });
+    let probe = accounts::hermes_probe(&catalog, &command, &environment, &folder, Duration::from_secs(5)).await;
+    assert!(probe.is_some_and(|p| p.answered) && host.closed(0), "the probe's child is closed when the probe returns");
+    host.push(FakeScript { stdout: b"[\"hermes-acp\",\"clarify\"]\n".to_vec(), ..FakeScript::default() });
+    let applied = agents::hermes_apply_question_tool(&catalog, &command, &environment, &folder.to_string_lossy()).await;
+    assert!(
+        applied == Some((QuestionOutcome::Ready, None)) && host.closed(1),
+        "the config read's child is closed when it returns: {applied:?}"
+    );
+}

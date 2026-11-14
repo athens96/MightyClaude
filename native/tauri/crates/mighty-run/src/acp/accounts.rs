@@ -317,6 +317,16 @@ pub fn hermes_status(probe: Option<&Probe>) -> CliAccountStatus {
 /// Ends the probe's child whatever happened to the probe.
 struct CloseOnDrop(Option<Arc<dyn ChildControl>>);
 
+impl CloseOnDrop {
+    /// The child closed here and awaited (C#'s `await using` on the way out), so nothing of it is left once the probe returns; the drop
+    /// closes it in a task of its own only when the probe's future is dropped first.
+    async fn close(mut self) {
+        if let Some(control) = self.0.take() {
+            let _ = control.close().await;
+        }
+    }
+}
+
 impl Drop for CloseOnDrop {
     fn drop(&mut self) {
         if let Some(control) = self.0.take() {
@@ -370,7 +380,7 @@ pub async fn hermes_probe(
     };
     drop(stdin);
     let _ = tokio::time::timeout(EXIT_GRACE, control.wait()).await;
-    drop(guard);
+    guard.close().await;
     Some(answer.unwrap_or(Probe { provider: None, answered: false, timed_out, version: None }))
 }
 

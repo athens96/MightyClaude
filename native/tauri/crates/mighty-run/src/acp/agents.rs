@@ -464,6 +464,16 @@ struct Ran {
 /// Ends a child that a dropped future still owned (C#'s `await using`).
 struct CloseOnDrop(Option<Arc<dyn ChildControl>>);
 
+impl CloseOnDrop {
+    /// The child closed here and awaited (C#'s `await using` on the way out), so nothing of it is left once the call returns; the drop
+    /// closes it in a task of its own only when the future is dropped first.
+    async fn close(mut self) {
+        if let Some(control) = self.0.take() {
+            let _ = control.close().await;
+        }
+    }
+}
+
 impl Drop for CloseOnDrop {
     fn drop(&mut self) {
         if let Some(control) = self.0.take() {
@@ -509,7 +519,7 @@ async fn run_cli(
         Some(Ran { code, output: utf16_prefix(&output, 1_048_576), error })
     };
     let ran = tokio::time::timeout(Duration::from_secs(20), read).await.ok().flatten();
-    drop(guard);
+    guard.close().await;
     ran
 }
 
