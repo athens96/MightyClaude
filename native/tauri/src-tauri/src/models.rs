@@ -108,6 +108,14 @@ pub fn refresh(host: &Host, state: &AppSnapshot, id: &str, invalidate: bool) {
     }
 }
 
+/// `ModelsAfterAccountChange(provider)` (MainWindow.ModelRefresh.cs:39, W6-C): a sign-in or sign-out changed what that CLI lists, so
+/// its lists in hand are old in every workspace (`ModelCatalogRefresh.Invalidate`): none is used again and the next request reads anew.
+pub fn after_account_change(host: &Host, provider: &str) {
+    if let Some(models) = models(host) {
+        models.refresh.invalidate(Some(provider));
+    }
+}
+
 /// `RefreshPaneModels` → `RefreshRuntime` → `ReloadProviderModels` (MainWindow.WorkflowParity.cs:27, MainWindow.Settings.cs:955-972):
 /// the model menu's refresh row, and a new conversation, read the pane's list again now, a reading already under way reading again
 /// first; the list read is its folder's newest, so a run about to start within the minute takes it rather than an older one, and the

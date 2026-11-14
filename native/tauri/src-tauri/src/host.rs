@@ -474,6 +474,8 @@ impl Host {
             active_git_key(snapshot).and_then(|key| git.as_ref().filter(|(k, _)| *k == key).and_then(|(_, info)| info.as_ref()));
         // The setup's badge and banner (setup.rs, W6-B), read with the state locked.
         let setup = crate::setup::shell_flags(self, snapshot);
+        // The account usage's chips, popover and dashboard bars (usage.rs, W6-C), read with the state locked.
+        let usage = crate::usage::shell(self, snapshot);
         let context = ShellContext {
             locale: self.locale,
             version: &self.version,
@@ -491,6 +493,7 @@ impl Host {
             setup_badge: setup.badge,
             setup_needed: setup.needed,
             remote: &empty_remote,
+            usage: usage.as_ref(),
         };
         shell_model(snapshot, &context, layout_defaults)
     }

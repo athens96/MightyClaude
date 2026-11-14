@@ -146,7 +146,7 @@ pub fn account_row(ui: &mut Ui, row: &AccountRow, reading: bool, actions: &Arc<d
     // A button of the row waits while the row works (`holds`); "cancel waiting" never does: it is what ends the wait.
     let held = !row.working;
     let push = |ui: &Ui, title: String, aid: Option<String>, action: Box<dyn Fn() + Send + Sync>| {
-        let mut button = ui.settings_push(ui.button(title, move || action()), ControlSize::Regular, false, false).va(VAlign::Top);
+        let mut button = ui.settings_push(ui.button(title, action), ControlSize::Regular, false, false).va(VAlign::Top);
         if let Some(aid) = aid {
             button.aid = Some(aid);
         }
