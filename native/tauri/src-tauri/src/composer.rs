@@ -319,15 +319,18 @@ pub fn drain_queue(host: Arc<Host>, id: String) {
                 if status == "running" || status == "error" || ui.view.starting || ui.view.queue_starting || running(&host, &id) {
                     continue;
                 }
-                let item = ui.queue.items()[0].clone();
                 ui.view.queue_starting = true;
                 ui.dirty = true;
-                // The decision made when the item was queued wins; an Antigravity card's continuation carries its rules.
-                let continuation = ui.continuations.get(&item.id).cloned();
-                (item, continuation)
+                ui.queue.items()[0].id.clone()
             };
-            let (next, continuation) = next;
             crate::models::prepare(&host, &id).await;
+            // A stop, a removal or the pane's close while the models were checked starts nothing.
+            let taken = {
+                let mut view = host.view();
+                let alive = panes::alive(&view, &id);
+                still_queued(view.panes.get_mut(&id), alive, &next)
+            };
+            let Some((next, continuation)) = taken else { return };
             let outcome =
                 start_run(&host, &id, &next.text, next.attachments.clone(), next.permission_mode_override.clone(), continuation).await;
             let mut view = host.view();
@@ -345,6 +348,25 @@ pub fn drain_queue(host: Arc<Host>, id: String) {
             return;
         }
     });
+}
+
+/// A queued Antigravity card's rules and card (`QueuedComposerInput.AntigravityGrant`/`AntigravityCard`).
+type Continuation = (mighty_run::antigravity::AllowGrant, mighty_run::antigravity::PermissionRequest);
+
+/// C# `TakeNextQueuedInput` once `PrepareModels` is over (MainWindow.QueuedComposer.cs:456-457): the item the queue's start took, read
+/// again from the queue with its continuation (the decision made when it was queued wins; an Antigravity card's continuation carries
+/// its rules). None when the pane went (`QueuePaneAlive`) or the item left the queue meanwhile (removed, or cancelled by a stop): the
+/// start is given up, `queue_starting` cleared and the composer drawn again.
+fn still_queued(ui: Option<&mut panes::PaneUi>, alive: bool, item: &str) -> Option<(queue::QueuedComposerInput, Option<Continuation>)> {
+    let ui = ui?;
+    let queued = ui.queue.items().iter().find(|q| q.id == item).filter(|_| alive).cloned();
+    let Some(queued) = queued else {
+        ui.view.queue_starting = false;
+        ui.dirty = true;
+        return None;
+    };
+    let continuation = ui.continuations.get(&queued.id).cloned();
+    Some((queued, continuation))
 }
 
 // ── attachments ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1036,4 +1058,72 @@ fn run_now_rows(host: &Host, view: &mut View, id: &str) -> Vec<(String, QueueRun
 /// The user's home folder (the slash catalogue's `~/.claude`).
 pub(crate) fn dirs_home() -> std::path::PathBuf {
     std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(std::path::PathBuf::from).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use mighty_core::locale::Locale;
+    use mighty_run::antigravity::{AllowGrant, PermissionRequest};
+
+    use super::{panes, queue, still_queued};
+
+    /// A pane view whose queue's start took its first item and waits for the models (`queue_starting`), a second item behind it; the
+    /// first carries an Antigravity card's continuation.
+    fn waiting() -> (panes::PaneUi, String, String) {
+        let locale = Locale::new("en");
+        let mut ui = panes::PaneUi::default();
+        let first = ui.queue.add("first", vec![], None, false, true, &locale).unwrap().id;
+        let second = ui.queue.add("second", vec![], Some("plan"), false, false, &locale).unwrap().id;
+        let grant = AllowGrant { request_id: "agy-1".into(), rules: vec!["run_command(echo hi)".into()], temporary: true };
+        let card = PermissionRequest { id: "agy-1".into(), run_id: "run-1".into(), actions: vec![], received_at: None };
+        ui.continuations.insert(first.clone(), (grant, card));
+        ui.view.queue_starting = true;
+        ui.dirty = false;
+        (ui, first, second)
+    }
+
+    /// Nothing happened while the models were checked: the item starts as it is queued now, with its Antigravity continuation.
+    #[test]
+    fn an_item_still_queued_starts_with_its_continuation() {
+        let (mut ui, first, _) = waiting();
+        let (item, continuation) = still_queued(Some(&mut ui), true, &first).expect("still queued");
+        assert_eq!((item.id.as_str(), item.text.as_str()), (first.as_str(), "first"));
+        let (grant, card) = continuation.expect("the card's continuation goes with it");
+        assert_eq!((grant.request_id.as_str(), card.id.as_str()), ("agy-1", "agy-1"));
+        assert!(ui.view.queue_starting, "the start goes on");
+    }
+
+    /// `queueRemove` while the models were checked (MainWindow.QueuedComposer.cs:457): the removed item never starts, the one behind it
+    /// stays queued, and the composer is free again.
+    #[test]
+    fn an_item_removed_during_the_model_check_does_not_start() {
+        let (mut ui, first, second) = waiting();
+        assert!(ui.queue.remove(&first), "the page's queueRemove");
+        assert!(still_queued(Some(&mut ui), true, &first).is_none(), "nothing starts");
+        assert!(!ui.view.queue_starting && ui.dirty, "queue_starting cleared, the composer drawn again");
+        assert_eq!(ui.queue.items().iter().map(|q| q.id.as_str()).collect::<Vec<_>>(), [second.as_str()], "the next one waits");
+    }
+
+    /// A stop while the models were checked cancels what waited (`StopActiveRun`): no cancelled request starts.
+    #[test]
+    fn a_stop_during_the_model_check_starts_no_cancelled_request() {
+        let (mut ui, first, _) = waiting();
+        // The page's stop, as the `stop` method does it for a turn that does not only wait on background work.
+        ui.submission += 1;
+        ui.queue_kept_on_stop = queue::background::stop_keeps_queue(None);
+        if !ui.queue_kept_on_stop {
+            ui.queue.clear();
+        }
+        assert!(still_queued(Some(&mut ui), true, &first).is_none(), "the cancelled request does not start");
+        assert!(!ui.view.queue_starting && ui.dirty);
+    }
+
+    /// The pane closed while the models were checked (`QueuePaneAlive`): nothing starts, whether its view is gone too or not yet.
+    #[test]
+    fn a_pane_closed_during_the_model_check_starts_nothing() {
+        let (mut ui, first, _) = waiting();
+        assert!(still_queued(Some(&mut ui), false, &first).is_none(), "the pane left the state");
+        assert!(!ui.view.queue_starting && ui.dirty);
+        assert!(still_queued(None, false, &first).is_none(), "its view is gone");
+    }
 }
