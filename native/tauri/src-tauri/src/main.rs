@@ -32,6 +32,7 @@ mod terminal;
 mod workmap;
 mod workspace_create;
 
+use std::path::Path;
 use std::sync::Arc;
 
 use mighty_core::locale::Locale;
@@ -253,9 +254,13 @@ fn main() {
             {
                 let _ = std::fs::create_dir_all(folder);
             }
-            // The smoke's stand-in agy writes its own settings, never the user's.
+            // The smoke's stand-in agy writes its own settings, never the user's, and keeps its ledger beside them.
             let agy_settings = fake_claude.as_ref().map(runs::FakeClaude::agy_settings);
-            let agy_rules = antigravity::rules(agy_settings.as_deref(), &antigravity_ledger, &data_dir);
+            let agy_ledger = match agy_settings.as_deref().and_then(Path::parent).and_then(Path::parent).and_then(Path::parent) {
+                Some(home) => home.join(antigravity::LEDGER),
+                None => antigravity_ledger.clone(),
+            };
+            let agy_rules = antigravity::rules(agy_settings.as_deref(), &agy_ledger, &data_dir);
             runs::Runs::start(
                 &host,
                 platform.processes.clone(),

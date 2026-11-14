@@ -447,10 +447,8 @@ async fn fake_cli_receives_attachment_bytes_and_staging_is_removed() {
         mighty_run::attachments::make("source.cs", b"attachment-fixture-contents").unwrap(),
     ];
     let events = Events::default();
-    // pi, Antigravity and the ACP agents are read through their own channels and streams (W5): their runs are refused until then.
-    for provider in
-        mighty_core::wire::PROVIDERS.iter().copied().filter(|p| !matches!(*p, "pi" | "gemini") && !mighty_run::providers::is_acp(p))
-    {
+    // pi and the ACP agents are read through their own channels and streams (W5): their runs are refused until then.
+    for provider in mighty_core::wire::PROVIDERS.iter().copied().filter(|p| *p != "pi" && !mighty_run::providers::is_acp(p)) {
         let record = directory.join(provider);
         let catalog = common::fake_catalog(&["--fake-cli", provider, &record.to_string_lossy(), "--verify-attachments"]);
         let manager = RunManager::new(catalog, RunManagerOptions::new(&plugin, resolve(&workspace), events.emit()));
@@ -805,7 +803,10 @@ async fn pi_runs_are_refused_until_their_stream() {
     let manager = RunManager::new(catalog, RunManagerOptions::new("", resolve(&workspace), events.emit()));
     let refused = manager.start_reached(request("pi", &workspace, "claude", "hello").with_provider("pi")).await;
     let name = mighty_run::providers::name("pi");
-    assert!(matches!(&refused, Err(error) if error.message().starts_with(name) && error.message().contains("does not read yet")), "{refused:?}");
+    assert!(
+        matches!(&refused, Err(error) if error.message().starts_with(name) && error.message().contains("does not read yet")),
+        "{refused:?}"
+    );
     assert_eq!(events.last_status("pi").as_deref(), Some("error"), "pi ends in an error");
     manager.dispose().await;
     assert!(!suffixed(&record, ".args").exists(), "no CLI was launched");
@@ -843,7 +844,10 @@ async fn an_antigravity_run_reads_its_stream() {
     );
     assert_eq!(common::json(prompt.trim_end())["message"]["content"], input, "the prompt is a user event");
     let launched = args(&record);
-    assert!(launched.iter().any(|a| a == "--output-format") && !launched.iter().any(|a| a.contains("say")), "the prompt is never an argument");
+    assert!(
+        launched.iter().any(|a| a == "--output-format") && !launched.iter().any(|a| a.contains("say")),
+        "the prompt is never an argument"
+    );
     common::remove_when_free(&directory).await;
 }
 

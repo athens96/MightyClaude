@@ -243,3 +243,29 @@ pub fn arguments(args: &Value) -> (Option<&str>, Option<&str>, Option<&str>) {
     let text = |key: &str| args.get(key).and_then(Value::as_str);
     (text("paneId"), text("cardId"), text("decision"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `Enum.TryParse<AntigravityPermissionDecision>(decision, ignoreCase: true)` as `antigravityAnswer` reads the page's words.
+    #[test]
+    fn the_page_answers_once_always_or_deny() {
+        assert_eq!(decision(Some("Once")), Some(PermissionDecision::Once));
+        assert_eq!(decision(Some("always")), Some(PermissionDecision::Always));
+        assert_eq!(decision(Some(" DENY ")), Some(PermissionDecision::Deny));
+        assert_eq!(decision(Some("1")), Some(PermissionDecision::Always));
+        assert_eq!(decision(Some("allow")), None);
+        assert_eq!(decision(None), None);
+        let json = serde_json::json!({"paneId": "p", "cardId": "agy-1", "decision": "Once"});
+        assert_eq!(arguments(&json), (Some("p"), Some("agy-1"), Some("Once")));
+    }
+
+    /// The ledger is the profile's only when the app may write it; else this machine's own for the profile.
+    #[test]
+    fn the_ledger_stays_out_of_the_profile_without_writes() {
+        let (profile, local) = (Path::new("profile"), Path::new("local"));
+        assert_eq!(ledger_path(profile, local, "key", true), profile.join(LEDGER));
+        assert_eq!(ledger_path(profile, local, "key", false), local.join("antigravity").join("key").join(LEDGER));
+    }
+}

@@ -113,7 +113,7 @@ fn activities() {
     assert_eq!(activity::duration_label(&complete).as_deref(), Some("1.2초"), "Duration display must not round up");
 }
 
-/// ProviderUsage's Codex half (Antigravity's stream is W5's).
+/// ActivityUsageVerification.cs:31 `ProviderUsage`: Codex's cumulative snapshots and Antigravity's streamed answer, totals and tool rows.
 #[test]
 fn provider_usage() {
     common::korean();
@@ -136,6 +136,44 @@ fn provider_usage() {
         "Codex cumulative snapshots must not sum or invent context/model"
     );
     assert!(seen.activity().iter().any(|a| a.kind == "command" && a.output.as_deref() == Some("clean")), "Codex command content missing");
+    // Antigravity: a long Markdown answer streamed in pieces stays one message; its totals are not context usage.
+    let seen = Seen::default();
+    let gemini = OutputParser::new("gemini", "gemini-usage", seen.hooks(true));
+    gemini.parse(r#"{"event":"init","conversation_id":"11111111-2222-4333-8444-555555555555","init":{"model":"gemini-3.8-flash-low"}}"#);
+    let markdown = format!("```swift\n{}\n```\n\n|a|b|\n|-|-|\n|1|2|", "x".repeat(20000));
+    let chars: Vec<char> = markdown.chars().collect();
+    for chunk in chars.chunks(3000) {
+        let piece: String = chunk.iter().collect();
+        gemini.parse(
+            &serde_json::json!({"event": "step_update", "step_update": {"step_index": 1, "state": "ACTIVE", "step_type": "agent_response", "text_delta": piece}})
+                .to_string(),
+        );
+    }
+    gemini.parse(r#"{"event":"step_update","step_update":{"step_index":1,"state":"DONE","step_type":"agent_response"}}"#);
+    gemini.parse(r#"{"event":"step_update","step_update":{"step_index":2,"state":"ACTIVE","step_type":"tool","tool_info":{"name":"view_file","parameters":{"AbsolutePath":"file.swift"}}}}"#);
+    gemini.parse(r#"{"event":"step_update","step_update":{"step_index":2,"state":"DONE","step_type":"tool","tool_info":{"name":"view_file","parameters":{"AbsolutePath":"file.swift"},"output":"content"}}}"#);
+    gemini.parse(r#"{"event":"result","result":{"status":"SUCCESS","response":"repeated","usage":{"input_tokens":1400,"output_tokens":90,"cache_read_tokens":200,"total_tokens":1490}}}"#);
+    let answers: Vec<String> = seen.logs().into_iter().filter(|(kind, _)| kind == "assistant").map(|(_, text)| text).collect();
+    assert_eq!(answers, [markdown], "Long Markdown must remain one logical message across delta reads");
+    let last = seen.last_usage();
+    assert!(
+        last.total_tokens == Some(1690)
+            && last.input_tokens == Some(1600)
+            && last.context_used_tokens.is_none()
+            && last.context_window_tokens.is_none()
+            && last.token_scope == "session",
+        "Antigravity totals are not context usage, and input includes cached input"
+    );
+    assert!(
+        seen.activity().iter().any(|a| a.tool_name.as_deref() == Some("view_file")
+            && a.summary == "file.swift"
+            && a.output.as_deref() == Some("content")
+            && a.state == "completed"),
+        "Antigravity tool lifecycle missing"
+    );
+    gemini.parse(r#"{"event":"result","result":{"status":"ERROR","error":{"message":"failed"}}}"#);
+    gemini.parse(r#"{"event":"result","result":{"status":"WAITING"}}"#);
+    assert!(gemini.failed(), "A later notice must not clear a fatal error");
 }
 
 #[test]
@@ -254,8 +292,8 @@ fn leftover_task_result() {
     );
 }
 
-/// Verification.cs "stream parser keeps text after thinking, errors latch and dedupe is bounded": the Claude half (Antigravity's is
-/// W5's; the Codex dedupe set is private and bounded the same way, by `seen`'s key hash).
+/// Verification.cs "stream parser keeps text after thinking, errors latch and dedupe is bounded": the Claude half and Antigravity's
+/// latched error (the Codex dedupe set is private and bounded the same way, by `seen`'s key hash).
 #[test]
 fn stream_parser_keeps_text_after_thinking() {
     common::korean();
@@ -264,6 +302,11 @@ fn stream_parser_keeps_text_after_thinking() {
     parser.parse(r#"{"type":"assistant","message":{"id":"a","content":[{"type":"thinking","thinking":"private"}]}}"#);
     parser.parse(r#"{"type":"assistant","message":{"id":"a","content":[{"type":"text","text":"visible"}]}}"#);
     assert_eq!(seen.logs().into_iter().map(|(_, text)| text).collect::<Vec<_>>(), ["visible"]);
+    // An Antigravity error stays the run's failure whatever status comes after it.
+    let gemini = OutputParser::new("gemini", "latched", Seen::default().hooks(false));
+    gemini.parse(r#"{"event":"result","result":{"status":"ERROR"}}"#);
+    gemini.parse(r#"{"event":"result","result":{"status":"WAITING"}}"#);
+    assert!(gemini.failed(), "an Antigravity error latches");
 }
 
 /// ComposerParityVerification.StreamEventsReachTheTranscript (M/MightyCore/CLIStreamParser.swift:383-384, 432-437). The Codex
