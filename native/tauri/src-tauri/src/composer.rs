@@ -549,16 +549,16 @@ fn validate_settings(pane: &RunSession, setting: &RunSettings) -> Result<(), Str
     probe.validate().map(|_| ()).map_err(|e| e.message().to_string())
 }
 
-/// A pane's models read again in the background (`RefreshPaneModels`), the composer told when they are in.
+/// A pane's models read again in the background (`RefreshPaneModels`) through the model lists' own refresh, which reconciles the panes
+/// with the list (models.rs); the composer told when they are in.
 fn refresh_models(host: &Arc<Host>, view: &View, id: &str) {
-    let Some(pane) = view.snapshot.session(id).cloned() else { return };
-    let folder = view.snapshot.workspace(pane.workspace_id()).filter(|w| w.remote.is_none()).map(|w| w.path().to_string());
-    let host = host.clone();
+    if view.snapshot.session(id).is_none() {
+        return;
+    }
+    let (host, id) = (host.clone(), id.to_string());
     tauri::async_runtime::spawn(async move {
-        if let Some(runs) = host.runs().cloned() {
-            runs.refresh(pane.provider(), folder.as_deref()).await;
-            host.panes_changed();
-        }
+        crate::models::reload(&host, &id).await;
+        host.panes_changed();
     });
 }
 

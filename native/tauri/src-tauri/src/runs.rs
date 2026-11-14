@@ -288,13 +288,6 @@ impl Runs {
         crate::host::lock(&self.runtime).get(provider).cloned()
     }
 
-    /// One provider read again for a folder (`RefreshProviderAsync`), kept as its runtime.
-    pub async fn refresh(&self, provider: &str, folder: Option<&str>) -> ProviderRuntime {
-        let value = self.catalog.refresh_provider(provider, folder, false).await;
-        crate::host::lock(&self.runtime).insert(provider.to_string(), value.clone());
-        value
-    }
-
     /// A provider's newer reading taken as its runtime (C# `runtime = ProviderCatalog.With(runtime, refreshed)`, models.rs).
     pub fn keep(&self, value: ProviderRuntime) {
         crate::host::lock(&self.runtime).insert(value.id.clone(), value);

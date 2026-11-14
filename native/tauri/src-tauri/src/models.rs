@@ -100,6 +100,22 @@ pub fn refresh(host: &Host, state: &AppSnapshot, id: &str, invalidate: bool) {
     }
 }
 
+/// `RefreshPaneModels` → `RefreshRuntime` → `ReloadProviderModels` (MainWindow.WorkflowParity.cs:27, MainWindow.Settings.cs:955-972):
+/// the model menu's refresh row, and a new conversation, read the pane's list again now, a reading already under way reading again
+/// first; the list read is its folder's newest, so a run about to start within the minute takes it rather than an older one, and the
+/// panes are reconciled with it (`ModelRefreshes.Store` → `AcceptModels`). C# reads every provider of the active workspace; the run
+/// engine here reads the pane's provider in its folder (the note above). A remote workspace's pane and a smoke read nothing.
+pub async fn reload(host: &Host, id: &str) {
+    let Some(models) = models(host) else { return };
+    let Some(key) = context_of(&host.view().snapshot, id) else { return };
+    read_again(&models.refresh, &key).await;
+}
+
+/// The reading [`reload`] waits for: forced, and the list in hand not used (`invalidate`), however new it is.
+async fn read_again(refresh: &ModelCatalogRefresh, key: &ModelContext) -> Option<ProviderRuntime> {
+    refresh.request(key, true, true).wait().await
+}
+
 /// `RefreshSelectedPaneModels`: selecting a pane reads its list again, however it was selected (M/AppStore.swift:546, 565). Looked
 /// at by the pane clock (panes.rs).
 pub fn follow_selection(host: &Host) {
@@ -137,7 +153,7 @@ fn accept(host: &Host, key: &ModelContext, previous: Option<&ProviderRuntime>, r
             .iter()
             .filter(|s| s.workspace_id() == key.workspace_id && s.provider() == key.provider && s.kind() == "claude")
             .map(|s| {
-                let busy = s.status() == "running" || view.panes.get(s.id()).is_some_and(|u| u.view.starting);
+                let busy = s.status() == "running" || update_starting(view.panes.get(s.id()));
                 (s.id().to_string(), busy, (s.model().to_string(), s.settings.clone().unwrap_or_default().effort))
             })
             .collect()
@@ -160,6 +176,11 @@ fn accept(host: &Host, key: &ModelContext, previous: Option<&ProviderRuntime>, r
         }
         reconcile(host, &id, previous.map(|p| &p.model_catalog), &refreshed.model_catalog);
     }
+}
+
+/// `UpdateStarting` (C# `starting || queueStarting`): the pane's send, or its queue's start, is under way.
+fn update_starting(ui: Option<&panes::PaneUi>) -> bool {
+    ui.is_some_and(|u| u.view.starting || u.view.queue_starting)
 }
 
 /// `ReconcileModel`: one pane's model and effort put right against a list, said in its transcript (`ModelSelectionSupport.Adjusted`);
@@ -187,18 +208,20 @@ pub async fn prepare(host: &Host, id: &str) {
     let Some(models) = models(host) else { return };
     let Some(key) = context_of(&host.view().snapshot, id) else { return };
     set_checking(host, id, true);
-    let current = models.refresh.wait_current(&key, None).await;
-    if current {
+    if let Some(value) = list_for_run(&models.refresh, &key).await {
         let prior = lock(&models.prior).remove(id);
-        let value = models.refresh.value(&key);
         let same_provider = host.view().snapshot.session(id).is_some_and(|s| s.provider() == key.provider);
-        if let Some(value) = value
-            && same_provider
-        {
+        if same_provider {
             reconcile(host, id, prior.as_ref(), &value.model_catalog);
         }
     }
     set_checking(host, id, false);
+}
+
+/// The list a run about to start is put right with (`WaitCurrent`, then `Value`): the newest, once in hand; None when it could not
+/// be read in time.
+async fn list_for_run(refresh: &ModelCatalogRefresh, key: &ModelContext) -> Option<ProviderRuntime> {
+    if refresh.wait_current(key, None).await { refresh.value(key) } else { None }
 }
 
 /// `checkingModels`: the editor's placeholder says the models are being checked.
@@ -212,11 +235,110 @@ fn set_checking(host: &Host, id: &str, checking: bool) {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
 
-    use mighty_core::model::{AppSnapshot, RemoteWorkspaceReference, RunSession, Workspace};
+    use mighty_core::model::{AppSnapshot, RemoteWorkspaceReference, RunSession, RunSettings, Workspace};
+    use mighty_run::model::{ModelCatalog, ModelOption, ProviderRuntime};
+    use mighty_run::model_selection::{self, Changed, Loader, ModelCatalogRefresh, ModelContext};
+    use mighty_run::providers;
 
-    use super::context_of;
+    use super::{context_of, list_for_run, read_again, update_starting};
+    use crate::panes::PaneUi;
+
+    /// A new list leaves a pane alone while its send or its queue's start is under way (`UpdateStarting`), until its next request.
+    #[test]
+    fn a_pane_whose_queue_is_starting_is_left_to_its_next_request() {
+        let mut ui = PaneUi::default();
+        assert!(!update_starting(Some(&ui)) && !update_starting(None), "an idle pane, or one without a view, is reconciled");
+        ui.view.queue_starting = true;
+        assert!(update_starting(Some(&ui)), "the queue's start under way");
+        ui.view.queue_starting = false;
+        ui.view.starting = true;
+        assert!(update_starting(Some(&ui)), "a send under way");
+    }
+
+    fn codex(models: Vec<ModelOption>) -> ProviderRuntime {
+        ProviderRuntime {
+            id: "codex".into(),
+            name: providers::name("codex").into(),
+            available: true,
+            version: Some("0.130.0".into()),
+            detail: String::new(),
+            model_catalog: ModelCatalog::new("cli", models, ""),
+            capabilities: providers::capabilities("codex", None),
+        }
+    }
+
+    fn model(value: &str, supports_effort: Option<bool>, levels: Option<&[&str]>) -> ModelOption {
+        ModelOption {
+            supports_effort,
+            supported_effort_levels: levels.map(|l| l.iter().map(|s| s.to_string()).collect()),
+            ..ModelOption::new(value, value, "")
+        }
+    }
+
+    fn pane(model: &str, effort: &str) -> RunSession {
+        RunSession {
+            id: Some("p".into()),
+            workspace_id: Some("w".into()),
+            kind: Some("claude".into()),
+            provider: Some("codex".into()),
+            model: Some(model.into()),
+            settings: Some(RunSettings { effort: effort.into(), ..RunSettings::default() }),
+            ..RunSession::default()
+        }
+    }
+
+    /// The model menu's refresh row reads the list into the model lists' own book (C# `RefreshPaneModels` → `ModelRefreshes.Store` →
+    /// `AcceptModels`): a model and effort picked from the list it read are not put back by the next send, which would otherwise be
+    /// reconciled against the list a run read less than a minute before; and the panes are reconciled with the new list.
+    #[tokio::test]
+    async fn a_model_picked_from_the_refreshed_list_survives_the_next_send() {
+        // The CLI listed m1, and m2 without effort levels; it now lists m2 with them and has dropped m1.
+        let before = codex(vec![model("default", None, None), model("m1", None, None), model("m2", Some(false), None)]);
+        let after = codex(vec![model("default", None, None), model("m2", Some(true), Some(&["low", "high"]))]);
+        let reads = Arc::new(AtomicUsize::new(0));
+        let loader: Loader = {
+            let (reads, before, after) = (reads.clone(), before.clone(), after.clone());
+            Arc::new(move |_: ModelContext| {
+                let value = if reads.fetch_add(1, Ordering::SeqCst) == 0 { before.clone() } else { after.clone() };
+                Box::pin(async move { Ok(value) })
+            })
+        };
+        // Each reading reported: the list before it, and it.
+        type Reported = Vec<(Option<ProviderRuntime>, ProviderRuntime)>;
+        let reported: Arc<Mutex<Reported>> = Arc::default();
+        let changed: Changed = {
+            let reported = reported.clone();
+            Arc::new(move |_: &ModelContext, previous: Option<&ProviderRuntime>, refreshed: &ProviderRuntime| {
+                reported.lock().unwrap().push((previous.cloned(), refreshed.clone()));
+            })
+        };
+        let refresh = ModelCatalogRefresh::new(tokio::runtime::Handle::current(), loader, changed, None);
+        let key = ModelContext::new("w", "C:\\work", "codex");
+
+        // A send a moment ago read the list as it was.
+        assert_eq!(list_for_run(&refresh, &key).await.as_ref(), Some(&before));
+        // The refresh row reads it again at once, however new the one in hand.
+        assert_eq!(read_again(&refresh, &key).await.as_ref(), Some(&after));
+        assert_eq!(reads.load(Ordering::SeqCst), 2, "read again, not answered with the list in hand");
+        // `AcceptModels` hears it with the list before: an idle pane on the model the CLI dropped gives way.
+        let (previous, refreshed) = reported.lock().unwrap().last().cloned().expect("the new list is reported");
+        assert_eq!(previous.as_ref(), Some(&before));
+        let dropped = model_selection::adjusted(&pane("m1", "default"), Some(&before.model_catalog), &refreshed.model_catalog);
+        assert_eq!(dropped.as_ref().map(|p| p.model()), Some("default"), "a pane on a dropped model is reconciled");
+
+        // The user picks m2 at high from the new list; the next send takes the list the row read, without reading again, and keeps it.
+        let picked = pane("m2", "high");
+        let list = list_for_run(&refresh, &key).await.expect("the newest list is in hand");
+        assert_eq!(reads.load(Ordering::SeqCst), 2);
+        assert!(model_selection::adjusted(&picked, None, &list.model_catalog).is_none(), "the pick stands");
+        // Against the list the send read before (what the row's reading used to leave in the book), the effort was put back.
+        let reset = model_selection::adjusted(&picked, None, &before.model_catalog).expect("the older list resets the effort");
+        assert_eq!(reset.settings.as_ref().map(|s| s.effort.as_str()), Some("default"));
+        refresh.shutdown();
+    }
 
     #[test]
     fn a_pane_reads_its_own_folders_list_and_a_remote_workspace_none() {
