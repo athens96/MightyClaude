@@ -89,7 +89,7 @@ porting checklist.
 Each is the C# handler's rule (named beside it). A change is C#'s `UpdateAsync` (normalized, then queued for saving); an action is C#'s
 `Act` (the banner cleared first, what it fails with shown there, the call answering null). The layout actions (`SelectLayoutSession`,
 `ActivatePane`, `SelectWorkspace`, `ApplyLayoutPreset`) live once, in `frame.rs`, and the layout saves in mighty-core's `add_pane`; every
-module uses those. The host answers 123 methods (`tauri-logs/unimplemented.json`'s `implemented` lists them).
+module uses those. The host answers 136 methods (`tauri-logs/unimplemented.json`'s `implemented` lists them).
 
 - **The frame** (`methods.rs`; C# MainWindow.WebShell.cs, MainWindow.Layout.cs, MainWindow.Navigation.cs, MainWindow.Sidebar.cs):
   `getLocale` (the saved `languagePreference`; "system" reads the OS's preferred UI languages in order, C# `Locale.ChosenLanguage`),
@@ -100,7 +100,7 @@ module uses those. The host answers 123 methods (`tauri-logs/unimplemented.json`
 - **The frame's actions** (`frame.rs`; C# MainWindow.WebShell.Shell.cs, MainWindow.Navigation.cs, MainWindow.ResumeSession.cs,
   MainWindow.SmallParity.cs, MainWindow.TextAppearance.cs): `closeSession` (the run stopped and ended, then the pane gone), `focusPane`
   (`toggle` back to custom), `textSize` (Ctrl+= / Ctrl+- / Ctrl+0 over the saved setting, pushed as `text`, and every open terminal takes
-  its size; not saved: W6), `dismissResource`, `renameSession` and `renameWorkspace` (the page's rename sheet; Automatic for an agent pane),
+  its size; saved per user only with `--allow-state-write`, never in a smoke), `dismissResource`, `renameSession` and `renameWorkspace` (the page's rename sheet; Automatic for an agent pane),
   `removeWorkspace` (the page's danger confirmation, every pane's run stopped), `showInExplorer` (the folder's real path, ShellExecute's `explore` verb),
   `pickFolder` (the OS's folder picker owned by the main window; the folder approved for saving and added, a Claude pane in a workspace
   without one), `addMenu` (the entries in the Mac's words, the remote menu, Connect), `addPaneEntry` (terminal, browser, files — files.rs's
@@ -170,8 +170,8 @@ module uses those. The host answers 123 methods (`tauri-logs/unimplemented.json`
 - **The terminals** (`terminal.rs`, C# MainWindow.Terminal.cs, MainWindow.WebShell.Panes.cs, MainWindow.TerminalPrompts.cs,
   MainWindow.ShellBlockRuns.cs, over mighty-terminal): `terminalOpen` (the footer; from then on a `footer` push whenever it changes),
   `terminalMessage` (ready starts the shell — the platform's default shell in the workspace's folder at the page's grid, with the CLI
-  environment —, input, resize, title, directory, copy, paste, pressed), `terminalRestart`, `terminalHistory` (its content only: the
-  dialog is a native panel, W6), `terminalPromptAnswer`, `terminalPromptShow`, `shellBlockRun` (only the command the reply shows, in
+  environment —, input, resize, title, directory, copy, paste, pressed), `terminalRestart`, `terminalHistory` (the pane's saved entries in the
+  native panel `terminalHistory`, dialog D14), `terminalPromptAnswer`, `terminalPromptShow`, `shellBlockRun` (only the command the reply shows, in
   the agent pane's terminal, its `agent-terminal` pane opened beside it, the record streamed at most every 200 ms), `shellBlockStop`.
   Pushes `{kind:'terminal', paneId, message}` (output each 32 ms, paste, reset, font, theme, footer); the font is the text setting's
   (12 pt at 100% to the nearest half point, the code font when one is chosen), given again to every open terminal when the theme or the
@@ -198,6 +198,20 @@ module uses those. The host answers 123 methods (`tauri-logs/unimplemented.json`
   again as `workmap` when it ends), `workMapOpenFile` (files.rs's `open_file_in_pane`: the file revealed, selected and previewed in the
   workspace's files pane, then `files{paneId, path}` pushed). The summaries are kept in `<profile>/work-map` with
   `--allow-state-write`, else in this machine's local folder for the profile.
+- **The native forms** (W6: `native.rs` over mighty-native, C# MainWindow.WebShell.Settings.cs `WebNativeSurface`): `nativeState`,
+  `nativeAction`, `nativeNav`, `nativeButton`, `nativeClose`. Each open surface (Settings, the setup screen, the plugin window, a dialog,
+  a panel) is read into the page's NativeNode JSON by mighty-native's port of C#'s `WebNativeReader` and pushed as `native{id, place,
+  view}` when it opens, after an input or a nav and on the frame's 250 ms clock, only when its text changed; `text{…}` carries the text
+  setting. `--native-dump <file>` writes every push as sent (the parity capture below).
+- **Settings and the screens it opens** (W6): `openSettings` (`settings/`: nine categories, seventeen boxes in the Mac's order, the
+  saved `SettingsPane`), `openHelp` (the guide in the user's browser; a smoke logs it), `openSetup` (`setup.rs`: the setup screen, its
+  probes, the install script in a terminal window of its own through `TerminalLauncher`, its sign-in row awaiting the CLI's own sign-in
+  and saying its refusal), `openPlugins` (`plugins.rs`: the plugin window over mighty-updates), `sessionInfo` (`composer.rs`: the pane's
+  numbers), `loginAction` (`accounts.rs`: the sign-in card and login recovery), `usageRefresh` and `usageDirect` (`usage.rs`: the status
+  bar's usage chips, the popover and the dashboard's bars; Claude's direct lookup only to `api.anthropic.com`). The status line
+  (`status_line.rs`), the completion toast (`notifications.rs`), the CLI and plugin updates and their holds (`updates.rs`) come with them.
+  Anything that changes the machine (installs, sign-ins and sign-outs, updates, the toast's registration, the user's registry) runs only
+  with `--allow-state-write` and never in a smoke; otherwise the row says "verification mode".
 
 ### The run engine in the app
 
@@ -268,24 +282,18 @@ What a later stage gives the composer, the cards and the Mighty views stays at i
 
 | Input | Until then | Stage |
 |---|---|---|
-| `BackgroundUpdateHolds`, `ManualMutationBlockReason`, `ManualUpdateReason` | nothing holds a pane | W6 |
-| `SetupItemForMissingCli` (the blocked row's install button), `installCli` | no install offered; `installCli` does nothing | W6 |
 | `SecondSend`, `WorktreeMenuOnly`, `HeldItems`, `Delegation.EndingRuns`, `queueRunNowMenu` | Ctrl+Enter queues as Enter; no held rows; the menu is empty | W7 |
 | `RemoteWorkspaceFeatures.BlockedReason`, a remote pane's runs (`RemoteRunner`) | none | W8 |
 | The style row, the guide panel, a guided question, a style's prompt and plan mode (`activeStyle`) | no style; typed text goes to the agent as typed | W9 |
-| A typed built-in (`SubmitTypedBuiltin`), the slash palette's usage, settings and plugins actions | sent as text; those actions do nothing | W6 |
 | The phone's "send to" switch and its `setAskTarget` route | none | W8 |
-| The custom model dialog (typed: mighty-composer `custom_model`), Settings › 페이즈별 모델 (typed: mighty-run `phase_section::form` and its actions), the plugin window | none drawn | W6 |
 | Background strip rows (`PlanCardSupport.BackgroundStripRows`) | the strip's line without rows | W8 |
-| The agents' web-open prompts (Agent IO's `open_url`), the sign-in card, the status line | none | W7, W6, W6 |
-| The shell pane's history dialog (`terminalHistory`: a native panel), the agent's `run_in_terminal` tools (Agent IO), a command typed into a new shell pane (`RunTerminalCommandAsync`: style installs, sign-ins), the phone's view of a shell's status and of a terminal prompt (`terminal::Pending`) | the history's content made, nothing shown; the agents' terminals exist for shell block runs only; nothing typed | W6, W7, W6/W9, W8 |
+| The agents' web-open prompts (Agent IO's `open_url`) | none | W7 |
+| The agent's `run_in_terminal` tools (Agent IO), a command typed into a new shell pane (`RunTerminalCommandAsync`: style installs; a sign-in opens a terminal window of its own), the phone's view of a shell's status and of a terminal prompt (`terminal::Pending`) | the agents' terminals exist for shell block runs only; nothing typed | W7, W9, W8 |
 | The Ouroboros dashboard, background output tails, custom agents' definitions | empty; `mightyOpenDashboard` only marks the view | W9 |
 | An Antigravity card on the phone and over the remote wire (`MobilePermission.FromAntigravity`, `MobileAntigravityCard`, the permission route's answers, a remote pane's host holding the card's rules in its own settings, `RemoteWireStart.AntigravityGrant`), the dashboard's count of a pane's card (`WorkDashboard.Pending`) | none: AntigravityPermissionVerification.cs:494, :511, :534 (its phone half), :683, :727 are W8's; the dashboard is the frame's later stage | W8, W6 |
-| Saving the text setting (Settings › Text), the files and work map panes' phone routes, the work dashboard's usage chips | the setting lasts until the app quits; none | W6, W8, W6 |
-| `ModelsAfterAccountChange` (a sign-in or sign-out drops every model list of that provider: models.rs over `ModelCatalogRefresh::invalidate`, before the accounts section's whole-runtime read) | nothing signs in or out in the app yet, so no list is dropped for it | W6 |
-| The rest of AntigravityVerification.cs:158 `TheModelListLabelsAndInstall`: the catalog row's filtering and fallback, `Efforts`/`IsBeta`, `Executable` for codex and claude, the install command, the update label, the `ModelLabel` slugs, the off-Windows block | its model list and a fake agy's models are checked (tests/antigravity.rs, W5-D's model lists); the setup screen's rows are not | W6 |
+| The files and work map panes' phone routes | none | W8 |
 
-Settings › 페이즈별 모델's form (W6) must check every model it saves with `wire::model` (the composer's `ChangeModel` rule) before it
+Settings › 페이즈별 모델's form (W6) checks every model it saves with `wire::model` (the composer's `ChangeModel` rule) before it
 reaches mighty-run's `model_settings` writes, which take what they are given, as C#'s `ModelSettingsFileStore` does: a value with a line
 break adds lines to Ouroboros's `config.yaml`. The writes keep C#'s other limits too, for W6 to settle: the comments in omc's
 `config.jsonc` are dropped, a rewritten YAML line loses its CRLF, a symlinked config is replaced by a plain file, the file's permissions
@@ -293,16 +301,23 @@ are not kept, and the temporary file is not flushed before it replaces the confi
 
 ### Unimplemented page methods
 
-What the page calls that the host answers `unimplemented` (the page's `bridge.call`s against `implemented`; a full smoke meets only
-`nativeState`):
+What the page calls that the host answers `unimplemented` (the page's `bridge.call`s against `implemented`; a full smoke meets none:
+`unimplemented: []`):
 
 | Methods | Stage |
 |---|---|
-| `nativeState`, `nativeAction`, `nativeNav`, `nativeButton`, `nativeClose` (the NativeNode forms: settings screens and dialogs) | W6 |
-| `openSettings`, `openSetup`, `openHelp`, `openPlugins`, `sessionInfo`, `loginAction`, `usageRefresh`, `usageDirect` | W6 |
 | `childAction` (a delegated child's row) | W7 |
 | `connectRemote`, `companionStatus`, `companionToggle` | W8 |
 | `guidedAction`, `postponeUpdate`, `restartForUpdate` | W9 |
+
+Left after W6:
+- A click on a completion toast reaches the running app only (the toast's own handler). Windows' Action Center keeps a toast after the
+  app quit; bringing the app back from there needs a COM activator registered for the app (C# review M3), a change to the machine
+  deferred to W9 with the other installer work.
+- Settings › 페이즈별 모델's add field takes its model with the 추가 button; Enter in the field adds it only once the page sends the key
+  (C#'s field handles Enter itself; the page's native field does not report it yet).
+- The later-stage boxes (screen view, mobile remote, remote workspaces, companion, styles) show C#'s host-absent states: their actions
+  wait for W7–W9 (the parity capture below lists them as differing from C#'s full boxes).
 
 ## Platform ports and native surfaces
 
@@ -391,6 +406,24 @@ the real profile and of `release/perf` and `release/help-capture-final` — and 
 missing SDK a failure), and `delta.rs`'s tests compare 600 random deltas with C#'s `WebDelta` byte for byte.
 `tools/parity/real-write.ps1` runs the app on a copy of the real profile with writing on, changes the theme through the page and
 quits, and compares the file with C#'s save of the same change.
+
+The native forms (W6) cannot be rendered by the C# tool (C# builds them from live WinUI controls), so they are captured from the C#
+app itself: `tools/parity/native.ps1` runs C#'s web smoke (`MIGHTY_SMOKE_WEB=1`, an empty temporary profile, WebView2's DevTools on
+`-Port`) while `tools/parity/native-capture.mjs` (Node's built-in WebSocket) taps every `native` and `text` message its page gets into
+`cs.jsonl`; C#'s smoke is stopped once its automatic-updates step reported, before its completion notification would register the
+build with Windows and show a toast. The Tauri smoke then runs with `--native-dump rs.jsonl` (`smoke.ps1 -NoRuns -NativeDump`), and
+`cargo run -p mighty-native --example native-diff -- cs.jsonl rs.jsonl --mask <profile>` compares each view's first push byte for byte
+after mighty-native's `parity` normalization (keys sorted — WebView2 hands C#'s page sorted keys, so the order is the one thing it cannot
+compare —, ids renumbered, the profile paths masked, font lists emptied) and prints the JSON paths that differ. HKCU Software\MightyCode,
+the notification registrations and `%APPDATA%\MightyCode` (its logs aside) are compared before and after. The last run (dark, Korean):
+the same as C# — Settings › 모델, CLI and 앱 정보, the setup screen over fixed probes, the terminal history panel and the model-id dialog;
+differing by the two smokes' states — 일반 (the demo profile's light theme and status line), the plugin window (the active workspace in
+its subtitle), 도구 (the toolkit's entries come from a read off the builder, so its first push has none); differing by stage — the
+later-stage boxes (W7–W9) and the companion popover (W8). `--write-cs <folder>` writes C#'s views normalized:
+`crates/mighty-native/tests/golden/` keeps those of machine-independent views, each compared in `cargo test` with the Rust side drawn
+headlessly in the same state (mighty-accounts `tests/golden.rs`: the CLI tab's providers, accounts and Claude Mods boxes; mighty-tools
+`tests/golden.rs`: the setup screen; the app's `terminal.rs` and `smoke_settings.rs`: the history panel and the model-id dialog).
+Capture again whenever the C# side changes.
 
 What is not reproduced (each a file no app writes): a number literal beyond ±1.8e308 (C# reads infinity; the load fails here);
 a lone surrogate escape inside a field C# does not model (C# skips it; the load fails here — inside a modelled field both fail);
@@ -481,8 +514,16 @@ were once it ended (`antigravityAllowOnce`). With `--smoke-real-claude` (`smoke.
 `claude` CLI instead (the pane's default permission mode, writes off) and checks the run completed, the result block shows "ok" and the
 CLI reported its usage (`real*`).
 
+The W6 steps follow the reload step (`smoke_settings.rs`, `smoke_setup.rs`, `smoke_accounts.rs`, `smoke_updates.rs`, from C#'s
+`RunWebSettingsSmoke` and `RunWebLiveSmoke`): Settings opened from the sidebar, every category's boxes, the theme switched and back, the
+terminal history panel and a model-id dialog; the setup screen over fixed probes, the components box, the toolkit and the status line
+card; the sign-in card, the CLI accounts box and the usage chips over fixtures; the CLI update rows, the plugin window over a fake reader
+and the update holds. A smoke reads no account, probes nothing of the PC and changes nothing on it. Last, as C#'s, `localeKeyLeakScan`:
+every W6 box's words as the page would get them (each category's boxes and the setup list, at least 50) and none a raw locale key
+(mighty-core's `key_leaks`, C#'s `LocaleKeyLeak.Detect`), reported as `{scanned, leaks}`.
+
 It writes `smoke-result.json` (`passed`, `checks`, each step's report — `probe`, `frame`, `browser`, `terminal`, `files`, `history`,
-`gitCreate`, `reload`, `acp`, `runs` —, the calls it saw, the unimplemented methods) and quits with
+`gitCreate`, `reload`, `settings`, `setup`, `accounts`, `updates`, `localeKeyLeakScan`, `acp`, `runs` —, the calls it saw, the unimplemented methods) and quits with
 0 when it passed, else 1 (Tauri's event loop would end with 0 either way; `main.rs` keeps the code). The demo
 profile is made by `cargo run -p mighty-core --example seed_demo -- <folder> [ko|en|zh|ja]` from
 `native/contracts/fixtures/demo-profile.json`, as the C# help capture seeds it (without playing the runs). With `-Profile`, the
