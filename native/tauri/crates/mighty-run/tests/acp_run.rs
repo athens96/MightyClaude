@@ -459,10 +459,7 @@ async fn a_stop_answers_hermess_waiting_approval_cancelled_first_and_takes_no_la
         answered.is_some() && cancel.is_some() && answered < cancel,
         "the waiting approval was answered cancelled before session/cancel: {frames:?}"
     );
-    assert!(
-        cards.lock().unwrap().iter().any(|c| c.id == first.id && c.state == "cancelled"),
-        "its card settled cancelled"
-    );
+    assert!(cards.lock().unwrap().iter().any(|c| c.id == first.id && c.state == "cancelled"), "its card settled cancelled");
     assert!(late.is_err_and(|e| e.message() == mighty_run::presentation::strings::already_settled()), "a late Allow is refused");
     assert!(!frames.iter().any(|f| f["id"] == 1), "and never reaches Hermes: {frames:?}");
     agents::hermes_reset_question_tool();
@@ -491,10 +488,8 @@ async fn a_pane_that_asks_starts_a_new_hermes_session_when_its_receipt_cannot_be
     common::until(|| events.ended(), 30_000, "the run ends").await;
     manager.dispose().await;
     assert_eq!(events.last_status().status.as_deref(), Some("completed"), "completed: {}", events.described());
-    let methods: Vec<String> = lines(directory.join("stdin.txt"))
-        .iter()
-        .filter_map(|l| common::json(l)["method"].as_str().map(str::to_string))
-        .collect();
+    let methods: Vec<String> =
+        lines(directory.join("stdin.txt")).iter().filter_map(|l| common::json(l)["method"].as_str().map(str::to_string)).collect();
     assert_eq!(methods, ["initialize", "session/new", "session/prompt"], "a new session, not the one asked for");
     agents::hermes_reset_question_tool();
     common::remove_when_free(&directory).await;
