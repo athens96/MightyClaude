@@ -159,7 +159,8 @@ fn fake_cli(provider: &str, record: &str, args: &[String]) {
 
 /// A pi that answers on stdin as `pi --mode rpc` does, from a fixture (`--pi-fixture <file>`), and exits when stdin ends
 /// (PiVerification.cs:360 `FakeAsync`): `get_state` answered with the first line; a prompt with the next three, then (after
-/// `--pi-hang`'s minute, or the steer `--pi-steer` reads) the rest. Every line it reads is kept in `<record>.stdin`.
+/// `--pi-hang`'s minute, or the steer `--pi-steer` reads) the rest; with `--pi-dialogs` (the app's smoke) it waits for the answer to
+/// each dialog it shows (`extension_ui_request` but `notify`) as pi does. Every line it reads is kept in `<record>.stdin`.
 fn fake_pi(record: &str, args: &[String]) {
     let has = |flag: &str| args.iter().any(|a| a == flag);
     let path = args.iter().position(|a| a == "--pi-fixture").and_then(|at| args.get(at + 1)).cloned().unwrap_or_default();
@@ -190,6 +191,19 @@ fn fake_pi(record: &str, args: &[String]) {
             }
             for output in fixture.iter().skip(4) {
                 say(output);
+                let asks = output.contains("\"extension_ui_request\"") && !output.contains("\"method\":\"notify\"");
+                if has("--pi-dialogs")
+                    && asks
+                    && let Some(answer) = read_line()
+                {
+                    append(
+                        &stdin,
+                        &format!(
+                            "{answer}
+"
+                        ),
+                    );
+                }
             }
         }
     }

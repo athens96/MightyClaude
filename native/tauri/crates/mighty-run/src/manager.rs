@@ -1027,7 +1027,8 @@ impl Exec {
         if self.run.finalizing.load(Ordering::SeqCst) || self.run.finished.load(Ordering::SeqCst) {
             return;
         }
-        if let (Some(tracker), Some(environment)) = (&self.tracker, lock(&self.children).clone()) {
+        let environment = lock(&self.children).clone();
+        if let (Some(tracker), Some(environment)) = (&self.tracker, environment) {
             lock(tracker).read_children(&environment, false);
         }
     }
@@ -1058,10 +1059,11 @@ impl Exec {
             };
             Self::activity(run, &self.emit, &activity::make(&run.activity_id, &request.provider, "turn", state, &summary));
         }
+        let environment = lock(&self.children).clone();
         if let Some(tracker) = &self.tracker {
             let mut sink = lock(tracker);
-            if let Some(environment) = lock(&self.children).clone() {
-                sink.read_children(&environment, true);
+            if let Some(environment) = &environment {
+                sink.read_children(environment, true);
             }
             sink.finish(state);
             if let Some(graph_run) = sink.build_run(false) {

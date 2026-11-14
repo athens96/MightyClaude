@@ -30,7 +30,8 @@ use crate::host::Host;
 const IMAGE_CACHE_BYTES: u64 = 200 * 1_048_576;
 
 /// The smoke's stand-in Claude (mighty-run's `mighty-fake-cli --replay-cli`): asks one Bash permission and one plan, then replays a
-/// recording. Every other provider is missing.
+/// recording; and its stand-in pi (`--fake-cli pi … --pi-fixture pi-rpc-question.jsonl --pi-dialogs`), which asks one question through
+/// the app's `ask_user` tool. Every other provider is missing.
 #[derive(Debug, Clone)]
 pub struct FakeClaude {
     pub binary: PathBuf,
@@ -123,8 +124,24 @@ impl Runs {
                 vec!["--replay-cli".into(), fake.recording.clone(), fake.record.to_string_lossy().into_owned()],
                 Some("2.1.322"),
             );
+            let pi = CliCommand::new(
+                fake.binary.to_string_lossy().into_owned(),
+                vec![
+                    "--fake-cli".into(),
+                    "pi".into(),
+                    format!("{}-pi", fake.record.to_string_lossy()),
+                    "--pi-fixture".into(),
+                    crate::smoke_runs::pi_fixture().to_string_lossy().into_owned(),
+                    "--pi-dialogs".into(),
+                ],
+                Some("0.70.2"),
+            );
             let finder: Finder = Arc::new(move |provider: String| {
-                let found = (provider == "claude").then(|| command.clone());
+                let found = match provider.as_str() {
+                    "claude" => Some(command.clone()),
+                    "pi" => Some(pi.clone()),
+                    _ => None,
+                };
                 Box::pin(async move { found })
             });
             finder
