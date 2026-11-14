@@ -133,6 +133,8 @@ pub struct Terminals {
     blocks: Mutex<HashMap<String, Arc<BlockRun>>>,
     /// The smoke's own terminal panes: in a smoke no other pane starts a shell (C# `smokeTerminalEnabled`).
     smoke_allowed: Mutex<HashSet<String>>,
+    /// Closes started when a pane or an agent pane went (each on its own task): the quit waits for them too.
+    closes: Mutex<Vec<tauri::async_runtime::JoinHandle<()>>>,
     closing: AtomicBool,
 }
 
@@ -324,6 +326,7 @@ impl Terminals {
             prompts: Mutex::default(),
             blocks: Mutex::default(),
             smoke_allowed: Mutex::default(),
+            closes: Mutex::default(),
             closing: AtomicBool::new(false),
         });
         host.app.manage(terminals.clone());
@@ -372,6 +375,14 @@ impl Terminals {
         lock(&self.panes).values().cloned().collect()
     }
 
+    /// A close run on its own task, kept for the quit to wait on (the ones already ended let go).
+    fn close_later(&self, close: impl std::future::Future<Output = ()> + Send + 'static) {
+        let handle = tauri::async_runtime::spawn(close);
+        let mut closes = lock(&self.closes);
+        closes.retain(|close| !close.inner().is_finished());
+        closes.push(handle);
+    }
+
     /// C# `RefreshTerminalTheme` for every pane (`Retheme`, `TextAppearanceChanged`): the theme or the text setting changed.
     pub fn restyle(&self) {
         for pane in self.all() {
@@ -399,7 +410,7 @@ impl Terminals {
         let options = PaneOptions { id: id.to_string(), kind, folder, enabled, no_profile: host.smoke.is_some() };
         let pane = TerminalPane::new(options, self.ports.clone(), self.events.clone());
         if let Some(earlier) = panes.insert(id.to_string(), pane.clone()) {
-            tauri::async_runtime::spawn(async move { earlier.dispose().await });
+            self.close_later(async move { earlier.dispose().await });
         }
         Ok(pane)
     }
@@ -431,7 +442,7 @@ impl Terminals {
             ids.iter().filter_map(|id| panes.remove(id)).collect()
         };
         for pane in gone {
-            tauri::async_runtime::spawn(async move { pane.dispose().await });
+            self.close_later(async move { pane.dispose().await });
         }
         let ended: Vec<Arc<AgentTerminal>> = {
             let mut agents = lock(&self.agents);
@@ -439,16 +450,16 @@ impl Terminals {
             ids.iter().filter_map(|id| agents.remove(id)).collect()
         };
         for agent in ended {
-            tauri::async_runtime::spawn(async move { agent.dispose().await });
+            self.close_later(async move { agent.dispose().await });
         }
     }
 
-    /// Every terminal closed (the app quits): at once, all together, the wait bounded.
+    /// Every terminal closed (the app quits): at once, all together, the closes already under way with them, the wait bounded.
     pub async fn close_all(&self) {
         self.closing.store(true, Ordering::SeqCst);
         let panes: Vec<Arc<TerminalPane>> = lock(&self.panes).drain().map(|(_, pane)| pane).collect();
         let agents: Vec<Arc<AgentTerminal>> = lock(&self.agents).drain().map(|(_, agent)| agent).collect();
-        let mut closes = vec![];
+        let mut closes: Vec<_> = lock(&self.closes).drain(..).collect();
         for pane in panes {
             closes.push(tauri::async_runtime::spawn(async move { pane.dispose().await }));
         }
