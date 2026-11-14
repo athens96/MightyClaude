@@ -2166,6 +2166,7 @@ dependencies = [
  "chrono",
  "mighty-composer",
  "mighty-core",
+ "mighty-native",
  "mighty-platform",
  "mighty-platform-windows",
  "mighty-run",

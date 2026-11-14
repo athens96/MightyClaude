@@ -285,6 +285,11 @@ impl ClaudePluginBrowser {
         !self.is_busy() && self.is_ready() && !self.refreshable_marketplaces().is_empty()
     }
 
+    /// A result line no operation of the window gave (C# `ShowResult(block, false)`: why a change could not start).
+    pub fn show_result(&self, result: ClaudePluginOperationResult) {
+        self.lock().last_result = Some(result);
+    }
+
     /// The result line.
     pub fn result_text(&self) -> Option<String> {
         self.lock().last_result.as_ref().map(|r| r.detail.clone())

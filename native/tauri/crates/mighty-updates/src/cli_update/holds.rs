@@ -238,6 +238,15 @@ impl AutomaticUpdates {
         self.state().clone()
     }
 
+    /// The pass holding `provider` (its plugins when `plugins`), or nothing, without running it: what the `automaticUpdates` smoke sets
+    /// (C# sets the window's `automaticUpdateRunning` and `automaticallyUpdatingProvider`).
+    pub fn set_holding(&self, provider: Option<&str>, plugins: bool) {
+        let mut state = self.state();
+        state.running = provider.is_some();
+        state.provider = provider.map(str::to_string);
+        state.plugins = plugins;
+    }
+
     /// The manual results become the last results the pass merges into (C#: the coordinator's results are `lastCliUpdateResults`).
     pub fn set_cli_results(&self, results: Vec<CliUpdateResult>) {
         self.state().cli_results = results;
