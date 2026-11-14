@@ -2147,10 +2147,16 @@ dependencies = [
 name = "mighty-updates"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
  "chrono",
+ "mighty-composer",
+ "mighty-core",
+ "mighty-platform",
+ "mighty-platform-windows",
+ "mighty-run",
  "regex",
- "sha2",
+ "serde_json",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
