@@ -2,11 +2,12 @@
 //! events. A run starts (`Begin`), its process is found, launched with its arguments and environment through the platform's
 //! `ProcessHost`, read line by line (`ExecuteAsync`), steered (`TrySteer`), answered (permissions, plans, questions) and stopped
 //! (`Stop`, 10 s). Its timers are C#'s: the graph published every second, a Claude run's input closed after 120 s of silence once
-//! the request answered and no background task runs (`BackgroundIdleClose`), the permission handshake given 15 s.
+//! the request answered and no background task runs (`BackgroundIdleClose`), the permission handshake given 15 s (Claude's, and a
+//! Codex `onRequest` run's app-server turn: `CodexApprovalChannel`, whose approvals are the pane's tool-permission requests).
 //!
-//! Until their stages: Codex's approval channel (`onRequest`), the ACP agents (opencode, Hermes), pi's RPC and dialogs and
-//! Antigravity's stream are W5 — a run of opencode, Hermes, pi or Antigravity, or a Codex run in `onRequest`, is refused with the
-//! reason (pi and Antigravity are read through the parser's `ProviderStream` once W5 plugs it in). A sharing host's PowerShell
+//! Until their stages: the ACP agents (opencode, Hermes), pi's RPC and dialogs and Antigravity's stream are W5 — a run of opencode,
+//! Hermes, pi or Antigravity is refused with the reason (pi and Antigravity are read through the parser's `ProviderStream` once W5
+//! plugs it in). A sharing host's PowerShell
 //! commands are W8. The Agent IO / delegation binding (W7) plugs in through [`RunBinding`]; the file originals (W4) through
 //! [`FileOriginals`].
 
@@ -27,6 +28,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::activity;
 use crate::attachments::StagedAttachments;
+use crate::codex_approval::{self, CodexApprovalChannel, CodexHooks};
 use crate::failure;
 use crate::graph::{GraphFactory, GraphSink, GraphStart};
 use crate::lines::{Lines, Next};
@@ -170,6 +172,8 @@ struct Run {
     input: Mutex<Option<Arc<InputPipe>>>,
     input_gate: Mutex<()>,
     permissions: Mutex<Option<Arc<ClaudePermissionChannel>>>,
+    /// A Codex run in `onRequest`: the app-server channel its stdio carries.
+    codex: Mutex<Option<Arc<CodexApprovalChannel>>>,
     parser: Mutex<Option<Arc<OutputParser>>>,
     tracker: Mutex<Option<SharedSink>>,
     redact: Mutex<Option<Redact>>,
@@ -207,6 +211,10 @@ impl Run {
 
     fn channel(&self) -> Option<Arc<ClaudePermissionChannel>> {
         lock(&self.permissions).clone()
+    }
+
+    fn codex(&self) -> Option<Arc<CodexApprovalChannel>> {
+        lock(&self.codex).clone()
     }
 }
 
@@ -306,8 +314,10 @@ impl RunManager {
     /// (a stop finds it from now on) and its task started. The [`Admitted`] waits for the process when the request asks for that.
     pub fn admit(&self, value: StartRunRequest, awaited: bool) -> Result<Admitted> {
         let request = value.validate()?;
-        if request.provider == "codex" && request.settings().permission_mode == "onRequest" {
-            // CodexApprovalChannel is W5: until then a run that needs it has no surface to answer it, as C# says without one.
+        if request.provider == "codex"
+            && request.settings().permission_mode == "onRequest"
+            && self.inner.options.permission_requested.is_none()
+        {
             return Err(RunError::State("Codex approval requests require a local approval surface.".into()));
         }
         let receiver;
@@ -334,6 +344,7 @@ impl RunManager {
                 input: Mutex::new(None),
                 input_gate: Mutex::new(()),
                 permissions: Mutex::new(None),
+                codex: Mutex::new(None),
                 parser: Mutex::new(None),
                 tracker: Mutex::new(None),
                 redact: Mutex::new(None),
@@ -371,6 +382,9 @@ impl RunManager {
     /// `RespondToToolPermission`: 이번만 허용 / 거부 for one waiting request of one run.
     pub fn respond_to_tool_permission(&self, session_id: &str, request_id: &str, allow: bool) -> Result<()> {
         let Some(run) = self.run(session_id) else { return Err(RunError::State(copy::already_settled())) };
+        if let Some(codex) = run.codex() {
+            return codex.respond(request_id, allow);
+        }
         match run.channel() {
             Some(channel) => channel.respond(request_id, allow),
             None => Err(RunError::State(copy::already_settled())),
@@ -671,6 +685,10 @@ impl Exec {
         if let Some(channel) = channel {
             channel.cancel_all();
         }
+        let codex = lock(&run.codex).take();
+        if let Some(codex) = codex {
+            codex.cancel_all();
+        }
         let child = lock(&run.child).take();
         if let Some(child) = child {
             let _ = child.close().await;
@@ -761,6 +779,10 @@ impl Exec {
         let channel = lock(&run.permissions).take();
         if let Some(channel) = channel {
             channel.cancel_all();
+        }
+        let codex = lock(&run.codex).take();
+        if let Some(codex) = codex {
+            codex.cancel_all();
         }
         if let Some(connection) = mod_connection {
             connection.dispose();
@@ -1045,6 +1067,7 @@ impl Exec {
         let inner = self.inner.clone();
         let mut request = run.request.clone();
         let provider = request.provider.clone();
+        let codex_approvals = provider == "codex" && request.settings().permission_mode == "onRequest";
         // The request's diagram block appears the moment the run starts, before the workspace, the CLI or the environment is found.
         if self.tracker.is_some() {
             self.graph_dirty.store(true, Ordering::SeqCst);
@@ -1112,6 +1135,9 @@ impl Exec {
             let command = command
                 .ok_or_else(|| Failure::Error(strings::get_with("run.error.cliNotInstalled", &[("name", providers::name(&provider))])))?;
             self.cancelled()?;
+            if codex_approvals && !providers::supports_codex_approvals(command.version.as_deref()) {
+                return Err(Failure::Error("Codex approval requests require stable Codex CLI 0.153.4 or later.".into()));
+            }
             let settings = request.settings();
             if settings.effort != "default" || phase_models::main_effort(&request).is_some() {
                 let runtime = providers.get_runtime(false, Some(&workspace_path)).await;
@@ -1179,7 +1205,8 @@ impl Exec {
             if provider == "pi" && staged.is_none() {
                 input = ProviderInput::pi_startup(&input, &[]);
             }
-            let mut arguments = match staged.as_ref() {
+            // An approval run's pictures go in its turn (`localImage`), not as `--image`.
+            let mut arguments = match staged.as_ref().filter(|_| !codex_approvals) {
                 Some(staged) => staged.arguments_for(&request, &inner.options.plugin_directory)?,
                 None => providers::arguments(&request, &inner.options.plugin_directory, None)?,
             };
@@ -1259,6 +1286,47 @@ impl Exec {
             let channel = ClaudePermissionChannel::new(&request.session_id, &prompt, hooks, &request.settings().permission_mode);
             *lock(&run.permissions) = Some(Arc::new(channel));
         }
+        if codex_approvals {
+            let images: Vec<String> = staged
+                .as_ref()
+                .map(|staged| {
+                    let pictures = staged.files.iter().filter(|(attachment, _)| attachment.media_type.starts_with("image/"));
+                    pictures.map(|(_, path)| path.to_string_lossy().into_owned()).collect()
+                })
+                .unwrap_or_default();
+            let (write_run, write_pipe) = (run.clone(), pipe.clone());
+            let consumer = Arc::downgrade(self);
+            let emit_run = run.clone();
+            let permission = inner.options.permission_requested.clone();
+            let parser = self.parser.clone();
+            let (warning_run, warning_emit) = (run.clone(), self.emit.clone());
+            let (fail_run, fail_emit) = (run.clone(), self.emit.clone());
+            let completed_pipe = pipe.clone();
+            let hooks = CodexHooks {
+                write: Arc::new(move |text| {
+                    if !write_run.finished.load(Ordering::SeqCst) {
+                        let _ = write_pipe.write(text);
+                    }
+                }),
+                consume: Arc::new(move |line| {
+                    if let Some(exec) = consumer.upgrade() {
+                        exec.consume(line);
+                    }
+                }),
+                emit: Arc::new(move |value| {
+                    if !emit_run.finished.load(Ordering::SeqCst)
+                        && let Some(sink) = &permission
+                    {
+                        sink(value);
+                    }
+                }),
+                activity: Arc::new(move |value, state| parser.permission_activity(value, state)),
+                warning: Arc::new(move |message| Exec::log(&warning_run, &warning_emit, "system", message)),
+                fail: Arc::new(move |message| Exec::fail_protocol(&fail_run, &fail_emit, message)),
+                completed: Arc::new(move || completed_pipe.close()),
+            };
+            *lock(&run.codex) = Some(Arc::new(CodexApprovalChannel::new(&request, &workspace_path, &input, images, hooks)));
+        }
         (self.emit)(RunEvent::state(&request.session_id, "running", None));
         if request.kind != "shell" {
             let summary = strings::get_with("run.activity.running", &[("name", providers::name(&provider))]);
@@ -1267,7 +1335,13 @@ impl Exec {
         if self.tracker.is_some() {
             self.publish_graph();
         }
-        let line_limit = if request.kind == "shell" { 1024 * 1024 } else { maximum_line_bytes(&provider) };
+        let line_limit = if request.kind == "shell" {
+            1024 * 1024
+        } else if codex_approvals {
+            codex_approval::MAXIMUM_FRAME_BYTES
+        } else {
+            maximum_line_bytes(&provider)
+        };
         let output = tokio::spawn(Self::pump_output(self.clone(), child.stdout.take(), line_limit));
         let error = tokio::spawn(Self::pump_error(self.clone(), child.stderr.take()));
         if interactive {
@@ -1312,6 +1386,21 @@ impl Exec {
                     channel.initialization_timed_out();
                 }
             });
+        } else if let Some(codex) = run.codex() {
+            // The channel writes the request itself, once its thread and turn are open; a turn not started in 15 s fails closed.
+            codex.start();
+            let exec = self.clone();
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(15)) => {}
+                    _ = exec.run.cancel.cancelled() => return,
+                }
+                if !exec.run.finished.load(Ordering::SeqCst)
+                    && let Some(codex) = exec.run.codex()
+                {
+                    codex.initialization_timed_out();
+                }
+            });
         } else {
             if request.kind != "shell" {
                 let first = if provider == "gemini" { ProviderInput::antigravity_user_message(&input) } else { input.clone() };
@@ -1345,13 +1434,21 @@ impl Exec {
             _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
         }
         self.parser.flush();
+        let codex = run.codex();
+        if let Some(codex) = &codex {
+            codex.flush();
+        }
         self.close_channel();
         if mod_connection.as_ref().is_some_and(|c| c.received() == 0) {
             Self::log(&run, &self.emit, "system", &strings::get("run.warning.noModEvents"));
         }
         let state = if run.plan_cancelled.load(Ordering::SeqCst) {
             "stopped"
-        } else if code == 0 && !self.parser.failed() && !run.protocol_failed.load(Ordering::SeqCst) {
+        } else if code == 0
+            && !self.parser.failed()
+            && !run.protocol_failed.load(Ordering::SeqCst)
+            && (!codex_approvals || codex.is_some_and(|c| c.turn_completed()))
+        {
             "completed"
         } else {
             "error"
@@ -1377,6 +1474,10 @@ impl Exec {
                     }
                     if request.kind == "shell" {
                         Self::log(&exec.run, &exec.emit, "output", &line);
+                        continue;
+                    }
+                    if let Some(codex) = exec.run.codex() {
+                        codex.receive(&line);
                         continue;
                     }
                     if let Some(channel) = exec.run.channel()

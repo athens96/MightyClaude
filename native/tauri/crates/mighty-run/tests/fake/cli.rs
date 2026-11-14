@@ -9,6 +9,8 @@
 //!   (native/contracts/fixtures/model-list-*) for its verified arguments, refused otherwise.
 //! - `--replay-cli <recording> <record> [args…]`: Claude with host prompts that asks one tool permission and one plan, records the
 //!   answers, then replays the recording (native/contracts/fixtures/<recording>.jsonl) and ends once its input closes.
+//! - `--codex-approval-fixture [args…]`: Codex's `app-server` for one approval turn (CodexApprovalVerification.cs:141 `FakeCliAsync`):
+//!   the handshake, one command approval that must be accepted, the answer, the turn's end, then stdin must end.
 
 use std::fs::OpenOptions;
 use std::io::{BufRead, Read, Write};
@@ -55,6 +57,7 @@ fn main() {
         Some("--fake-cli") if args.len() >= 3 => fake_cli(&args[1], &args[2], &args[3..]),
         Some("--model-list-cli") if args.len() >= 3 => model_list_cli(&args[1], &args[2], &args[3..]),
         Some("--replay-cli") if args.len() >= 3 => replay_cli(&args[1], &args[2], &args[3..]),
+        Some("--codex-approval-fixture") => codex_approval_fixture(&args[1..]),
         // C# `--long-child <pid file>`: a shell pane's command that writes its id and runs until it is stopped.
         Some("--long-child") if args.len() >= 2 => {
             let _ = std::fs::write(&args[1], std::process::id().to_string());
@@ -147,6 +150,41 @@ fn fake_cli(provider: &str, record: &str, args: &[String]) {
     if has("--fail-run") {
         std::process::exit(2);
     }
+}
+
+/// C#'s check fails the fixture with an exception (a non-zero exit).
+fn check(value: bool, message: &str) {
+    if !value {
+        eprintln!("{message}");
+        std::process::exit(1);
+    }
+}
+
+/// Codex's `app-server` for one approval turn (CodexApprovalVerification.cs:141 `FakeCliAsync`).
+fn codex_approval_fixture(args: &[String]) {
+    check(args.iter().any(|a| a == "app-server") && !args.iter().any(|a| a == "exec"), "Fixture expected app-server arguments.");
+    let read = || -> Value {
+        let Some(line) = read_line() else {
+            eprintln!("unexpected stdin EOF");
+            std::process::exit(1);
+        };
+        serde_json::from_str(&line).unwrap_or(Value::Null)
+    };
+    let initialize = read();
+    check(text(&initialize, "method") == Some("initialize"), "first frame is initialize");
+    say(&json!({"id": initialize["id"], "result": {}}).to_string());
+    check(text(&read(), "method") == Some("initialized"), "client acknowledges initialization");
+    let thread = read();
+    say(&json!({"id": thread["id"], "result": {"thread": {"id": "thread-1"}}}).to_string());
+    let turn = read();
+    check(turn["params"]["approvalPolicy"] == "on-request", "actual turn carries approval policy");
+    say(&json!({"id": turn["id"], "result": {"turn": {"id": "turn-1"}}}).to_string());
+    say(&json!({"id": 40, "method": "item/commandExecution/requestApproval", "params": {"threadId": "thread-1", "turnId": "turn-1", "itemId": "cmd-1", "command": "fixture command", "cwd": "C:\\work"}}).to_string());
+    check(read()["result"]["decision"] == "accept", "explicit single-call response arrives");
+    say(&json!({"method": "item/completed", "params": {"threadId": "thread-1", "turnId": "turn-1", "item": {"id": "result", "type": "agentMessage", "text": "fixture complete"}}}).to_string());
+    say(&json!({"method": "turn/completed", "params": {"threadId": "thread-1", "turn": {"id": "turn-1", "status": "completed"}}})
+        .to_string());
+    check(read_line().is_none(), "stdin ends only after turn completion");
 }
 
 fn base64(bytes: &[u8]) -> String {

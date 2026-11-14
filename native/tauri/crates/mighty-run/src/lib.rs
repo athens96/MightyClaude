@@ -8,6 +8,7 @@
 //! | `ProviderCatalog.cs` | [`providers`] |
 //! | `PhaseModelPreferences.cs` (the run's part) | [`phase_models`] |
 //! | `ToolPermissions.cs`, `ToolPermissionPresentation.cs`, `ToolPermissionStrings.cs` | [`permissions`], [`presentation`] |
+//! | `CodexApprovalChannel.cs` | [`codex_approval`] |
 //! | `UserQuestionnaire.cs`, `QuestionnaireProgress.cs`, `AgentQuestions.cs` | [`questionnaire`] |
 //! | `OutputParser.cs` (Claude), `ClaudeStream` | [`parser`], [`stream`] |
 //! | `AgentActivity.cs` (`ActivitySupport`, `MetadataJson`) | [`activity`], [`meta`] |
@@ -23,6 +24,7 @@ pub mod activity;
 pub mod apply;
 pub mod attachments;
 pub mod background_output;
+pub mod codex_approval;
 pub mod compaction;
 pub mod failure;
 pub mod flow_steps;
