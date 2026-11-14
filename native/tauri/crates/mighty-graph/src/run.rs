@@ -104,12 +104,14 @@ pub struct TrackerSink {
     codex_sessions: Option<CodexWatcherFactory>,
     watcher: Option<Box<dyn SessionWatcher>>,
     antigravity: Option<AntigravitySubagentWatcher>,
+    /// A read is out with the watcher: none other is handed out (nor a watcher opened afresh) until it is merged back.
+    reading: bool,
 }
 
 impl TrackerSink {
     /// `codex_sessions`: where a Codex run's sub-agents are read from; None leaves them to what the stream says.
     pub fn new(tracker: ExecutionGraphTracker, codex_sessions: Option<CodexWatcherFactory>) -> TrackerSink {
-        TrackerSink { tracker, started: DateTimeOffset::now(), codex_sessions, watcher: None, antigravity: None }
+        TrackerSink { tracker, started: DateTimeOffset::now(), codex_sessions, watcher: None, antigravity: None, reading: false }
     }
 
     /// The Codex half of C#'s `ReadChildren`: the watcher, opened once the stream named the root thread (the opening goes with the read,
@@ -193,14 +195,20 @@ impl GraphSink for TrackerSink {
     /// C#'s `ReadChildren`: an Antigravity run's sub-agents from their own transcripts under its `brain`, a Codex run's from its session
     /// files — read by the runner without this sink's lock.
     fn read_children(&mut self, sources: &ChildSources<'_>, closing: bool) -> Option<ChildRead> {
-        match self.tracker.provider() {
+        if self.reading {
+            return None;
+        }
+        let read = match self.tracker.provider() {
             "gemini" => self.antigravity_children(sources.antigravity_brain?, sources.namespace, closing),
             "codex" => self.codex_children(sources.environment, closing),
             _ => None,
-        }
+        };
+        self.reading = read.is_some();
+        read
     }
     /// The read's sub-agents merged into the graph (`CodexSession`, `AntigravitySession`), its watcher kept for the next read.
     fn merge_children(&mut self, found: ChildrenFound) {
+        self.reading = false;
         let Ok(found) = found.downcast::<Found>() else { return };
         match *found {
             Found::Codex(watcher, children) => {
