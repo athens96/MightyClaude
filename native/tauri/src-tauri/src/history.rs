@@ -52,6 +52,8 @@ struct ResumeList {
 pub struct History {
     panes: Mutex<HashMap<String, PaneHistory>>,
     known: Mutex<Option<Vec<String>>>,
+    /// Held while `known-sessions.json` is written: one save at a time.
+    saving: Mutex<()>,
     resume: Mutex<Option<ResumeList>>,
     serial: Mutex<u64>,
     /// `PaneView.HistoryHomeOverride`: the smoke reads its own fixture records instead of the user's.
@@ -231,20 +233,31 @@ fn known_sessions(host: &Host) -> HashSet<String> {
     known.get_or_insert_with(|| known::load(&host.data_dir.join(known::FILE_NAME))).iter().map(|id| id.to_lowercase()).collect()
 }
 
-/// `RememberSession`: a session id a pane started or resumed is never hidden as an automated run again.
+/// `RememberSession`: a session id a pane started or resumed is never hidden as an automated run again. The file is written only when
+/// the app may write its profile (`--allow-state-write`, main.rs's parsed options), off the caller's thread and locks (the page's view
+/// may be held), one save at a time, each writing the list as it is then (a slower save never writes an older list last).
 pub fn remember_session(host: &Host, id: &str) {
     let history = of(host);
-    let mut known = lock(&history.known);
     let path = host.data_dir.join(known::FILE_NAME);
-    let list = known.get_or_insert_with(|| known::load(&path));
-    let Some(next) = known::adding(id, list) else { return };
-    *list = next.clone();
-    // Only when the app may write its profile (`--allow-state-write`, main.rs's parsed options).
-    if host.writes()
-        && let Err(error) = known::save(&next, &path)
     {
-        host.log.line(&format!("known-sessions.json: {error}"));
+        let mut known = lock(&history.known);
+        let list = known.get_or_insert_with(|| known::load(&path));
+        let Some(next) = known::adding(id, list) else { return };
+        *list = next;
     }
+    if !host.writes() {
+        return;
+    }
+    let app = host.app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _saving = lock(&history.saving);
+        let latest = lock(&history.known).clone().unwrap_or_default();
+        if let Err(error) = known::save(&latest, &path)
+            && let Some(host) = app.try_state::<Arc<Host>>()
+        {
+            host.log.line(&format!("known-sessions.json: {error}"));
+        }
+    });
 }
 
 /// C# `LocalFolder(workspace)`: a workspace's folder on this computer; none for a remote workspace, whose sessions are its host's

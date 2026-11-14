@@ -138,6 +138,14 @@ fn folder() -> PathBuf {
     std::env::temp_dir().join(format!("mighty-tauri-smoke-history-{}", std::process::id()))
 }
 
+/// The step's fixture folders (the repository, the records' home, git's hooks folder) removed once the smoke has its result.
+pub fn remove_fixtures() {
+    let folder = folder();
+    for path in [folder.with_extension("home"), folder.with_extension("hooks"), folder] {
+        let _ = std::fs::remove_dir_all(path);
+    }
+}
+
 /// The workspace of the step, made the active one (in memory, as the other steps' are).
 fn add_workspace(host: &Host, folder: &Path) -> Result<(), String> {
     let mut view = host.view();

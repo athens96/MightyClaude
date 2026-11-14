@@ -834,6 +834,27 @@ fn resume_picker_continues_the_session_in_a_new_pane_and_remembers_it() {
     );
     known::save(&bounded, &path).expect("saved");
     check(known::load(&path) == bounded, "known-sessions.json reads back");
+    // A temporary left by a save that stopped, or a link put where the temporary goes, never takes the write (W4 review C15).
+    let temporary = path.with_extension("json.tmp");
+    std::fs::write(&temporary, "left").unwrap();
+    known::save(&ids, &path).expect("saved over a temporary left behind");
+    check(known::load(&path) == ids && !temporary.exists(), "the temporary went, the list was written");
+    let elsewhere = root.join("elsewhere.json");
+    std::fs::write(&elsewhere, "keep").unwrap();
+    // A second name of another file (no privilege needed): writing the temporary in place would write that file.
+    std::fs::hard_link(&elsewhere, &temporary).unwrap();
+    known::save(&bounded, &path).expect("saved past a second name of another file");
+    check(std::fs::read_to_string(&elsewhere).unwrap() == "keep", "the other file is never written");
+    check(known::load(&path) == bounded, "the list was written in its own place");
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_file(&elsewhere, &temporary).is_ok();
+    #[cfg(unix)]
+    let linked = std::os::unix::fs::symlink(&elsewhere, &temporary).is_ok();
+    if linked {
+        known::save(&bounded, &path).expect("saved past a link");
+        check(std::fs::read_to_string(&elsewhere).unwrap() == "keep", "the link's target is never written");
+        check(known::load(&path) == bounded, "the list was written in its own place");
+    }
     check(
         resumable::one_line("one\n two   three") == "one two three" && resumable::one_line(&"x".repeat(300)).chars().count() == 201,
         "titles are one line of at most 200 characters",

@@ -945,13 +945,22 @@ pub mod known {
         Some(last(next))
     }
 
+    /// The list written whole to a temporary file beside `path` and moved over it. A temporary already there — left by a save that
+    /// stopped, or put there as a link — goes first, and the new one is created, never opened through a link.
     pub fn save(ids: &[String], path: &Path) -> std::io::Result<()> {
+        use std::io::Write as _;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let temporary = path.with_extension("json.tmp");
+        if std::fs::symlink_metadata(&temporary).is_ok() {
+            // A link to a folder is removed as a folder on Windows.
+            std::fs::remove_file(&temporary).or_else(|_| std::fs::remove_dir(&temporary))?;
+        }
         let kept: Vec<&String> = ids.iter().skip(ids.len().saturating_sub(MAXIMUM)).collect();
-        std::fs::write(&temporary, serde_json::to_vec(&kept).unwrap_or_default())?;
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&temporary)?;
+        file.write_all(&serde_json::to_vec(&kept).unwrap_or_default())?;
+        drop(file);
         std::fs::rename(&temporary, path)
     }
 }
