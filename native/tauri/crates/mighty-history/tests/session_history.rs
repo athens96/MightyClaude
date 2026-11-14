@@ -559,6 +559,39 @@ fn session_history_loaded_runs_stay_bounded_and_follow_a_trim() {
     check(trimmed.runs.is_empty(), "resuming another session drops what no longer connects");
 }
 
+/// Every projection of a pane takes its loaded runs (W4 review C2): they are shared, never copied run by run, a pane record whose
+/// first run did not change leaves them as they are, and a change made while a projection still holds the list leaves that list whole.
+#[test]
+fn session_history_a_projection_takes_the_loaded_runs_without_copying_them() {
+    let file = SessionHistoryFile { path: "/r".into(), created: 1 };
+    let mut state = SessionHistoryState::new();
+    state.begin(Some("c"), Some("s"), None, &SessionHistoryRequest::new("claude", "s", "/w"));
+    let generation = state.generation;
+    state.finish(Ok(SessionHistoryChunk { runs: vec![run("record-1"), run("record-2")], file, end: 5, reached_start: false }), generation);
+    let shown = state.runs.clone();
+    check(Arc::ptr_eq(&shown, &state.runs), "a projection shares the list");
+    state.follow(&[run("c")], &[run("c")], Some("s"), "claude");
+    check(Arc::ptr_eq(&shown, &state.runs), "the same first run: nothing followed, nothing copied");
+    state.follow(&[run("a"), run("c")], &[run("c")], Some("s"), "claude");
+    check(inputs(&shown) == ["record-1", "record-2"], "the list a projection holds is not changed under it");
+    drop(shown);
+    let again = state.runs.clone();
+    check(Arc::strong_count(&again) == 2, "only the state and this projection hold the runs");
+}
+
+/// A load the host could not finish (the reader panicked: history.rs reads that as unreadable, W4 review C6) leaves the block failed
+/// and offering the load again, never "loading".
+#[test]
+fn session_history_an_unreadable_load_fails_and_can_be_tried_again() {
+    let mut state = SessionHistoryState::new();
+    let template = SessionHistoryRequest::new("claude", "s", "/w");
+    assert!(state.begin(Some("c"), Some("s"), None, &template).is_some() && state.phase == Phase::Loading);
+    let generation = state.generation;
+    check(!state.finish(Err(SessionHistoryError::Unreadable), generation), "no start over");
+    check(state.phase == Phase::Failed && state.block_acts() && state.can_load(), "failed, and the block is a button again");
+    check(state.begin(Some("c"), Some("s"), None, &template).is_some(), "the load can be asked for again");
+}
+
 /// SessionHistoryVerification.cs:384 `TheLayoutStacksLoadedRequestsAboveWithoutMovingTheRetainedOne`.
 #[test]
 fn session_history_the_layout_stacks_loaded_requests_above_without_moving_the_retained_one() {
@@ -801,6 +834,27 @@ fn resume_picker_continues_the_session_in_a_new_pane_and_remembers_it() {
     );
     known::save(&bounded, &path).expect("saved");
     check(known::load(&path) == bounded, "known-sessions.json reads back");
+    // A temporary left by a save that stopped, or a link put where the temporary goes, never takes the write (W4 review C15).
+    let temporary = path.with_extension("json.tmp");
+    std::fs::write(&temporary, "left").unwrap();
+    known::save(&ids, &path).expect("saved over a temporary left behind");
+    check(known::load(&path) == ids && !temporary.exists(), "the temporary went, the list was written");
+    let elsewhere = root.join("elsewhere.json");
+    std::fs::write(&elsewhere, "keep").unwrap();
+    // A second name of another file (no privilege needed): writing the temporary in place would write that file.
+    std::fs::hard_link(&elsewhere, &temporary).unwrap();
+    known::save(&bounded, &path).expect("saved past a second name of another file");
+    check(std::fs::read_to_string(&elsewhere).unwrap() == "keep", "the other file is never written");
+    check(known::load(&path) == bounded, "the list was written in its own place");
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_file(&elsewhere, &temporary).is_ok();
+    #[cfg(unix)]
+    let linked = std::os::unix::fs::symlink(&elsewhere, &temporary).is_ok();
+    if linked {
+        known::save(&bounded, &path).expect("saved past a link");
+        check(std::fs::read_to_string(&elsewhere).unwrap() == "keep", "the link's target is never written");
+        check(known::load(&path) == bounded, "the list was written in its own place");
+    }
     check(
         resumable::one_line("one\n two   three") == "one two three" && resumable::one_line(&"x".repeat(300)).chars().count() == 201,
         "titles are one line of at most 200 characters",

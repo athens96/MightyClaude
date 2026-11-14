@@ -722,6 +722,7 @@ impl Smoke {
             host.log.line(&format!("smoke: cannot write {}: {error}", self.out.display()));
         }
         host.log.line(&format!("smoke: {} ({})", if passed { "passed" } else { "FAILED" }, self.out.display()));
+        crate::smoke_history::remove_fixtures();
         if self.exit {
             host.app.exit(if passed { 0 } else { 1 });
         }

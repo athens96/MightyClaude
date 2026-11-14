@@ -4,7 +4,8 @@
 //! (1 Mi UTF-16 units at most, sent each 32 ms as base64 UTF-8), the exit, the restart, the shell's activity and the footer the page
 //! draws under it. Everything the page sees leaves through [`PaneEvents::post`] as `{kind:'terminal', paneId, message}`.
 //!
-//! Locks: a pane never calls [`PaneEvents`] while it holds its own lock, so the host may call into a pane while it holds its own.
+//! Locks: a pane never calls [`PaneEvents`] while it holds its own lock, so the host may call into a pane while it holds its own. Its
+//! outbox lock alone is held across a post: output and a restart's reset leave in the order they were decided.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -18,7 +19,6 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
 
-use crate::activity::next_status;
 use crate::agent::AgentTerminal;
 use crate::text::{BoundedText, Utf8Decoder, last_units};
 
@@ -135,8 +135,10 @@ pub trait PaneEvents: Send + Sync {
     fn post(&self, pane: &str, message: &TerminalMessage);
     /// The shell pane's status from its terminal (C# `ShellStatusChanged`: idle, running, completed, error).
     fn status(&self, pane: &str, status: &'static str);
-    /// The pane's status as the state has it now (C# `service.SessionStatus`).
-    fn session_status(&self, pane: &str) -> Option<String>;
+    /// A reading of the shell pane's activity (C# `ApplyShellActivity`): running while a command occupies its terminal, idle at its
+    /// prompt, as [`crate::activity::next_status`] decides from the status the pane has when the change is made — inside the state's
+    /// update, so an exit or a failure that landed after the reading is never overwritten.
+    fn activity(&self, pane: &str, busy: bool);
     /// The window's error line (C# `owner.error.Text`).
     fn error(&self, text: String);
     /// A press inside the terminal, which never reaches the pane as a pointer event (C# `ActivatePane`).
@@ -188,6 +190,9 @@ pub struct TerminalPane {
     events: Arc<dyn PaneEvents>,
     state: Mutex<State>,
     pending: Mutex<BoundedText>,
+    /// Held from the moment output is taken (or the reset decided) until its post is done, so a chunk read before a restart never
+    /// reaches the page after that restart's reset. Taken before the state lock; never while the pane's other locks are held.
+    outbox: Mutex<()>,
     weak: Weak<TerminalPane>,
 }
 
@@ -269,6 +274,7 @@ impl TerminalPane {
             events,
             state: Mutex::new(state),
             pending: Mutex::new(BoundedText::default()),
+            outbox: Mutex::new(()),
             weak: weak.clone(),
         })
     }
@@ -517,17 +523,15 @@ impl TerminalPane {
     }
 
     /// One reading of the shell's activity (C# `ShellProcessProbe.IsBusy` then `ApplyShellActivity`): the pane is running while a
-    /// command occupies its terminal and idle at its prompt; a pane that has exited or failed keeps that, and a reading of a shell the
-    /// pane no longer has changes nothing. Whether a shell was read.
+    /// command occupies its terminal and idle at its prompt; a pane that has exited or failed keeps that (decided by the window against
+    /// the status it has then, [`PaneEvents::activity`]), and a reading that could not be taken or of a shell the pane no longer has
+    /// changes nothing. Whether a shell was read.
     pub fn read_activity(&self) -> bool {
         let Some(control) = self.attached() else { return false };
         let busy = control.busy();
         let still = self.attached().is_some_and(|current| Arc::ptr_eq(&current, &control));
-        if !still {
-            return true;
-        }
-        if let Some(next) = self.events.session_status(&self.options.id).and_then(|current| next_status(&current, busy)) {
-            self.events.status(&self.options.id, next);
+        if let Some(busy) = busy.filter(|_| still) {
+            self.events.activity(&self.options.id, busy);
         }
         true
     }
@@ -687,9 +691,13 @@ impl TerminalPane {
         };
         // A page whose terminal never said it was ready starts the shell with its ready.
         if ready {
-            let mut effects = Effects::default();
-            TerminalPane::post(&lock(&self.state), &mut effects, TerminalMessage::Reset);
-            self.emit(effects);
+            {
+                // After any output a flush already took: the reset clears it on the page, never the other way round.
+                let _outbox = lock(&self.outbox);
+                let mut effects = Effects::default();
+                TerminalPane::post(&lock(&self.state), &mut effects, TerminalMessage::Reset);
+                self.emit(effects);
+            }
             if let Err(error) = self.start_shell().await {
                 let effects = {
                     let mut state = lock(&self.state);
@@ -708,8 +716,10 @@ impl TerminalPane {
         lock(&self.state).restarting = false;
     }
 
-    /// C# `FlushTerminal`: the output waiting, to a ready page as one base64 UTF-8 chunk.
+    /// C# `FlushTerminal`: the output waiting, to a ready page as one base64 UTF-8 chunk. The outbox is held from the take to the post,
+    /// so a restart's reset cannot overtake the chunk.
     pub fn flush(&self) {
+        let _outbox = lock(&self.outbox);
         let mut effects = Effects::default();
         {
             let mut state = lock(&self.state);

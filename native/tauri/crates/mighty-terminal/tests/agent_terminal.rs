@@ -5,11 +5,14 @@
 
 mod common;
 
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use common::*;
-use mighty_platform::fake::KILLED;
+use mighty_platform::fake::{FakePtyHost, KILLED};
+use mighty_platform::{BoxFuture, PtyHost, PtyRequest, PtySession};
+use mighty_terminal::AgentTerminal;
 use mighty_terminal::agent::{AgentTerminalError, MAXIMUM_RUNNING};
 use mighty_terminal::prompt::TerminalPromptMonitor;
 
@@ -95,6 +98,53 @@ async fn a_pane_runs_eight_commands_at_once_and_says_why_a_start_failed() {
     assert!((0..MAXIMUM_RUNNING).all(|index| fixture.ptys.closed(index)), "the close ends every command");
 }
 
+/// The fake terminals, with the start of a command naming "slow" held until the check lets it go.
+struct HeldStart {
+    ptys: Arc<FakePtyHost>,
+    release: tokio::sync::watch::Receiver<bool>,
+}
+
+impl PtyHost for HeldStart {
+    fn default_shell(&self) -> PathBuf {
+        self.ptys.default_shell()
+    }
+    fn shell_arguments(&self, shell: &Path, command: Option<&str>, no_profile: bool) -> Vec<String> {
+        self.ptys.shell_arguments(shell, command, no_profile)
+    }
+    fn open(&self, request: PtyRequest) -> BoxFuture<'_, mighty_platform::Result<PtySession>> {
+        Box::pin(async move {
+            if request.args.iter().any(|a| a.contains("slow")) {
+                let _ = self.release.clone().wait_for(|go| *go).await;
+            }
+            self.ptys.open(request).await
+        })
+    }
+}
+
+/// C# `AgentTerminal.DisposeAsync` closes every command at once: one still starting holds up none of the others.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_command_still_starting_holds_up_no_other_close() {
+    let fixture = Fixture::new("agent-dispose");
+    let (go, release) = tokio::sync::watch::channel(false);
+    let terminal = AgentTerminal::new(
+        fixture.folder.clone(),
+        Arc::new(HeldStart { ptys: fixture.ptys.clone(), release }),
+        fixture.environment.clone(),
+    );
+    let starting = terminal.clone();
+    let slow = tokio::spawn(async move { starting.start("slow start", None).await });
+    until(|| terminal.replay().contains("> slow start"), 5_000, "the slow command begun").await;
+    terminal.start("quick", None).await.unwrap();
+    let closing = terminal.clone();
+    let dispose = tokio::spawn(async move { closing.dispose().await });
+    until(|| fixture.ptys.closed(0), 5_000, "the quick command closed while the slow one still starts").await;
+    assert!(!dispose.is_finished(), "the close still waits for the command that is starting");
+    go.send_replace(true);
+    tokio::time::timeout(Duration::from_secs(10), dispose).await.expect("the close ends once it started").unwrap();
+    let _ = slow.await;
+    assert!(fixture.ptys.closed(1), "the slow command is closed too once it started");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_command_waiting_for_input_is_found_by_the_prompt_monitor() {
     let fixture = Fixture::new("agent-prompt");
@@ -124,7 +174,7 @@ async fn a_command_waiting_for_input_is_found_by_the_prompt_monitor() {
 #[cfg(windows)]
 #[tokio::test(flavor = "multi_thread")]
 async fn real_windows_interactive_process() {
-    use mighty_terminal::{AgentTerminal, TerminalTextCleaner};
+    use mighty_terminal::TerminalTextCleaner;
 
     let directory = std::env::temp_dir().join(format!("mighty-agent-io-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();

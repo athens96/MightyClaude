@@ -22,14 +22,28 @@ pub fn thread(file_name: &str) -> Option<String> {
     ROLLOUT_NAME.captures(file_name).and_then(|c| c.name("thread")).map(|m| m.as_str().to_string())
 }
 
-/// A file that exists and is no link (C# also refuses any other reparse point; a symbolic link and a junction are what this sees).
-pub fn regular(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_file() && !m.file_type().is_symlink())
+/// Whether an entry is a link or any other reparse point (C# `FileAttributes.ReparsePoint`: a symbolic link, a junction, and also a
+/// cloud placeholder, an app execution alias, a deduplicated file, ...), none of which a record is read through.
+fn reparse(meta: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return true;
+        }
+    }
+    meta.file_type().is_symlink()
 }
 
-/// A folder that exists and is no link.
+/// A file that exists and is no link nor any other reparse point (C# `RecordFiles.Regular`).
+pub fn regular(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_file() && !reparse(&m))
+}
+
+/// A folder that exists and is no link nor any other reparse point (C# `RecordFiles.RealDirectory`).
 pub fn real_directory(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_dir() && !m.file_type().is_symlink())
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_dir() && !reparse(&m))
 }
 
 /// `RecordFiles.Open`: a regular file opened for reading, the CLI still free to write, rename or delete it.
@@ -246,5 +260,28 @@ mod tests {
         );
         assert_eq!(thread("rollout-2026-10-01T10-00-00-2d9e2c1a.jsonl"), None);
         assert_eq!(thread("rollout-2026-10-01T10-00-00-2d9e2c1a-1111-4222-8333-444455556666.jsonl.bak"), None);
+    }
+
+    /// A record is read from a plain file in a plain folder only: no folder as a file, no file as a folder, no link (W4 review C13; any
+    /// other reparse point — a cloud placeholder, an app alias — is refused by its attribute, which a check cannot make without a
+    /// privilege).
+    #[test]
+    fn records_are_plain_files_in_plain_folders() {
+        let folder = std::env::temp_dir().join(format!("mighty-history-files-{}", std::process::id()));
+        std::fs::create_dir_all(folder.join("real")).unwrap();
+        std::fs::write(folder.join("real").join("a.jsonl"), "{}\n").unwrap();
+        assert!(regular(&folder.join("real").join("a.jsonl")) && real_directory(&folder.join("real")));
+        assert!(!regular(&folder.join("real")) && !real_directory(&folder.join("real").join("a.jsonl")) && !regular(&folder.join("none")));
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_dir(folder.join("real"), folder.join("linked")).is_ok()
+            && std::os::windows::fs::symlink_file(folder.join("real").join("a.jsonl"), folder.join("linked.jsonl")).is_ok();
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(folder.join("real"), folder.join("linked")).is_ok()
+            && std::os::unix::fs::symlink(folder.join("real").join("a.jsonl"), folder.join("linked.jsonl")).is_ok();
+        // Making a link may need a privilege this account lacks.
+        if linked {
+            assert!(!real_directory(&folder.join("linked")) && !regular(&folder.join("linked.jsonl")), "a link is no record");
+        }
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }

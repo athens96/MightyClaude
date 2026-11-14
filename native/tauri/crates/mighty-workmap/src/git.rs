@@ -1,6 +1,7 @@
 //! Git as the work map runs it (C# `DelegationGit.Run`, DelegationWorktree.cs:188-291): git from the PATH through the platform's
-//! `ProcessHost`, the user's own settings but no hooks, fsmonitor or auto gc, no inherited `GIT_*` variable, no prompt, at most 1 MiB of
-//! output and a deadline. The work map's commands only read.
+//! `ProcessHost`, the user's own settings but no hooks, fsmonitor or auto gc, no program a repository's config names ([`no_programs`]:
+//! no signature check, no transport), no inherited `GIT_*` variable, no prompt, at most 1 MiB of output and a deadline. The work map's
+//! commands only read.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -36,6 +37,21 @@ pub fn executable() -> Option<PathBuf> {
         .filter(|folder| mighty_core::normalize::fully_qualified(&folder.to_string_lossy()))
         .map(|folder| folder.join(name))
         .find(|candidate| candidate.is_file())
+}
+
+/// The settings that keep a repository's own config from running a program while git only reads it, after the user's and the
+/// repository's settings (a `-c` wins over both): no signature is checked (`log.showSignature`), the signature programs name a path
+/// under the git executable itself, which is a file, so nothing can ever be there to run (`gpg.program`, `gpg.ssh.program`,
+/// `gpg.x509.program`), and no transport is allowed, so a partial clone never fetches what it lacks through a remote's command
+/// (`protocol.allow`, with `GIT_NO_LAZY_FETCH`). The header's `git status` (src-tauri host.rs `read_git`) passes the same.
+pub fn no_programs(git: &Path) -> Vec<String> {
+    let nothing = git.join("no-program").to_string_lossy().into_owned();
+    let mut settings = vec!["-c".to_string(), "log.showSignature=false".to_string()];
+    for name in ["gpg.program", "gpg.ssh.program", "gpg.x509.program"] {
+        settings.extend(["-c".to_string(), format!("{name}={nothing}")]);
+    }
+    settings.extend(["-c".to_string(), "protocol.allow=never".to_string()]);
+    settings
 }
 
 /// Git for one app: the process host every child starts through, and the empty folder git is pointed at for hooks.
@@ -83,6 +99,7 @@ impl Git {
         if mighty_run::os::windows() {
             args.extend(["-c".to_string(), "core.longpaths=true".to_string()]);
         }
+        args.extend(no_programs(&program));
         args.extend(["-C".to_string(), folder]);
         args.extend(arguments.iter().map(|a| a.to_string()));
         let mut request = SpawnRequest::new(program, args, directory);
@@ -92,7 +109,8 @@ impl Git {
                 request = request.without(key);
             }
         }
-        let request = request.env("GIT_OPTIONAL_LOCKS", "0").env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C");
+        let request =
+            request.env("GIT_OPTIONAL_LOCKS", "0").env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C").env("GIT_NO_LAZY_FETCH", "1");
         let mut child = self.processes.spawn(request).await.ok()?;
         drop(child.stdin.take());
         let control = child.control();

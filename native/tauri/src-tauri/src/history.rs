@@ -15,11 +15,12 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use mighty_core::graph::MightyGraphRun;
 use mighty_core::model::{RunSession, Workspace};
 use mighty_graph::view::{MightyPane, WebMightyHistory, shows_history_block};
+use mighty_history::history::SessionHistoryError;
 use mighty_history::resumable::{self, known};
 use mighty_history::{
     ResumableSession, ResumableSessionListing, ResumableSessionQuery, SessionHistoryRequest, SessionHistoryState, history,
@@ -30,11 +31,12 @@ use tauri::Manager;
 use crate::host::{Host, Registry, View, lock};
 use crate::methods::{flag, text};
 
-/// One pane's loaded history (C# `graphHistory`, `graphHistoryRetained`, `graphHistoryLoad`).
+/// One pane's loaded history (C# `graphHistory`, `graphHistoryRetained`, `graphHistoryLoad`): the pane's record as the last projection
+/// saw it stands for its retained runs (shared, never copied).
 #[derive(Default)]
 struct PaneHistory {
     state: SessionHistoryState,
-    retained: Vec<MightyGraphRun>,
+    retained: Option<Arc<RunSession>>,
     load: Option<Arc<AtomicBool>>,
 }
 
@@ -50,6 +52,8 @@ struct ResumeList {
 pub struct History {
     panes: Mutex<HashMap<String, PaneHistory>>,
     known: Mutex<Option<Vec<String>>>,
+    /// Held while `known-sessions.json` is written: one save at a time.
+    saving: Mutex<()>,
     resume: Mutex<Option<ResumeList>>,
     serial: Mutex<u64>,
     /// `PaneView.HistoryHomeOverride`: the smoke reads its own fixture records instead of the user's.
@@ -63,12 +67,6 @@ pub fn of(host: &Host) -> Arc<History> {
     }
     host.app.manage(Arc::new(History::default()));
     host.app.state::<Arc<History>>().inner().clone()
-}
-
-/// Whether the app was started with `--allow-state-write` (it may write `known-sessions.json` in the profile).
-fn writes_allowed() -> bool {
-    static ALLOWED: OnceLock<bool> = OnceLock::new();
-    *ALLOWED.get_or_init(|| crate::args::parse(std::env::args().skip(1)).map(|o| o.allow_state_write).unwrap_or(false))
 }
 
 impl History {
@@ -103,8 +101,9 @@ impl History {
 
 /// `GraphHistoryRuns(pane, retained)` and the history block (`WebMightyModel`): the loaded runs that still attach above the retained
 /// ones (a trim moves the runs it drops into the history; history from another session is not shown), and the block's words while the
-/// pane has a record to read. Panes that left the state let their history go (`ForgetGraphHistory`).
-pub fn older(host: &Host, view: &View, pane: &RunSession) -> (Vec<MightyGraphRun>, Option<WebMightyHistory>) {
+/// pane has a record to read. Panes that left the state let their history go (`ForgetGraphHistory`). Each projection takes the runs
+/// shared: none is copied, and a pane record that did not change is not followed again.
+pub fn older(host: &Host, view: &View, pane: &Arc<RunSession>) -> (Arc<Vec<MightyGraphRun>>, Option<WebMightyHistory>) {
     let history = of(host);
     let mut panes = lock(&history.panes);
     let alive: HashSet<&str> = view.snapshot.sessions().iter().map(|s| s.id()).collect();
@@ -117,12 +116,14 @@ pub fn older(host: &Host, view: &View, pane: &RunSession) -> (Vec<MightyGraphRun
     });
     let retained = pane.graph_runs();
     let entry = panes.entry(pane.id().to_string()).or_default();
-    let previous = std::mem::take(&mut entry.retained);
-    entry.state.follow(&previous, retained, pane.resume_id.as_deref(), pane.provider());
-    entry.retained = retained.to_vec();
+    if !entry.retained.as_ref().is_some_and(|seen| Arc::ptr_eq(seen, pane)) {
+        let previous = entry.retained.replace(pane.clone());
+        let before = previous.as_ref().map_or(&[][..], |p| p.graph_runs());
+        entry.state.follow(before, retained, pane.resume_id.as_deref(), pane.provider());
+    }
     let first = retained.first().map(|r| r.id());
     let connects = entry.state.connects(first, pane.resume_id.as_deref());
-    let runs = if connects { entry.state.runs.clone() } else { vec![] };
+    let runs = if connects { entry.state.runs.clone() } else { Arc::default() };
     let block = shows_history_block(pane.provider(), retained, pane.resume_id.as_deref()).then(|| {
         let fresh = SessionHistoryState::new();
         let state = if connects { &entry.state } else { &fresh };
@@ -135,15 +136,25 @@ pub fn older(host: &Host, view: &View, pane: &RunSession) -> (Vec<MightyGraphRun
     (runs, block)
 }
 
-/// The older runs a pane holds now (for `mightyImages` and a block's size), without following a trim.
-pub fn loaded(host: &Host, pane: &RunSession) -> Vec<MightyGraphRun> {
+/// `ForgetGraphHistory`: a pane that left the state lets its history go, and a load still reading for it stops (panes.rs calls this
+/// where the host drops a closed pane's view, so a pane no projection asks about again lets go too).
+pub fn forget(host: &Host, pane_id: &str) {
+    let history = of(host);
+    let entry = lock(&history.panes).remove(pane_id);
+    if let Some(load) = entry.and_then(|entry| entry.load) {
+        load.store(true, Ordering::SeqCst);
+    }
+}
+
+/// The older runs a pane holds now (for `mightyImages` and a block's size), without following a trim; shared, not copied.
+pub fn loaded(host: &Host, pane: &RunSession) -> Arc<Vec<MightyGraphRun>> {
     let history = of(host);
     let panes = lock(&history.panes);
     match panes.get(pane.id()) {
         Some(entry) if entry.state.connects(pane.graph_runs().first().map(|r| r.id()), pane.resume_id.as_deref()) => {
             entry.state.runs.clone()
         }
-        _ => vec![],
+        _ => Arc::default(),
     }
 }
 
@@ -185,7 +196,10 @@ pub fn load_older(host: &Arc<Host>, view: &mut View, pane_id: &str) {
     view.mighty.dirty(pane_id);
     let (host, id, locale) = (host.clone(), pane_id.to_string(), host.locale);
     tauri::async_runtime::spawn_blocking(move || {
-        let result = history::load(&next, &locale, cancel.as_ref());
+        // A record that makes the reader panic reads as unreadable: the block says the load failed and offers it again, instead of
+        // saying "loading" for good.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| history::load(&next, &locale, cancel.as_ref())))
+            .unwrap_or(Err(SessionHistoryError::Unreadable));
         if cancel.load(Ordering::SeqCst) {
             return;
         }
@@ -219,23 +233,43 @@ fn known_sessions(host: &Host) -> HashSet<String> {
     known.get_or_insert_with(|| known::load(&host.data_dir.join(known::FILE_NAME))).iter().map(|id| id.to_lowercase()).collect()
 }
 
-/// `RememberSession`: a session id a pane started or resumed is never hidden as an automated run again.
+/// `RememberSession`: a session id a pane started or resumed is never hidden as an automated run again. The file is written only when
+/// the app may write its profile (`--allow-state-write`, main.rs's parsed options), off the caller's thread and locks (the page's view
+/// may be held), one save at a time, each writing the list as it is then (a slower save never writes an older list last).
 pub fn remember_session(host: &Host, id: &str) {
     let history = of(host);
-    let mut known = lock(&history.known);
     let path = host.data_dir.join(known::FILE_NAME);
-    let list = known.get_or_insert_with(|| known::load(&path));
-    let Some(next) = known::adding(id, list) else { return };
-    *list = next.clone();
-    if writes_allowed()
-        && let Err(error) = known::save(&next, &path)
     {
-        host.log.line(&format!("known-sessions.json: {error}"));
+        let mut known = lock(&history.known);
+        let list = known.get_or_insert_with(|| known::load(&path));
+        let Some(next) = known::adding(id, list) else { return };
+        *list = next;
     }
+    if !host.writes() {
+        return;
+    }
+    let app = host.app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _saving = lock(&history.saving);
+        let latest = lock(&history.known).clone().unwrap_or_default();
+        if let Err(error) = known::save(&latest, &path)
+            && let Some(host) = app.try_state::<Arc<Host>>()
+        {
+            host.log.line(&format!("known-sessions.json: {error}"));
+        }
+    });
 }
 
-/// `ResumeQuery(workspace)`: the folder's records under the CLI homes, open panes' sessions left out, the app's own never hidden.
-fn query(host: &Host, view: &View, folder: &str) -> ResumableSessionQuery {
+/// C# `LocalFolder(workspace)`: a workspace's folder on this computer; none for a remote workspace, whose sessions are its host's
+/// (M/AppStore+ResumeSession.swift: its agent pane starts new).
+fn local_folder(workspace: &Workspace) -> Option<&str> {
+    (workspace.remote.is_none() && !workspace.path().is_empty()).then(|| workspace.path())
+}
+
+/// `ResumeQuery(workspace)`: the folder's records under the CLI homes, open panes' sessions left out, the app's own never hidden; none
+/// for a remote workspace.
+fn query(host: &Host, view: &View, workspace: &Workspace) -> Option<ResumableSessionQuery> {
+    let folder = local_folder(workspace)?;
     let history = of(host);
     let mut environment = history.environment();
     // opencode's and Hermes's databases move with these as the CLIs' own do; the smoke's own home stands alone.
@@ -253,17 +287,18 @@ fn query(host: &Host, view: &View, folder: &str) -> ResumableSessionQuery {
     query.home = history.home();
     query.excluding = resumable::in_use(view.snapshot.sessions().iter().map(|s| s.as_ref()));
     query.known = known_sessions(host);
-    query
+    Some(query)
 }
 
 /// `AddAgentPane`'s look-up: whether the folder has a session of this agent to continue (the head of one record only, nested runs
 /// hidden, open panes' sessions left out). It reads files: call it off the page's thread. Any failure reading the records means nothing
-/// to offer (`AddPaneMenu.AsksResume` then decides with the panes open when it ends).
+/// to offer (`AddPaneMenu.AsksResume` then decides with the panes open when it ends), and so does a remote workspace.
 pub fn look_up(host: &Host, provider: &str, workspace: &Workspace) -> ResumableSessionListing {
-    let mut query = {
+    let query = {
         let view = host.view();
-        query(host, &view, workspace.path())
+        query(host, &view, workspace)
     };
+    let Some(mut query) = query else { return ResumableSessionListing::default() };
     query.head_only = true;
     query.maximum_sessions = 1;
     resumable::listing_of(&query, provider, &mighty_history::Never)
@@ -299,7 +334,7 @@ pub fn pick(host: &Host, view: &View, listing: &ResumableSessionListing, session
 /// `WebResumeRows`: the rows of the resume list frame.rs says is open (C# `webResume`) for the page's search, read again when "모든
 /// 세션 보기" changed; null when no list is open.
 async fn resume_rows(host: Arc<Host>, search: String, all: bool) -> Result<Value, String> {
-    let Some(crate::frame::OpenResume { provider, path, .. }) = crate::frame::open_resume(&host) else { return Ok(Value::Null) };
+    let Some(crate::frame::OpenResume { provider, workspace_id, .. }) = crate::frame::open_resume(&host) else { return Ok(Value::Null) };
     let history = of(&host);
     let (serial, cached, cached_all) = {
         let list = lock(&history.resume);
@@ -309,10 +344,12 @@ async fn resume_rows(host: Arc<Host>, search: String, all: bool) -> Result<Value
     let listing = match cached {
         Some(listing) if cached_all == all => listing,
         _ => {
-            let mut query = {
+            // The workspace as it is now: one that went, or is another computer's, lists nothing.
+            let query = {
                 let view = host.view();
-                query(&host, &view, &path)
+                view.snapshot.workspace(&workspace_id).cloned().and_then(|workspace| query(&host, &view, &workspace))
             };
+            let Some(mut query) = query else { return Ok(Value::Null) };
             query.include_automated = all;
             let reading = provider.clone();
             let listing = tauri::async_runtime::spawn_blocking(move || resumable::listing_of(&query, &reading, &mighty_history::Never))
@@ -399,4 +436,29 @@ pub fn register(methods: &mut Registry) {
         resume_rows(host, search, flag(&args, "all")).await
     });
     crate::workmap::register(methods);
+}
+
+#[cfg(test)]
+mod tests {
+    use mighty_core::model::RemoteWorkspaceReference;
+
+    use super::*;
+
+    /// C# `ResumeQuery(LocalFolder(workspace))`: only a workspace on this computer has sessions to continue here (W4 review C10).
+    #[test]
+    fn only_a_local_workspace_is_asked_for_its_sessions() {
+        let local = Workspace { id: Some("w".into()), path: Some("C:\\work".into()), ..Workspace::default() };
+        assert_eq!(local_folder(&local), Some("C:\\work"));
+        let remote = Workspace {
+            remote: Some(RemoteWorkspaceReference {
+                connection_id: Some("c".into()),
+                workspace_id: Some("w".into()),
+                host_name: Some("mac".into()),
+                version: 2,
+            }),
+            ..local.clone()
+        };
+        assert_eq!(local_folder(&remote), None, "a remote workspace's sessions are its host's");
+        assert_eq!(local_folder(&Workspace { path: Some(String::new()), ..local }), None, "no folder, nothing to read");
+    }
 }

@@ -431,8 +431,9 @@ impl AgentTerminal {
         self.listeners.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).retain(|(listener, _)| *listener != id);
     }
 
-    /// Ends every command (their terminals closed, all at once) and refuses new ones. A second call returns at once.
-    pub async fn dispose(&self) {
+    /// Ends every command (their terminals closed, all at once: a command still starting holds up none of the others) and refuses new
+    /// ones. A second call returns at once.
+    pub async fn dispose(self: &Arc<Self>) {
         let commands: Vec<(watch::Receiver<Started>, watch::Receiver<bool>, String)> = {
             let mut gate = self.lock();
             if gate.closing {
@@ -443,9 +444,10 @@ impl AgentTerminal {
         };
         let mut endings = vec![];
         for (started, completed, handle) in commands {
-            let _ = wait_started(started).await;
-            let control = self.lock().command(&handle).and_then(|c| c.control.clone());
+            let terminal = self.clone();
             endings.push(tokio::spawn(async move {
+                let _ = wait_started(started).await;
+                let control = terminal.lock().command(&handle).and_then(|c| c.control.clone());
                 if let Some(control) = control {
                     let _ = control.close().await;
                 }

@@ -19,6 +19,8 @@ mighty-core.workspace = true
 mighty-graph.workspace = true
 mighty-platform.workspace = true
 mighty-run.workspace = true
+# The workspace reader (`files::read_under`: no link, nothing outside the folder) the repository's release files are read through.
+mighty-composer.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 indexmap = { workspace = true, features = ["serde"] }
@@ -28,8 +30,6 @@ tokio = { workspace = true, features = ["sync", "time", "rt", "macros", "io-util
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["sync", "time", "rt", "rt-multi-thread", "macros", "io-util"] }
-# WorkDashboardVerification's background strip (`PlanCardSupport.ShowsBackgroundStrip`).
-mighty-composer.workspace = true
 
 [target.'cfg(windows)'.dev-dependencies]
 mighty-platform-windows.workspace = true

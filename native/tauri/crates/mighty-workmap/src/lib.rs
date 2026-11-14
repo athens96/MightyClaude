@@ -408,22 +408,50 @@ fn version(
     }
 }
 
-fn read_text(path: &Path) -> Option<String> {
-    if !path.is_file() {
-        return None;
-    }
-    std::fs::read(path).ok().map(|bytes| {
-        // `File.ReadAllTextAsync`: UTF-8, its byte order mark dropped.
-        let text = String::from_utf8_lossy(&bytes).into_owned();
-        text.strip_prefix('\u{feff}').map(str::to_string).unwrap_or(text)
-    })
+/// The largest VERSION file the map reads.
+pub const VERSION_BYTES: usize = 1_024;
+/// The largest release state the map reads, and how much of the release notes a summary reads (it keeps far fewer characters).
+pub const RELEASE_FILE_BYTES: usize = 65_536;
+
+/// `File.ReadAllTextAsync`'s text: UTF-8, its byte order mark dropped.
+fn text_of(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes).into_owned();
+    text.strip_prefix('\u{feff}').map(str::to_string).unwrap_or(text)
 }
 
+/// A file of the repository at `relative` (`/`-separated) under `root`, through the workspace reader (mighty-composer `read_under`: no
+/// link, nothing outside the folder, a regular file only); None when it is not such a file or holds more than `limit` bytes.
+pub fn read_text(root: &Path, relative: &str, limit: usize) -> Option<String> {
+    let (_, bytes) = mighty_composer::files::read_under(relative, root, limit + 1).ok()?;
+    (bytes.len() <= limit).then(|| text_of(&bytes))
+}
+
+/// The first `limit` bytes of such a file (the release notes, which a summary cuts anyway).
+pub fn read_start(root: &Path, relative: &str, limit: usize) -> Option<String> {
+    mighty_composer::files::read_under(relative, root, limit).ok().map(|(_, bytes)| text_of(&bytes))
+}
+
+/// `ReadCommitsAsync`: a version's commits (at most [`MAXIMUM_COMMITS_PER_VERSION`]) and how many it has. None when git failed —
+/// including a log past git's 1 MiB of output (one commit that names a great many files can do it): the whole map then reads
+/// `gitFailed`, as C#'s does (`DelegationGit.Run` gives null past `MaximumBytes`, WorkMap.cs `ReadCommitsAsync`): kept for parity, no
+/// version is shown in part.
 async fn read_commits(git: &Git, root: &Path, range: &str) -> Option<(Vec<WorkMapCommit>, i32)> {
     let limit = MAXIMUM_COMMITS_PER_VERSION.to_string();
     let log = git
         .run(
-            &["-c", "core.quotepath=false", "log", "--no-merges", "--format=%x1e%H%x1f%aI%x1f%s", "--name-only", "-n", &limit, range, "--"],
+            &[
+                "-c",
+                "core.quotepath=false",
+                "log",
+                "--no-merges",
+                "--no-show-signature",
+                "--format=%x1e%H%x1f%aI%x1f%s",
+                "--name-only",
+                "-n",
+                &limit,
+                range,
+                "--",
+            ],
             root,
             GIT_TIMEOUT_SECONDS,
         )
@@ -484,7 +512,8 @@ pub async fn build(
     else {
         return WorkMapModel::unavailable("gitFailed");
     };
-    let mut tag_info: HashMap<String, (String, String)> = HashMap::new();
+    // In git's order (by name), as C#'s dictionary keeps it: tags of the same version number stay in that order.
+    let mut tag_info: IndexMap<String, (String, String)> = IndexMap::new();
     for line in refs.stdout.split('\n').filter(|l| !l.is_empty()) {
         let fields: Vec<&str> = line.trim_end_matches('\r').split('\u{1f}').collect();
         if fields.len() < 4 || !TAG_PATTERN.is_match(fields[0]) {
@@ -518,9 +547,9 @@ pub async fn build(
 
     let mut versions = vec![];
     if !next_commits.is_empty() {
-        let name = version_name(read_text(&root.join("VERSION")).as_deref(), newest.as_deref());
+        let name = version_name(read_text(root, "VERSION", VERSION_BYTES).as_deref(), newest.as_deref());
         let status = match &name {
-            Some(name) => release_status(read_text(&root.join("release").join(name).join("state.json")).as_deref()),
+            Some(name) => release_status(read_text(root, &format!("release/{name}/state.json"), RELEASE_FILE_BYTES).as_deref()),
             None => ("unreleased".to_string(), None),
         };
         let date = Some(&next_commits[0].date).filter(|d| d.encode_utf16().count() >= 10).map(|d| d.chars().take(10).collect());

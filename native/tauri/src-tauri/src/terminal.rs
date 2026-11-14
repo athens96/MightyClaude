@@ -75,7 +75,38 @@ struct Prompts {
     monitors: HashMap<String, Arc<TerminalPromptMonitor>>,
     /// The card each agent pane shows now (C# `terminalPrompts`).
     current: HashMap<String, TerminalPrompt>,
+    /// The prompt each agent pane last had answered: a poll that found it before the answer never brings its card back.
+    answered: HashMap<String, String>,
     watching: bool,
+}
+
+impl Prompts {
+    /// A poll's findings (read with the lock let go) made the cards: what was answered meanwhile is left out; the panes whose card
+    /// changed.
+    fn commit(&mut self, mut found: HashMap<String, TerminalPrompt>, agents: &HashSet<String>) -> Vec<String> {
+        self.monitors.retain(|id, _| agents.contains(id));
+        self.answered.retain(|id, _| agents.contains(id));
+        found.retain(|pane, prompt| self.answered.get(pane) != Some(&prompt.id));
+        let mut ids: HashSet<String> = found.keys().cloned().collect();
+        ids.extend(self.current.keys().cloned());
+        let changed: Vec<String> =
+            ids.into_iter().filter(|id| found.get(id).map(|p| &p.id) != self.current.get(id).map(|p| &p.id)).collect();
+        if !changed.is_empty() {
+            self.current = found;
+        }
+        changed
+    }
+
+    /// The card `prompt_id` of `pane` taken for its answer, at most once: it goes from the pane and is marked answered.
+    fn take_answer(&mut self, pane: &str, prompt_id: &str) -> Option<TerminalPrompt> {
+        let prompt = self.current.get(pane).filter(|p| p.id == prompt_id)?.clone();
+        self.current.remove(pane);
+        self.answered.insert(pane.to_string(), prompt.id.clone());
+        if let Some(monitor) = self.monitors.get(pane) {
+            monitor.answered(&prompt);
+        }
+        Some(prompt)
+    }
 }
 
 /// A transcript's shell block running in its agent pane's terminal (C# `ShellBlockRunning`).
@@ -102,6 +133,8 @@ pub struct Terminals {
     blocks: Mutex<HashMap<String, Arc<BlockRun>>>,
     /// The smoke's own terminal panes: in a smoke no other pane starts a shell (C# `smokeTerminalEnabled`).
     smoke_allowed: Mutex<HashSet<String>>,
+    /// Closes started when a pane or an agent pane went (each on its own task): the quit waits for them too.
+    closes: Mutex<Vec<tauri::async_runtime::JoinHandle<()>>>,
     closing: AtomicBool,
 }
 
@@ -125,14 +158,14 @@ impl PaneEvents for HostEvents {
 
     fn status(&self, pane: &str, status: &'static str) {
         if let Some(host) = self.host.upgrade() {
-            set_shell_status(&host, pane, status);
+            change_shell_status(&host, pane, |session| mighty_terminal::activity::shell_status_change(session, status));
         }
     }
 
-    fn session_status(&self, pane: &str) -> Option<String> {
-        let host = self.host.upgrade()?;
-        let view = host.view();
-        view.snapshot.session(pane).map(|s| s.status().to_string())
+    fn activity(&self, pane: &str, busy: bool) {
+        if let Some(host) = self.host.upgrade() {
+            change_shell_status(&host, pane, |session| mighty_terminal::activity::activity_change(session, busy));
+        }
     }
 
     fn error(&self, text: String) {
@@ -165,13 +198,13 @@ impl PaneEvents for HostEvents {
     }
 }
 
-/// C# `SetShellStatus` through the run service (a light update of the pane), then the page's copy taken again.
-fn set_shell_status(host: &Arc<Host>, pane: &str, status: &'static str) {
+/// C# `SetShellStatus` through the run service (a light update of the pane, `change` deciding from the pane as the update finds it),
+/// then the page's copy taken again.
+fn change_shell_status(host: &Arc<Host>, pane: &str, change: impl FnOnce(&RunSession) -> Option<(RunSession, bool)>) {
     let Some(runs) = host.runs() else { return };
-    let changed = runs.service.update_pane(pane, |session| {
-        mighty_terminal::activity::shell_status_change(session, status)
-            .map(|(next, now)| (next, if now { PaneSave::Now } else { PaneSave::Later }))
-    });
+    let changed = runs
+        .service
+        .update_pane(pane, |session| change(session).map(|(next, now)| (next, if now { PaneSave::Now } else { PaneSave::Later })));
     if changed {
         host.view().sync();
         host.schedule();
@@ -293,6 +326,7 @@ impl Terminals {
             prompts: Mutex::default(),
             blocks: Mutex::default(),
             smoke_allowed: Mutex::default(),
+            closes: Mutex::default(),
             closing: AtomicBool::new(false),
         });
         host.app.manage(terminals.clone());
@@ -341,6 +375,14 @@ impl Terminals {
         lock(&self.panes).values().cloned().collect()
     }
 
+    /// A close run on its own task, kept for the quit to wait on (the ones already ended let go).
+    fn close_later(&self, close: impl std::future::Future<Output = ()> + Send + 'static) {
+        let handle = tauri::async_runtime::spawn(close);
+        let mut closes = lock(&self.closes);
+        closes.retain(|close| !close.inner().is_finished());
+        closes.push(handle);
+    }
+
     /// C# `RefreshTerminalTheme` for every pane (`Retheme`, `TextAppearanceChanged`): the theme or the text setting changed.
     pub fn restyle(&self) {
         for pane in self.all() {
@@ -368,7 +410,7 @@ impl Terminals {
         let options = PaneOptions { id: id.to_string(), kind, folder, enabled, no_profile: host.smoke.is_some() };
         let pane = TerminalPane::new(options, self.ports.clone(), self.events.clone());
         if let Some(earlier) = panes.insert(id.to_string(), pane.clone()) {
-            tauri::async_runtime::spawn(async move { earlier.dispose().await });
+            self.close_later(async move { earlier.dispose().await });
         }
         Ok(pane)
     }
@@ -400,7 +442,7 @@ impl Terminals {
             ids.iter().filter_map(|id| panes.remove(id)).collect()
         };
         for pane in gone {
-            tauri::async_runtime::spawn(async move { pane.dispose().await });
+            self.close_later(async move { pane.dispose().await });
         }
         let ended: Vec<Arc<AgentTerminal>> = {
             let mut agents = lock(&self.agents);
@@ -408,16 +450,16 @@ impl Terminals {
             ids.iter().filter_map(|id| agents.remove(id)).collect()
         };
         for agent in ended {
-            tauri::async_runtime::spawn(async move { agent.dispose().await });
+            self.close_later(async move { agent.dispose().await });
         }
     }
 
-    /// Every terminal closed (the app quits): at once, all together, the wait bounded.
+    /// Every terminal closed (the app quits): at once, all together, the closes already under way with them, the wait bounded.
     pub async fn close_all(&self) {
         self.closing.store(true, Ordering::SeqCst);
         let panes: Vec<Arc<TerminalPane>> = lock(&self.panes).drain().map(|(_, pane)| pane).collect();
         let agents: Vec<Arc<AgentTerminal>> = lock(&self.agents).drain().map(|(_, agent)| agent).collect();
-        let mut closes = vec![];
+        let mut closes: Vec<_> = lock(&self.closes).drain(..).collect();
         for pane in panes {
             closes.push(tauri::async_runtime::spawn(async move { pane.dispose().await }));
         }
@@ -472,18 +514,8 @@ impl Terminals {
                 found.insert(pane.clone(), prompt);
             }
         }
-        let changed: Vec<String> = {
-            let mut prompts = lock(&self.prompts);
-            prompts.monitors.retain(|id, _| agents.iter().any(|(pane, _)| pane == id));
-            let mut ids: HashSet<String> = found.keys().cloned().collect();
-            ids.extend(prompts.current.keys().cloned());
-            let changed: Vec<String> =
-                ids.into_iter().filter(|id| found.get(id).map(|p| &p.id) != prompts.current.get(id).map(|p| &p.id)).collect();
-            if !changed.is_empty() {
-                prompts.current = found;
-            }
-            changed
-        };
+        let panes: HashSet<String> = agents.iter().map(|(pane, _)| pane.clone()).collect();
+        let changed = lock(&self.prompts).commit(found, &panes);
         for id in &changed {
             self.prompt_changed(id);
         }
@@ -499,23 +531,13 @@ impl Terminals {
         }
     }
 
-    /// C# `AnswerTerminalPrompt`: the answer goes to the waiting command, and the card goes until it asks again. Whether it was
-    /// typed.
+    /// C# `AnswerTerminalPrompt`: the answer goes to the waiting command, and the card goes until it asks again. A card is taken for
+    /// its answer once (a second answer of it, or a poll that found it before, never types again). Whether it was typed.
     fn answer_prompt(&self, pane: &str, prompt_id: &str, answer: &TerminalPromptAnswer) -> bool {
-        let Some(prompt) = lock(&self.prompts).current.get(pane).filter(|p| p.id == prompt_id).cloned() else { return false };
         let Some(terminal) = lock(&self.agents).get(pane).cloned() else { return false };
-        if !terminal.write_to(&prompt.handle, &answer.input()) {
-            return false;
-        }
-        {
-            let mut prompts = lock(&self.prompts);
-            if let Some(monitor) = prompts.monitors.get(pane) {
-                monitor.answered(&prompt);
-            }
-            prompts.current.remove(pane);
-        }
+        let Some(prompt) = lock(&self.prompts).take_answer(pane, prompt_id) else { return false };
         self.prompt_changed(pane);
-        true
+        terminal.write_to(&prompt.handle, &answer.input())
     }
 
     /// The card a pane shows now, as the cards model takes it.
@@ -870,6 +892,36 @@ mod tests {
             with_agent_io_pane(&mut snapshot, &mut defaults, "gone", "w", AGENT_TERMINAL, Locale::new("en")),
             Err("Agent pane closed.".into())
         );
+    }
+
+    fn prompt(handle: &str, length: usize) -> TerminalPrompt {
+        TerminalPrompt {
+            id: format!("{handle}:{length}"),
+            handle: handle.into(),
+            text: "Continue? (y/n)".into(),
+            options: vec![],
+            kind: "yesNo",
+            default_yes: None,
+        }
+    }
+
+    /// A poll reads the terminals with the prompts' lock let go: a card answered meanwhile never comes back from what that poll
+    /// found, and is answered once only; the same command asking again after more output is a new card.
+    #[test]
+    fn an_answered_prompt_card_never_comes_back_from_an_earlier_poll() {
+        let agents = HashSet::from(["agent".to_string()]);
+        let mut prompts = Prompts::default();
+        let asked = prompt("h", 10);
+        assert_eq!(prompts.commit(HashMap::from([("agent".to_string(), asked.clone())]), &agents), ["agent"]);
+        // A poll finds the card (lock let go) while the user answers it.
+        let found = HashMap::from([("agent".to_string(), asked.clone())]);
+        assert_eq!(prompts.take_answer("agent", &asked.id), Some(asked.clone()), "the answer takes the card");
+        assert_eq!(prompts.take_answer("agent", &asked.id), None, "a second answer of the same card types nothing");
+        assert!(prompts.commit(found, &agents).is_empty() && prompts.current.is_empty(), "the earlier poll does not bring it back");
+        let again = prompt("h", 25);
+        assert_eq!(prompts.commit(HashMap::from([("agent".to_string(), again.clone())]), &agents), ["agent"]);
+        assert_eq!(prompts.current.get("agent"), Some(&again), "asking again after more output is a new card");
+        assert!(prompts.commit(HashMap::new(), &HashSet::new()) == ["agent"] && prompts.answered.is_empty(), "a closed pane's go");
     }
 
     #[test]

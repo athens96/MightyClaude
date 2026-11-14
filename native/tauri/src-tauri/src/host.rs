@@ -331,6 +331,11 @@ impl Host {
         lock(&self.store).approve_local(path)
     }
 
+    /// Whether the app may write its profile (`--allow-state-write`, as main.rs parsed it into the store).
+    pub fn writes(&self) -> bool {
+        lock(&self.store).writes()
+    }
+
     /// The run service takes the state from here on (runs.rs).
     pub fn attach(&self, runs: Arc<Runs>) {
         let mut view = self.view();
@@ -723,23 +728,14 @@ pub async fn read_git(processes: &dyn ProcessHost, folder: &str) -> Option<Works
     let path = std::env::var_os("PATH")?;
     let binary = std::env::split_paths(&path).map(|p| p.join(name)).find(|p| p.is_file())?;
     let hooks = if cfg!(windows) { "core.hooksPath=NUL" } else { "core.hooksPath=/dev/null" };
-    let arguments = [
-        "--no-optional-locks",
-        "-c",
-        "core.fsmonitor=false",
-        "-c",
-        hooks,
-        "-c",
-        "core.untrackedCache=false",
-        "-c",
-        "gc.auto=0",
-        "-C",
-        folder,
-        "status",
-        "--porcelain=v2",
-        "--branch",
-        "--untracked-files=normal",
-    ];
+    let mut arguments: Vec<String> =
+        ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", hooks, "-c", "core.untrackedCache=false", "-c", "gc.auto=0"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+    // No program the repository's config names (signature checks, a partial clone's fetch), as the work map's git (W4 review C1).
+    arguments.extend(mighty_workmap::git::no_programs(&binary));
+    arguments.extend(["-C", folder, "status", "--porcelain=v2", "--branch", "--untracked-files=normal"].iter().map(|s| s.to_string()));
     let mut request = SpawnRequest::new(binary, arguments, folder);
     for (key, _) in std::env::vars_os() {
         let key = key.to_string_lossy().into_owned();
@@ -747,7 +743,7 @@ pub async fn read_git(processes: &dyn ProcessHost, folder: &str) -> Option<Works
             request = request.without(key);
         }
     }
-    let request = request.env("GIT_OPTIONAL_LOCKS", "0").env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C");
+    let request = request.env("GIT_OPTIONAL_LOCKS", "0").env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C").env("GIT_NO_LAZY_FETCH", "1");
     let mut child = processes.spawn(request).await.ok()?;
     drop(child.stdin.take());
     let control = child.control();
@@ -927,5 +923,41 @@ mod tests {
         service.update(|state| AppSnapshot { theme: Some("light".into()), ..state.clone() }).unwrap();
         assert_ne!(view.snapshot.theme(), "light", "the page's copy has not taken the change yet");
         assert_eq!(view.current().theme(), "light", "the save takes the service's state");
+    }
+
+    /// The header's `git status` reads a repository whose config would run a program on a signature check or a fetch, and runs none
+    /// (W4 review C1): the branch is read as before, the script's marker is never written.
+    #[cfg(windows)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_headers_git_status_runs_no_program_of_the_repositorys() {
+        if mighty_workmap::git::executable().is_none() {
+            return;
+        }
+        let parent = std::env::temp_dir().join(format!("mighty-host-git-{}", std::process::id()));
+        let folder = parent.join("repo");
+        std::fs::create_dir_all(&folder).unwrap();
+        let processes = mighty_platform_windows::WindowsProcessHost::new();
+        // The fixture's git commands through the work map's git (the process layer every child starts through).
+        let fixture = mighty_workmap::Git::new(Arc::new(mighty_platform_windows::WindowsProcessHost::new()), parent.join("hooks"));
+        let marker = parent.join("ran");
+        let script = parent.join("program.bat");
+        std::fs::write(&script, format!("@echo off\r\necho ran> \"{}\"\r\n", marker.display())).unwrap();
+        let script = script.to_string_lossy().into_owned();
+        let commit = ["-c", "user.name=a", "-c", "user.email=a@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty"];
+        let steps: [&[&str]; 5] = [
+            &["init", "-q", "-b", "main"],
+            &[&commit[..], &["-m", "one"]].concat(),
+            &["config", "log.showSignature", "true"],
+            &["config", "gpg.program", &script],
+            &["config", "core.sshCommand", &script],
+        ];
+        for step in steps {
+            let result = fixture.run(step, &folder, 30.0).await;
+            assert!(result.as_ref().is_some_and(|r| r.exit_code == 0), "git {step:?}: {result:?}");
+        }
+        let info = read_git(&processes, &folder.to_string_lossy()).await.expect("the status is read");
+        assert_eq!(info.branch, "main");
+        assert!(!marker.exists(), "no program of the repository's ran");
+        let _ = std::fs::remove_dir_all(&parent);
     }
 }

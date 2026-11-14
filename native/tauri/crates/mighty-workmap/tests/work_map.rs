@@ -304,6 +304,39 @@ fn work_map_the_pane_is_never_saved_and_never_counted() {
     remove(&folder);
 }
 
+/// The repository's VERSION, release state and notes are read through the workspace reader (W4 review C4): a regular file under the
+/// folder only — no link, nothing outside it, no folder — and none past its size (the notes are cut instead).
+#[test]
+fn work_map_release_files_are_read_inside_the_folder_and_bounded() {
+    use mighty_workmap::{RELEASE_FILE_BYTES, VERSION_BYTES, read_start, read_text};
+    let root = temp("release-files");
+    let outside = temp("release-outside");
+    std::fs::write(root.join("VERSION"), "\u{feff}0.1.2\n").unwrap();
+    assert_eq!(read_text(&root, "VERSION", VERSION_BYTES).as_deref(), Some("0.1.2\n"), "UTF-8, its byte order mark dropped");
+    std::fs::write(root.join("VERSION"), format!("0.1.2{}", " ".repeat(VERSION_BYTES))).unwrap();
+    assert_eq!(read_text(&root, "VERSION", VERSION_BYTES), None, "a VERSION past 1 KiB is not read");
+    std::fs::create_dir_all(root.join("release").join("0.1.2")).unwrap();
+    std::fs::write(root.join("release").join("0.1.2").join("state.json"), "x".repeat(RELEASE_FILE_BYTES + 1)).unwrap();
+    assert_eq!(read_text(&root, "release/0.1.2/state.json", RELEASE_FILE_BYTES), None, "a state past 64 KiB is not read");
+    std::fs::write(root.join("release").join("0.1.2-notes.md"), "n".repeat(RELEASE_FILE_BYTES * 2)).unwrap();
+    assert_eq!(read_start(&root, "release/0.1.2-notes.md", RELEASE_FILE_BYTES).map(|n| n.len()), Some(RELEASE_FILE_BYTES), "notes cut");
+    assert_eq!(read_text(&root, "release", RELEASE_FILE_BYTES), None, "a folder is no file");
+    std::fs::write(outside.join("VERSION"), "9.9.9").unwrap();
+    let escape = format!("../{}/VERSION", outside.file_name().unwrap().to_string_lossy());
+    assert_eq!(read_text(&root, &escape, VERSION_BYTES), None, "nothing outside the folder");
+    std::fs::remove_file(root.join("VERSION")).unwrap();
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_file(outside.join("VERSION"), root.join("VERSION")).is_ok();
+    #[cfg(unix)]
+    let linked = std::os::unix::fs::symlink(outside.join("VERSION"), root.join("VERSION")).is_ok();
+    // Making a link may need a privilege this account lacks; the reader's link check is mighty-composer's own then.
+    if linked {
+        assert_eq!(read_text(&root, "VERSION", VERSION_BYTES), None, "a VERSION that is a link is not followed");
+    }
+    remove(&root);
+    remove(&outside);
+}
+
 // ── a real repository, the summary run and the service (Windows: git and the scripted Claude start through WindowsProcessHost) ──
 
 #[cfg(windows)]
@@ -312,6 +345,7 @@ mod real {
 
     use super::*;
     use mighty_workmap::{WorkMapService, WorkMapStart, WorkMapStoredSummary, WorkMapTopic};
+    use tokio::io::AsyncReadExt;
 
     fn topic(title: &str, lanes: &[&str], commits: &[String]) -> WorkMapTopic {
         WorkMapTopic {
@@ -513,6 +547,85 @@ mod real {
                 && model.versions[0].commits[0].lanes == ["etc"],
             "with no tag the whole history is the unreleased version"
         );
+        remove(&parent);
+    }
+
+    /// A repository's own config must not run a program while the work map reads it: with `log.showSignature=true` and
+    /// `gpg.program` naming a script, a plain `git log` of a signed commit runs the script (checked first, so the check cannot pass
+    /// for want of a reproduction); the work map's reads, and even an explicit `--show-signature` through its git, never do.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn work_map_a_repositorys_signature_settings_run_no_program() {
+        let Some(program) = mighty_workmap::git::executable() else { return };
+        let parent = temp("signature");
+        let git = git(&parent);
+        let folder = parent.join("repo");
+        std::fs::create_dir_all(&folder).unwrap();
+        run_git(&git, &folder, &["init", "-q"]).await;
+        commit(&git, &folder, "a.txt", "(mac) plain", "2026-01-01T00:00:00+00:00").await;
+        // A signed commit on top, its signature a made-up one (the script is asked to check it, whatever it holds).
+        let tree = git.run(&["rev-parse", "HEAD^{tree}"], &folder, 30.0).await.unwrap();
+        let parent_commit = git.run(&["rev-parse", "HEAD"], &folder, 30.0).await.unwrap();
+        let object = format!(
+            "tree {}\nparent {}\nauthor a <a@example.com> 1767225600 +0000\ncommitter a <a@example.com> 1767225600 +0000\ngpgsig -----BEGIN PGP SIGNATURE-----\n \n iQEzBAABCAAdFiEE\n -----END PGP SIGNATURE-----\n\n(windows) signed\n",
+            mighty_workmap::git::line(&tree.stdout),
+            mighty_workmap::git::line(&parent_commit.stdout)
+        );
+        std::fs::write(parent.join("signed.txt"), object).unwrap();
+        let signed_file = parent.join("signed.txt").to_string_lossy().into_owned();
+        let written = git.run(&["hash-object", "-t", "commit", "-w", &signed_file], &folder, 30.0).await.unwrap();
+        run_git(&git, &folder, &["update-ref", "HEAD", mighty_workmap::git::line(&written.stdout)]).await;
+        let marker = parent.join("gpg-ran");
+        let script = parent.join("gpg.bat");
+        std::fs::write(&script, format!("@echo off\r\necho ran> \"{}\"\r\n", marker.display())).unwrap();
+        let script_text = script.to_string_lossy().into_owned();
+        for setting in [["log.showSignature", "true"], ["gpg.program", &script_text], ["gpg.ssh.program", &script_text]] {
+            run_git(&git, &folder, &["config", setting[0], setting[1]]).await;
+        }
+        // A plain git log, none of the work map's settings, through the same process layer.
+        let folder_text = folder.to_string_lossy().into_owned();
+        let request = mighty_platform::SpawnRequest::new(&program, ["-C", &folder_text, "log", "-n", "1", "--format=%H"], &folder);
+        let mut child = processes().spawn(request).await.expect("git starts");
+        drop(child.stdin.take());
+        let (mut stdout, mut stderr) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
+        let (mut out, mut err) = (vec![], vec![]);
+        let _ = tokio::join!(stdout.read_to_end(&mut out), stderr.read_to_end(&mut err));
+        let code = child.control().wait().await.expect("git ends");
+        assert!(code == 0 && marker.exists(), "the repository's settings run the script under a plain git log");
+        std::fs::remove_file(&marker).unwrap();
+
+        let (empty, none) = (IndexMap::new(), HashMap::new());
+        let model = mighty_workmap::build(&git, &folder, &[], &empty, None, &none).await;
+        assert!(model.available && model.versions.len() == 1, "the map reads the repository: {model:?}");
+        let subjects: Vec<&str> = model.versions[0].commits.iter().map(|c| c.subject.as_str()).collect();
+        assert_eq!(subjects, ["signed", "plain"], "both commits, the signed one first");
+        assert!(!marker.exists(), "the work map's git log ran the repository's gpg program");
+        let explicit = git.run(&["log", "-n", "1", "--show-signature", "--format=%H"], &folder, 30.0).await;
+        assert!(explicit.is_some() && !marker.exists(), "even an explicit --show-signature runs no program of the repository's");
+        remove(&parent);
+    }
+
+    /// Two tags of the same version number keep git's order (by name) on every read, never the order a hash map happens to give
+    /// (W4 review C8).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn work_map_tags_of_one_version_number_keep_one_order() {
+        if mighty_workmap::git::executable().is_none() {
+            return;
+        }
+        let parent = temp("tag-order");
+        let git = git(&parent);
+        let folder = parent.join("repo");
+        std::fs::create_dir_all(&folder).unwrap();
+        run_git(&git, &folder, &["init", "-q"]).await;
+        commit(&git, &folder, "a.txt", "(mac) one", "2026-01-01T00:00:00+00:00").await;
+        for tag in ["v0.1.0", "v0.01.0", "v00.1.0", "v0.1.00"] {
+            run_git(&git, &folder, &["tag", tag]).await;
+        }
+        let (empty, none) = (IndexMap::new(), HashMap::new());
+        for _ in 0..8 {
+            let model = mighty_workmap::build(&git, &folder, &[], &empty, None, &none).await;
+            let keys: Vec<&str> = model.versions.iter().map(|v| v.key.as_str()).collect();
+            assert_eq!(keys, ["v0.01.0", "v0.1.0", "v0.1.00", "v00.1.0"], "git's order, every time");
+        }
         remove(&parent);
     }
 
