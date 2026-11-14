@@ -3550,6 +3550,7 @@
   "provider.catalog.failure.noModels": "no models in its output",
   "run.notice.hermesFullAccessSession": "This Hermes session started with full access and does not ask about dangerous commands. A new session is started to match the current permission.",
   "run.notice.hermesAskingSession": "This Hermes session started without full access and keeps asking about dangerous commands. Full access applies from a new conversation.",
+  "run.notice.hermesUnknownSession": "How this Hermes session started could not be read from Hermes's records, so it is not continued: a new session is started that asks about dangerous commands.",
   "run.error.hermesTurnFailed": "Hermes could not finish this request. The reply above says why.",
   "acp.channel.questionSkipped": "The agent's question cannot be shown as a question card, so it was skipped: {question} ({choices})",
   "run.error.hermesNoProvider": "Hermes has no model provider connected, so the request was not sent. Sign in to pick a provider and a default model.",

@@ -3550,6 +3550,7 @@
   "provider.catalog.failure.noModels": "出力にモデルが見つかりませんでした",
   "run.notice.hermesFullAccessSession": "この Hermes セッションはフルアクセスで始まっており、危険なコマンドを尋ねません。現在の権限に合わせて新しいセッションで始めます。",
   "run.notice.hermesAskingSession": "この Hermes セッションはフルアクセスなしで始まっており、危険なコマンドを引き続き尋ねます。フルアクセスは新しい会話から適用されます。",
+  "run.notice.hermesUnknownSession": "この Hermes セッションがどう始まったかを Hermes の記録から読めなかったため、続行しません。危険なコマンドを尋ねる新しいセッションで始めます。",
   "run.error.hermesTurnFailed": "Hermes はこのリクエストを完了できませんでした。理由は上の返答にあります。",
   "acp.channel.questionSkipped": "エージェントの質問は質問カードとして表示できないため、スキップしました: {question} ({choices})",
   "run.error.hermesNoProvider": "Hermes に接続されたモデルプロバイダーがないため、リクエストを送りませんでした。ログインしてプロバイダーと既定のモデルを選んでください。",

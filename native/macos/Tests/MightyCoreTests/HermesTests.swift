@@ -811,6 +811,26 @@ struct HermesTests {
         await runner.shutdown(); await service.shutdown()
     }
 
+    /// S-B12 (Windows AcpVerification.AHermesSessionIsContinuedOnlyWhereItsYoloAndAnswerAllow).
+    @Test func aSessionIsContinuedOnlyWhereItsYoloAndItsAnswersAllow() {
+        let id = Self.resumedSession
+        func decided(_ mode: String, _ count: Int?, _ started: Bool?) -> String {
+            let decision = HermesAgent.resume(id, mode: mode, messageCount: count, startedWithFullAccess: started)
+            return "\(decision.resumeID ?? "new") \(decision.noticeKey ?? "-")"
+        }
+        // A session that never answered is not continued.
+        #expect(decided("manual", 0, false) == "new -" && decided("fullAccess", 0, true) == "new -")
+        // A yolo session is not continued by a pane that asks, nor by one that accepts edits.
+        #expect(decided("manual", 3, true) == "new run.notice.hermesFullAccessSession" && decided("acceptEdits", 3, true) == "new run.notice.hermesFullAccessSession")
+        // An asking session is continued and still asks; matching sessions are continued.
+        #expect(decided("fullAccess", 3, false) == "\(id) run.notice.hermesAskingSession")
+        #expect(decided("fullAccess", 3, true) == "\(id) -" && decided("manual", 3, false) == "\(id) -")
+        // A session whose policy receipt cannot be read may have started with --yolo; only a full-access pane continues it.
+        #expect(decided("manual", 3, nil) == "new run.notice.hermesUnknownSession" && decided("acceptEdits", nil, nil) == "new run.notice.hermesUnknownSession")
+        #expect(decided("fullAccess", 3, nil) == "\(id) -" && decided("fullAccess", nil, nil) == "\(id) -")
+        #expect(L("run.notice.hermesUnknownSession") != "run.notice.hermesUnknownSession")
+    }
+
     /// S-B11 (Windows AcpVerification.ACancelledTurnAnswersItsWaitingPermissionsCancelled): a turn
     /// being cancelled answers the permission requests waiting on the user `cancelled`, before its
     /// `session/cancel` ("The Client MUST respond to all pending session/request_permission requests

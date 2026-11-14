@@ -67,6 +67,22 @@ public enum HermesAgent {
         }
     }
 
+    /// Whether a run continues the pane's Hermes session, and what the pane is told (Windows
+    /// `HermesAgent.Resume`): Hermes fixes `--yolo` when a session starts, so one that started
+    /// with it is not continued by a pane that asks (a new session, run.notice.hermesFullAccessSession),
+    /// and one that started without it keeps asking in a full-access pane (continued,
+    /// run.notice.hermesAskingSession); a session whose first request never got an answer
+    /// (`message_count` 0) keeps the provider it was made with and is not continued. A session
+    /// whose policy receipt cannot be read may have started with `--yolo`: a pane that asks
+    /// starts a new one (run.notice.hermesUnknownSession), a full-access pane continues it.
+    public static func resume(_ resumeID: String, mode: String, messageCount: Int?, startedWithFullAccess: Bool?) -> (resumeID: String?, noticeKey: String?) {
+        let full = mode == "fullAccess"
+        if messageCount == 0 { return (nil, nil) }
+        if startedWithFullAccess == true, !full { return (nil, "run.notice.hermesFullAccessSession") }
+        if startedWithFullAccess == nil, !full { return (nil, "run.notice.hermesUnknownSession") }
+        return (resumeID, startedWithFullAccess == false && full ? "run.notice.hermesAskingSession" : nil)
+    }
+
     /// The messages the session holds (`sessions.message_count`): 0 for one whose turns all failed
     /// or never ran. nil when the session or the database is not there.
     public static func messageCount(sessionID: String, database: URL) -> Int? {

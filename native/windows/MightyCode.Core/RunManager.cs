@@ -361,7 +361,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 var launch = request.Provider == "pi" && request.ResumeId is { } piResume && PiAgent.SessionFile(piResume, workspace.Path, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), environment) is null ? request with { ResumeId = null } : request;
                 // Hermes fixes `--yolo` when a session starts: a session that started with it is not continued by a pane that asks (it would not
                 // ask), one that started without it keeps asking; a session whose first request never got an answer is not continued (it keeps
-                // the provider it was made with and fails again). A record that cannot be read changes nothing (M/ProcessRunner.swift).
+                // the provider it was made with and fails again). One whose record cannot be read is continued only by a full-access pane
+                // (M/ProcessRunner.swift).
                 if (request.Provider == "hermes" && launch.ResumeId is { } hermesResume)
                 {
                     var database = HermesSessions.StateDatabase(environment);

@@ -629,18 +629,16 @@ public actor ProcessRunner {
                     if PiAgent.sessionFile(id: resume, workspacePath: workspace.path, home: home, environment: environment) == nil { launch.resumeId = nil }
                 }
                 // Hermes fixes `--yolo` when a session starts. A session that started with it is not
-                // continued by a pane that asks (it would not ask); one that started without it keeps asking.
+                // continued by a pane that asks (it would not ask); one that started without it keeps asking;
+                // one whose record cannot be read is continued only by a full-access pane (`HermesAgent.resume`).
                 var hermesNotice: String?
                 if request.provider == "hermes", let resume = request.resumeId {
                     let home = environment["HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.homeDirectoryForCurrentUser
                     let database = HermesAgent.database(home: home, environment: environment)
-                    let started = HermesAgent.startedWithFullAccess(sessionID: resume, database: database)
-                    let full = request.settings.permissionMode == "fullAccess"
-                    // A session without an answered turn (its first request failed, say before a provider was
-                    // set up) keeps the provider it was created with and would fail the same way again.
-                    if HermesAgent.messageCount(sessionID: resume, database: database) == 0 { launch.resumeId = nil }
-                    else if started == true, !full { launch.resumeId = nil; hermesNotice = L("run.notice.hermesFullAccessSession") }
-                    else if started == false, full { hermesNotice = L("run.notice.hermesAskingSession") }
+                    let decided = HermesAgent.resume(resume, mode: request.settings.permissionMode, messageCount: HermesAgent.messageCount(sessionID: resume, database: database),
+                                                     startedWithFullAccess: HermesAgent.startedWithFullAccess(sessionID: resume, database: database))
+                    launch.resumeId = decided.resumeID
+                    hermesNotice = decided.noticeKey.map { L($0) }
                 }
                 if codexApprovals {
                     arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts, paneMCPBinding: paneBinding, codexHome: run.codexHome)
