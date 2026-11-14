@@ -508,7 +508,8 @@ pub async fn build(
     else {
         return WorkMapModel::unavailable("gitFailed");
     };
-    let mut tag_info: HashMap<String, (String, String)> = HashMap::new();
+    // In git's order (by name), as C#'s dictionary keeps it: tags of the same version number stay in that order.
+    let mut tag_info: IndexMap<String, (String, String)> = IndexMap::new();
     for line in refs.stdout.split('\n').filter(|l| !l.is_empty()) {
         let fields: Vec<&str> = line.trim_end_matches('\r').split('\u{1f}').collect();
         if fields.len() < 4 || !TAG_PATTERN.is_match(fields[0]) {

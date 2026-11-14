@@ -598,6 +598,31 @@ mod real {
         remove(&parent);
     }
 
+    /// Two tags of the same version number keep git's order (by name) on every read, never the order a hash map happens to give
+    /// (W4 review C8).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn work_map_tags_of_one_version_number_keep_one_order() {
+        if mighty_workmap::git::executable().is_none() {
+            return;
+        }
+        let parent = temp("tag-order");
+        let git = git(&parent);
+        let folder = parent.join("repo");
+        std::fs::create_dir_all(&folder).unwrap();
+        run_git(&git, &folder, &["init", "-q"]).await;
+        commit(&git, &folder, "a.txt", "(mac) one", "2026-01-01T00:00:00+00:00").await;
+        for tag in ["v0.1.0", "v0.01.0", "v00.1.0", "v0.1.00"] {
+            run_git(&git, &folder, &["tag", tag]).await;
+        }
+        let (empty, none) = (IndexMap::new(), HashMap::new());
+        for _ in 0..8 {
+            let model = mighty_workmap::build(&git, &folder, &[], &empty, None, &none).await;
+            let keys: Vec<&str> = model.versions.iter().map(|v| v.key.as_str()).collect();
+            assert_eq!(keys, ["v0.01.0", "v0.1.0", "v0.1.00", "v00.1.0"], "git's order, every time");
+        }
+        remove(&parent);
+    }
+
     /// WorkMapVerification.cs:220 `ClaudeIsAskedOnceInAFolderOfItsOwn`.
     #[tokio::test(flavor = "multi_thread")]
     async fn work_map_claude_is_asked_once_in_a_folder_of_its_own_with_a_time_limit() {
