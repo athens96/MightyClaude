@@ -5,7 +5,7 @@
 //! ones do (`English(...)`): this file is its own process, so its language never meets the Korean checks'.
 //!
 //! The checks of the phone's and the remote wire's sides of the card (`MobilePermission`, `RemoteWire*`, the permission route, a remote
-//! pane's host) are W8's: DEFERRED.md.
+//! pane's host) are W8's: README "Pending inputs".
 
 mod common;
 
