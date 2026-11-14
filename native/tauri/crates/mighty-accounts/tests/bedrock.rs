@@ -114,3 +114,63 @@ fn the_reset_settings_are_written_as_system_text_json_writes_them() {
         "CLAUDE_CONFIG_DIR"
     );
 }
+
+/// Review C15: a number is written back as it was read (`JsonNode` keeps its text), so settings whose only difference would be
+/// `1.0` against `1` are not rewritten, and no backup is left.
+#[test]
+fn numbers_keep_their_text_and_unchanged_settings_are_left_alone() {
+    let new_line = mighty_run::os::new_line();
+    let written = bedrock::reset_user_settings_json(r#"{"a":1.0,"b":[1e2,-0.50],"model":"apac.anthropic.claude-test"}"#).unwrap();
+    assert_eq!(written, format!("{{{n}  \"a\": 1.0,{n}  \"b\": [{n}    1e2,{n}    -0.50{n}  ]{n}}}\n", n = new_line));
+    assert_eq!(
+        bedrock::reset_user_settings_json(r#"{"x":1,"x":2,"y":3}"#).unwrap(),
+        format!("{{{n}  \"x\": 2,{n}  \"y\": 3{n}}}\n", n = new_line),
+        "a name given twice keeps its place and its last value"
+    );
+
+    let home = temp("bedrock-reset-numbers");
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+    let path = home.join(".claude").join("settings.json");
+    const ORIGINAL: &str = r#"{"cleanupPeriodDays":30.0,"env":{"CUSTOM":"keep"}}"#;
+    std::fs::write(&path, ORIGINAL).unwrap();
+    assert_eq!(bedrock::reset_user_settings(&text(&home), &env(&[])).unwrap(), None, "nothing of Bedrock, nothing written");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), ORIGINAL, "the settings are untouched");
+    assert_eq!(std::fs::read_dir(home.join(".claude")).unwrap().count(), 1, "no backup and no temporary file");
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+/// Review C5 and C14: the backup takes the settings' permissions (C# `File.Copy` keeps the mode), and a read-only settings file
+/// leaves no temporary file behind whether or not it could be replaced.
+#[test]
+fn the_backup_keeps_the_settings_permissions_and_no_temporary_is_left() {
+    let home = temp("bedrock-reset-read-only");
+    let folder = home.join(".claude");
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = folder.join("settings.json");
+    std::fs::write(&path, r#"{"env":{"CLAUDE_CODE_USE_BEDROCK":"1","CUSTOM":"keep"}}"#).unwrap();
+    let mut read_only = std::fs::metadata(&path).unwrap().permissions();
+    read_only.set_readonly(true);
+    std::fs::set_permissions(&path, read_only.clone()).unwrap();
+
+    let result = bedrock::reset_user_settings(&text(&home), &env(&[]));
+    let names: Vec<String> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert!(!names.iter().any(|n| n.ends_with(".tmp")), "no temporary file is left: {names:?}");
+    let backup = names.iter().find(|n| n.starts_with("settings.json.bedrock-backup-")).expect("the backup was made first");
+    let backup = folder.join(backup);
+    assert_eq!(std::fs::metadata(&backup).unwrap().permissions(), read_only, "the backup has the settings' permissions");
+    assert!(std::fs::read_to_string(&backup).unwrap().contains("CLAUDE_CODE_USE_BEDROCK"), "the backup holds the original");
+    let settings = std::fs::read_to_string(&path).unwrap();
+    match result {
+        Ok(made) => assert!(made.is_some() && !settings.contains("BEDROCK"), "replaced: {settings}"),
+        Err(_) => assert!(settings.contains("BEDROCK"), "refused, the settings as they were"),
+    }
+
+    for entry in std::fs::read_dir(&folder).unwrap() {
+        let file = entry.unwrap().path();
+        let mut writable = std::fs::metadata(&file).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false, reason = "the test's own files, to remove them")]
+        writable.set_readonly(false);
+        std::fs::set_permissions(&file, writable).unwrap();
+    }
+    let _ = std::fs::remove_dir_all(&home);
+}

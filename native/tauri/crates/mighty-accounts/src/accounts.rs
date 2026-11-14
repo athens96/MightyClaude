@@ -324,13 +324,23 @@ pub fn jwt_claims(token: &str) -> Option<Map<String, Value>> {
 }
 
 /// `CliAccountSupport.BoundedFileText`: a small regular file's text (UTF-8, a byte order mark dropped), its size checked before it
-/// is read; None for a folder, a link, a file past `max_bytes` or one that cannot be read.
+/// is read; None for a folder, a link, a file past `max_bytes` or one that cannot be read. The size is the opened file's and at most
+/// one byte past the bound is read, so a file swapped or grown after the check is still refused rather than read whole.
 pub fn bounded_file_text(path: &Path, max_bytes: usize) -> Option<String> {
     let info = std::fs::symlink_metadata(path).ok()?;
-    if info.is_dir() || info.file_type().is_symlink() || info.len() > max_bytes as u64 {
+    if info.is_dir() || info.file_type().is_symlink() {
         return None;
     }
-    let bytes = std::fs::read(path).ok()?;
+    let file = std::fs::File::open(path).ok()?;
+    let info = file.metadata().ok()?;
+    if !info.is_file() || info.len() > max_bytes as u64 {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut std::io::Read::take(file, max_bytes as u64 + 1), &mut bytes).ok()?;
+    if bytes.len() > max_bytes {
+        return None;
+    }
     let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
     Some(String::from_utf8_lossy(bytes).into_owned())
 }

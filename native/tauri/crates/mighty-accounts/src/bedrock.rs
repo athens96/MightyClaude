@@ -12,6 +12,7 @@ use std::sync::OnceLock;
 use mighty_run::{os, strings};
 use regex::Regex;
 use serde_json::Value;
+use serde_json::value::RawValue;
 
 pub use mighty_run::failure::bedrock_guidance as runtime_failure_guidance;
 
@@ -70,21 +71,6 @@ const MODEL_KEYS: [&str; 8] = [
     "CLAUDE_CODE_SUBAGENT_MODEL",
 ];
 
-/// `BedrockModel`: a Bedrock model id or ARN.
-fn bedrock_model(value: Option<&Value>) -> bool {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    let pattern = PATTERN.get_or_init(|| Regex::new(r"^(?:(?:us|eu|apac|global)\.)?anthropic\.|^arn:aws[^:]*:bedrock:").expect("pattern"));
-    value.map(node_text).is_some_and(|text| pattern.is_match(&text))
-}
-
-/// `JsonNode.ToString()`: a string's own text, anything else its JSON.
-fn node_text(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
-        other => other.to_string(),
-    }
-}
-
 /// Why a reset was refused (C#'s `InvalidDataException` and `IOException` messages).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResetError(pub String);
@@ -97,60 +83,131 @@ impl std::fmt::Display for ResetError {
 
 impl std::error::Error for ResetError {}
 
-/// `ResetUserSettingsJson`: the settings without Bedrock — its four keys, the region once Bedrock was on, and the model pins that
-/// name a Bedrock model; everything else (other AWS credentials, permissions, other models) stays. Written as
-/// `JsonSerializer` writes indented JSON, with a final newline.
-pub fn reset_user_settings_json(json: &str) -> Result<String, ResetError> {
+/// A JSON value as `JsonNode` keeps it: a number (and `true`, `false`, `null`) as its own text, so `1.0` is written back as `1.0`.
+enum Node {
+    Raw(String),
+    Str(String),
+    Arr(Vec<Node>),
+    Obj(Vec<(String, Node)>),
+}
+
+/// An object's members in document order (a name given twice keeps its first place and its last value).
+struct RawObject(Vec<(String, Box<RawValue>)>);
+
+impl<'de> serde::Deserialize<'de> for RawObject {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Members;
+        impl<'de> serde::de::Visitor<'de> for Members {
+            type Value = RawObject;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("an object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<RawObject, A::Error> {
+                let mut members: Vec<(String, Box<RawValue>)> = Vec::new();
+                while let Some((name, value)) = map.next_entry::<String, Box<RawValue>>()? {
+                    match members.iter_mut().find(|(kept, _)| *kept == name) {
+                        Some(member) => member.1 = value,
+                        None => members.push((name, value)),
+                    }
+                }
+                Ok(RawObject(members))
+            }
+        }
+        deserializer.deserialize_map(Members)
+    }
+}
+
+fn node(raw: &RawValue) -> Result<Node, serde_json::Error> {
+    let text = raw.get().trim();
+    Ok(match text.as_bytes().first() {
+        Some(b'{') => {
+            let members = serde_json::from_str::<RawObject>(text)?.0;
+            Node::Obj(members.into_iter().map(|(name, value)| node(&value).map(|n| (name, n))).collect::<Result<_, _>>()?)
+        }
+        Some(b'[') => Node::Arr(serde_json::from_str::<Vec<Box<RawValue>>>(text)?.iter().map(|v| node(v)).collect::<Result<_, _>>()?),
+        Some(b'"') => Node::Str(serde_json::from_str::<String>(text)?),
+        _ => Node::Raw(text.to_string()),
+    })
+}
+
+/// `JsonNode.ToString()` as far as the reset reads it: a string's own text, a scalar's, else its JSON.
+fn node_text(value: &Node) -> String {
+    match value {
+        Node::Str(text) | Node::Raw(text) => text.clone(),
+        other => {
+            let mut out = String::new();
+            write_indented(&mut out, other, 0);
+            out
+        }
+    }
+}
+
+/// `BedrockModel`: a Bedrock model id or ARN.
+fn bedrock_model(value: Option<&Node>) -> bool {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    let pattern = PATTERN.get_or_init(|| Regex::new(r"^(?:(?:us|eu|apac|global)\.)?anthropic\.|^arn:aws[^:]*:bedrock:").expect("pattern"));
+    value.map(node_text).is_some_and(|text| pattern.is_match(&text))
+}
+
+/// The settings without Bedrock, and whether anything was taken out (C#'s `JsonNode.DeepEquals(original, updated)` false).
+fn reset_json(json: &str) -> Result<(String, bool), ResetError> {
     if json.len() > MAXIMUM_SETTINGS_BYTES {
         return Err(ResetError("Claude settings exceed the size limit.".into()));
     }
-    let Ok(Value::Object(mut root)) = serde_json::from_str::<Value>(json) else {
-        return Err(ResetError("Claude settings must be a JSON object.".into()));
+    let not_object = || ResetError("Claude settings must be a JSON object.".into());
+    // Read as `JsonNode.Parse` reads (its depth bounded, so the walk below is too), then again keeping each value's own text.
+    let Ok(Value::Object(_)) = serde_json::from_str::<Value>(json) else { return Err(not_object()) };
+    let Ok(Node::Obj(mut root)) = serde_json::from_str::<Box<RawValue>>(json).and_then(|raw| node(&raw)) else {
+        return Err(not_object());
     };
-    match root.get_mut("env") {
-        None | Some(Value::Null) => {}
-        Some(Value::Object(env)) => {
-            let enabled = env.get("CLAUDE_CODE_USE_BEDROCK").map(node_text).is_some_and(|value| value == "1" || value == "true");
-            let doomed: Vec<String> = env
-                .iter()
-                .filter(|(key, value)| {
-                    BEDROCK_KEYS.contains(&key.as_str())
+    let mut changed = false;
+    if let Some((_, env)) = root.iter_mut().find(|(name, _)| name == "env") {
+        match env {
+            Node::Raw(text) if text == "null" => {}
+            Node::Obj(members) => {
+                let enabled = members
+                    .iter()
+                    .find(|(name, _)| name == "CLAUDE_CODE_USE_BEDROCK")
+                    .map(|(_, value)| node_text(value))
+                    .is_some_and(|value| value == "1" || value == "true");
+                let before = members.len();
+                members.retain(|(key, value)| {
+                    !(BEDROCK_KEYS.contains(&key.as_str())
                         || enabled && matches!(key.as_str(), "AWS_REGION" | "AWS_DEFAULT_REGION")
-                        || MODEL_KEYS.contains(&key.as_str()) && bedrock_model(Some(value))
-                })
-                .map(|(key, _)| key.clone())
-                .collect();
-            for key in doomed {
-                env.shift_remove(&key);
+                        || MODEL_KEYS.contains(&key.as_str()) && bedrock_model(Some(value)))
+                });
+                changed |= members.len() != before;
             }
+            _ => return Err(ResetError("Claude settings env must be an object.".into())),
         }
-        Some(_) => return Err(ResetError("Claude settings env must be an object.".into())),
     }
-    if bedrock_model(root.get("model")) {
-        root.shift_remove("model");
+    let model = root.iter().position(|(name, value)| name == "model" && bedrock_model(Some(value)));
+    if let Some(at) = model {
+        root.remove(at);
+        changed = true;
     }
     let mut out = String::new();
-    write_indented(&mut out, &Value::Object(root), 0);
+    write_indented(&mut out, &Node::Obj(root), 0);
     out.push('\n');
-    Ok(out)
+    Ok((out, changed))
 }
 
-/// `JsonSerializer` with `WriteIndented`: two spaces, `"name": value`, `Environment.NewLine` between lines, text escaped as
-/// `JavaScriptEncoder.Default` escapes it.
-fn write_indented(out: &mut String, value: &Value, depth: usize) {
+/// `ResetUserSettingsJson`: the settings without Bedrock — its four keys, the region once Bedrock was on, and the model pins that
+/// name a Bedrock model; everything else (other AWS credentials, permissions, other models) stays, numbers as they were written.
+/// Written as `JsonNode.ToJsonString` writes indented JSON, with a final newline.
+pub fn reset_user_settings_json(json: &str) -> Result<String, ResetError> {
+    reset_json(json).map(|(written, _)| written)
+}
+
+/// `JsonNode.ToJsonString` with `WriteIndented`: two spaces, `"name": value`, `Environment.NewLine` between lines, text escaped as
+/// `JavaScriptEncoder.Default` escapes it, a number as its own text.
+fn write_indented(out: &mut String, value: &Node, depth: usize) {
     let new_line = os::new_line();
     let indent = |out: &mut String, depth: usize| out.push_str(&"  ".repeat(depth));
     match value {
-        Value::Null => out.push_str("null"),
-        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-        Value::Number(n) => match (n.as_i64(), n.as_u64(), n.as_f64()) {
-            (Some(i), _, _) => out.push_str(&i.to_string()),
-            (_, Some(u), _) => out.push_str(&u.to_string()),
-            (_, _, Some(f)) => out.push_str(&mighty_core::json::format_double(f)),
-            _ => out.push_str(&n.to_string()),
-        },
-        Value::String(s) => mighty_core::json::escape_into(out, s),
-        Value::Array(items) => {
+        Node::Raw(text) => out.push_str(text),
+        Node::Str(text) => mighty_core::json::escape_into(out, text),
+        Node::Arr(items) => {
             if items.is_empty() {
                 out.push_str("[]");
                 return;
@@ -168,13 +225,13 @@ fn write_indented(out: &mut String, value: &Value, depth: usize) {
             indent(out, depth);
             out.push(']');
         }
-        Value::Object(map) => {
-            if map.is_empty() {
+        Node::Obj(members) => {
+            if members.is_empty() {
                 out.push_str("{}");
                 return;
             }
             out.push('{');
-            for (i, (name, item)) in map.iter().enumerate() {
+            for (i, (name, item)) in members.iter().enumerate() {
                 if i > 0 {
                     out.push(',');
                 }
@@ -216,9 +273,8 @@ pub fn reset_user_settings(home: &str, environment: &BTreeMap<String, String>) -
         return Err(io("Claude settings are not a bounded regular file."));
     }
     let original = read_text(&path)?;
-    let updated = reset_user_settings_json(&original)?;
-    let same = serde_json::from_str::<Value>(&original).ok() == serde_json::from_str::<Value>(&updated).ok();
-    if same {
+    let (updated, changed) = reset_json(&original)?;
+    if !changed {
         return Ok(None);
     }
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -227,7 +283,11 @@ pub fn reset_user_settings(home: &str, environment: &BTreeMap<String, String>) -
     let result = (|| {
         copy_new(&path, &backup)?;
         std::fs::write(&temporary, updated.as_bytes()).map_err(|e| ResetError(e.to_string()))?;
-        if let Ok(permissions) = std::fs::metadata(&path).map(|m| m.permissions()) {
+        // C# `File.SetUnixFileMode(temporary, File.GetUnixFileMode(path))`, off Windows only: on Windows a read-only original would
+        // make the temporary read-only too, and it could be neither moved over the original nor deleted.
+        if !os::windows()
+            && let Ok(permissions) = std::fs::metadata(&path).map(|m| m.permissions())
+        {
             let _ = std::fs::set_permissions(&temporary, permissions);
         }
         if read_text(&path)? != original {
@@ -249,9 +309,14 @@ fn read_text(path: &Path) -> Result<String, ResetError> {
     Ok(String::from_utf8_lossy(bytes).into_owned())
 }
 
-/// `File.Copy(from, to, overwrite: false)`.
+/// `File.Copy(from, to, overwrite: false)`: the copy takes the original's permissions (its mode off Windows, as `File.Copy` keeps it)
+/// before any byte is written, so a backup of the settings is never readable by more than the settings were. The handle opened for
+/// writing still writes once the copy is read-only.
 fn copy_new(from: &Path, to: &Path) -> Result<(), ResetError> {
-    let bytes = std::fs::read(from).map_err(|e| ResetError(e.to_string()))?;
-    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(to).map_err(|e| ResetError(e.to_string()))?;
-    std::io::Write::write_all(&mut file, &bytes).map_err(|e| ResetError(e.to_string()))
+    let failed = |e: std::io::Error| ResetError(e.to_string());
+    let bytes = std::fs::read(from).map_err(failed)?;
+    let permissions = std::fs::metadata(from).map_err(failed)?.permissions();
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(to).map_err(failed)?;
+    file.set_permissions(permissions).map_err(failed)?;
+    std::io::Write::write_all(&mut file, &bytes).map_err(failed)
 }
