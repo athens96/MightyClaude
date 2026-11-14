@@ -873,13 +873,6 @@ struct Kept {
     written_at: Option<mighty_core::time::DateTimeOffset>,
 }
 
-impl Kept {
-    /// `LoadedKeptLists()`: the kept lists, read from the storage folder the first time.
-    fn loaded(&mut self, storage: Option<&Path>) -> &mut KeptModelLists {
-        self.lists.get_or_insert_with(|| KeptModelLists::load(KeptModelLists::file_path(storage).as_deref()))
-    }
-}
-
 impl ProviderCatalog {
     /// `finder`: finds a provider's CLI (the checks' fake); None looks along the CLI environment's PATH and the installers' folders.
     pub fn new(processes: Arc<dyn ProcessHost>, environment: Arc<dyn ShellEnvironment>, finder: Option<Finder>) -> ProviderCatalog {
@@ -1291,21 +1284,47 @@ impl ProviderCatalog {
         }
         let reason =
             read.read_failure.clone().unwrap_or_else(|| read_failure(provider, &strings::get("provider.catalog.failure.noModels"), ""));
-        let entry = lock(&self.kept).loaded(self.storage.as_deref()).list(provider, workspace).cloned();
+        let entry = if self.load_kept().await {
+            lock(&self.kept).lists.as_ref().and_then(|lists| lists.list(provider, workspace).cloned())
+        } else {
+            None
+        };
         match entry {
             Some(entry) => kept_lists::kept(&entry, &reason),
             None => fallback(provider).with_failure(reason),
         }
     }
 
+    /// `LoadedKeptLists()`: the kept lists, read from the storage folder the first time, off the async worker. A file that is there and
+    /// could not be read (another program holding it, access refused) is not taken for "no lists" (C# would): false, nothing kept, and
+    /// it is read again next time, so a keep never writes over the lists it holds.
+    async fn load_kept(&self) -> bool {
+        if lock(&self.kept).lists.is_some() {
+            return true;
+        }
+        let read = match KeptModelLists::file_path(self.storage.as_deref()) {
+            None => Ok(KeptModelLists::default()),
+            Some(path) => tokio::task::spawn_blocking(move || KeptModelLists::read(Some(&path)))
+                .await
+                .unwrap_or_else(|e| Err(std::io::Error::other(e))),
+        };
+        let Ok(lists) = read else { return false };
+        lock(&self.kept).lists.get_or_insert(lists);
+        true
+    }
+
     /// `KeepAsync`: keeps a list the CLI just gave, writing the file (in the storage folder only) when it changed or is five minutes
-    /// old. A write that fails leaves the list kept in memory; the next change writes it.
+    /// old. A write that fails leaves the list kept in memory; the next change writes it. While the kept lists' file cannot be read,
+    /// nothing is kept.
     async fn keep(&self, catalog: &ModelCatalog, provider: &str, workspace: Option<&str>) {
+        if !self.load_kept().await {
+            return;
+        }
         let now = mighty_core::time::DateTimeOffset::now();
         let data = {
             let mut kept = lock(&self.kept);
             let written_at = kept.written_at;
-            let lists = kept.loaded(self.storage.as_deref());
+            let Some(lists) = kept.lists.as_mut() else { return };
             (lists.remember(catalog, provider, workspace, now, written_at) && self.storage.is_some()).then(|| lists.encoded())
         };
         let (Some(data), Some(path)) = (data, KeptModelLists::file_path(self.storage.as_deref())) else { return };

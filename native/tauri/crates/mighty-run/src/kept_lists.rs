@@ -83,18 +83,33 @@ impl KeptModelLists {
     /// `Load(path)`: the file's lists; a missing, oversized or unreadable file gives none, and an entry that does not check out is
     /// left out.
     pub fn load(path: Option<&Path>) -> KeptModelLists {
-        let mut lists = KeptModelLists::default();
-        let Some(path) = path else { return lists };
-        let Ok(meta) = std::fs::symlink_metadata(path) else { return lists };
+        KeptModelLists::read(path).unwrap_or_default()
+    }
+
+    /// [`load`](Self::load), but a file that is there and could not be read (another program holding it, access refused) is an Err
+    /// rather than no lists, so [`crate::providers::ProviderCatalog`] reads it again later instead of writing over the lists it holds.
+    pub fn read(path: Option<&Path>) -> std::io::Result<KeptModelLists> {
+        let lists = KeptModelLists::default();
+        let Some(path) = path else { return Ok(lists) };
+        let meta = match std::fs::symlink_metadata(path) {
+            Ok(meta) => meta,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(lists),
+            Err(error) => return Err(error),
+        };
         if meta.is_dir() || reparse_point(&meta) || meta.len() > MAXIMUM_BYTES as u64 {
-            return lists;
+            return Ok(lists);
         }
-        let Ok(data) = std::fs::read(path) else { return lists };
+        Ok(KeptModelLists::parse(&std::fs::read(path)?))
+    }
+
+    /// The lists of a file's bytes: none unless the whole file checks out, and an entry that does not is left out.
+    fn parse(data: &[u8]) -> KeptModelLists {
+        let mut lists = KeptModelLists::default();
         if data.len() > MAXIMUM_BYTES {
             return lists;
         }
         // `JsonDocument.Parse`: the whole file is JSON or nothing is read.
-        let Ok(Raw(root)) = serde_json::from_slice::<Raw>(&data) else { return lists };
+        let Ok(Raw(root)) = serde_json::from_slice::<Raw>(data) else { return lists };
         let RawValue::Object(members) = &root else { return lists };
         let version = last(members, "version").and_then(|v| v.integer());
         let Some(RawValue::Array(rows)) = last(members, "lists") else { return lists };
@@ -279,13 +294,20 @@ pub fn date(text: Option<&str>) -> Option<DateTimeOffset> {
         }
         _ => return None,
     };
+    // .NET's years are 1 to 9999, and the instant in UTC must lie between `DateTimeOffset.MinValue` and `MaxValue`.
+    if year == 0 {
+        return None;
+    }
     let date = chrono::NaiveDate::from_ymd_opt(year as i32, month, day)?;
     let time = chrono::NaiveTime::from_hms_opt(hour, minute, second)?;
     let local = chrono::NaiveDateTime::new(date, time).and_utc();
     let utc = local - chrono::Duration::minutes(offset_minutes);
     let ticks = mighty_core::time::ticks_of(utc) + ticks_fraction;
-    Some(DateTimeOffset::from_utc_ticks(ticks))
+    (0..=MAXIMUM_TICKS).contains(&ticks).then(|| DateTimeOffset::from_utc_ticks(ticks))
 }
+
+/// `DateTime.MaxValue.Ticks`: 9999-12-31T23:59:59.9999999.
+const MAXIMUM_TICKS: i64 = 3_155_378_975_999_999_999;
 
 /// C# `StateStore.AtomicWriteAsync(path, data)` as `KeepAsync` calls it (no backup): `data` written to a new temporary file beside
 /// `path` and flushed to the disk, readable and writable by this user only off Windows, then moved over the file; a refused move

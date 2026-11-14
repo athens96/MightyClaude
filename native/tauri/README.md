@@ -222,9 +222,11 @@ on agy's default (the pane's model set back with a note). The CLIs are read once
 its models are asked for; until then the composer says it is checking the runtime.
 
 The model lists keep themselves right (`models.rs`, C# MainWindow.ModelRefresh.cs over mighty-run's `ModelCatalogRefresh`): selecting a
-pane reads its list again, a provider switch reads the new agent's, and a send or a queued request waits up to 3 s for the list as the
-CLI has it now (the editor says it checks the models); a newer list becomes the provider's runtime, and an idle pane whose model or effort
-the list no longer has takes the default with a line in its transcript (`ModelSelectionSupport.Adjusted`). The last list each CLI gave is
+pane reads its list again, a provider switch reads the new agent's, the model menu's refresh row and a new conversation read it again at
+once (C# `RefreshPaneModels`), and a send or a queued request waits up to 3 s for the list as the CLI has it now (the editor says it
+checks the models; a queued request removed, stopped or closed meanwhile does not start); a newer list becomes the provider's runtime, and
+an idle pane whose model or effort the list no longer has takes the default with a line in its transcript
+(`ModelSelectionSupport.Adjusted`). At quit nothing is read or reconciled any more before the last save. The last list each CLI gave is
 kept (`KeptModelLists`: `model-lists.json` in the profile with `--allow-state-write`, else in
 `%LOCALAPPDATA%\dev.mightycode.tauri\provider-catalog\<profile>`), so a read that fails, now or after a restart, shows that list, and the
 model menu says which list it is (`ModelListNotices.Notice`: the built-in one, or the kept one and its age). A smoke reads and reconciles
@@ -272,6 +274,13 @@ What a later stage gives the composer, the cards and the Mighty views stays at i
 | The Ouroboros dashboard, background output tails, custom agents' definitions | empty; `mightyOpenDashboard` only marks the view | W9 |
 | An Antigravity card on the phone and over the remote wire (`MobilePermission.FromAntigravity`, `MobileAntigravityCard`, the permission route's answers, a remote pane's host holding the card's rules in its own settings, `RemoteWireStart.AntigravityGrant`), the dashboard's count of a pane's card (`WorkDashboard.Pending`) | none: AntigravityPermissionVerification.cs:494, :511, :534 (its phone half), :683, :727 are W8's; the dashboard is the frame's later stage | W8, W6 |
 | Saving the text setting (Settings › Text), the files and work map panes' phone routes, the work dashboard's usage chips | the setting lasts until the app quits; none | W6, W8, W6 |
+| `ModelsAfterAccountChange` (a sign-in or sign-out drops every model list of that provider: models.rs over `ModelCatalogRefresh::invalidate`, before the accounts section's whole-runtime read) | nothing signs in or out in the app yet, so no list is dropped for it | W6 |
+
+Settings › 페이즈별 모델's form (W6) must check every model it saves with `wire::model` (the composer's `ChangeModel` rule) before it
+reaches mighty-run's `model_settings` writes, which take what they are given, as C#'s `ModelSettingsFileStore` does: a value with a line
+break adds lines to Ouroboros's `config.yaml`. The writes keep C#'s other limits too, for W6 to settle: the comments in omc's
+`config.jsonc` are dropped, a rewritten YAML line loses its CRLF, a symlinked config is replaced by a plain file, the file's permissions
+are not kept, and the temporary file is not flushed before it replaces the config.
 
 ### Unimplemented page methods
 

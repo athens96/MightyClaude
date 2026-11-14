@@ -121,14 +121,32 @@ fn the_kept_lists_file_is_bounded_and_read_tolerantly() {
         "only the entry that checks out: {}",
         loaded.entries().len()
     );
-    // A name written twice in an entry refuses it, as the Mac's decoder does; once in the file's root the last one counts.
-    let repeated = format!(
-        r#"{{"version":1,"lists":[{{"provider":"pi","provider":"gemini","listedAt":"{stamp}","detail":"d","models":[{{"value":"m","displayName":"M","description":""}}]}}],"lists":[]}}"#
+    // A name written twice in an entry refuses it, as the Mac's decoder does, and that entry alone.
+    let entry = |provider: &str| {
+        format!(
+            r#"{{"provider":"{provider}","listedAt":"{stamp}","detail":"d","models":[{{"value":"m","displayName":"M","description":""}}]}}"#
+        )
+    };
+    let twice = format!(
+        r#"{{"provider":"pi","provider":"gemini","listedAt":"{stamp}","detail":"d","models":[{{"value":"m","displayName":"M","description":""}}]}}"#
     );
-    std::fs::write(&file, repeated).unwrap();
-    assert!(KeptModelLists::load(Some(&file)).entries().is_empty(), "a repeated name refuses the entry, and the last root lists count");
-    // Over the size bound the file is not read at all.
-    std::fs::write(&file, vec![0u8; kept_lists::MAXIMUM_BYTES + 1]).unwrap();
+    std::fs::write(&file, format!(r#"{{"version":1,"lists":[{twice},{}]}}"#, entry("codex"))).unwrap();
+    let providers_of = |lists: KeptModelLists| lists.entries().iter().map(|e| e.provider.clone()).collect::<Vec<_>>();
+    assert_eq!(providers_of(KeptModelLists::load(Some(&file))), ["codex"], "a repeated name refuses its entry, and only it");
+    // Written twice in the file's root, the last one counts.
+    std::fs::write(&file, format!(r#"{{"version":1,"lists":[{}],"lists":[{}]}}"#, entry("pi"), entry("gemini"))).unwrap();
+    assert_eq!(providers_of(KeptModelLists::load(Some(&file))), ["gemini"], "the root's last lists count");
+    // Over the size bound a file that would read is not read at all: the same lists padded to the bound read, one byte more do not.
+    let padded = |size: usize| {
+        let mut data = format!(r#"{{"version":1,"lists":[{}]}}"#, entry("codex")).into_bytes();
+        let end = data.pop().unwrap();
+        data.resize(size - 1, b' ');
+        data.push(end);
+        data
+    };
+    std::fs::write(&file, padded(kept_lists::MAXIMUM_BYTES)).unwrap();
+    assert_eq!(providers_of(KeptModelLists::load(Some(&file))), ["codex"], "a file at the bound is read");
+    std::fs::write(&file, padded(kept_lists::MAXIMUM_BYTES + 1)).unwrap();
     assert!(KeptModelLists::load(Some(&file)).entries().is_empty(), "an oversized file is not read");
 
     let mut lists = KeptModelLists::default();
@@ -213,6 +231,14 @@ fn a_kept_lists_date_reads_as_the_c_sharp_formats_do() {
         assert!(kept_lists::date(Some(bad)).is_none(), "{bad} is no date");
     }
     assert!(kept_lists::date(Some(&format!("2026-11-11T02:00:00{}", "0".repeat(60)))).is_none(), "longer than 64 is no date");
+    // `DateTimeOffset.TryParseExact`'s range: years 1 to 9999, the instant in UTC from MinValue to MaxValue.
+    let ticks = |text: &str| kept_lists::date(Some(text)).map(|d| d.utc_ticks());
+    assert_eq!(ticks("0001-01-01T00:00:00Z"), Some(0), "MinValue");
+    assert_eq!(ticks("0001-01-01T00:30:00+00:30"), Some(0), "MinValue through an offset");
+    assert_eq!(ticks("9999-12-31T23:59:59.9999999Z"), Some(3_155_378_975_999_999_999), "MaxValue");
+    for bad in ["0000-01-01T00:00:00Z", "0000-12-31T23:00:00-02:00", "0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00"] {
+        assert!(kept_lists::date(Some(bad)).is_none(), "{bad} is out of .NET's range");
+    }
 }
 
 // ── A kept list is shown, never trusted ─────────────────────────────────────────────────────────────────────────────────
@@ -729,6 +755,79 @@ async fn model_list_is_read_again_when_it_must_be() {
             && after.providers[0] == whole.providers[0],
         "the kept runtime of that folder takes the new reading and keeps the others"
     );
+}
+
+/// A reading that panics (ModelSelection.cs:171-172, the probe's `catch` and `finally`) leaves no probe behind: it answers nothing, a
+/// run about to start does not ask again for 15 s, and a selected pane reads again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reading_that_panics_leaves_no_probe_behind() {
+    let loads = Arc::new(AtomicUsize::new(0));
+    let loader: Loader = {
+        let loads = loads.clone();
+        Arc::new(move |context: ModelContext| {
+            let number = loads.fetch_add(1, Ordering::SeqCst) + 1;
+            Box::pin(async move {
+                if number == 1 {
+                    // A panic without the panic hook's message in the checks' output.
+                    std::panic::resume_unwind(Box::new("the reading panicked"));
+                }
+                Ok(runtime(&context.provider, cli(vec![plain("default"), plain(&format!("m{number}"))])))
+            })
+        })
+    };
+    let refresh = ModelCatalogRefresh::new(tokio::runtime::Handle::current(), loader, changed_nothing(), None);
+    let key = ModelContext::new("w", "/w", "codex");
+    let loads_now = || loads.load(Ordering::SeqCst);
+    assert!(refresh.request(&key, true, false).wait().await.is_none() && loads_now() == 1, "the reading that panicked answers nothing");
+    assert!(
+        refresh.request(&key, false, false).wait().await.is_none() && loads_now() == 1,
+        "it counts as a failed reading: a run does not ask again within 15 s"
+    );
+    let value = refresh.request(&key, true, false).wait().await;
+    assert!(
+        last_value(&value).as_deref() == Some("m2") && loads_now() == 2 && refresh.is_current(&key),
+        "a selected pane reads again: the probe that panicked was not kept"
+    );
+    refresh.shutdown();
+}
+
+/// A reading still under way when the app quits (`Shutdown()`, MainWindow.cs:132) is never reported, so no pane is reconciled and
+/// saved after the last save.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reading_under_way_at_quit_is_never_reported() {
+    let (release, hold) = tokio::sync::oneshot::channel::<()>();
+    let hold = Arc::new(Mutex::new(Some(hold)));
+    let loads = Arc::new(AtomicUsize::new(0));
+    let loader: Loader = {
+        let loads = loads.clone();
+        Arc::new(move |context: ModelContext| {
+            loads.fetch_add(1, Ordering::SeqCst);
+            let hold = hold.lock().unwrap().take();
+            Box::pin(async move {
+                if let Some(hold) = hold {
+                    let _ = hold.await;
+                }
+                Ok(runtime(&context.provider, cli(vec![plain("default"), plain("m1")])))
+            })
+        })
+    };
+    let reported = Arc::new(AtomicUsize::new(0));
+    let changed: Changed = {
+        let reported = reported.clone();
+        Arc::new(move |_: &ModelContext, _: Option<&ProviderRuntime>, _: &ProviderRuntime| {
+            reported.fetch_add(1, Ordering::SeqCst);
+        })
+    };
+    let refresh = ModelCatalogRefresh::new(tokio::runtime::Handle::current(), loader, changed, None);
+    let key = ModelContext::new("w", "/w", "claude");
+    let reading = refresh.request(&key, true, false);
+    common::until(|| loads.load(Ordering::SeqCst) == 1, 10_000, "the reading").await;
+    refresh.shutdown();
+    let _ = release.send(());
+    assert!(reading.wait().await.is_none(), "the reading answers nothing once the app quits");
+    assert_eq!(reported.load(Ordering::SeqCst), 0, "and is never reported");
+    refresh.store(&key, runtime("claude", cli(vec![plain("default"), plain("m2")])));
+    assert_eq!(reported.load(Ordering::SeqCst), 0, "nor is a whole runtime read after it");
 }
 
 // M/AppStore+ClaudeModelReset.swift:16-47.

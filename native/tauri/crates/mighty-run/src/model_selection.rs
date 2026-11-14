@@ -386,6 +386,8 @@ impl ModelCatalogRefresh {
     /// reading, then keeps and reports it. A reading that failed answers None and holds runs off for [`FAILED_LIFETIME`].
     async fn probe(&self, key: ModelContext, id: u64, sender: watch::Sender<Option<Option<ProviderRuntime>>>) {
         tokio::time::sleep(SETTLE).await;
+        // Dropped before `sender`, so a request woken by the probe's end never finds it still kept.
+        let mut end = ProbeEnd { refresh: self, key: &key, id, ended: false };
         let result = loop {
             let revision = {
                 let state = lock(&self.inner.state);
@@ -424,13 +426,35 @@ impl ModelCatalogRefresh {
                 }
             }
         };
-        // This probe, as `request` kept it: a probe that `changed` starts must not be forgotten by this one's end.
-        if let Some(entry) = lock(&self.inner.state).entries.get_mut(&key)
-            && entry.probe.as_ref().is_some_and(|p| p.id == id)
-        {
-            entry.probe = None;
-        }
+        end.ended = true;
+        drop(end);
         let _ = sender.send(Some(result));
+    }
+}
+
+/// `ProbeAsync`'s `finally` (and its `catch` for a panic, ModelSelection.cs:171-172): however the probe ends — a read or `changed` that
+/// panicked included — it is forgotten as `request` kept it (a probe that `changed` starts is not forgotten by this one's end), and one
+/// that never reached its answer counts as a failed reading, so runs do not ask again for [`FAILED_LIFETIME`]. Its waiters then answer
+/// None (the sender went with it).
+struct ProbeEnd<'a> {
+    refresh: &'a ModelCatalogRefresh,
+    key: &'a ModelContext,
+    id: u64,
+    /// The probe reached its answer.
+    ended: bool,
+}
+
+impl Drop for ProbeEnd<'_> {
+    fn drop(&mut self) {
+        let failed = (!self.ended).then(|| self.refresh.now());
+        if let Some(entry) = lock(&self.refresh.inner.state).entries.get_mut(self.key) {
+            if let Some(now) = failed {
+                entry.failed_at = Some(now);
+            }
+            if entry.probe.as_ref().is_some_and(|p| p.id == self.id) {
+                entry.probe = None;
+            }
+        }
     }
 }
 
