@@ -1954,8 +1954,15 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "mighty-core",
+ "mighty-platform",
+ "mighty-platform-windows",
+ "mighty-run",
  "regex",
+ "serde_json",
  "sha2",
+ "tokio",
+ "url",
 ]
 
 [[package]]
