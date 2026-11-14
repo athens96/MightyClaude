@@ -1,12 +1,14 @@
 //! C# PiVerification (MightyCode.Core.Tests/PiVerification.cs): the RPC stdin pi reads, attachments in its prompt, and real runs against
 //! a pi that answers from a recording (`mighty-fake-cli --fake-cli pi <record> --pi-fixture <file>`, C#'s `FakeAsync`) through the
-//! Windows ProcessHost. The recordings' replays through the parser and the graph are mighty-graph's tests/pi.rs; the argv's in
-//! pi_arguments.rs; the session list mighty-history's.
+//! Windows ProcessHost; with CliLoginRecoveryVerification's pi sign-in checks. The recordings' replays through the parser and the graph
+//! are mighty-graph's tests/pi.rs; the argv's in pi_arguments.rs; the session list mighty-history's.
 
 mod common;
 
 use mighty_run::model::StartRunRequest;
+use mighty_run::parser::{OutputParser, ParserHooks};
 use mighty_run::permissions::ProviderInput;
+use mighty_run::{failure, providers};
 
 const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==";
 
@@ -55,6 +57,66 @@ fn attachments_ride_in_the_prompt_or_are_named_by_path() {
     let path = |index: usize| staged.files[index].1.to_string_lossy().into_owned();
     assert!(message.contains(&path(1)) && !message.contains(&path(0)), "the other file is named by the path of its copy");
     staged.dispose().unwrap();
+}
+
+/// `CliLoginRecoveryVerification.PiMessageEnd`: an assistant message pi ended, with the error it ended in.
+fn pi_message_end(error: Option<&str>) -> String {
+    let mut message = serde_json::json!({"role": "assistant", "content": [], "stopReason": if error.is_some() { "error" } else { "stop" }});
+    if let Some(error) = error {
+        message["errorMessage"] = serde_json::json!(error);
+    }
+    serde_json::json!({"type": "message_end", "message": message}).to_string()
+}
+
+/// CliLoginRecoveryVerification.cs:245 `PiSignInFailuresAndTheTerminalTable`, its stream part: pi's own sign-in failures, read from its
+/// RPC stream. The terminal sign-ins' table (`CliTerminalSignIn`, `CliAccountTerminal`) is the CLI accounts' (W6).
+#[test]
+fn pi_sign_in_failures_and_the_terminal_table() {
+    for text in [
+        "No API key found for anthropic. Use /login or set ANTHROPIC_API_KEY.",
+        "No models available. Use /login or set an API key.",
+        "Please use /login",
+    ] {
+        assert!(failure::pi(text), "pi's sign-in failure: {text}");
+    }
+    for text in ["rate limit exceeded", "407 Proxy Authentication Required", "context window exceeded"] {
+        assert!(!failure::pi(text), "not pi's sign-in failure: {text}");
+    }
+    let parser = |provider: &str| OutputParser::new(provider, "run-pi", ParserHooks::default());
+    let rejected = parser("pi");
+    rejected.parse(r#"{"type":"response","command":"prompt","success":false,"error":"No API key found for anthropic. Use /login or set ANTHROPIC_API_KEY."}"#);
+    assert!(rejected.failed() && rejected.authentication_failure(), "a prompt pi refuses for its sign-in is a lost sign-in");
+    let other = parser("pi");
+    other.parse(r#"{"type":"response","command":"prompt","success":false,"error":"rate limit exceeded"}"#);
+    assert!(other.failed() && !other.authentication_failure(), "another refusal is not");
+    // A message that ended in it, until a retry starts or a later message answers; a retry that gave up on it.
+    let turn = parser("pi");
+    turn.parse(&pi_message_end(Some("No models available. Use /login or set an API key.")));
+    assert!(turn.authentication_failure(), "a message that ended in it");
+    turn.parse(r#"{"type":"auto_retry_start","attempt":1,"maxAttempts":3,"delayMs":1000,"errorMessage":"No models available."}"#);
+    assert!(!turn.authentication_failure(), "a retry starting clears it");
+    turn.parse(&pi_message_end(Some("No API key found for openai. Use /login.")));
+    turn.parse(&pi_message_end(None));
+    assert!(!turn.authentication_failure(), "a later answer clears it");
+    turn.parse(r#"{"type":"auto_retry_end","success":false,"attempt":3,"finalError":"No API key found for openai. Use /login."}"#);
+    assert!(turn.failed() && turn.authentication_failure(), "a retry that gave up on it");
+    let claude = parser("claude");
+    claude.parse(r#"{"type":"response","command":"prompt","success":false,"error":"No API key found. Use /login"}"#);
+    assert!(!claude.authentication_failure(), "only pi's stream is read this way");
+}
+
+/// PiVerification.cs:455 `PiIsNeitherADelegationChildNorAParentNorInARemoteWorkspaceAndTheHostAdvertisesIt`, the run engine's part:
+/// beta, its tool names and its graph. History replay (none for pi) is mighty-history's `history::PROVIDERS`; the delegation menus (W7), the remote workspace's menu and the phone's capabilities
+/// (W8) are their stages'; the slash commands are mighty-composer's (tests/slash.rs) and the add menu mighty-core's.
+#[test]
+fn pi_is_beta_reads_its_tool_names_and_draws_a_graph() {
+    assert!(providers::is_beta("pi") && providers::is_local_only("pi"), "beta, on this computer only");
+    assert!(mighty_run::activity::kind("find") == "search" && mighty_run::activity::kind("ls") == "read", "pi's tool names");
+    assert!(mighty_core::graph::GRAPH_PROVIDERS.contains(&"pi"), "a graph");
+    assert!(
+        mighty_run::strings::provider_label("pi") == "pi" && providers::executable("pi") == "pi" && providers::name("pi") == "pi",
+        "name and place"
+    );
 }
 
 #[cfg(windows)]
@@ -173,6 +235,57 @@ mod runs {
 
     fn pi(id: &str, workspace: &Workspace, input: &str) -> StartRunRequest {
         StartRunRequest::new(id, workspace.id.as_deref().unwrap(), "claude", input).with_provider("pi")
+    }
+
+    /// CliLoginRecoveryVerification.cs:310 `PiFakeCliRunLostItsSignIn`: a pi run whose turn ended on its own sign-in failure ends with
+    /// the authentication reason; another failure does not.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn pi_fake_cli_run_lost_its_sign_in() {
+        common::korean();
+        let directory = common::temp("pi-sign-in");
+        for (error, expected) in [
+            ("No API key found for anthropic. Use /login or set ANTHROPIC_API_KEY.", Some("authentication")),
+            ("rate limit exceeded", None),
+        ] {
+            let fixture = directory.join(format!("pi-{}.jsonl", expected.unwrap_or("other")));
+            let lines = [
+                r#"{"id":"s1","type":"response","command":"get_state","success":true,"data":{"sessionId":"0197c1d2-7f3a-7c4e-9b1a-5d2e8f6a4b30"}}"#.to_string(),
+                r#"{"type":"agent_start"}"#.to_string(),
+                super::pi_message_end(Some(error)),
+                r#"{"type":"agent_end","messages":[]}"#.to_string(),
+            ];
+            std::fs::write(&fixture, format!("{}\n", lines.join("\n"))).unwrap();
+            let record = directory.join(format!("record-{}", expected.unwrap_or("other")));
+            let (record, file) = (record.to_string_lossy().into_owned(), fixture.to_string_lossy().into_owned());
+            let catalog = common::fake_catalog(&["--fake-cli", "pi", &record, "--pi-fixture", &file]);
+            let events = Events::default();
+            let workspace = Workspace { path: Some(directory.to_string_lossy().into_owned()), ..Workspace::default() };
+            let resolved = workspace.clone();
+            let list = events.0.clone();
+            let manager = RunManager::new(
+                catalog,
+                RunManagerOptions::new(
+                    "",
+                    Arc::new(move |_| {
+                        let workspace = resolved.clone();
+                        Box::pin(async move { Ok(workspace) })
+                    }),
+                    Arc::new(move |event| list.lock().unwrap().push(event)),
+                ),
+            );
+            manager.start(pi("pi-pane", &workspace, "hello")).await.unwrap();
+            common::until(|| events.ended(), 30000, "the pi run ends").await;
+            manager.dispose().await;
+            let all = events.all();
+            let last = all.iter().rev().find(|e| e.kind == "status").unwrap();
+            assert!(
+                last.status.as_deref() == Some("error") && last.reason.as_deref() == expected,
+                "{error}: expected error with reason {expected:?}, got {:?} with {:?}",
+                last.status,
+                last.reason
+            );
+        }
+        common::remove_when_free(&directory).await;
     }
 
     /// PiVerification.cs:381 `ARunWritesTheStartupLinesKeepsStdinOpenUntilTheTurnEndsThenCompletes`.
