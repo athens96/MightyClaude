@@ -332,11 +332,43 @@ pub fn workspace_paths(path: &str) -> Vec<String> {
 
 fn matches(cwd: &str, paths: &[String]) -> bool {
     let plain = normalized(cwd);
-    paths.iter().any(|p| same_path(p, &plain))
-        || resolved(cwd).is_some_and(|real| {
+    if paths.iter().any(|p| same_path(p, &plain)) {
+        return true;
+    }
+    !on_another_share(cwd, paths)
+        && resolved(cwd).is_some_and(|real| {
             let real = normalized(&real);
             paths.iter().any(|p| same_path(p, &real))
         })
+}
+
+/// A share or device path (`\\server\share\…`, `\\?\…`) the workspace does not lie on: it is never resolved, since asking a share that
+/// is offline can take seconds for each record (and no link on it leads back to a local workspace the listing would show).
+fn on_another_share(cwd: &str, paths: &[String]) -> bool {
+    let shared = |path: &str| path.starts_with("\\\\") || path.starts_with("//");
+    crate::windows_paths() && shared(cwd) && !paths.iter().any(|p| shared(p) && same_path(&root_of(p), &root_of(cwd)))
+}
+
+/// The workspace folder a record must name (`WorkspacePaths`), each record's folder decided once a listing: records share a few
+/// folders, and resolving one touches the disk.
+struct Folder {
+    paths: Vec<String>,
+    seen: HashMap<String, bool>,
+}
+
+impl Folder {
+    fn new(workspace_path: &str) -> Folder {
+        Folder { paths: workspace_paths(workspace_path), seen: HashMap::new() }
+    }
+
+    fn matches(&mut self, cwd: &str) -> bool {
+        if let Some(here) = self.seen.get(cwd) {
+            return *here;
+        }
+        let here = matches(cwd, &self.paths);
+        self.seen.insert(cwd.to_string(), here);
+        here
+    }
 }
 
 struct Candidate {
@@ -415,9 +447,9 @@ fn walk(
 
 fn claude(query: &ResumableSessionQuery, budget: &mut i64, cancel: &dyn Cancel) -> ResumableSessionListing {
     let projects = claude_config(&query.home, &query.environment).join("projects");
-    let paths = workspace_paths(&query.workspace_path);
+    let mut folder = Folder::new(&query.workspace_path);
     let mut folders: Vec<String> = vec![];
-    for path in &paths {
+    for path in &folder.paths {
         let folder = claude_project_folder(path);
         if !folders.contains(&folder) {
             folders.push(folder);
@@ -435,7 +467,7 @@ fn claude(query: &ResumableSessionQuery, budget: &mut i64, cancel: &dyn Cancel) 
         }
     }
     walk(candidates, query, cancel, false, |candidate, known| {
-        claude_session(&candidate.path, &candidate.id, candidate.modified, &paths, known, query.include_automated, query.head_only, budget)
+        claude_session(&candidate.path, &candidate.id, candidate.modified, &mut folder, known, query.include_automated, query.head_only, budget)
     })
 }
 
@@ -446,7 +478,7 @@ fn claude_session(
     path: &Path,
     id: &str,
     modified: DateTimeOffset,
-    paths: &[String],
+    folder: &mut Folder,
     known: bool,
     include_automated: bool,
     head_only: bool,
@@ -465,7 +497,7 @@ fn claude_session(
             && let Some(cwd) = json::text(&value, "cwd")
         {
             cwd_checked = true;
-            if json::flag(&value, "isSidechain") || !matches(cwd, paths) {
+            if json::flag(&value, "isSidechain") || !folder.matches(cwd) {
                 foreign = true;
                 return false;
             }
@@ -515,7 +547,7 @@ fn claude_model(line: &[u8]) -> Option<String> {
 
 fn codex(query: &ResumableSessionQuery, budget: &mut i64, cancel: &dyn Cancel) -> ResumableSessionListing {
     let Some(sessions) = files::sessions(&codex_home(&query.home, &query.environment)) else { return ResumableSessionListing::default() };
-    let paths = workspace_paths(&query.workspace_path);
+    let mut folder = Folder::new(&query.workspace_path);
     let candidates = files::day_folders(&sessions)
         .iter()
         .flat_map(|day| files::rollouts(day))
@@ -523,7 +555,7 @@ fn codex(query: &ResumableSessionQuery, budget: &mut i64, cancel: &dyn Cancel) -
         .filter(|c| wire::identifier(&c.id))
         .collect();
     walk(candidates, query, cancel, true, |candidate, known| {
-        codex_session(&candidate.path, &candidate.id, candidate.modified, &paths, known, query.include_automated, query.head_only, budget)
+        codex_session(&candidate.path, &candidate.id, candidate.modified, &mut folder, known, query.include_automated, query.head_only, budget)
     })
 }
 
@@ -532,7 +564,7 @@ fn codex_session(
     path: &Path,
     id: &str,
     modified: DateTimeOffset,
-    paths: &[String],
+    folder: &mut Folder,
     known: bool,
     include_automated: bool,
     head_only: bool,
@@ -555,7 +587,7 @@ fn codex_session(
     }
     let payload = prop(Some(&meta), "payload");
     let Some(cwd) = scan::text(payload, "cwd") else { return Outcome::Skipped };
-    if !matches(cwd, paths) {
+    if !folder.matches(cwd) {
         return Outcome::Skipped;
     }
     if prop(payload, "source").and_then(Value::as_object).is_some_and(|s| s.contains_key("subagent")) {
@@ -620,18 +652,16 @@ fn codex_session(
 /// transcript. The title is the first request typed, as for the others; agy's own summary title stands in when none was read.
 fn antigravity_listing(query: &ResumableSessionQuery, budget: &mut i64, cancel: &dyn Cancel) -> ResumableSessionListing {
     let Some(rows) = antigravity::summaries(&antigravity::database(&query.home), 20_000) else { return ResumableSessionListing::default() };
-    let paths = workspace_paths(&query.workspace_path);
+    let mut folder = Folder::new(&query.workspace_path);
     let brain = antigravity::brain(&query.home);
     let mut candidates = vec![];
     let mut titles: HashMap<String, String> = HashMap::new();
     let mut seen = HashSet::new();
-    // Rows share a few folders: each is resolved once.
-    let mut matched: HashMap<String, bool> = HashMap::new();
     for row in rows {
         if !row.parent.is_empty() {
             continue;
         }
-        let here = row.paths.iter().any(|p| *matched.entry(p.clone()).or_insert_with(|| matches(p, &paths)));
+        let here = row.paths.iter().any(|p| folder.matches(p));
         if !here || !seen.insert(row.conversation.to_lowercase()) {
             continue;
         }
@@ -703,10 +733,10 @@ fn antigravity_session(
 /// `<agent dir>/sessions/--<path>--/<timestamp>_<id>.jsonl` of the workspace folder: the first line is the header (`type: session`, `id`,
 /// `cwd`); a request is a `message` entry whose message has the `user` role.
 fn pi_listing(query: &ResumableSessionQuery, budget: &mut i64, cancel: &dyn Cancel) -> ResumableSessionListing {
-    let paths = workspace_paths(&query.workspace_path);
+    let mut workspace = Folder::new(&query.workspace_path);
     let mut candidates = vec![];
     let mut seen = HashSet::new();
-    for folder in pi::session_folders(&paths, &query.home, &query.environment) {
+    for folder in pi::session_folders(&workspace.paths, &query.home, &query.environment) {
         for (path, modified) in files::files(&folder, ".jsonl") {
             let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             let Some(id) = pi::session_id(&name) else { continue };
@@ -717,7 +747,7 @@ fn pi_listing(query: &ResumableSessionQuery, budget: &mut i64, cancel: &dyn Canc
         }
     }
     walk(candidates, query, cancel, false, |candidate, known| {
-        pi_session(&candidate.path, &candidate.id, candidate.modified, &paths, known, query.include_automated, query.head_only, budget)
+        pi_session(&candidate.path, &candidate.id, candidate.modified, &mut workspace, known, query.include_automated, query.head_only, budget)
     })
 }
 
@@ -726,7 +756,7 @@ fn pi_session(
     path: &Path,
     id: &str,
     modified: DateTimeOffset,
-    paths: &[String],
+    folder: &mut Folder,
     known: bool,
     include_automated: bool,
     head_only: bool,
@@ -744,7 +774,7 @@ fn pi_session(
             let header = scan::parse(line);
             let good = header
                 .as_ref()
-                .is_some_and(|h| json::text(h, "type") == Some("session") && json::text(h, "cwd").is_some_and(|cwd| matches(cwd, paths)));
+                .is_some_and(|h| json::text(h, "type") == Some("session") && json::text(h, "cwd").is_some_and(|cwd| folder.matches(cwd)));
             if !good {
                 foreign = true;
                 return false;
@@ -830,10 +860,9 @@ fn opencode(query: &ResumableSessionQuery, cancel: &dyn Cancel) -> ResumableSess
 /// under its first row's id, which ACP resumes.
 fn hermes(query: &ResumableSessionQuery, cancel: &dyn Cancel) -> ResumableSessionListing {
     let database = acp::hermes_state_database(&query.environment, Some(&query.home));
-    let paths = workspace_paths(&query.workspace_path);
-    // Conversations share a few folders: each is resolved once.
-    let mut matched: HashMap<String, bool> = HashMap::new();
-    let mut here = |cwd: &str| *matched.entry(cwd.to_string()).or_insert_with(|| matches(cwd, &paths));
+    // Conversations share a few folders: each is decided once.
+    let mut folder = Folder::new(&query.workspace_path);
+    let mut here = |cwd: &str| folder.matches(cwd);
     let rows = acp::hermes_rows(&database, &mut here, query.oldest(), query.maximum_scanned.min(2_000), !query.head_only, cancel);
     listed("hermes", &database, rows, query, cancel)
 }
@@ -935,6 +964,25 @@ mod tests {
     fn titles_are_one_line() {
         assert_eq!(one_line("one\n two   three"), "one two three");
         assert_eq!(one_line(&"x".repeat(300)).chars().count(), 201);
+    }
+
+    /// A record's folder is decided once a listing, and a share the workspace is not on is never resolved (W4 review C11).
+    #[test]
+    fn a_folder_is_decided_once_and_another_share_never_resolved() {
+        let workspace = if crate::windows_paths() { "C:\\work" } else { "/work" };
+        let mut folder = Folder::new(workspace);
+        let inside = if crate::windows_paths() { "C:\\work\\" } else { "/work/" };
+        assert!(folder.matches(inside) && folder.matches(inside), "the workspace folder, with a trailing separator");
+        assert_eq!(folder.seen.len(), 1, "decided once");
+        if crate::windows_paths() {
+            let paths = vec!["C:\\work".to_string()];
+            assert!(on_another_share("\\\\offline\\share\\work", &paths), "a share the workspace is not on");
+            assert!(on_another_share("\\\\?\\UNC\\offline\\share", &paths), "a device path");
+            assert!(!on_another_share("D:\\work", &paths), "a local folder is resolved as before");
+            let shared = vec!["\\\\server\\share\\work".to_string()];
+            assert!(!on_another_share("\\\\SERVER\\share\\other", &shared), "the share the workspace lies on");
+            assert!(!folder.matches("\\\\offline\\share\\work"), "not the workspace, and never asked");
+        }
     }
 
     #[test]
