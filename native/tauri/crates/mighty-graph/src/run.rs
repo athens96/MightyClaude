@@ -2,23 +2,42 @@
 //! model, onNode, effort)`): mighty-run's [`GraphFactory`] and [`GraphSink`] over [`ExecutionGraphTracker`]. mighty-run names the seam
 //! and never this crate; this crate reads mighty-run and nothing reads this crate back, so the two stay free of a cycle. The host hands
 //! `RunManagerOptions.graph` a [`TrackerFactory`]; the runner then publishes each request's graph run every second and at its end, with
-//! the notice runs its background work opened, as C#'s does.
+//! the notice runs its background work opened, as C#'s does. A Codex run's sub-agents come live from Codex's session files through
+//! the [`SessionWatcher`] the factory's [`CodexWatcherFactory`] opens (mighty-history's `codex_sessions`, which reads the files).
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use mighty_core::graph::MightyGraphRun;
 use mighty_core::json::Wire;
 use mighty_core::locale::Locale;
 use mighty_core::model::{AgentActivity, LogEntry};
+use mighty_core::time::DateTimeOffset;
 use mighty_run::graph::{GraphFactory, GraphSink, GraphStart};
 use serde_json::Value;
 
-use crate::tracker::{ModGraphMetadata, ModMetadata};
+use crate::tracker::{CodexSessionAgent, ModGraphMetadata, ModMetadata};
 use crate::{ExecutionGraphNode, ExecutionGraphTracker};
 
+/// A run's sub-agents as the CLI's own files tell them (C# `CodexSessionWatcher`): what changed since the last poll; at the end what is
+/// left, after which it reads nothing more.
+pub trait SessionWatcher: Send {
+    fn poll(&mut self) -> Vec<CodexSessionAgent>;
+    fn finish(&mut self) -> Vec<CodexSessionAgent>;
+}
+
+/// Opens a Codex run's [`SessionWatcher`] (C# `new CodexSessionWatcher(codexHome, root, startedAt, tracker.RunID)`): the CLI's
+/// environment, the run's root thread, when the run started and the graph run's id. None when there is nothing to watch.
+pub type CodexWatcherFactory =
+    Arc<dyn Fn(&BTreeMap<String, String>, &str, DateTimeOffset, &str) -> Option<Box<dyn SessionWatcher>> + Send + Sync>;
+
 /// Makes one tracker per run. `locale`: the language the blocks are worded in; None reads the run engine's (`mighty_run::strings`) when
-/// each run starts, as C#'s tracker reads `Locale` when it words something.
-#[derive(Debug, Clone, Copy, Default)]
+/// each run starts, as C#'s tracker reads `Locale` when it words something. `codex_sessions`: where a Codex run's sub-agents are read
+/// from; None leaves them to what the stream says.
+#[derive(Clone, Default)]
 pub struct TrackerFactory {
     pub locale: Option<Locale>,
+    pub codex_sessions: Option<CodexWatcherFactory>,
 }
 
 impl TrackerFactory {
@@ -69,13 +88,17 @@ impl GraphFactory for TrackerFactory {
             None,
             locale,
         );
-        Box::new(TrackerSink { tracker })
+        Box::new(TrackerSink { tracker, started: DateTimeOffset::now(), codex_sessions: self.codex_sessions.clone(), watcher: None })
     }
 }
 
-/// One run's tracker behind the runner's calls.
+/// One run's tracker behind the runner's calls, with the watcher of its sub-agents' files once there is one.
 pub struct TrackerSink {
     pub tracker: ExecutionGraphTracker,
+    /// When the run started (C#'s `startedAt`): nothing older is read.
+    started: DateTimeOffset,
+    codex_sessions: Option<CodexWatcherFactory>,
+    watcher: Option<Box<dyn SessionWatcher>>,
 }
 
 impl GraphSink for TrackerSink {
@@ -115,7 +138,21 @@ impl GraphSink for TrackerSink {
     fn antigravity_answer(&mut self, text: &str) {
         self.tracker.antigravity_answer(text);
     }
-    fn codex_root_thread(&self) -> Option<String> {
-        self.tracker.codex_root_thread().map(str::to_string)
+    /// The Codex half of C#'s `ReadChildren`: the watcher opens once the stream named the root thread, and each sub-agent it read is
+    /// merged (`CodexSession`).
+    fn read_children(&mut self, environment: &BTreeMap<String, String>, closing: bool) {
+        if self.tracker.provider() != "codex" {
+            return;
+        }
+        if self.watcher.is_none()
+            && let (Some(open), Some(root)) = (&self.codex_sessions, self.tracker.codex_root_thread())
+        {
+            self.watcher = open(environment, root, self.started, self.tracker.run_id());
+        }
+        let Some(watcher) = self.watcher.as_mut() else { return };
+        let children = if closing { watcher.finish() } else { watcher.poll() };
+        for child in &children {
+            self.tracker.codex_session(child);
+        }
     }
 }

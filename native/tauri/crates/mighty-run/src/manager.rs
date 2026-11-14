@@ -607,6 +607,8 @@ struct Exec {
     background: Mutex<BackgroundTaskTracker>,
     plan_gate: Mutex<()>,
     todo_run_id: Option<String>,
+    /// The CLI's environment the run started with, once read: where `ReadChildren` finds the CLI's own files.
+    children: Mutex<Option<BTreeMap<String, String>>>,
     emit: Emit,
 }
 
@@ -839,6 +841,7 @@ impl Exec {
             background: Mutex::new(BackgroundTaskTracker::new(None)),
             plan_gate: Mutex::new(()),
             todo_run_id,
+            children: Mutex::new(None),
             emit: emit.clone(),
         });
         let reopened = exec.clone();
@@ -1018,6 +1021,17 @@ impl Exec {
         true
     }
 
+    /// `PublishGraph(readChildren: true)`'s first step: the run's sub-agents read from the CLI's own files while it is current.
+    fn read_children(&self) {
+        let _gate = lock(&self.graph_gate);
+        if self.run.finalizing.load(Ordering::SeqCst) || self.run.finished.load(Ordering::SeqCst) {
+            return;
+        }
+        if let (Some(tracker), Some(environment)) = (&self.tracker, lock(&self.children).clone()) {
+            lock(tracker).read_children(&environment, false);
+        }
+    }
+
     /// `Finish`: the run's last events — background work that never reported an end, the rows still open, the turn, the graph,
     /// and its status (with "authentication" when an error is a lost sign-in).
     fn finish(&self, state: &str) {
@@ -1046,6 +1060,9 @@ impl Exec {
         }
         if let Some(tracker) = &self.tracker {
             let mut sink = lock(tracker);
+            if let Some(environment) = lock(&self.children).clone() {
+                sink.read_children(&environment, true);
+            }
             sink.finish(state);
             if let Some(graph_run) = sink.build_run(false) {
                 (self.emit)(RunEvent { graph_run: Some(graph_run), ..RunEvent::new(&request.session_id, "graph_run") });
@@ -1204,6 +1221,9 @@ impl Exec {
             _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
         }
         let mut environment = providers.quiet_environment();
+        if request.kind != "shell" {
+            *lock(&self.children) = Some(environment.clone());
+        }
         if self.tracker.is_some() {
             let exec = self.clone();
             *graph_task = Some(tokio::spawn(async move {
@@ -1212,6 +1232,7 @@ impl Exec {
                         _ = tokio::time::sleep(Duration::from_secs(1)) => {}
                         _ = exec.graph_stop.cancelled() => return,
                     }
+                    exec.read_children();
                     if !exec.publish_graph() {
                         return;
                     }

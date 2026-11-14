@@ -6,6 +6,7 @@
 //! graph dirty for its one-second publish and passes the node to a sharing host's `GraphNodes`, never after the run's last status.
 //! A sink is called from the run's task, from the Mods bridge and from the permission channel; calls come one at a time.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use mighty_core::graph::MightyGraphRun;
@@ -56,10 +57,10 @@ pub trait GraphSink: Send {
     fn take_notice_runs(&mut self, include_running: bool) -> Vec<MightyGraphRun>;
     /// `AntigravityAnswer`: an Antigravity reply as the transcript shows it (W5).
     fn antigravity_answer(&mut self, _text: &str) {}
-    /// `CodexRootThread`: the Codex thread the run's session files are under (W5).
-    fn codex_root_thread(&self) -> Option<String> {
-        None
-    }
+    /// `ReadChildren(closing)`: the run's sub-agents read from the CLI's own files (Codex's session files, `CodexSessionWatcher`, once
+    /// the run's root thread is known), every second while the run goes on and once more, `closing`, at its end. `environment`: the
+    /// CLI's environment the run started with (where Codex keeps its home: `CODEX_HOME`).
+    fn read_children(&mut self, _environment: &BTreeMap<String, String>, _closing: bool) {}
 }
 
 /// Makes one [`GraphSink`] per run (the lead plugs mighty-graph's tracker in here).

@@ -8,7 +8,6 @@ mod common;
 use mighty_run::model::StartRunRequest;
 use mighty_run::permissions::ProviderInput;
 
-const SESSION_ID: &str = "0197c1d2-7f3a-7c4e-9b1a-5d2e8f6a4b30";
 const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==";
 
 /// PiVerification.cs:160 `TheRpcStdinIsGetStateThenThePromptAndASteerIsOneLine`.
@@ -71,7 +70,9 @@ mod runs {
     use mighty_run::{RunManager, RunManagerOptions, providers};
     use serde_json::Value;
 
-    use super::{SESSION_ID, common};
+    use super::common;
+
+    const SESSION_ID: &str = "0197c1d2-7f3a-7c4e-9b1a-5d2e8f6a4b30";
 
     /// A graph standing in for mighty-graph's tracker: the request's run with its provider and state.
     struct StubGraph;
