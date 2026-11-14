@@ -32,8 +32,6 @@ pub enum Pending {
     ChildCardNotes,
     /// `runtime` and `runtimeChecks` (`ProviderCatalog.GetRuntimeAsync`, W2): the machine words say "checking" until it is known.
     Runtime,
-    /// `usage` (AccountUsageService, W6): no chips, no usage popover, no dashboard bars.
-    Usage,
     /// `appUpdate` (W9): no update badge, staged badge or countdown.
     AppUpdate,
     /// `WebCompanionControls` (companion, W8).
@@ -48,12 +46,11 @@ pub enum Pending {
     ModelCatalog,
 }
 
-pub const PENDING: [Pending; 11] = [
+pub const PENDING: [Pending; 10] = [
     Pending::Attention,
     Pending::DelegationChildren,
     Pending::ChildCardNotes,
     Pending::Runtime,
-    Pending::Usage,
     Pending::AppUpdate,
     Pending::Companion,
     Pending::Setup,
@@ -933,7 +930,123 @@ pub struct Dashboard {
     pub running: usize,
     pub waiting: usize,
     pub done: usize,
+    /// The usage card's rows (`usage.LeadingBars()`), none when no provider has a window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Vec<UsageBars>>,
     pub workspaces: Vec<DashboardWorkspace>,
+}
+
+// ── account usage (AccountUsageStatus as the page draws it, MainWindow.WebShell.Shell.cs:422-452, :508-511) ─────────────────
+
+/// One word of a usage chip: a leading window in its own ink (a window at 90% or more warns).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageWord {
+    pub text: String,
+    pub warning: bool,
+}
+
+/// A status bar chip: its provider, the name a screen reader hears, its words.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageChip {
+    pub provider: String,
+    pub name: String,
+    pub words: Vec<UsageWord>,
+}
+
+/// One window of a popover card.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageWindowRow {
+    pub label: String,
+    pub used: String,
+    pub fraction: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reset: Option<String>,
+    pub warning: bool,
+}
+
+/// One 리셋권 row of the Claude card.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageResetRow {
+    pub program: String,
+    pub label: String,
+    pub text: String,
+}
+
+/// The Claude card's 리셋권 rows and their link.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageReset {
+    pub title: String,
+    pub rows: Vec<UsageResetRow>,
+    pub link: String,
+    pub url: String,
+}
+
+/// A provider's card in the usage popover.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageCard {
+    pub provider: String,
+    pub name: String,
+    pub title: String,
+    pub beta: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    pub windows: Vec<UsageWindowRow>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checked_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reset: Option<UsageReset>,
+}
+
+/// The direct Claude lookup's switch beside its words.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageDirect {
+    pub label: String,
+    pub description: String,
+    pub on: bool,
+}
+
+/// The usage popover (`WebUsageDetails`).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageDetails {
+    pub title: String,
+    pub refreshing: bool,
+    pub refresh_label: String,
+    pub refresh_tooltip: String,
+    pub cards: Vec<UsageCard>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direct: Option<UsageDirect>,
+    pub shared: String,
+}
+
+/// One bar of the dashboard's usage card.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageBar {
+    pub label: String,
+    pub percent: String,
+    pub fraction: f64,
+    pub warning: bool,
+}
+
+/// A provider's bars on the dashboard's usage card.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct UsageBars {
+    pub provider: String,
+    pub name: String,
+    pub bars: Vec<UsageBar>,
+}
+
+/// What the account usage gives the frame: the chips (none while no provider has an AI pane), the popover and the dashboard's bars.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UsageModel {
+    pub chips: Option<Vec<UsageChip>>,
+    pub details: UsageDetails,
+    pub bars: Vec<UsageBars>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -946,6 +1059,8 @@ pub struct Status {
     pub running: String,
     pub update_help: String,
     pub setup: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chips: Option<Vec<UsageChip>>,
     pub chips_title: String,
     pub chips_tooltip: String,
 }
@@ -969,6 +1084,8 @@ pub struct ShellModel {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource: Option<String>,
     pub status: Status,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<UsageDetails>,
     pub setup_needed: bool,
 }
 
@@ -1009,6 +1126,8 @@ pub struct ShellContext<'a> {
     pub setup_badge: bool,
     pub setup_needed: bool,
     pub remote: &'a HashMap<String, RemoteConnection>,
+    /// The account usage's chips, popover and bars (the host's `AccountUsageStatus`), when it is there.
+    pub usage: Option<&'a UsageModel>,
 }
 
 /// C# `WorkspaceDisclosure.Expanded`: the saved list, or the active workspace when none was saved.
@@ -1130,6 +1249,7 @@ pub fn shell_model(state: &AppSnapshot, context: &ShellContext, defaults: &mut H
             running: counted.iter().filter(|s| s.status() == "running").count(),
             waiting: counted.iter().map(|s| attention(s.id()).total()).sum(),
             done: counted.iter().filter(|s| s.status() == "completed").count(),
+            usage: context.usage.map(|u| u.bars.clone()).filter(|bars| !bars.is_empty()),
             workspaces: state
                 .workspaces()
                 .iter()
@@ -1229,9 +1349,11 @@ pub fn shell_model(state: &AppSnapshot, context: &ShellContext, defaults: &mut H
             running: locale.get_with("window.status.runningCount", &[("count", &running.to_string())]),
             update_help: locale.get("window.status.updateBadgeHelp"),
             setup: context.setup_badge,
+            chips: context.usage.and_then(|u| u.chips.clone()),
             chips_title: locale.get("windows.accountUsage.title"),
             chips_tooltip: locale.get("windows.accountUsage.chipsTooltip"),
         },
+        usage: context.usage.map(|u| u.details.clone()),
         setup_needed: context.setup_needed,
     }
 }

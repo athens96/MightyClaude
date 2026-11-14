@@ -144,6 +144,50 @@ pub fn fake_cli() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_mighty-accounts-fake"))
 }
 
+/// Where the checks' launch plans find the console host and cmd.exe (by name where no system folder is given, as C#'s checks).
+#[cfg(windows)]
+#[derive(Debug, Clone)]
+pub struct TerminalHosts {
+    pub console_host: String,
+    pub command_interpreter: String,
+}
+
+#[cfg(windows)]
+impl TerminalHosts {
+    pub fn new(system_folder: Option<&str>) -> TerminalHosts {
+        match system_folder {
+            Some(folder) => {
+                TerminalHosts { console_host: format!(r"{folder}\conhost.exe"), command_interpreter: format!(r"{folder}\cmd.exe") }
+            }
+            None => TerminalHosts { console_host: "conhost.exe".into(), command_interpreter: "cmd.exe".into() },
+        }
+    }
+}
+
+/// C# `CliAccountTerminal.LaunchPlan(loginArgv, windowsTerminalAvailable, directory, resolvedBinary, windowsTerminal, title)` through the
+/// launcher's own plan (mighty-platform-windows' console.rs): Windows Terminal by `windows_terminal`'s path, `wt.exe` where none is known.
+#[cfg(windows)]
+pub fn launch_plan(
+    hosts: &TerminalHosts,
+    argv: &[String],
+    windows_terminal_available: bool,
+    directory: Option<&str>,
+    resolved: Option<&str>,
+    windows_terminal: Option<&str>,
+    title: Option<&str>,
+) -> mighty_platform::Result<(String, Vec<String>)> {
+    let terminal = windows_terminal_available.then(|| windows_terminal.unwrap_or("wt.exe"));
+    mighty_platform_windows::console::launch_plan(
+        argv,
+        terminal,
+        directory,
+        resolved,
+        title,
+        &hosts.command_interpreter,
+        &hosts.console_host,
+    )
+}
+
 pub fn json(text: &str) -> serde_json::Value {
     serde_json::from_str(text).unwrap_or_else(|e| panic!("{e}: {text}"))
 }

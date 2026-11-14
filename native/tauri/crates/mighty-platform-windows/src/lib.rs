@@ -184,10 +184,10 @@ mod imp {
         Arc::new(WindowsTerminalLauncher)
     }
 
-    /// The account usage's HTTPS GET (`mighty_platform::HttpsGet`). W6-C swaps in its WinHTTP GET (http.rs: system proxy, redirects,
-    /// cookies and automatic logon off, the body only for a 2xx); until then `Unsupported`, so no request reaches the network.
+    /// The account usage's HTTPS GET (`mighty_platform::HttpsGet`): WinHTTP (http.rs: system proxy, redirects, cookies and automatic
+    /// logon off, the body only for a 2xx). Which URLs may be asked is the caller's guard (mighty-accounts' `usage::guard`).
     pub fn https_get() -> Arc<dyn mighty_platform::HttpsGet> {
-        Arc::new(Unsupported)
+        Arc::new(crate::http::WinHttpGet)
     }
 
     /// Each copy of the command `name` this PC has (C# `SetupProber.Executables`): along the environment's PATH with PATHEXT, then

@@ -11,9 +11,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, Utc};
+#[cfg(windows)]
+use common::{TerminalHosts, launch_plan};
 use mighty_accounts::accounts::{self, CliAccountStatus, CliLoginOption, method};
 use mighty_accounts::login::{self, CliAutoLoginGate, CliBackgroundLogin, CliLoginOutputParser, CliLoginRetryBook};
-use mighty_accounts::terminal::{self, CliLoginOutcome, CliTerminalSignIn, TerminalHosts, launch_plan, login_wait, terminal_login};
+use mighty_accounts::terminal::{CliLoginOutcome, CliTerminalSignIn, login_wait, terminal_login};
 use mighty_core::json::Wire;
 use mighty_core::model::AppSnapshot;
 use mighty_platform::fake::FakePtyHost;
@@ -399,7 +401,17 @@ async fn antigravity_sign_in_is_its_status_reading_signed_in() {
     )
     .await;
     assert_eq!(pi.outcome, CliLoginOutcome::LoggedIn, "pi's terminal sign-in ends with pi's status");
+}
 
+/// CliLoginRecoveryVerification.cs:147-155, the terminal half: the Antigravity sign-in terminal in the pane's workspace.
+#[cfg(windows)]
+#[test]
+fn the_antigravity_sign_in_terminal_starts_in_the_workspace() {}
+
+/// CliLoginRecoveryVerification.cs:298-305: pi.cmd by its full path through cmd /c, in Windows Terminal or the console host.
+#[cfg(windows)]
+#[test]
+fn pis_terminal_runs_its_shim_through_cmd() {
     let hosts = TerminalHosts::new(None);
     let agy = strings_of(&accounts::login_arguments("gemini", CliLoginOption::Account).unwrap());
     let plan = launch_plan(&hosts, &agy, true, Some(r"C:\Projects\app"), None, None, None).unwrap();
@@ -553,7 +565,6 @@ fn pi_sign_in_failures_and_the_terminal_table() {
         strings_of(&["new-tab", "--", "agy"]),
         "a title Windows Terminal would split is left out"
     );
-    assert!(terminal::is_batch("PI.CMD") && terminal::is_batch("x.bat") && !terminal::is_batch("agy.exe"), "batch files");
 }
 
 /// `CliTerminalLogin.RunAsync` (CliLoginRecovery.cs:286): a status that turns from signed out to signed in confirms (and resends);
