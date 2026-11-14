@@ -21,6 +21,7 @@ use mighty_core::graph::MightyGraphRun;
 use mighty_core::model::{RunSession, Workspace};
 use mighty_graph::view::{MightyPane, WebMightyHistory, shows_history_block};
 use mighty_history::resumable::{self, known};
+use mighty_history::history::SessionHistoryError;
 use mighty_history::{
     ResumableSession, ResumableSessionListing, ResumableSessionQuery, SessionHistoryRequest, SessionHistoryState, history,
 };
@@ -199,7 +200,10 @@ pub fn load_older(host: &Arc<Host>, view: &mut View, pane_id: &str) {
     view.mighty.dirty(pane_id);
     let (host, id, locale) = (host.clone(), pane_id.to_string(), host.locale);
     tauri::async_runtime::spawn_blocking(move || {
-        let result = history::load(&next, &locale, cancel.as_ref());
+        // A record that makes the reader panic reads as unreadable: the block says the load failed and offers it again, instead of
+        // saying "loading" for good.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| history::load(&next, &locale, cancel.as_ref())))
+            .unwrap_or(Err(SessionHistoryError::Unreadable));
         if cancel.load(Ordering::SeqCst) {
             return;
         }

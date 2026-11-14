@@ -579,6 +579,19 @@ fn session_history_a_projection_takes_the_loaded_runs_without_copying_them() {
     check(Arc::strong_count(&again) == 2, "only the state and this projection hold the runs");
 }
 
+/// A load the host could not finish (the reader panicked: history.rs reads that as unreadable, W4 review C6) leaves the block failed
+/// and offering the load again, never "loading".
+#[test]
+fn session_history_an_unreadable_load_fails_and_can_be_tried_again() {
+    let mut state = SessionHistoryState::new();
+    let template = SessionHistoryRequest::new("claude", "s", "/w");
+    assert!(state.begin(Some("c"), Some("s"), None, &template).is_some() && state.phase == Phase::Loading);
+    let generation = state.generation;
+    check(!state.finish(Err(SessionHistoryError::Unreadable), generation), "no start over");
+    check(state.phase == Phase::Failed && state.block_acts() && state.can_load(), "failed, and the block is a button again");
+    check(state.begin(Some("c"), Some("s"), None, &template).is_some(), "the load can be asked for again");
+}
+
 /// SessionHistoryVerification.cs:384 `TheLayoutStacksLoadedRequestsAboveWithoutMovingTheRetainedOne`.
 #[test]
 fn session_history_the_layout_stacks_loaded_requests_above_without_moving_the_retained_one() {
