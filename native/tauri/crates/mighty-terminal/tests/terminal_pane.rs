@@ -5,13 +5,15 @@
 
 mod common;
 
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use common::*;
 use mighty_platform::Clipboard;
 use mighty_platform::fake::KILLED;
 use mighty_terminal::pane::{COPY_LIMIT, PASTE_LIMIT, directory_from_url};
-use mighty_terminal::{PaneKind, TerminalFont, TerminalMessage};
+use mighty_terminal::{AgentTerminal, PaneEvents, PaneKind, PaneOptions, TerminalFont, TerminalMessage, TerminalPane};
 use serde_json::json;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -245,6 +247,76 @@ async fn an_agent_terminal_pane_shows_its_owners_commands() {
     let stopped = tokio::time::timeout(Duration::from_secs(10), agent.stop(&handle)).await.unwrap().unwrap();
     assert_eq!((stopped.status, stopped.exit_code), ("done", Some(KILLED)));
     agent.dispose().await;
+}
+
+/// A window whose next output post is held (a page slow to take it) until the check lets it go; a post is recorded once it ends.
+struct Held {
+    window: Arc<Window>,
+    hold: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>>,
+}
+
+impl PaneEvents for Held {
+    fn post(&self, pane: &str, message: &TerminalMessage) {
+        let held = if matches!(message, TerminalMessage::Output { .. }) { self.hold.lock().unwrap().take() } else { None };
+        if let Some((entered, release)) = held {
+            entered.send(()).unwrap();
+            release.recv().unwrap();
+        }
+        self.window.post(pane, message);
+    }
+    fn status(&self, pane: &str, status: &'static str) {
+        self.window.status(pane, status);
+    }
+    fn session_status(&self, pane: &str) -> Option<String> {
+        self.window.session_status(pane)
+    }
+    fn error(&self, text: String) {
+        self.window.error(text);
+    }
+    fn pressed(&self, pane: &str) {
+        self.window.pressed(pane);
+    }
+    fn light(&self) -> bool {
+        self.window.light()
+    }
+    fn font(&self) -> TerminalFont {
+        self.window.font()
+    }
+    fn agent_terminal(&self, owner: &str) -> Option<Arc<AgentTerminal>> {
+        self.window.agent_terminal(owner)
+    }
+}
+
+/// Output a flush took before a restart reaches the page before the restart's reset, never after it (where it would draw the old
+/// shell's output into the new one's terminal).
+#[tokio::test(flavor = "multi_thread")]
+async fn output_taken_before_a_restart_never_follows_its_reset() {
+    let fixture = Fixture::new("outbox");
+    let (entered_sender, entered) = mpsc::channel();
+    let (release, release_receiver) = mpsc::channel();
+    let held = Arc::new(Held { window: fixture.window.clone(), hold: Mutex::new(None) });
+    let options =
+        PaneOptions { id: "pane".into(), kind: PaneKind::Shell, folder: Some(fixture.folder.clone()), enabled: true, no_profile: true };
+    let pane = TerminalPane::new(options, fixture.ports(), held.clone());
+    pane.handle_message(&json!({"type": "ready", "columns": 80, "rows": 24})).await;
+    pane.handle_message(&json!({"type": "input", "text": "old shell output"})).await;
+    until(|| pane.diagnostics()["pending"].as_u64().unwrap_or(0) > 0, 5_000, "the old shell's output waiting").await;
+    *held.hold.lock().unwrap() = Some((entered_sender, release_receiver));
+    let flushing = pane.clone();
+    let flush = std::thread::spawn(move || flushing.flush());
+    entered.recv_timeout(Duration::from_secs(5)).expect("the flush posts the output");
+    let restarting = pane.clone();
+    let restart = tokio::spawn(async move { restarting.restart().await });
+    // The restart has closed the old shell and wants to reset the page meanwhile.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    release.send(()).unwrap();
+    flush.join().unwrap();
+    tokio::time::timeout(Duration::from_secs(10), restart).await.expect("the restart ends").unwrap();
+    let posts = fixture.window.posts();
+    let output = posts.iter().position(|m| matches!(m, TerminalMessage::Output { .. })).expect("the output was posted");
+    let reset = posts.iter().position(|m| *m == TerminalMessage::Reset).expect("the reset was posted");
+    assert!(output < reset, "the old output first, then the reset that clears it: {posts:?}");
+    pane.dispose().await;
 }
 
 #[test]

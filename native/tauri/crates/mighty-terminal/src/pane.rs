@@ -4,7 +4,8 @@
 //! (1 Mi UTF-16 units at most, sent each 32 ms as base64 UTF-8), the exit, the restart, the shell's activity and the footer the page
 //! draws under it. Everything the page sees leaves through [`PaneEvents::post`] as `{kind:'terminal', paneId, message}`.
 //!
-//! Locks: a pane never calls [`PaneEvents`] while it holds its own lock, so the host may call into a pane while it holds its own.
+//! Locks: a pane never calls [`PaneEvents`] while it holds its own lock, so the host may call into a pane while it holds its own. Its
+//! outbox lock alone is held across a post: output and a restart's reset leave in the order they were decided.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -188,6 +189,9 @@ pub struct TerminalPane {
     events: Arc<dyn PaneEvents>,
     state: Mutex<State>,
     pending: Mutex<BoundedText>,
+    /// Held from the moment output is taken (or the reset decided) until its post is done, so a chunk read before a restart never
+    /// reaches the page after that restart's reset. Taken before the state lock; never while the pane's other locks are held.
+    outbox: Mutex<()>,
     weak: Weak<TerminalPane>,
 }
 
@@ -269,6 +273,7 @@ impl TerminalPane {
             events,
             state: Mutex::new(state),
             pending: Mutex::new(BoundedText::default()),
+            outbox: Mutex::new(()),
             weak: weak.clone(),
         })
     }
@@ -687,9 +692,13 @@ impl TerminalPane {
         };
         // A page whose terminal never said it was ready starts the shell with its ready.
         if ready {
-            let mut effects = Effects::default();
-            TerminalPane::post(&lock(&self.state), &mut effects, TerminalMessage::Reset);
-            self.emit(effects);
+            {
+                // After any output a flush already took: the reset clears it on the page, never the other way round.
+                let _outbox = lock(&self.outbox);
+                let mut effects = Effects::default();
+                TerminalPane::post(&lock(&self.state), &mut effects, TerminalMessage::Reset);
+                self.emit(effects);
+            }
             if let Err(error) = self.start_shell().await {
                 let effects = {
                     let mut state = lock(&self.state);
@@ -708,8 +717,10 @@ impl TerminalPane {
         lock(&self.state).restarting = false;
     }
 
-    /// C# `FlushTerminal`: the output waiting, to a ready page as one base64 UTF-8 chunk.
+    /// C# `FlushTerminal`: the output waiting, to a ready page as one base64 UTF-8 chunk. The outbox is held from the take to the post,
+    /// so a restart's reset cannot overtake the chunk.
     pub fn flush(&self) {
+        let _outbox = lock(&self.outbox);
         let mut effects = Effects::default();
         {
             let mut state = lock(&self.state);
