@@ -11,10 +11,11 @@
 mod common;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use mighty_platform::fake::RecordingTerminalLauncher;
 use mighty_platform::setup::FakeSetupFiles;
 use mighty_platform::{PrefsStore, SetupFiles};
 use mighty_run::model::{ModelCatalog, ProviderCapabilities, ProviderRuntime, RuntimeInfo};
@@ -27,7 +28,7 @@ use mighty_tools::setup::probe::{
     self, Finder, SKILL_INSTALLING_MARKER, SetupFirstRun, SetupProbeResult, SetupProbeState, SetupProber, SetupRowState, SetupRows,
     SetupRuntimeSync, VersionReader,
 };
-use mighty_tools::setup::screen::{self, Gate, InstallStart, InstallWindow, Refresh, SetupScreen, WatchTick};
+use mighty_tools::setup::screen::{self, Gate, InstallStart, Refresh, SetupScreen, WatchTick};
 use mighty_tools::setup::script::{self, SetupScriptLabels};
 use mighty_tools::setup::windows::{hermes_install_folder, well_known_folders};
 use serde_json::{Map, Value, json};
@@ -1008,26 +1009,6 @@ fn antigravity_the_model_list_labels_and_install_setup_rows() {
 
 // ── the screen (MainWindow.Setup.cs, MainWindow.SetupSmoke.cs) ────────────────────────────────────────────────────────────
 
-/// What a window was asked to open: the argv, the folder, the environment.
-type Opened = (Vec<String>, PathBuf, BTreeMap<String, String>);
-
-/// A window that records what it would have opened.
-#[derive(Default)]
-struct RecordingWindow {
-    opened: Mutex<Vec<Opened>>,
-    refuse: Mutex<Option<String>>,
-}
-
-impl InstallWindow for RecordingWindow {
-    fn open(&self, argv: &[String], folder: &Path, environment: &BTreeMap<String, String>) -> Result<(), String> {
-        if let Some(why) = self.refuse.lock().unwrap().clone() {
-            return Err(why);
-        }
-        self.opened.lock().unwrap().push((argv.to_vec(), folder.to_path_buf(), environment.clone()));
-        Ok(())
-    }
-}
-
 /// The smoke's screen over fixed probes (MainWindow.SetupSmoke.cs): the first-run decision, the rows, the picks and the plan in
 /// install order, the confirmation, a cancelled confirmation that opens no window, and the blocked pane's install.
 #[test]
@@ -1071,14 +1052,14 @@ fn setup_screen_over_the_smokes_fixed_probes() {
     assert!(confirmation.steps.iter().all(|s| !s.body.to_lowercase().contains("runas") && !s.body.contains("sudo")), "a step elevates");
     assert!(confirmation.preamble[0].starts_with("Set-Location -LiteralPath $HOME"), "the working-folder line first");
     // A cancelled confirmation starts nothing; a smoke never installs even when asked.
-    let window = RecordingWindow::default();
+    let window = RecordingTerminalLauncher::default();
     let files = FakeSetupFiles::default();
     let local = common::temp("screen-smoke");
     assert_eq!(
         screen.start_install(&confirmation.steps, Gate::Smoke, &windows_environment(), &files, &window, None, &local, Instant::now()),
         InstallStart::Ignored
     );
-    assert!(screen.run.is_none() && screen.terminals_opened == 0 && window.opened.lock().unwrap().is_empty(), "cancelledWithoutTerminal");
+    assert!(screen.run.is_none() && screen.terminals_opened == 0 && window.opened().is_empty(), "cancelledWithoutTerminal");
     // A pane whose CLI is missing offers its install; an old Claude does not, and a shell never.
     let mut runtime = RuntimeInfo {
         platform: "win32".into(),
@@ -1110,7 +1091,7 @@ fn setup_screen_installs_through_the_ports_only_when_allowed() {
     screen.toggle("gh");
     let env = windows_environment();
     let steps = screen.confirmation(&env).unwrap().steps;
-    let window = RecordingWindow::default();
+    let window = RecordingTerminalLauncher::default();
     let files = FakeSetupFiles::default();
     files.set_system_folder(Some(r"C:\WINDOWS\system32"));
     let local = common::temp("screen-install");
@@ -1120,7 +1101,7 @@ fn setup_screen_installs_through_the_ports_only_when_allowed() {
         InstallStart::NotAllowed,
         "read-only installs nothing"
     );
-    assert!(files.prepared().is_empty() && window.opened.lock().unwrap().is_empty());
+    assert!(files.prepared().is_empty() && window.opened().is_empty());
     files.set_elevated(true);
     assert!(
         screen.may_confirm(&files, &env).is_none()
@@ -1129,19 +1110,24 @@ fn setup_screen_installs_through_the_ports_only_when_allowed() {
     );
     assert_eq!(screen.start_install(&steps, Gate::Allowed, &env, &files, &window, None, &local, now), InstallStart::Refused);
     files.set_elevated(false);
-    window.refuse.lock().unwrap().replace("no console".into());
-    assert_eq!(screen.start_install(&steps, Gate::Allowed, &env, &files, &window, None, &local, now), InstallStart::Refused);
-    assert_eq!(screen.message.as_deref(), Some(strings::get_with("setup.windows.error.terminal", &[("error", "no console")]).as_str()));
-    window.refuse.lock().unwrap().take();
+    let refusing = RecordingTerminalLauncher::default();
+    refusing.refuse();
+    assert_eq!(screen.start_install(&steps, Gate::Allowed, &env, &files, &refusing, None, &local, now), InstallStart::Refused);
+    let why = mighty_platform::PlatformError::Refused("the terminal did not start".into()).to_string();
+    assert_eq!(screen.message.as_deref(), Some(strings::get_with("setup.windows.error.terminal", &[("error", &why)]).as_str()));
     assert_eq!(screen.start_install(&steps, Gate::Allowed, &env, &files, &window, None, &local, now), InstallStart::Started);
     let folder = local.join("MightyCode").join("setup");
-    let opened = window.opened.lock().unwrap().clone();
+    let opened = window.opened();
     assert_eq!(opened.len(), 1);
-    let (argv, at, variables) = &opened[0];
+    let (argv, at, variables) = (&opened[0].argv, opened[0].directory.as_ref(), &opened[0].environment);
     assert!(
-        at == &folder
+        at == Some(&folder)
             && argv[0] == r"C:\WINDOWS\system32\WindowsPowerShell\v1.0\powershell.exe"
             && argv[1..5] == ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]
+            && opened[0].resolved.as_deref() == Some(argv[0].as_str())
+            && opened[0].prefer_terminal_app,
+        "the system's PowerShell in the setup folder, Windows Terminal when it is there: {:?}",
+        opened[0]
     );
     assert_eq!(
         variables.get("NoDefaultCurrentDirectoryInExePath").map(String::as_str),

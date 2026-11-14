@@ -22,6 +22,8 @@ mighty-platform.workspace = true
 mighty-run.workspace = true
 # The status line card's input (`StatusLineInput`, `StatusRun`), which `status_line::input` fills.
 mighty-composer.workspace = true
+# The forms (`view`): the virtual WinUI, its reader and the settings kit.
+mighty-native.workspace = true
 serde_json.workspace = true
 indexmap.workspace = true
 chrono.workspace = true

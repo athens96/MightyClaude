@@ -119,3 +119,19 @@ pub fn context(pane: &RunSession, inputs: &ContextInputs) -> StatusLineContext {
         transcript_path: Some(transcript_path(inputs.config_dir, inputs.folder, &session_id).to_string_lossy().into_owned()),
     }
 }
+
+/// C# `ModelLabel.StatusLine` (ModelLabel.cs:116): `model.id` and `model.display_name` for a status line. The model the CLI reported
+/// counts only for the pane's own provider and only while it reported it for the selection the pane still has; else the catalogue's
+/// resolution of the selection, else the selection itself; named by its family and version, else as the model menu names it.
+pub fn model_label(pane: &RunSession, catalog: &mighty_run::model::ModelCatalog, locale: &mighty_core::locale::Locale) -> (String, String) {
+    let usage = pane.session_usage.as_ref().filter(|usage| usage.provider == pane.provider());
+    let current = usage
+        .filter(|usage| usage.selected_model.as_deref().is_none_or(|selected| selected == pane.model()))
+        .and_then(|usage| usage.model.clone());
+    let id = current
+        .or_else(|| catalog.models.iter().find(|m| m.value == pane.model()).and_then(|m| m.resolved_model.clone()))
+        .unwrap_or_else(|| pane.model().to_string());
+    let options: Vec<mighty_core::model_label::ModelOption> = catalog.models.iter().map(|m| m.label_option()).collect();
+    let name = mighty_core::model_label::format(&id).unwrap_or_else(|| mighty_core::model_label::selection(pane, &options, locale));
+    (id, name)
+}

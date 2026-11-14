@@ -1129,3 +1129,51 @@ fn the_status_line_card_reads_the_terminal_colours() {
     let empty = card::input(None, None, None);
     assert!(mighty_composer::cards::status_line_card(&empty, &mighty_core::locale::Locale::new("ko")).is_none(), "nothing to show");
 }
+
+/// "model labels: the status line names the current selection" (ModelLabelVerification.cs:141, `ModelLabel.StatusLine`).
+#[test]
+fn model_labels_the_status_line_names_the_current_selection() {
+    let _language = language();
+    common::korean();
+    let rows: Vec<Value> = serde_json::from_str(
+        r#"[
+          {"value": "default", "resolvedModel": "claude-opus-5-5", "displayName": "Default (recommended)", "description": "Opus 5.5 · Best for everyday, complex tasks"},
+          {"value": "opus", "resolvedModel": "claude-opus-5-5", "displayName": "Opus"},
+          {"value": "claude-fable-5-1[1m]", "resolvedModel": "claude-fable-5-1", "displayName": "Fable"},
+          {"value": "sonnet", "resolvedModel": "claude-sonnet-5-5", "displayName": "Sonnet"},
+          {"value": "haiku", "resolvedModel": "claude-haiku-4-5-20251001", "displayName": "Haiku"}
+        ]"#,
+    )
+    .unwrap();
+    let catalog = mighty_run::providers::claude_catalog(&rows);
+    let usage = |model: &str, selected: Option<&str>| {
+        let mut value = mighty_core::model::SessionUsage::from_json(
+            &serde_json::json!({"provider": "claude", "source": "claude.stream-json", "tokenScope": "run", "updatedAt": "2026-10-03T00:00:00Z"}),
+        )
+        .unwrap();
+        value.model = Some(model.to_string());
+        value.selected_model = selected.map(str::to_string);
+        value
+    };
+    let pane = |model: &str, usage: Option<mighty_core::model::SessionUsage>| mighty_core::model::RunSession {
+        workspace_id: Some("w".into()),
+        title: Some("t".into()),
+        model: Some(model.into()),
+        provider: Some("claude".into()),
+        session_usage: usage,
+        ..mighty_core::model::RunSession::default()
+    };
+    let locale = mighty_core::locale::Locale::new("ko");
+    let current = pane("opus", Some(usage("claude-opus-5-5", Some("opus"))));
+    assert_eq!(card::model_label(&current, &catalog, &locale), ("claude-opus-5-5".into(), "Opus 5.5".into()), "the reported selection");
+    let switched = mighty_core::model::RunSession { model: Some("haiku".into()), ..current.clone() };
+    assert_eq!(card::model_label(&switched, &catalog, &locale), ("claude-haiku-4-5-20251001".into(), "Haiku 4.5".into()), "after a switch");
+    let legacy = pane("sonnet", Some(usage("claude-sonnet-4-5", None)));
+    assert_eq!(card::model_label(&legacy, &catalog, &locale), ("claude-sonnet-4-5".into(), "Sonnet 4.5".into()), "legacy usage");
+    let fallback = mighty_run::providers::fallback("claude");
+    assert_eq!(
+        card::model_label(&pane("default", None), &fallback, &locale),
+        ("default".into(), "Claude 설정 따름".into()),
+        "the fallback default"
+    );
+}

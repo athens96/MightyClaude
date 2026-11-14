@@ -2148,6 +2148,7 @@ dependencies = [
  "indexmap 2.14.2",
  "mighty-composer",
  "mighty-core",
+ "mighty-native",
  "mighty-platform",
  "mighty-platform-windows",
  "mighty-run",
