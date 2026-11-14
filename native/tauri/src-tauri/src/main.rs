@@ -21,6 +21,7 @@ mod panes;
 mod platform;
 mod runs;
 mod smoke;
+mod smoke_acp;
 mod smoke_files;
 mod smoke_frame;
 mod smoke_history;
@@ -200,6 +201,17 @@ fn main() {
     } else {
         platform.paths.local_dir().join("image-cache").join(platform.paths.profile_key())
     };
+    // The picker the last Hermes session offered likewise (C# `hermes-models.json` in the profile).
+    let hermes_models = if options.allow_state_write {
+        data_dir.join(mighty_run::acp::agents::HERMES_MODEL_CACHE_FILE)
+    } else {
+        platform
+            .paths
+            .local_dir()
+            .join("hermes-models")
+            .join(platform.paths.profile_key())
+            .join(mighty_run::acp::agents::HERMES_MODEL_CACHE_FILE)
+    };
     // The work map's summaries likewise, and its git's empty hooks folder this machine's own (workmap.rs).
     let workmap_folders = workmap::Folders::new(platform.paths.as_ref(), options.allow_state_write);
     // The file originals (files.rs, C# `FileOriginalStore`) likewise: the profile's `file-originals`, else this machine's own.
@@ -249,7 +261,14 @@ fn main() {
             {
                 let _ = std::fs::create_dir_all(folder);
             }
-            runs::Runs::start(&host, platform.processes.clone(), platform.environment.clone(), fake_claude.clone(), image_dir.clone());
+            runs::Runs::start(
+                &host,
+                platform.processes.clone(),
+                platform.environment.clone(),
+                fake_claude.clone(),
+                image_dir.clone(),
+                hermes_models.clone(),
+            );
             // Terminal panes, the agents' terminals, terminal prompts and shell block runs (terminal.rs).
             terminal::Terminals::start(&host, &platform);
             host.start_clocks();

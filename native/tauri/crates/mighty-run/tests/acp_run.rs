@@ -366,7 +366,8 @@ async fn the_runner_hands_an_acp_agents_cards_to_its_channel() {
         let events = Events::default();
         let seen: Arc<Mutex<Vec<ToolPermissionRequest>>> = Arc::default();
         let cell: Cell = Arc::default();
-        let catalog = fake("opencode", &directory, recording, "opencode v2.2.7", &[]);
+        // The agent waits for each card's answer, as a real one does.
+        let catalog = fake("opencode", &directory, recording, "opencode v2.2.7", &["--fake-await-answers"]);
         let mut options = RunManagerOptions::new("", resolve(&workspace), events.emit());
         let (sink, answer) = (seen.clone(), cell.clone());
         options.permission_requested = Some(Arc::new(move |value: ToolPermissionRequest| {

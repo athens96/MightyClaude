@@ -9,7 +9,7 @@
 //!   (native/contracts/fixtures/model-list-*) for its verified arguments, refused otherwise.
 //! - `--replay-cli <recording> <record> [args…]`: Claude with host prompts that asks one tool permission and one plan, records the
 //!   answers, then replays the recording (native/contracts/fixtures/<recording>.jsonl) and ends once its input closes.
-//! - `--fake-acp <state> <fixture> [--fake-linger|--fake-stall] [args…]` (C# AcpRunVerification.FakeAcpAsync): an ACP agent that answers
+//! - `--fake-acp <state> <fixture> [--fake-linger|--fake-stall|--fake-await-answers] [args…]` (C# AcpRunVerification.FakeAcpAsync): an ACP agent that answers
 //!   the channel's requests with a recorded opencode or Hermes session (each `mighty-…` answer only after one request line), records its
 //!   argv, its environment and its stdin in `<state>`, and plays Hermes's `config get/set` over `<state>/hermes-config.json`.
 //! - `--hermes-acp-cli <state> <mode> [args…]` (C# AcpAgentAccountVerification.FakeHermesAsync): `hermes acp` as 0.23.1 answers the
@@ -535,10 +535,12 @@ fn replay_cli(recording: &str, record: &str, args: &[String]) {
 
 /// An ACP agent replaying a recorded session (C# `AcpRunVerification.FakeAcpAsync`): each answer to one of the channel's requests
 /// (`"id":"mighty-…"`) goes only after one request line was read; `--fake-stall` stops before the prompt's answer and `--fake-linger`
-/// keeps the server up after its input ended, both for a minute.
+/// keeps the server up after its input ended, both for a minute. `--fake-await-answers` (not C#'s: its checks answer no card) also waits,
+/// after each request of the agent's own (a permission, a form), for the client's answer line before it goes on, as a real agent does.
 fn fake_acp(state: &str, fixture_path: &str, rest: &[String]) {
     let linger = rest.iter().any(|a| a == "--fake-linger");
     let stall = rest.iter().any(|a| a == "--fake-stall");
+    let await_answers = rest.iter().any(|a| a == "--fake-await-answers");
     let args: Vec<&String> = rest.iter().filter(|a| !a.starts_with("--fake-")).collect();
     let state = PathBuf::from(state);
     if args.len() == 1 && args[0] == "--version" {
@@ -578,15 +580,33 @@ fn fake_acp(state: &str, fixture_path: &str, rest: &[String]) {
     let _ = std::fs::write(state.join("env.json"), env.to_string());
     let stdin = state.join("stdin.txt").to_string_lossy().into_owned();
     let recorded = std::fs::read_to_string(fixture_path).unwrap_or_default();
+    // The client's requests read while waiting for an answer, each still owed its recorded answer.
+    let mut requests: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    let frame = |line: &str| serde_json::from_str::<Value>(line).unwrap_or(Value::Null);
+    let method = |line: &str| frame(line).get("method").is_some();
+    let is_request = |line: &str| method(line) && frame(line).get("id").is_some_and(|id| !id.is_null());
     for line in recorded.split('\n').map(|l| l.trim_end_matches('\r')).filter(|l| !l.is_empty()) {
         if stall && line.contains("\"stopReason\"") {
             break;
         }
-        if line.contains("\"id\":\"mighty-") {
+        if line.contains("\"id\":\"mighty-") && requests.pop_front().is_none() {
             let Some(request) = read_line() else { return };
             append(&stdin, &format!("{request}\n"));
         }
         say(line);
+        if await_answers && is_request(line) {
+            // The recording's updates came before the client's next request: a request read here waits for its own answer, and a
+            // notification is no answer.
+            loop {
+                let Some(next) = read_line() else { return };
+                append(&stdin, &format!("{next}\n"));
+                if is_request(&next) {
+                    requests.push_back(next);
+                } else if !method(&next) {
+                    break;
+                }
+            }
+        }
     }
     while let Some(extra) = read_line() {
         append(&stdin, &format!("{extra}\n"));

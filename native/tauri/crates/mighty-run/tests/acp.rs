@@ -1162,6 +1162,28 @@ fn attached_copies_are_named_in_the_prompt_and_pictures_are_image_blocks() {
     );
 }
 
+/// CliLoginRecoveryVerification.PiSignInFailuresAndTheTerminalTable, its opencode and Hermes words (CliLoginRecoveryVerification.cs:281-284;
+/// the rest of it, pi's stream and the terminal table, is pi's and the sign-in card's).
+#[test]
+fn pi_sign_in_failures_and_the_terminal_table_opencode_and_hermes_words() {
+    use mighty_run::failure;
+    assert!(
+        failure::opencode("provider authentication required")
+            && failure::opencode("Free usage limit reached. Connect a provider to keep going")
+            && failure::opencode("401 Unauthorized")
+            && !failure::opencode("407 Proxy Authentication Required")
+            && !failure::opencode("rate limited"),
+        "opencode's sign-in words"
+    );
+    assert!(
+        failure::hermes("⚠️ provider 'auto' has no endpoint configured, so the request is not sent anywhere")
+            && failure::hermes("Hermes is not connected to any AI provider yet. Run `hermes model`.")
+            && !failure::hermes("407 Proxy Authentication Required")
+            && !failure::hermes("The file is written."),
+        "Hermes's sign-in words"
+    );
+}
+
 #[test]
 fn the_clarify_config_value_is_the_macs() {
     assert!(

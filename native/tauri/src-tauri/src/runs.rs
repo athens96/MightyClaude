@@ -19,7 +19,7 @@ use mighty_platform::{ProcessHost, ShellEnvironment};
 use mighty_run::model::{CliCommand, ModelCatalog, ProviderRuntime};
 use mighty_run::parser::{ImageError, ImageStore};
 use mighty_run::providers::{self, Finder, ProviderCatalog};
-use mighty_run::service::{Configure, RunService, RunServiceOptions};
+use mighty_run::service::{Configure, RunService, RunServiceOptions, ServiceEvent};
 
 use crate::host::Host;
 
@@ -27,7 +27,7 @@ use crate::host::Host;
 const IMAGE_CACHE_BYTES: u64 = 200 * 1_048_576;
 
 /// The smoke's stand-in Claude (mighty-run's `mighty-fake-cli --replay-cli`): asks one Bash permission and one plan, then replays a
-/// recording. Every other provider is missing.
+/// recording. The same binary is the ACP step's opencode (`--fake-acp`, smoke_acp.rs); every other provider is missing.
 #[derive(Debug, Clone)]
 pub struct FakeClaude {
     pub binary: PathBuf,
@@ -65,6 +65,47 @@ impl ImageStore for CacheStore {
     }
 }
 
+/// The files the app ships for the agents' runs (C# `AgentFiles`: opencode's question instructions, pi's `ask_user` extension): `Agents`
+/// beside the exe when it was put there, else the repository's (the Mac bundle's Resources/Agents, which the C# build copies).
+fn agent_files() -> Option<PathBuf> {
+    let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join("Agents")));
+    if beside.as_ref().is_some_and(|dir| dir.is_dir()) {
+        return beside;
+    }
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("macos")
+        .join("Sources")
+        .join("MightyCore")
+        .join("Resources")
+        .join("Agents");
+    repository.is_dir().then_some(repository)
+}
+
+/// What Hermes's `state.db` says of a session a run would continue (C# `HermesSessions.MessageCount`, `StartedWithFullAccess` of
+/// `StateDatabase(environment)`), read through mighty-history; read-only.
+fn hermes_session(environment: &std::collections::BTreeMap<String, String>, session: &str) -> (Option<i32>, Option<bool>) {
+    let environment: HashMap<String, String> = environment.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let database = mighty_history::acp::hermes_state_database(&environment, None);
+    (
+        mighty_history::acp::hermes_message_count(&database, session),
+        mighty_history::acp::hermes_started_with_full_access(&database, session),
+    )
+}
+
+/// A Hermes pane's run ended (C# `RefreshModelsAfterHermesRun`): the folder whose model list is read again, so the models its session
+/// offered are in the menu. None for anything else, and in a smoke (which asks no CLI).
+fn hermes_run_ended(host: &Host, event: &ServiceEvent) -> Option<Option<String>> {
+    let ServiceEvent::Run { event, .. } = event else { return None };
+    if host.smoke.is_some() || event.kind != "status" || !matches!(event.status.as_deref(), Some("completed" | "error" | "stopped")) {
+        return None;
+    }
+    let view = host.view();
+    let pane = view.snapshot.session(&event.session_id).filter(|s| s.kind() == "claude" && s.provider() == "hermes")?;
+    Some(view.snapshot.workspace(pane.workspace_id()).filter(|w| w.remote.is_none()).map(|w| w.path().to_string()))
+}
+
 /// The mighty-bridge plugin the Claude runs load (C#: `mods/mighty-bridge` copied next to the app as `claude-mods`): beside the exe
 /// when it was put there, else the repository's own (a development build).
 pub fn plugin_directory() -> String {
@@ -90,6 +131,7 @@ impl Runs {
         environment: Arc<dyn ShellEnvironment>,
         fake: Option<FakeClaude>,
         image_dir: PathBuf,
+        hermes_models: PathBuf,
     ) -> Arc<Runs> {
         mighty_run::strings::set_language(host.locale.language());
         // `{value:N0}` (the attachments' sizes) in the user's regional format, as C#'s current culture writes it.
@@ -102,13 +144,36 @@ impl Runs {
                 vec!["--replay-cli".into(), fake.recording.clone(), fake.record.to_string_lossy().into_owned()],
                 Some("2.1.322"),
             );
+            // The ACP step's opencode: the stand-in replaying a recorded session that asks one question (smoke_acp.rs).
+            let state = crate::smoke_acp::state(&fake.record);
+            let _ = std::fs::create_dir_all(&state);
+            let opencode = CliCommand::new(
+                fake.binary.to_string_lossy().into_owned(),
+                vec![
+                    "--fake-acp".into(),
+                    state.to_string_lossy().into_owned(),
+                    crate::smoke_acp::fixture().to_string_lossy().into_owned(),
+                    // The question waits for the page's answer, as a real agent's does.
+                    "--fake-await-answers".into(),
+                ],
+                Some("opencode v2.2.7"),
+            );
             let finder: Finder = Arc::new(move |provider: String| {
-                let found = (provider == "claude").then(|| command.clone());
+                let found = match provider.as_str() {
+                    "claude" => Some(command.clone()),
+                    "opencode" => Some(opencode.clone()),
+                    _ => None,
+                };
                 Box::pin(async move { found })
             });
             finder
         });
         let catalog = Arc::new(ProviderCatalog::new(processes, environment, finder));
+        // The picker the last Hermes session offered (C# `ProviderCatalog.HermesModelCache`) and the agents' shipped files.
+        catalog.set_hermes_model_cache(Some(hermes_models));
+        if let Some(folder) = agent_files() {
+            providers::set_agent_files(Some(folder));
+        }
         let images = Arc::new(AgentImageCache::new(image_dir, IMAGE_CACHE_BYTES));
         let store: Arc<dyn ImageStore> = Arc::new(CacheStore(images.clone()));
         // A Claude run's Edit, Write and MultiEdit results keep the files' originals (files.rs, C# FileOriginalStore).
@@ -117,6 +182,7 @@ impl Runs {
             options.graph = Some(Arc::new(TrackerFactory::new()));
             options.images = Some(store);
             options.file_originals = originals;
+            options.hermes_session = Some(Arc::new(hermes_session));
         });
         let snapshot = host.view().snapshot.clone();
         let (service, mut events) = RunService::new(
@@ -135,7 +201,17 @@ impl Runs {
         let pump = host.clone();
         tauri::async_runtime::spawn(async move {
             while let Some(event) = events.recv().await {
+                let hermes = hermes_run_ended(&pump, &event);
                 pump.service_event(event);
+                if let Some(folder) = hermes {
+                    let host = pump.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Some(runs) = host.runs().cloned() {
+                            runs.refresh("hermes", folder.as_deref()).await;
+                            host.panes_changed();
+                        }
+                    });
+                }
             }
         });
         let reader = host.clone();
