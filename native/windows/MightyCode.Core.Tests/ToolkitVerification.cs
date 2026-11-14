@@ -391,6 +391,70 @@ internal static class ToolkitVerification
         return Task.CompletedTask;
     }
 
+    // ── a skill whose address names no plain folder never runs its clone ──────
+
+    internal static Task ToolkitSkillFolderNeverLeavesTheSkillsFolder()
+    {
+        var dir = TempDir();
+        var home = TempDir();
+        try
+        {
+            var ctx = new ToolkitProbeContext { HomeDirectory = home, PathDirectories = [], LocalAppData = home };
+            var skillsRoot = Path.Combine(home, ".claude", "skills");
+
+            // A plain name still clones to <home>\.claude\skills\<name>, with the trailing / and .git taken off.
+            foreach (var good in new[] { "https://github.com/example/my-skill.git", "https://github.com/example/my-skill/", "https://github.com/example/my-skill.GIT" })
+            {
+                var commands = ToolkitRunner.InstallCommands(MakeEntry("good", new ToolkitFileReader.SkillSpec(good)), null, ctx);
+                Check(commands.Count == 1 && commands[0].SequenceEqual(["git", "clone", good, Path.Combine(skillsRoot, "my-skill")]), "a plain skill name clones into .claude/skills: " + good);
+            }
+
+            // A last segment that is a drive, or holds a character Windows refuses, joins to a folder outside .claude\skills.
+            var evil = new[]
+            {
+                "https://github.com/example/D:evil", "https://github.com/example/D:evil.git", "https://github.com/example/a:b/",
+                "https://github.com/example/x*y", "foo:D:evil", "ssh://git@host/example/C:",
+            };
+            foreach (var url in evil)
+            {
+                var entry = MakeEntry("evil", new ToolkitFileReader.SkillSpec(url));
+                Check(ToolkitProbe.SkillFolder(url, out var refusal) is null && refusal is not null && refusal.Contains(url), "the folder name is refused with why: " + url);
+                Check(refusal != null && !refusal.StartsWith("toolkit.error."), "the refusal is the localized words, not the key: " + refusal);
+                Check(ToolkitRunner.InstallCommands(entry, null, ctx).Count == 0, "no clone is built for " + url);
+                Check(ToolkitProbe.Probe(entry, null, ctx) == ToolkitProbe.Result.Missing, "the probe reports the skill missing for " + url);
+            }
+
+            // An address that is no URL: the probe says missing (no throw); the plan fails saying so.
+            var notUrl = "skills/relative-path";
+            Check(ToolkitProbe.SkillFolder(notUrl, out var urlRefusal) is null && urlRefusal is not null && urlRefusal.Contains(notUrl) && !urlRefusal.StartsWith("toolkit.error."), "a non-URL is refused with why");
+            Check(ToolkitProbe.Probe(MakeEntry("nu", new ToolkitFileReader.SkillSpec(notUrl)), null, ctx) == ToolkitProbe.Result.Missing, "the probe reports a non-URL skill missing");
+
+            // The plan fails with the reason for an approved skill, and runs the good one.
+            var store = new ToolkitStore(dir);
+            var evilEntry = MakeEntry("evil-skill", new ToolkitFileReader.SkillSpec("https://github.com/example/D:evil"));
+            store.Add(evilEntry);
+            store.Approve("evil-skill");
+            var runner = new ToolkitRunner(store, ctx);
+            var failure = false;
+            try { runner.Plan(); }
+            catch (InvalidOperationException ex) { failure = ex.Message.Contains("D:evil") && !ex.Message.StartsWith("toolkit.error."); }
+            Check(failure, "the plan fails with the refusal, naming the folder");
+
+            store.Remove("evil-skill");
+            store.Add(MakeEntry("good-skill", new ToolkitFileReader.SkillSpec("https://github.com/example/good-skill.git")));
+            store.Approve("good-skill");
+            var plan = runner.Plan();
+            Check(plan.Any(i => i.Entry.Id == "good-skill" && i.Action == ToolkitPlanItem.PlanAction.Run && i.Commands[0][3] == Path.Combine(skillsRoot, "good-skill")), "a plain skill is still planned");
+
+            // An entry the user has not approved is only listed as left out; nothing of it runs, so its name is not judged.
+            store.Remove("good-skill");
+            store.Add(evilEntry);
+            Check(runner.Plan().Any(i => i.Entry.Id == "evil-skill" && i.Action == ToolkitPlanItem.PlanAction.Skip), "an unapproved evil skill is left out, not run");
+        }
+        finally { Directory.Delete(dir, true); Directory.Delete(home, true); }
+        return Task.CompletedTask;
+    }
+
     // ── 7: toolkit install is an ordered step list ────────────────────────────
 
     internal static Task ToolkitInstallIsAnOrderedStepList()

@@ -75,8 +75,9 @@ public actor ToolkitRunner {
 
     /// Returns items for entries that are currently missing.
     /// Bundled and user+approved entries get `.run(commands:)`;
-    /// unapproved user entries get `.skip`.
-    public func plan() async -> [ToolkitPlanItem] {
+    /// unapproved user entries get `.skip`. A skill to run whose address is no URL, or names
+    /// no plain folder, fails the plan with why instead of running its clone.
+    public func plan() async throws -> [ToolkitPlanItem] {
         let (entries, _) = await store.list()
         var items: [ToolkitPlanItem] = []
         for entry in entries {
@@ -85,6 +86,7 @@ public actor ToolkitRunner {
             if entry.source == .user && approval == nil {
                 items.append(ToolkitPlanItem(entry: entry, action: .skip))
             } else {
+                if case .skill(let url) = entry.install { _ = try ToolkitProbe.skillFolder(url: url) }
                 let commands = Self.installCommands(for: entry, approval: approval, context: probeContext)
                 guard !commands.isEmpty else { continue }
                 items.append(ToolkitPlanItem(entry: entry, action: .run(commands: commands)))
@@ -201,9 +203,7 @@ public actor ToolkitRunner {
         case .mcp(let name, let executable, let args):
             return [["claude", "mcp", "add", "--scope", "user", name, "--"] + [executable] + args]
         case .skill(let url):
-            var component = URL(string: url)?.lastPathComponent ?? ""
-            if component.hasSuffix(".git") { component = String(component.dropLast(4)) }
-            guard !component.isEmpty else { return [] }
+            guard let component = (try? ToolkitProbe.skillFolder(url: url)) ?? nil else { return [] }
             let dest = probeContext.home.appendingPathComponent(".claude/skills/\(component)").path
             return [["git", "clone", url, dest]]
         case .package(let manager, let name, _):

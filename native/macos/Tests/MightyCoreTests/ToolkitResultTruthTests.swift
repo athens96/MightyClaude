@@ -199,7 +199,7 @@ private final class FakeExec: ToolkitRunnerExecutor, @unchecked Sendable {
         let runner = ToolkitRunner(store: store, probeContext: ctx)
 
         // (e1) winget entry is absent from plan() on macOS (not probed = not counted as missing)
-        let items = await runner.plan()
+        let items = try await runner.plan()
         #expect(!items.contains { $0.entry.entryId == "win-only" })
 
         // (e2) running the plan does not include a result for the winget entry

@@ -72,7 +72,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let fakeExec = FakeToolkitExecutor(responses: [])
         try await store.approve(entryId: "my-pkg", executor: fakeExec)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let items = await runner.plan()
+        let items = try await runner.plan()
         #expect(items.count == 2) // bundled + user
         let userItem = items.first { $0.entry.entryId == "my-pkg" }!
         if case .run(let cmds) = userItem.action {
@@ -91,7 +91,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
                                  install: .package(manager: .npm, name: "typescript"))
         try await store.addEntry(entry)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let items = await runner.plan()
+        let items = try await runner.plan()
         let userItem = items.first { $0.entry.entryId == "my-pkg" }!
         #expect(userItem.action == .skip)
     }
@@ -113,7 +113,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let ctx = ToolkitProbeContext(home: home, environment: [:], appDataDir: home,
                                       brewPrefixes: [fakePrefix.path])
         let runner = ToolkitRunner(store: store, probeContext: ctx)
-        let items = await runner.plan()
+        let items = try await runner.plan()
         // User entry is already installed → not in plan
         #expect(items.allSatisfy { $0.entry.entryId != "my-pkg" })
     }
@@ -132,7 +132,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let fakeExec = FakeToolkitExecutor(responses: [])
         try await store.approve(entryId: "approved", executor: fakeExec)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let items = await runner.plan()
+        let items = try await runner.plan()
         let approvedItem = items.first { $0.entry.entryId == "approved" }!
         let unapprovedItem = items.first { $0.entry.entryId == "unapproved" }!
         if case .run(let cmds) = approvedItem.action {
@@ -159,7 +159,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         try await store.approve(entryId: "a", executor: fakeExec)
         try await store.approve(entryId: "b", executor: fakeExec)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let items = await runner.plan()
+        let items = try await runner.plan()
         let executor = FakeRunnerExecutor()
         _ = await runner.run(plan: items, executor: executor)
         // First call should be for "a", second for "b"
@@ -184,7 +184,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         try await store.approve(entryId: "a", executor: fakeExec)
         try await store.approve(entryId: "b", executor: fakeExec)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let plan = await runner.plan()
+        let plan = try await runner.plan()
         // First item's command fails (non-zero, no probe file)
         let executor = FakeRunnerExecutor(responses: [.failure(output: "install failed")],
                                            default: .failure(output: "install failed"))
@@ -214,7 +214,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let fakeExec = FakeToolkitExecutor(responses: [])
         try await store.approve(entryId: "pkg", executor: fakeExec)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let plan = await runner.plan()
+        let plan = try await runner.plan()
         // First call: network error → should retry; second call: also fails (no probe file)
         let executor = FakeRunnerExecutor(
             responses: [networkOutput(), .failure(output: "still failed")],
@@ -235,7 +235,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let fakeExec = FakeToolkitExecutor(responses: [])
         try await store.approve(entryId: "pkg", executor: fakeExec)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let plan = await runner.plan()
+        let plan = try await runner.plan()
         // Non-network failure → no retry
         let executor = FakeRunnerExecutor(
             responses: [.failure(output: "permission denied")],
@@ -256,7 +256,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let fakeExec = FakeToolkitExecutor(responses: [])
         try await store.approve(entryId: "pkg", executor: fakeExec)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let plan = await runner.plan()
+        let plan = try await runner.plan()
         // Both calls return network error; should not retry more than once
         let executor = FakeRunnerExecutor(
             responses: [networkOutput(), networkOutput()],
@@ -277,7 +277,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let fakeExec = FakeToolkitExecutor(responses: [])
         try await store.approve(entryId: "srv", executor: fakeExec)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let plan = await runner.plan()
+        let plan = try await runner.plan()
         // claude mcp add is not a fetch step — network error still means no retry
         let executor = FakeRunnerExecutor(
             responses: [networkOutput()],
@@ -300,7 +300,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let fakeExec = FakeToolkitExecutor(responses: [])
         try await store.approve(entryId: "pkg", executor: fakeExec)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let plan = await runner.plan()
+        let plan = try await runner.plan()
         // Executor always returns exit 0, but no probe file created
         let executor = FakeRunnerExecutor(default: .success)
         let results = await runner.run(plan: plan, executor: executor)
@@ -346,7 +346,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
                                   install: .package(manager: .brew, name: "ripgrep"))
         try await store.addEntry(entry)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let plan = await runner.plan()
+        let plan = try await runner.plan()
         let executor = FakeRunnerExecutor(default: .success)
         let results = await runner.run(plan: plan, executor: executor)
         let userResult = results.first { $0.entryId == "pkg" }!
@@ -375,7 +375,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let ctx = ToolkitProbeContext(home: home, environment: [:], appDataDir: appData)
         let runner = ToolkitRunner(store: store, probeContext: ctx)
         // First plan should include the entry
-        let plan1 = await runner.plan()
+        let plan1 = try await runner.plan()
         let setupItem1 = plan1.first { $0.entry.entryId == "setup" }
         #expect(setupItem1 != nil)
         // The fake executor clones nothing, so put the checked-out script in place.
@@ -388,7 +388,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let setupResult = results.first { $0.entryId == "setup" }!
         #expect(setupResult.verdict == .installed)
         // Second plan: entry is now installed → not in plan
-        let plan2 = await runner.plan()
+        let plan2 = try await runner.plan()
         #expect(plan2.allSatisfy { $0.entry.entryId != "setup" })
     }
 
@@ -413,7 +413,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         try FileManager.default.createDirectory(at: clone, withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(at: clone.appendingPathComponent("install.sh"), withDestinationURL: outside)
         let executor = FakeRunnerExecutor(default: .success)
-        let results = await runner.run(plan: await runner.plan(), executor: executor)
+        let results = await runner.run(plan: try await runner.plan(), executor: executor)
         #expect(!executor.calls.contains { $0.first?.hasSuffix("install.sh") == true })
         #expect(results.first { $0.entryId == "setup" }?.verdict == .failed)
     }
@@ -424,7 +424,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         try FileManager.default.createDirectory(at: clone, withIntermediateDirectories: true)
         try Data("#!/bin/sh\n".utf8).write(to: clone.appendingPathComponent("install.sh"))
         let executor = FakeRunnerExecutor(responses: [.success, .failure(output: "fatal: reference is not a tree")], default: .success)
-        let plan = await runner.plan().filter { $0.entry.entryId == "setup" }
+        let plan = try await runner.plan().filter { $0.entry.entryId == "setup" }
         let results = await runner.run(plan: plan, executor: executor)
         #expect(executor.calls.count == 2)
         #expect(results.first { $0.entryId == "setup" }?.verdict == .failed)
@@ -471,7 +471,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let fakeExec = FakeToolkitExecutor(responses: [])
         try await store.approve(entryId: "my-plugin", executor: fakeExec)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let items = await runner.plan()
+        let items = try await runner.plan()
         let item = items.first { $0.entry.entryId == "my-plugin" }!
         if case .run(let cmds) = item.action {
             #expect(cmds[0] == ["claude", "plugin", "marketplace", "add", "--scope", "user", "owner/repo"])
@@ -492,7 +492,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let fakeExec = FakeToolkitExecutor(responses: [])
         try await store.approve(entryId: "srv", executor: fakeExec)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let items = await runner.plan()
+        let items = try await runner.plan()
         let item = items.first { $0.entry.entryId == "srv" }!
         if case .run(let cmds) = item.action {
             #expect(cmds[0] == ["claude", "mcp", "add", "--scope", "user", "my-mcp", "--", "node", "server.js"])
@@ -512,7 +512,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let fakeExec = FakeToolkitExecutor(responses: [])
         try await store.approve(entryId: "my-skill", executor: fakeExec)
         let runner = ToolkitRunner(store: store, probeContext: makeContext(home: home))
-        let items = await runner.plan()
+        let items = try await runner.plan()
         let item = items.first { $0.entry.entryId == "my-skill" }!
         if case .run(let cmds) = item.action {
             let expected = ["git", "clone",
@@ -539,7 +539,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         try await store.approve(entryId: "setup", executor: fakeExec)
         let ctx = ToolkitProbeContext(home: home, environment: [:], appDataDir: appData)
         let runner = ToolkitRunner(store: store, probeContext: ctx)
-        let items = await runner.plan()
+        let items = try await runner.plan()
         let item = items.first { $0.entry.entryId == "setup" }!
         if case .run(let cmds) = item.action {
             let cloneDir = appData.appendingPathComponent("toolkit-clones/\(fakeSHA)").path
@@ -549,5 +549,76 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         } else {
             Issue.record("Expected .run for repoScript entry")
         }
+    }
+
+    // MARK: – A skill's folder never leaves ~/.claude/skills
+
+    @Test func skillFolderNamesAreCheckedBeforeAnyCloneIsBuilt() async throws {
+        let dir = tempDir("skill-folder")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = dir.appendingPathComponent("home")
+        let ctx = makeContext(home: home)
+        let skills = home.appendingPathComponent(".claude/skills")
+
+        for good in ["https://github.com/example/my-skill.git", "https://github.com/example/my-skill/", "https://github.com/example/my-skill.GIT"] {
+            let entry = ToolkitEntry(entryId: "good", displayName: "Good", source: .user, install: .skill(url: good))
+            #expect(ToolkitRunner.installCommands(for: entry, approval: nil, context: ctx)
+                    == [["git", "clone", good, skills.appendingPathComponent("my-skill").path]])
+        }
+
+        // A last component that is a drive, a dot segment, or holds a character Windows refuses names a folder outside the skills folder.
+        let evil = ["https://github.com/example/D:evil", "https://github.com/example/D:evil.git", "https://github.com/example/a:b/",
+                    "https://github.com/example/x*y", "https://github.com/example/..", "foo:D:evil", "ssh://git@host/example/C:"]
+        for url in evil {
+            let entry = ToolkitEntry(entryId: "evil", displayName: "Evil", source: .user, install: .skill(url: url))
+            do {
+                _ = try ToolkitProbe.skillFolder(url: url)
+                Issue.record("Expected the folder name of \(url) to be refused")
+            } catch {
+                let why = error.localizedDescription
+                #expect(why.contains(url) && !why.hasPrefix("toolkit.error."))
+            }
+            #expect(ToolkitRunner.installCommands(for: entry, approval: nil, context: ctx).isEmpty)
+            #expect(ToolkitProbe.probe(entry: entry, approval: nil, context: ctx) == .missing)
+        }
+
+        // An address that is no URL is refused saying so; the probe only reports the skill missing.
+        for notURL in ["not a url", "skills/relative-path"] {
+            do {
+                _ = try ToolkitProbe.skillFolder(url: notURL)
+                Issue.record("Expected \(notURL) to be refused")
+            } catch {
+                #expect(error.localizedDescription.contains(notURL) && !error.localizedDescription.hasPrefix("toolkit.error."))
+            }
+            let entry = ToolkitEntry(entryId: "nu", displayName: "Nu", source: .user, install: .skill(url: notURL))
+            #expect(ToolkitProbe.probe(entry: entry, approval: nil, context: ctx) == .missing)
+        }
+
+        // The plan fails with the reason for an approved evil skill; a plain skill is still planned.
+        let store = ToolkitStore(directory: dir.appendingPathComponent("data"))
+        let evilEntry = ToolkitEntry(entryId: "evil-skill", displayName: "Evil", source: .user,
+                                     install: .skill(url: "https://github.com/example/D:evil"))
+        try await store.addEntry(evilEntry)
+        try await store.approve(entryId: "evil-skill", executor: FakeToolkitExecutor())
+        let runner = ToolkitRunner(store: store, probeContext: ctx)
+        do {
+            _ = try await runner.plan()
+            Issue.record("Expected the plan to fail")
+        } catch {
+            #expect(error.localizedDescription.contains("D:evil"))
+        }
+        try await store.removeEntry(id: "evil-skill")
+        let goodEntry = ToolkitEntry(entryId: "good-skill", displayName: "Good", source: .user,
+                                     install: .skill(url: "https://github.com/example/good-skill.git"))
+        try await store.addEntry(goodEntry)
+        try await store.approve(entryId: "good-skill", executor: FakeToolkitExecutor())
+        let planned = try await runner.plan().first { $0.entry.entryId == "good-skill" }
+        #expect(planned?.action == .run(commands: [["git", "clone", "https://github.com/example/good-skill.git", skills.appendingPathComponent("good-skill").path]]))
+
+        // An entry the user has not approved is only listed as left out, so its name is not judged.
+        try await store.removeEntry(id: "good-skill")
+        try await store.addEntry(evilEntry)
+        let left = try await runner.plan().first { $0.entry.entryId == "evil-skill" }
+        #expect(left?.action == .skip)
     }
 }

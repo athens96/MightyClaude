@@ -2658,6 +2658,8 @@
   "settings.phaseModels.error.jsoncUnparseableDetail": "config.jsonc를 파싱할 수 없습니다: {error}",
   "toolkit.error.unreadable": "toolkit.json을 읽을 수 없습니다. 원본 파일은 변경하지 않았습니다.",
   "toolkit.error.tagUnresolved": "tag '{tag}'를 커밋 SHA로 해석할 수 없습니다.",
+  "toolkit.error.skillAddress": "스킬 주소가 URL이 아닙니다: {url}",
+  "toolkit.error.skillFolder": "스킬의 폴더 이름이 .claude\\skills 안의 평범한 폴더 이름이 아닙니다: {name} ({url})",
   "questionnaire.error.badFormat": "선택 요청의 질문 또는 선택지 형식이 올바르지 않습니다.",
   "questionnaire.error.missingAnswer": "답변이 누락되었습니다.",
   "usage.keychain.accessNeeded": "macOS Keychain의 Claude Code 로그인 정보에 접근해야 계정 한도를 읽을 수 있습니다. 새로고침을 누르면 접근 허용 창이 열립니다. \"항상 허용\"을 선택하면 이 빌드에서는 다시 묻지 않습니다.",

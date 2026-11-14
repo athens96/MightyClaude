@@ -2658,6 +2658,8 @@
   "settings.phaseModels.error.jsoncUnparseableDetail": "无法解析 config.jsonc：{error}",
   "toolkit.error.unreadable": "无法读取 toolkit.json。原文件未被更改。",
   "toolkit.error.tagUnresolved": "无法将标签“{tag}”解析为提交 SHA。",
+  "toolkit.error.skillAddress": "技能地址不是 URL：{url}",
+  "toolkit.error.skillFolder": "技能的文件夹名称不是 .claude\\skills 中的普通文件夹名：{name}（{url}）",
   "questionnaire.error.badFormat": "问题中的题目或选项格式无效。",
   "questionnaire.error.missingAnswer": "缺少回答。",
   "usage.keychain.accessNeeded": "读取账户限额需要访问 macOS 钥匙串中的 Claude Code 登录信息。按“刷新”即可打开访问提示。选择“始终允许”后，此构建将不再询问。",

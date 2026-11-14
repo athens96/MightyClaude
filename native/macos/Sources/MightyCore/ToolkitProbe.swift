@@ -75,12 +75,27 @@ public enum ToolkitProbe {
         return mcpServers[name] != nil ? .installed : .missing
     }
 
+    /// The skill's folder name under ~/.claude/skills: the URL's last path component with ".git" (any case) taken off.
+    /// Nil when the address names no component. Throws, with the localized why, when the address is no URL or the component is no plain
+    /// folder name: "." or "..", a drive (`D:evil`), a separator, or a character Windows refuses would join to a folder outside
+    /// ~/.claude/skills (the same rule as Windows' ToolkitProbe.SkillFolder and the Rust app's skill_folder).
+    static func skillFolder(url: String) throws -> String? {
+        guard let parsed = URL(string: url), parsed.scheme != nil else {
+            throw ToolkitStoreError(L("toolkit.error.skillAddress", ["url": url]))
+        }
+        var component = parsed.lastPathComponent
+        if component.lowercased().hasSuffix(".git") { component = String(component.dropLast(4)) }
+        if component.isEmpty || component == "/" { return nil }
+        let refused = CharacterSet(charactersIn: ":\\/<>\"|?*").union(.controlCharacters)
+        if component == "." || component == ".." || component.unicodeScalars.contains(where: { refused.contains($0) }) {
+            throw ToolkitStoreError(L("toolkit.error.skillFolder", ["name": component, "url": url]))
+        }
+        return component
+    }
+
     /// skill: ~/.claude/skills/<derived>/SKILL.md exists.
-    /// derived = last URL path component with trailing .git stripped.
     private static func probeSkill(url: String, home: URL) -> Result {
-        var component = URL(string: url)?.lastPathComponent ?? ""
-        if component.hasSuffix(".git") { component = String(component.dropLast(4)) }
-        guard !component.isEmpty else { return .missing }
+        guard let component = (try? skillFolder(url: url)) ?? nil else { return .missing }
         let skillMd = home.appendingPathComponent(".claude/skills/\(component)/SKILL.md")
         return FileManager.default.fileExists(atPath: skillMd.path) ? .installed : .missing
     }

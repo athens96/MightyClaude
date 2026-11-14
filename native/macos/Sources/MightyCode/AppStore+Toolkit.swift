@@ -101,9 +101,12 @@ extension AppStore {
         Task {
             let context = makeProbeContext(environment: await toolkitEnvironment())
             let runner = ToolkitRunner(store: toolkitStore, probeContext: context)
-            let plan = await runner.plan()
-            toolkitPlan = plan
-            toolkitShowConfirmation = true
+            do {
+                toolkitPlan = try await runner.plan()
+                toolkitShowConfirmation = true
+            } catch {
+                toolkitFileError = error.localizedDescription
+            }
         }
     }
 

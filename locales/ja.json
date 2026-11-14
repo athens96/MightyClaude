@@ -2658,6 +2658,8 @@
   "settings.phaseModels.error.jsoncUnparseableDetail": "config.jsoncを解析できませんでした: {error}",
   "toolkit.error.unreadable": "toolkit.jsonを読み込めませんでした。元のファイルは変更していません。",
   "toolkit.error.tagUnresolved": "タグ「{tag}」をコミットSHAに解決できませんでした。",
+  "toolkit.error.skillAddress": "スキルのアドレスがURLではありません: {url}",
+  "toolkit.error.skillFolder": "スキルのフォルダ名が.claude\\skills内の通常のフォルダ名ではありません: {name}（{url}）",
   "questionnaire.error.badFormat": "質問または選択肢の形式が正しくありません。",
   "questionnaire.error.missingAnswer": "回答が不足しています。",
   "usage.keychain.accessNeeded": "アカウントの上限を読み取るには、macOSキーチェーン内のClaude Codeのサインイン情報へのアクセスが必要です。更新を押すとアクセスの確認画面が開きます。「常に許可」を選ぶと、このビルドでは再び確認されません。",

@@ -2658,6 +2658,8 @@
   "settings.phaseModels.error.jsoncUnparseableDetail": "config.jsonc could not be parsed: {error}",
   "toolkit.error.unreadable": "Couldn't read toolkit.json. The original file wasn't changed.",
   "toolkit.error.tagUnresolved": "Couldn't resolve tag '{tag}' to a commit SHA.",
+  "toolkit.error.skillAddress": "The skill's address isn't a URL: {url}",
+  "toolkit.error.skillFolder": "The skill's folder name isn't a plain folder in .claude\\skills: {name} ({url})",
   "questionnaire.error.badFormat": "The question's questions or options are in an invalid format.",
   "questionnaire.error.missingAnswer": "An answer is missing.",
   "usage.keychain.accessNeeded": "Reading the account limits needs access to the Claude Code sign-in in the macOS Keychain. Press refresh to open the access prompt. Choose \"Always Allow\" and this build won't ask again.",

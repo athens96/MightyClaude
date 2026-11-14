@@ -29,6 +29,10 @@ public struct ToolkitStoreError: Error, Sendable {
     public init(_ message: String) { self.message = message }
 }
 
+extension ToolkitStoreError: LocalizedError {
+    public var errorDescription: String? { message }
+}
+
 // MARK: - ToolkitStore
 
 /// Manages the user's toolkit list next to workspace-state.json.

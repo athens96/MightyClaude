@@ -83,13 +83,33 @@ public static class ToolkitProbe
         catch { return Result.Missing; }
     }
 
+    /// The skill's folder name under %USERPROFILE%\.claude\skills: the URL's last path segment with a trailing '/' and ".git" taken off.
+    /// Null when the address names no segment. <paramref name="refusal"/> says why when the address is no URL, or the segment is no plain
+    /// folder name: a drive (D:evil), a separator, "." or "..", or a character Windows refuses would join to a folder outside .claude\skills.
+    internal static string? SkillFolder(string url, out string? refusal)
+    {
+        refusal = null;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            refusal = Locale.Get("toolkit.error.skillAddress", new Dictionary<string, string> { ["url"] = url });
+            return null;
+        }
+        var component = uri.Segments.LastOrDefault()?.TrimEnd('/') ?? "";
+        if (component.EndsWith(".git", StringComparison.OrdinalIgnoreCase)) component = component[..^4];
+        if (component.Length == 0) return null;
+        if (component is "." or ".." || component.Any(c => ":\\/<>\"|?*".Contains(c) || char.IsControl(c)))
+        {
+            refusal = Locale.Get("toolkit.error.skillFolder", new Dictionary<string, string> { ["name"] = component, ["url"] = url });
+            return null;
+        }
+        return component;
+    }
+
     // skill: %USERPROFILE%\.claude\skills\<name>\SKILL.md exists.
-    // name = last URL path component with trailing .git stripped.
     private static Result ProbeSkill(string url, string home)
     {
-        var component = new Uri(url, UriKind.Absolute).Segments.LastOrDefault()?.TrimEnd('/') ?? "";
-        if (component.EndsWith(".git", StringComparison.OrdinalIgnoreCase)) component = component[..^4];
-        if (component.Length == 0) return Result.Missing;
+        var component = SkillFolder(url, out _);
+        if (component is null) return Result.Missing;
         var skillMd = Path.Combine(home, ".claude", "skills", component, "SKILL.md");
         return File.Exists(skillMd) ? Result.Installed : Result.Missing;
     }

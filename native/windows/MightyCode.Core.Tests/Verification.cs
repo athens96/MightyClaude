@@ -1597,6 +1597,7 @@ internal static class Verification
         await Test("toolkit plan runs only missing approved entries", ToolkitVerification.ToolkitPlanRunsOnlyMissingApprovedEntries);
         await Test("toolkit probes are file-only and run twice and decide the result table", ToolkitVerification.ToolkitProbesAreFileOnly);
         await Test("toolkit plan is a step list", ToolkitVerification.ToolkitInstallIsAnOrderedStepList);
+        await Test("toolkit skill folder never leaves the skills folder", ToolkitVerification.ToolkitSkillFolderNeverLeavesTheSkillsFolder);
         await Test("bundled entry sorts first and survives an unreadable store", ToolkitVerification.BundledEntrySortsFirstAndSurvivesAnUnreadableStore);
         await Test("result table separates not attempted, failed and succeeded", ToolkitVerification.ResultTableSeparatesNotAttemptedFailedAndSucceeded);
         await Test("result truth is authoritative: probe decides verdict, steps are explanation", ToolkitVerification.ResultTruthIsAuthoritative);

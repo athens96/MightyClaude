@@ -75,6 +75,7 @@ public sealed class ToolkitRunner(ToolkitStore store, ToolkitProbeContext probeC
 
     /// Returns items for entries that are currently missing.
     /// Bundled and approved user entries get Run; unapproved user entries get Skip.
+    /// A skill to run whose address is no URL, or names no plain folder, fails the plan with why (InvalidOperationException) instead of running its clone.
     public IReadOnlyList<ToolkitPlanItem> Plan()
     {
         var (entries, _) = store.List();
@@ -89,6 +90,8 @@ public sealed class ToolkitRunner(ToolkitStore store, ToolkitProbeContext probeC
             }
             else
             {
+                if (entry.Install is ToolkitFileReader.SkillSpec skill && ToolkitProbe.SkillFolder(skill.Url, out var refusal) is null && refusal is not null)
+                    throw new InvalidOperationException(refusal);
                 var commands = InstallCommands(entry, approval, probeContext);
                 if (commands.Count == 0) continue;
                 items.Add(new ToolkitPlanItem { Entry = entry, Action = ToolkitPlanItem.PlanAction.Run, Commands = commands });
@@ -195,9 +198,8 @@ public sealed class ToolkitRunner(ToolkitStore store, ToolkitProbeContext probeC
 
     private static IReadOnlyList<IReadOnlyList<string>> SkillCommands(string url, string homeDir)
     {
-        var component = new Uri(url, UriKind.Absolute).Segments.LastOrDefault()?.TrimEnd('/') ?? "";
-        if (component.EndsWith(".git", StringComparison.OrdinalIgnoreCase)) component = component[..^4];
-        if (component.Length == 0) return [];
+        var component = ToolkitProbe.SkillFolder(url, out _);
+        if (component is null) return [];
         var dest = Path.Combine(homeDir, ".claude", "skills", component);
         return [["git", "clone", url, dest]];
     }

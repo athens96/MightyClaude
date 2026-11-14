@@ -414,7 +414,7 @@ private func sampleWinget(id: String = "wt", name: String = "Microsoft.WindowsTe
         let ctx = ToolkitProbeContext(home: home, environment: [:],
                                       appDataDir: home.appendingPathComponent("appdata"))
         let runner = ToolkitRunner(store: store, probeContext: ctx)
-        let items = await runner.plan()
+        let items = try await runner.plan()
         #expect(!items.contains { $0.entry.entryId == "wt" })
     }
 
