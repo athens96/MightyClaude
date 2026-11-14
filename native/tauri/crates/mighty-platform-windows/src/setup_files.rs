@@ -307,6 +307,34 @@ mod tests {
         }
     }
 
+    /// An owner-and-list SDDL text as Windows writes it back.
+    fn canonical(sddl: &str) -> String {
+        use windows_sys::Win32::Security::Authorization::ConvertSecurityDescriptorToStringSecurityDescriptorW;
+        let text = wide(sddl);
+        let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
+        // SAFETY: a NUL-terminated SDDL string; the descriptor and the text are LocalAlloc'd by Windows and freed here.
+        unsafe {
+            assert_ne!(
+                ConvertStringSecurityDescriptorToSecurityDescriptorW(text.as_ptr(), SDDL_REVISION_1, &mut descriptor, null_mut()),
+                0
+            );
+            let mut out: *mut u16 = null_mut();
+            let converted = ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                descriptor,
+                SDDL_REVISION_1,
+                OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                &mut out,
+                null_mut(),
+            );
+            assert_ne!(converted, 0);
+            let length = (0..).take_while(|&at| *out.add(at) != 0).count();
+            let canonical = String::from_utf16_lossy(std::slice::from_raw_parts(out, length));
+            LocalFree(out as HLOCAL);
+            LocalFree(descriptor as HLOCAL);
+            canonical
+        }
+    }
+
     /// C# `PrepareDirectory`'s folder read back from Windows: this user its owner, a protected list (nothing inherited) of one entry,
     /// full control for this user inherited by folders and files — made new, and put back after the list was widened.
     #[test]
@@ -316,10 +344,11 @@ mod tests {
         let folder = root.join("setup");
         WindowsSetupFiles.prepare_folder(&folder).expect("the folder is prepared");
         let user = User::current().unwrap();
-        // Protected (P; Windows adds AI, the list written with auto-inheritance), one entry: full control for this user.
-        let user_only = |sddl: String| {
-            sddl == format!("O:{0}D:P(A;OICI;FA;;;{0})", user.text) || sddl == format!("O:{0}D:PAI(A;OICI;FA;;;{0})", user.text)
-        };
+        // Protected (P; Windows adds AI, the list written with auto-inheritance), one entry: full control for this user. The expected
+        // text goes through Windows once too, so a SID it writes as an alias (LA for the built-in Administrator CI runs as) compares.
+        let expected =
+            [canonical(&format!("O:{0}D:P(A;OICI;FA;;;{0})", user.text)), canonical(&format!("O:{0}D:PAI(A;OICI;FA;;;{0})", user.text))];
+        let user_only = |sddl: String| expected.contains(&sddl);
         assert!(user_only(security_of(&folder)), "{}", security_of(&folder));
         // Widened in between (everyone may read): the next run puts the user-only list back.
         let everyone = wide(format!("D:(A;OICI;FA;;;{0})(A;OICI;FR;;;WD)", user.text));
