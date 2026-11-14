@@ -11,7 +11,7 @@
 //! C# runs every callback under the channel's re-entrant lock. Here the frames to the agent are written under the lock, in order; every
 //! other callback (`consume`, `emit`, `activity`, `warning`, `fail`, `completed`) is queued under it and delivered once it is released,
 //! one at a time and in the order C# makes them, by whichever caller finds the queue undelivered — so a callback may answer at once,
-//! as C#'s may. A frame nested deeper than serde_json's 128 levels (C# reads 256) is read as a plain line.
+//! as C#'s may. A frame nested deeper than serde_json's 128 levels (C# reads 256) fails the channel closed, as one too large does.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -315,8 +315,16 @@ impl AcpChannel {
             if state.closed {
                 return;
             }
-            let node = if line.trim_start().starts_with('{') { serde_json::from_str::<Value>(line).ok() } else { None };
-            let Some(Value::Object(frame)) = node else {
+            let parsed = line.trim_start().starts_with('{').then(|| serde_json::from_str::<Value>(line));
+            // A frame nested deeper than serde_json reads (128 levels; C# reads 256) may be a request the turn waits on: it fails closed
+            // as a frame too large does, never read as a plain line that leaves the turn waiting.
+            if let Some(Err(error)) = &parsed
+                && error.to_string().starts_with("recursion limit exceeded")
+            {
+                this.fail_closed(state, effects, strings::get("acp.channel.frameTooLarge"));
+                return;
+            }
+            let Some(Ok(Value::Object(frame))) = parsed else {
                 // An agent may print a plain line (a warning) before or beside its frames: shown, not fatal.
                 let shown = clean(Some(&agents::utf16_prefix(line, 4_096)), 4_096, false);
                 if !shown.is_empty() {
@@ -666,7 +674,7 @@ impl AcpChannel {
             .filter(|named| !named.is_empty() && named.len() <= 256 && named.chars().all(|ch| ch > ' ' && ch != '\x7f'))
             .map(str::to_string)
             .unwrap_or_else(|| format!("permission-{request_key}"));
-        let Some(display) = display_json(&display_input(call.get("rawInput"))).filter(|d| d.len() <= MAXIMUM_INPUT_BYTES) else {
+        let Some(display) = display_json(&display_input(call.get("rawInput"))) else {
             self.answer(raw_id, reject.as_deref());
             effects.push(Effect::Warning(strings::get("acp.channel.requestTooLarge")));
             return;
@@ -1035,9 +1043,12 @@ fn sorted(value: &Value) -> Value {
 }
 
 /// `DisplayJson`: the card's JSON — indented, keys sorted, format characters (bidirectional overrides and the like) escaped so they
-/// cannot hide text. None when it nests too deep to write.
+/// cannot hide text. None when it nests too deep to write, or when it is longer than [`MAXIMUM_INPUT_BYTES`] (the card's cap), which
+/// is looked at on the compact text first: the indented text is never shorter, and a crafted request whose sorted copy and indented
+/// text would take gigabytes is refused before either is made (C#'s out-of-memory fails only the run; a failed allocation here would
+/// end the app).
 fn display_json(value: &Value) -> Option<String> {
-    if depth(value) > 64 {
+    if depth(value) > 64 || text_json::relaxed(value, false).len() > MAXIMUM_INPUT_BYTES {
         return None;
     }
     let text = text_json::relaxed(&sorted(value), true);
@@ -1052,7 +1063,7 @@ fn display_json(value: &Value) -> Option<String> {
             result.push(character);
         }
     }
-    Some(result)
+    (result.len() <= MAXIMUM_INPUT_BYTES).then_some(result)
 }
 
 #[cfg(test)]
