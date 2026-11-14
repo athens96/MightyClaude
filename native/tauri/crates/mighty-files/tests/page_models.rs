@@ -334,8 +334,15 @@ fn html_frames_get_a_host_per_folder() {
     assert_eq!(host.len(), "h".len() + 32 + frames::HOST_SUFFIX.len());
     let again = hosts.address(root, &real("docs/other.html"), origin).unwrap();
     assert!(again.starts_with(&format!("http://mightyhtml.{host}/")), "a folder keeps its host");
+    // Folders compare as the OS's paths do (`workspace_files::relative`): ignoring case on Windows, where C#'s `htmlHosts` lives;
+    // elsewhere a differently cased path is not under the root at all.
     let shouted = real("docs").to_string_lossy().to_uppercase();
-    assert!(hosts.address(root, &Path::new(&shouted).join("x.html"), origin).unwrap().contains(&host), "folders compare ignoring case");
+    let shouted_address = hosts.address(root, &Path::new(&shouted).join("x.html"), origin);
+    if cfg!(windows) {
+        assert!(shouted_address.unwrap().contains(&host), "folders compare ignoring case");
+    } else {
+        assert!(shouted_address.is_none(), "a differently cased path is outside a case-sensitive root");
+    }
     assert_eq!(hosts.folder(&host), Some((root.to_path_buf(), "docs".to_string())), "the root and the folder's place in it");
     let top = hosts.address(root, &real("top.html"), origin).unwrap();
     let top_host = top.trim_start_matches("http://mightyhtml.").split('/').next().unwrap().to_string();
