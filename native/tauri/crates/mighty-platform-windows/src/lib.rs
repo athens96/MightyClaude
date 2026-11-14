@@ -16,6 +16,8 @@ mod clipboard;
 #[cfg(windows)]
 pub mod command;
 #[cfg(windows)]
+pub mod console;
+#[cfg(windows)]
 pub mod discovery;
 #[cfg(windows)]
 mod dpapi;
@@ -23,6 +25,12 @@ mod dpapi;
 pub mod environment;
 #[cfg(windows)]
 pub mod files;
+#[cfg(windows)]
+pub mod fonts;
+#[cfg(windows)]
+pub mod http;
+#[cfg(windows)]
+pub mod notify;
 #[cfg(windows)]
 mod prefs;
 #[cfg(windows)]

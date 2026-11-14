@@ -26,6 +26,10 @@ mighty-run.workspace = true
 mighty-terminal.workspace = true
 mighty-history.workspace = true
 mighty-workmap.workspace = true
+mighty-native.workspace = true
+mighty-tools.workspace = true
+mighty-accounts.workspace = true
+mighty-updates.workspace = true
 indexmap.workspace = true
 base64 = "0.22"
 # pickAttachments: the OS's file picker (C# FileOpenPicker), Rust-side only (no page permission).
@@ -47,3 +51,8 @@ mighty-platform-macos.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["sync", "rt", "macros"] }
+
+# W6 Step 0 lists mighty-native, mighty-tools, mighty-accounts and mighty-updates before any code uses them; this table goes once
+# the app's code uses all four.
+[lints.cargo]
+unused_dependencies = "allow"

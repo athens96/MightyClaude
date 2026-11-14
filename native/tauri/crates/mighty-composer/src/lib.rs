@@ -22,6 +22,7 @@ pub mod pending;
 pub mod presentation;
 pub mod queue;
 pub mod runtime;
+pub mod session_info;
 pub mod slash;
 pub mod svg;
 pub mod text;

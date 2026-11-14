@@ -6,18 +6,23 @@
 //! `WorkspaceFiles.cs`). No Tauri and no OS-specific code, so it builds and tests anywhere.
 
 pub mod add_pane;
+pub mod app_update_view;
 pub mod attachment;
 pub mod browser;
 pub mod demo;
+pub mod design_tokens;
 pub mod graph;
+pub mod help_site;
 pub mod json;
 pub mod layout;
 pub mod locale;
 pub mod model;
 pub mod model_label;
 pub mod normalize;
+pub mod notifications;
 pub mod permission;
 pub mod rename;
+pub mod settings_sections;
 pub mod shell;
 pub mod store;
 pub mod text_appearance;

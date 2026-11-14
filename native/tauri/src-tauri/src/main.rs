@@ -5,6 +5,7 @@
 //! registration, a WebView2 folder or local data with the installed C# app. It must become the real one before this ships.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod accounts;
 mod antigravity;
 mod args;
 mod ask;
@@ -20,18 +21,30 @@ mod logfile;
 mod methods;
 mod mighty;
 mod models;
+mod native;
+mod notifications;
 mod panes;
 mod platform;
+mod plugins;
 mod runs;
+mod settings;
+mod setup;
 mod smoke;
+mod smoke_accounts;
 mod smoke_acp;
 mod smoke_files;
 mod smoke_frame;
 mod smoke_history;
 mod smoke_runs;
+mod smoke_settings;
+mod smoke_setup;
 mod smoke_terminal;
+mod smoke_updates;
+mod status_line;
 mod surface;
 mod terminal;
+mod updates;
+mod usage;
 mod workmap;
 mod workspace_create;
 

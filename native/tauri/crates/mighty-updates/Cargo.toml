@@ -1,0 +1,26 @@
+[package]
+name = "mighty-updates"
+version = "0.1.0"
+description = "Mighty Code's CLI updates, automatic updates and plugins (W6-D: C# CliUpdateService, CliUpdateCoordinator, CliAutoUpdateSchedule, CliUpdateStrings, ClaudePlugins, ClaudePluginReader, ClaudePluginPresentation, CodexPluginReader, CodexPluginStrings, PluginOperations, PluginAutoUpdates, PluginStrings), with no Tauri dependency and no OS code."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+# The checks' stand-in CLI (CLI updates, the plugin list and installs), relaunched by the tests as mighty-run's `mighty-fake-cli`
+# is: std only, so it builds on every OS. Not tests/fake/main.rs: Cargo would also take that as a test target.
+[[bin]]
+name = "mighty-updates-fake"
+path = "tests/fake/cli.rs"
+test = false
+doc = false
+
+[dependencies]
+chrono.workspace = true
+regex.workspace = true
+sha2.workspace = true
+base64 = "0.22"
+
+# W6 Step 0 lists the dependencies before any code uses them; this table goes once the crate's code does.
+[lints.cargo]
+unused_dependencies = "allow"
