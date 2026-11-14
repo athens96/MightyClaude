@@ -2,7 +2,7 @@
 //! list): the catalog read once, the probe results, the picks, the one install running, the probe cadence, the install's start
 //! and watch, and what the frame shows (`setupNeeded`, the status bar's badge). The host draws it (phase 2) and runs its timers;
 //! everything that touches the machine goes through ports: the probes through [`ProbeContext`] (`ShellEnvironment`, the platform's
-//! finder, `ProcessHost`), the folder and markers through `SetupFiles`, the install window through [`InstallWindow`].
+//! finder, `ProcessHost`), the folder and markers through `SetupFiles`, the install window through W6-A's `TerminalLauncher`.
 //!
 //! An install changes the machine: [`Gate`] says whether this run of the app may start one (W6 defaults: only with
 //! `--allow-state-write` until W9, never in a smoke).
@@ -12,8 +12,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use mighty_platform::console::{TerminalLaunch, TerminalLauncher};
 use mighty_platform::{ProcessHost, SetupFiles, ShellEnvironment};
-use mighty_run::model::{ProviderRuntime, RuntimeInfo};
+use mighty_run::model::ProviderRuntime;
 use mighty_run::strings;
 
 use crate::setup::catalog::{SetupCatalog, SetupItem, SetupPlatform};
@@ -37,15 +38,6 @@ pub const WINDOW_HEIGHT: f64 = 700.0;
 /// C# `WindowsCommand.NoCurrentDirectorySearch`: npx and claude are .cmd shims, and their bare node is never looked for in the
 /// folder a step runs in.
 pub const NO_CURRENT_DIRECTORY_SEARCH: &str = "NoDefaultCurrentDirectoryInExePath";
-
-/// The console window the install script runs in, which outlives the app (C# `Process.Start` of `CliAccountTerminal.LaunchPlan`:
-/// Windows Terminal by the full path found along the PATH, else the system's console host). W6-A's terminal launcher port
-/// (`mighty_platform::console`) fills this once it lands; the checks record what would have opened.
-pub trait InstallWindow: Send + Sync {
-    /// Opens `argv` in `folder` with `environment` (the CLI environment, [`NO_CURRENT_DIRECTORY_SEARCH`] set). `Err` carries why it
-    /// could not start.
-    fn open(&self, argv: &[String], folder: &Path, environment: &BTreeMap<String, String>) -> Result<(), String>;
-}
 
 /// Whether this run of the app may change the machine (the host's `--allow-state-write` and smoke flags).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -416,7 +408,7 @@ impl SetupScreen {
         gate: Gate,
         environment: &BTreeMap<String, String>,
         files: &dyn SetupFiles,
-        window: &dyn InstallWindow,
+        terminals: &dyn TerminalLauncher,
         profile_directory: Option<&Path>,
         local_app_data: &Path,
         now: Instant,
@@ -457,8 +449,18 @@ impl SetupScreen {
         let argv = script::launch_arguments(&script.to_string_lossy(), files.system_folder().as_deref(), environment);
         let mut variables = environment.clone();
         set_variable(&mut variables, NO_CURRENT_DIRECTORY_SEARCH, "1");
-        if let Err(error) = window.open(&argv, &folder, &variables) {
-            self.message = Some(strings::get_with("setup.windows.error.terminal", &[("error", &error)]));
+        // The console window the script runs in outlives the app (C# `Process.Start` of `CliAccountTerminal.LaunchPlan`: Windows
+        // Terminal by the full path found along the PATH, else the system's console host), the system's PowerShell by its own path.
+        let launch = TerminalLaunch {
+            resolved: argv.first().cloned(),
+            argv,
+            directory: Some(folder.clone()),
+            title: None,
+            environment: variables,
+            prefer_terminal_app: true,
+        };
+        if let Err(error) = terminals.open(launch) {
+            self.message = Some(strings::get_with("setup.windows.error.terminal", &[("error", &error.to_string())]));
             return InstallStart::Refused;
         }
         self.terminals_opened += 1;
@@ -524,10 +526,17 @@ impl SetupScreen {
     }
 
     /// C# `SetupItemForMissingCli`: the setup item for an agent pane's provider when its CLI is missing on this PC, so the blocked
-    /// line can offer to install it. A remote pane's CLI is on its host; an old Claude is no missing CLI (it gets the update).
-    pub fn item_for_missing_cli(&mut self, kind: &str, provider: &str, remote: bool, runtime: Option<&RuntimeInfo>) -> Option<String> {
+    /// line can offer to install it. A remote pane's CLI is on its host; an old Claude is no missing CLI (it gets the update). `runtime`
+    /// is each provider's runtime as last read (C#'s `runtime.Providers`), None before the first read.
+    pub fn item_for_missing_cli(
+        &mut self,
+        kind: &str,
+        provider: &str,
+        remote: bool,
+        runtime: Option<&[ProviderRuntime]>,
+    ) -> Option<String> {
         let runtime = runtime?;
-        if kind != "claude" || remote || runtime.providers.iter().any(|p| p.id == provider && p.version.is_some()) {
+        if kind != "claude" || remote || runtime.iter().any(|p| p.id == provider && p.version.is_some()) {
             return None;
         }
         self.load_catalog()?.items.iter().find(|item| item.provider() == Some(provider)).map(|item| item.id.clone())
