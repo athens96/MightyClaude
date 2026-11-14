@@ -115,15 +115,15 @@ public static class HermesAgent
     /// session starts, so one that started with it is not continued by a pane that asks (a new session, run.notice.hermesFullAccessSession),
     /// and one that started without it keeps asking in a full-access pane (continued, run.notice.hermesAskingSession); a session whose first
     /// request never got an answer (<c>message_count</c> 0) keeps the provider it was made with and is not continued. A session whose policy
-    /// receipt cannot be read may have started with <c>--yolo</c>: a pane that asks starts a new one (run.notice.hermesUnknownSession), a
-    /// full-access pane continues it.
+    /// receipt cannot be read may have started with <c>--yolo</c>: a pane that asks starts a new one, without a notice; a full-access pane
+    /// continues it.
     /// </summary>
     public static (string? ResumeId, string? NoticeKey) Resume(string resumeId, string mode, int? messageCount, bool? startedWithFullAccess)
     {
         var full = mode == "fullAccess";
         if (messageCount == 0) return (null, null);
         if (startedWithFullAccess == true && !full) return (null, "run.notice.hermesFullAccessSession");
-        if (startedWithFullAccess is null && !full) return (null, "run.notice.hermesUnknownSession");
+        if (startedWithFullAccess is null && !full) return (null, null);
         return (resumeId, startedWithFullAccess == false && full ? "run.notice.hermesAskingSession" : null);
     }
 

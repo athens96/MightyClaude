@@ -74,12 +74,12 @@ public enum HermesAgent {
     /// run.notice.hermesAskingSession); a session whose first request never got an answer
     /// (`message_count` 0) keeps the provider it was made with and is not continued. A session
     /// whose policy receipt cannot be read may have started with `--yolo`: a pane that asks
-    /// starts a new one (run.notice.hermesUnknownSession), a full-access pane continues it.
+    /// starts a new one, without a notice; a full-access pane continues it.
     public static func resume(_ resumeID: String, mode: String, messageCount: Int?, startedWithFullAccess: Bool?) -> (resumeID: String?, noticeKey: String?) {
         let full = mode == "fullAccess"
         if messageCount == 0 { return (nil, nil) }
         if startedWithFullAccess == true, !full { return (nil, "run.notice.hermesFullAccessSession") }
-        if startedWithFullAccess == nil, !full { return (nil, "run.notice.hermesUnknownSession") }
+        if startedWithFullAccess == nil, !full { return (nil, nil) }
         return (resumeID, startedWithFullAccess == false && full ? "run.notice.hermesAskingSession" : nil)
     }
 

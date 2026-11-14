@@ -531,10 +531,9 @@ internal static class AcpVerification
         Check(HermesAgent.Resume(id, "fullAccess", 3, false) == (id, "run.notice.hermesAskingSession"), "an asking session is continued and still asks");
         Check(HermesAgent.Resume(id, "fullAccess", 3, true) == (id, null) && HermesAgent.Resume(id, "manual", 3, false) == (id, null), "matching sessions are continued");
         // S-B12: a session whose policy receipt cannot be read may have started with --yolo; only a full-access pane continues it.
-        Check(HermesAgent.Resume(id, "manual", 3, null) == (null, "run.notice.hermesUnknownSession") && HermesAgent.Resume(id, "acceptEdits", null, null) == (null, "run.notice.hermesUnknownSession"),
-            "a pane that asks starts a new session when the receipt cannot be read");
+        Check(HermesAgent.Resume(id, "manual", 3, null) == (null, null) && HermesAgent.Resume(id, "acceptEdits", null, null) == (null, null),
+            "a pane that asks starts a new session when the receipt cannot be read, without a notice");
         Check(HermesAgent.Resume(id, "fullAccess", 3, null) == (id, null) && HermesAgent.Resume(id, "fullAccess", null, null) == (id, null), "a full-access pane continues it");
-        Check(Locale.Get("run.notice.hermesUnknownSession") != "run.notice.hermesUnknownSession", "the pane is told why");
         return Task.CompletedTask;
     }
 

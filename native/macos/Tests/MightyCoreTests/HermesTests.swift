@@ -826,9 +826,8 @@ struct HermesTests {
         #expect(decided("fullAccess", 3, false) == "\(id) run.notice.hermesAskingSession")
         #expect(decided("fullAccess", 3, true) == "\(id) -" && decided("manual", 3, false) == "\(id) -")
         // A session whose policy receipt cannot be read may have started with --yolo; only a full-access pane continues it.
-        #expect(decided("manual", 3, nil) == "new run.notice.hermesUnknownSession" && decided("acceptEdits", nil, nil) == "new run.notice.hermesUnknownSession")
+        #expect(decided("manual", 3, nil) == "new -" && decided("acceptEdits", nil, nil) == "new -")
         #expect(decided("fullAccess", 3, nil) == "\(id) -" && decided("fullAccess", nil, nil) == "\(id) -")
-        #expect(L("run.notice.hermesUnknownSession") != "run.notice.hermesUnknownSession")
     }
 
     /// S-B11 (Windows AcpVerification.ACancelledTurnAnswersItsWaitingPermissionsCancelled): a turn
