@@ -193,6 +193,34 @@ pub fn registry() -> Registry {
     // W6: the native forms (native.rs) and Settings with the guide (settings/mod.rs).
     crate::native::register(&mut methods);
     crate::settings::register(&mut methods);
+    // W6's other page methods, each the C# handler's guard around its part's seam (setup.rs: W6-B; accounts.rs, usage.rs: W6-C;
+    // plugins.rs: W6-D; composer.rs's session info: W6-A).
+    methods.add("openSetup", |host: Arc<Host>, _| async move {
+        crate::setup::open(&host, None);
+        Ok(Value::Null)
+    });
+    methods.add("openPlugins", |host: Arc<Host>, args| async move {
+        // The pane header's plugin button: a Claude or Codex pane's provider, while no sheet is up.
+        let provider = {
+            let view = host.view();
+            let pane = text(&args, "id").and_then(|id| view.snapshot.session(id));
+            pane.map(|p| p.provider().to_string()).filter(|p| matches!(p.as_str(), "claude" | "codex") && !view.dialog_open)
+        };
+        if let Some(provider) = provider {
+            crate::plugins::open(&host, &provider).await;
+        }
+        Ok(Value::Null)
+    });
+    methods.add("sessionInfo", |host: Arc<Host>, args| async move { crate::composer::session_info(&host, text(&args, "paneId")) });
+    methods.add("loginAction", |host: Arc<Host>, args| async move { crate::accounts::login_action(host, args).await });
+    methods.add("usageRefresh", |host: Arc<Host>, args| async move {
+        crate::usage::refresh(&host, flag(&args, "force"));
+        Ok(Value::Null)
+    });
+    methods.add("usageDirect", |host: Arc<Host>, args| async move {
+        crate::usage::direct(&host, flag(&args, "on")).await?;
+        Ok(Value::Null)
+    });
     methods.add("openUrl", |_host: Arc<Host>, args| async move {
         // C# `openUrl`: an http, https or mailto address, to the user's default handler; anything else does nothing.
         if let Some(url) = text(&args, "url").and_then(openable_url) {

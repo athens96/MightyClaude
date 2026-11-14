@@ -258,7 +258,24 @@ impl Runs {
         tauri::async_runtime::spawn(async move {
             while let Some(event) = events.recv().await {
                 let hermes = hermes_run_ended(&pump, &event);
+                // C# MainWindow.cs:88's order: `RecordProviderActivity` (updates.rs, W6-D) and `ReceiveLoginSignal` (accounts.rs, W6-C)
+                // before the pane takes the event, `HandleRunEventForNotification` (notifications.rs, W6-A) after it; a request about to
+                // start goes to the login recovery (C# `service.RequestStarting`, MainWindow.LoginRecovery.cs:49).
+                let run = match &event {
+                    ServiceEvent::Run { event, .. } => Some(event.as_ref().clone()),
+                    _ => None,
+                };
+                if let Some(run) = &run {
+                    crate::updates::on_run_event(&pump, run);
+                    crate::accounts::on_run_event(&pump, run);
+                }
+                if let ServiceEvent::RequestStarting(request) = &event {
+                    crate::accounts::on_request_starting(&pump, request);
+                }
                 pump.service_event(event);
+                if let Some(run) = &run {
+                    crate::notifications::on_event(&pump, run);
+                }
                 // C# `RefreshModels(sessionId, invalidate: true)` through the model lists' own refresh (models.rs), which reconciles the
                 // pane with the new list and asks no CLI in a smoke.
                 if let Some(id) = hermes {

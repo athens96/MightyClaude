@@ -92,6 +92,7 @@ pub fn render(host: &Host, id: &str) {
 
 /// `native::touch`: a surface whose model changed outside an input (a read finished, a timer) is read again now instead of on the
 /// next tick.
+#[allow(dead_code, reason = "a seam every W6 part (a model changed outside an input) calls")]
 pub fn touch(host: &Host, id: &str) {
     render(host, id);
 }
@@ -215,11 +216,13 @@ pub fn start_dialog(host: &Arc<Host>, mut spec: DialogSpec) -> DialogHandle {
 
 /// `native::show_dialog`: C# `ShowDialogAsync` — the dialog drawn by the page from the spec, answered with its button (None for its
 /// close button, Esc and [`hide_dialog`]).
+#[allow(dead_code, reason = "a seam every W6 part's dialogs calls")]
 pub async fn show_dialog(host: &Arc<Host>, spec: DialogSpec) -> DialogResult {
     start_dialog(host, spec).wait().await
 }
 
 /// `native::hide_dialog`: C# `HideDialog` — the dialog closes as None unless its `can_close` refuses.
+#[allow(dead_code, reason = "a seam W6-D (the plugin browser) calls")]
 pub fn hide_dialog(host: &Host, id: &str) {
     if of(host).surfaces.hide(id) == Some(Next::Close) {
         close(host, id);
@@ -228,6 +231,7 @@ pub fn hide_dialog(host: &Host, id: &str) {
 
 /// C# `SafeButton`'s `Act` for a control's handler: on its own task, the error banner cleared first and what the work fails with
 /// shown there.
+#[allow(dead_code, reason = "a seam every W6 part's buttons calls")]
 pub fn act(host: &Arc<Host>, work: impl Future<Output = Result<(), String>> + Send + 'static) {
     let host = host.clone();
     tauri::async_runtime::spawn(async move {

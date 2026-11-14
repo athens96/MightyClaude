@@ -16,12 +16,14 @@ use crate::host::{Host, Reply};
 
 /// `accounts::statuses`: each CLI's account status as last read (C# `cliAccountStatuses`), for the setup screen's sign-in row. Stub:
 /// W6-C fills it; until then none was read.
+#[allow(dead_code, reason = "a seam W6-B (the setup screen's sign-in row) calls")]
 pub fn statuses(_host: &Host) -> Vec<CliAccountStatus> {
     vec![]
 }
 
 /// `accounts::start_sign_in`: C# `StartCliSignIn(provider, option)` — the CLI's own sign-in in a terminal window (the `TerminalLauncher`
 /// port), then the status polled until it reads signed in. Stub: W6-C fills it; until then nothing opens.
+#[allow(dead_code, reason = "a seam W6-B (the setup screen's sign-in row) calls")]
 pub fn start_sign_in(_host: &Arc<Host>, _provider: &str, _option: Option<&str>) {}
 
 /// `accounts::refresh`: C# `RefreshCliAccounts` — every account status read again (Settings' CLI tab as it opens, outside a smoke).
@@ -30,6 +32,7 @@ pub fn refresh(_host: &Arc<Host>) {}
 
 /// `accounts::resend_after_update`: C# `ResendLoginsAwaitingUpdate` — the sign-in retries held while a CLI update ran, sent once it
 /// ended (W6-D calls it). Stub: W6-C fills it; until then nothing is held.
+#[allow(dead_code, reason = "a seam W6-D (after an update) calls")]
 pub fn resend_after_update(_host: &Arc<Host>) {}
 
 /// `accounts::login_input`: what the pane's sign-in card shows (C# `RenderLoginCard`'s state), for `CardInputs.login`. Called while the

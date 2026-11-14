@@ -185,6 +185,7 @@ fn start(host: &Arc<Host>) -> Option<tokio::sync::oneshot::Receiver<()>> {
 
 /// `settings::open`: Settings opened (when it can be) and, when `category` is given, brought to that category (C# `OpenSettings`
 /// then `SelectSettingsCategory`).
+#[allow(dead_code, reason = "a seam W6-A1 (the slash palette) and W6-C calls")]
 pub fn open(host: &Arc<Host>, category: Option<&str>) {
     let _ = start(host);
     if let Some(category) = category {
@@ -204,6 +205,7 @@ pub fn select(host: &Arc<Host>, id: &str) -> bool {
 }
 
 /// `CloseWebSettings`.
+#[allow(dead_code, reason = "a seam W6-A1 and W6-D calls")]
 pub fn close(host: &Arc<Host>) {
     crate::native::close(host, SURFACE);
 }
