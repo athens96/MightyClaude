@@ -1955,6 +1955,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "mighty-core",
+ "mighty-native",
  "mighty-platform",
  "mighty-platform-windows",
  "mighty-run",
