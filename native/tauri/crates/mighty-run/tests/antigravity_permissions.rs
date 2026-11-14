@@ -582,6 +582,23 @@ fn settings_that_are_not_the_expected_shape_are_refused() {
 
 // ── the rules the app holds ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
+/// The folder as its long name: a temporary folder can sit under an 8.3 name (`C:\Users\RUNNER~1\…` on CI), and a path with `~` never
+/// gets a file rule (S-H1), so a check about a plain local file must name it in full.
+#[cfg(windows)]
+fn long_path(path: PathBuf) -> PathBuf {
+    let Ok(real) = std::fs::canonicalize(&path) else { return path };
+    let text = real.to_string_lossy();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path,
+    }
+}
+
+#[cfg(not(windows))]
+fn long_path(path: PathBuf) -> PathBuf {
+    path
+}
+
 /// C#'s `Folder`: a temporary home with agy's settings and the app's ledger in it.
 struct Folder {
     root: PathBuf,
@@ -589,7 +606,7 @@ struct Folder {
 
 impl Folder {
     fn new(name: &str) -> Folder {
-        Folder { root: common::temp(&format!("agy-{name}")) }
+        Folder { root: long_path(common::temp(&format!("agy-{name}"))) }
     }
     fn settings_path(&self) -> PathBuf {
         self.root.join(".gemini").join("antigravity-cli").join("settings.json")

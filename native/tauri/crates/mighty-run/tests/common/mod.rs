@@ -181,8 +181,13 @@ pub fn alive(id: u32) -> bool {
     }
 }
 
-/// A catalog that finds no CLI (C# `Verification.Absent`).
-#[cfg(windows)]
+/// A catalog that finds no CLI (C# `Verification.Absent`). On Windows a command given to it explicitly still runs over the real process
+/// layer; elsewhere (the checks that only need a catalog that finds nothing) it starts nothing.
 pub fn absent_catalog() -> std::sync::Arc<mighty_run::providers::ProviderCatalog> {
-    catalog(|_| None)
+    #[cfg(windows)]
+    let host = std::sync::Arc::new(mighty_platform_windows::WindowsProcessHost::new());
+    #[cfg(not(windows))]
+    let host = std::sync::Arc::new(mighty_platform::unsupported::Unsupported);
+    let finder: mighty_run::providers::Finder = std::sync::Arc::new(|_provider: String| Box::pin(async { None }));
+    std::sync::Arc::new(mighty_run::providers::ProviderCatalog::new(host, environment(), Some(finder)))
 }
