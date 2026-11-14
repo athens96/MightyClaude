@@ -6,6 +6,7 @@
 //! graph dirty for its one-second publish and passes the node to a sharing host's `GraphNodes`, never after the run's last status.
 //! A sink is called from the run's task, from the Mods bridge and from the permission channel; calls come one at a time.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use mighty_core::graph::MightyGraphRun;
@@ -54,8 +55,12 @@ pub trait GraphSink: Send {
     fn build_run(&mut self, include_running: bool) -> Option<MightyGraphRun>;
     /// `TakeNoticeRuns(includeRunning)`: each notice run the run's background work opened.
     fn take_notice_runs(&mut self, include_running: bool) -> Vec<MightyGraphRun>;
-    /// `AntigravityAnswer`: an Antigravity reply as the transcript shows it (W5).
+    /// `AntigravityAnswer`: an Antigravity reply as the transcript shows it.
     fn antigravity_answer(&mut self, _text: &str) {}
+    /// `ReadChildren`'s Antigravity half: once the stream named a sub-agent, its own transcript under `brain` (and those of the helpers it
+    /// starts) read into the graph — `AntigravitySubagentWatcher.Poll`, or with `closing` its last, larger `Finish`, each snapshot to
+    /// `AntigravitySession`. `namespace` is the run's activity id, which names the sub-agents' rows.
+    fn antigravity_children(&mut self, _brain: &Path, _namespace: &str, _closing: bool) {}
     /// `CodexRootThread`: the Codex thread the run's session files are under (W5).
     fn codex_root_thread(&self) -> Option<String> {
         None

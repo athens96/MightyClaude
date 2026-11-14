@@ -18,8 +18,10 @@
 //! | `AttachmentSupport.cs` | [`attachments`] |
 //! | `RunManager.cs` | [`manager`] (with the [`graph::GraphSink`] the graph tracker plugs into) |
 //! | `DesktopService.cs` (runs) | [`service`] |
+//! | `AntigravityPermissions.cs`, `AntigravityRecords.cs` (the records' helpers), `AntigravityMigration.ModelUnavailable` | [`antigravity`] |
 
 pub mod activity;
+pub mod antigravity;
 pub mod apply;
 pub mod attachments;
 pub mod background_output;

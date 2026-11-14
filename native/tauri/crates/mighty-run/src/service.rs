@@ -7,13 +7,17 @@
 //! channel ([`ServiceEvent`]) in order — each applied event, each permission change, and when to save (at once at a run's end,
 //! else on the host's save schedule, C#'s `QueueSave` and `ScheduleSave`).
 //!
+//! Antigravity's cards and the rules their continuations hold are [`antigravity`]'s (C# DesktopService.Antigravity.cs): each pane's
+//! card ([`ServiceEvent::AntigravityCard`] when it changes), the rules a continuation puts in agy's settings before its run starts and
+//! takes out when it ends, the card back with the reason when the continuation cannot start.
+//!
 //! Until their stages: a remote workspace's runs go through a [`RemoteRunner`] (W8); delegation's run ledger, merges and notices
-//! (W7), Antigravity's rules (W5), the file originals' pruning (W4), the style's own tool permissions (W6) and the known-session
-//! list (W4: [`ServiceEvent::RememberSession`] hands the id to the host) are not here.
+//! (W7), the file originals' pruning (W4), the style's own tool permissions (W6) and the known-session list (W4:
+//! [`ServiceEvent::RememberSession`] hands the id to the host) are not here.
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use indexmap::IndexMap;
 use mighty_core::graph::GRAPH_PROVIDERS;
@@ -24,6 +28,7 @@ use mighty_core::wire;
 use mighty_platform::BoxFuture;
 use tokio::sync::mpsc;
 
+use crate::antigravity::AntigravityRuleLeases;
 use crate::apply;
 use crate::attachments;
 use crate::manager::{RunManager, RunManagerOptions};
@@ -36,6 +41,8 @@ use crate::questionnaire::UserQuestionAnswer;
 use crate::strings;
 use crate::timing;
 use crate::{Result, RunError, lock};
+
+mod antigravity;
 
 /// What the service tells its host, in order.
 #[derive(Debug, Clone)]
@@ -52,6 +59,8 @@ pub enum ServiceEvent {
     SaveSoon,
     /// A session id a pane started or resumed (C# `RememberSession`, the resume list's known sessions).
     RememberSession(String),
+    /// A pane's Antigravity card came, went, or its answer moved (C# `AntigravityCardChanged`): the pane's id.
+    AntigravityCard(String),
 }
 
 /// How a pane changed by [`RunService::update_pane`] is saved.
@@ -97,9 +106,19 @@ struct Shared {
     events: mpsc::UnboundedSender<ServiceEvent>,
     /// The waiting tool-permission requests of each pane, in the order they came.
     pending: Mutex<HashMap<String, IndexMap<String, ToolPermissionRequest>>>,
+    /// Every pane's Antigravity card and the rules its continuation holds.
+    antigravity: Mutex<antigravity::Desk>,
+    /// agy's settings (`AntigravityRules`), set once the runner's options are made.
+    antigravity_rules: OnceLock<AntigravityRuleLeases>,
 }
 
 impl Shared {
+    /// `AntigravityRules`: the ones the host gave (`RunManagerOptions::antigravity_rules`), else the user's own settings without a ledger.
+    fn rules(&self) -> &AntigravityRuleLeases {
+        self.antigravity_rules
+            .get_or_init(|| AntigravityRuleLeases::new(&AntigravityRuleLeases::default_settings_path(None), None, None, None))
+    }
+
     fn send(&self, event: ServiceEvent) {
         let _ = self.events.send(event);
     }
@@ -131,6 +150,7 @@ impl Shared {
     }
 
     fn after_receive(&self, value: RunEvent, notice_turn_ended: bool) {
+        self.receive_antigravity(&value);
         if value.kind == "resume"
             && let Some(resumed) = &value.resume_id
         {
@@ -193,6 +213,8 @@ impl RunService {
             state: Mutex::new(State { snapshot, routes: HashMap::new(), closing: false }),
             events,
             pending: Mutex::new(HashMap::new()),
+            antigravity: Mutex::new(antigravity::Desk::default()),
+            antigravity_rules: OnceLock::new(),
         });
         let resolver = shared.clone();
         let resolve: crate::manager::ResolveWorkspace = Arc::new(move |id: String| {
@@ -208,6 +230,9 @@ impl RunService {
         }
         if let Some(configure) = options.configure {
             configure(&mut manager_options);
+        }
+        if let Some(rules) = manager_options.antigravity_rules.clone() {
+            let _ = shared.antigravity_rules.set(rules);
         }
         let manager = RunManager::new(providers, manager_options);
         (RunService { shared, manager, remote: options.remote, admitting: options.admitting }, receiver)
@@ -229,13 +254,25 @@ impl RunService {
 
     /// `UpdateAsync`: a change normalized as C# normalizes every change, then saved.
     pub fn update(&self, change: impl FnOnce(&AppSnapshot) -> AppSnapshot) -> Result<()> {
-        {
+        let closed: Vec<String> = {
             let mut state = lock(&self.shared.state);
             if state.closing {
                 return Err(RunError::State("the service is closing".into()));
             }
             let next = normalize::normalize(&change(&state.snapshot), false).map_err(|e| RunError::Invalid(e.to_string()))?;
+            let closed = state
+                .snapshot
+                .sessions()
+                .iter()
+                .filter(|before| next.session(before.id()).is_none())
+                .map(|before| before.id().to_string())
+                .collect();
             state.snapshot = next;
+            closed
+        };
+        // A closed pane's Antigravity card and reason go with it (C# `ForgetAntigravity`).
+        for pane in closed {
+            self.shared.forget_antigravity(&pane);
         }
         self.shared.send(ServiceEvent::SaveNow);
         Ok(())
@@ -407,38 +444,45 @@ impl RunService {
         self.shared
             .send(ServiceEvent::Run { event: Box::new(RunEvent::state(&request.session_id, "running", None)), notice_turn_ended: false });
         let session_id = request.session_id.clone();
-        let admitted = {
-            let mut state = lock(&self.shared.state);
-            let cancelled = state.closing || state.routes.get(&session_id).is_none_or(|r| r.cancelled);
-            if cancelled {
-                let stopped = RunEvent::state(&session_id, "stopped", None);
-                let ended = self.shared.receive_locked(&mut state, &stopped);
-                drop(state);
-                self.shared.after_receive(stopped, ended);
-                if request.attachment_list().is_some() {
-                    return Err(RunError::Cancelled(strings::get("run.error.attachmentSendCancelled")));
+        // An allowed Antigravity card's rules are in place before its run starts; a remote pane's host puts them in its own settings.
+        let held = if remote { Ok(()) } else { self.hold_antigravity_rules(&request).await };
+        let started = match held {
+            Err(error) => Err(error),
+            Ok(()) => {
+                let admitted = {
+                    let mut state = lock(&self.shared.state);
+                    let cancelled = state.closing || state.routes.get(&session_id).is_none_or(|r| r.cancelled);
+                    if cancelled {
+                        let stopped = RunEvent::state(&session_id, "stopped", None);
+                        let ended = self.shared.receive_locked(&mut state, &stopped);
+                        drop(state);
+                        self.shared.after_receive(stopped, ended);
+                        if request.attachment_list().is_some() {
+                            return Err(RunError::Cancelled(strings::get("run.error.attachmentSendCancelled")));
+                        }
+                        return Ok(None);
+                    }
+                    if let Some(route) = state.routes.get_mut(&session_id) {
+                        route.started = true;
+                    }
+                    if let Some(admitting) = &self.admitting {
+                        admitting(&session_id);
+                    }
+                    // The runner registers the run under this lock, as C# starts `local.StartAsync` inside it: a stop that finds the
+                    // route started always finds the run too.
+                    (!remote).then(|| self.manager.admit(request.clone(), reach))
+                };
+                match admitted {
+                    Some(admitted) => match admitted {
+                        Ok(admitted) => admitted.reached().await.map(Some),
+                        Err(error) => Err(error),
+                    },
+                    None => match &self.remote {
+                        Some(runner) => runner.start(request.clone(), workspace).await.map(|reached| reached.then_some(())),
+                        None => Err(RunError::State(strings::get("run.error.approvedWorkspaceOnly"))),
+                    },
                 }
-                return Ok(None);
             }
-            if let Some(route) = state.routes.get_mut(&session_id) {
-                route.started = true;
-            }
-            if let Some(admitting) = &self.admitting {
-                admitting(&session_id);
-            }
-            // The runner registers the run under this lock, as C# starts `local.StartAsync` inside it: a stop that finds the route
-            // started always finds the run too.
-            (!remote).then(|| self.manager.admit(request.clone(), reach))
-        };
-        let started = match admitted {
-            Some(admitted) => match admitted {
-                Ok(admitted) => admitted.reached().await.map(Some),
-                Err(error) => Err(error),
-            },
-            None => match &self.remote {
-                Some(runner) => runner.start(request.clone(), workspace).await.map(|reached| reached.then_some(())),
-                None => Err(RunError::State(strings::get("run.error.approvedWorkspaceOnly"))),
-            },
         };
         match started {
             Ok(Some(())) => Ok(Some(())),
@@ -453,6 +497,7 @@ impl RunService {
             Err(error) => {
                 self.shared.receive(RunEvent::log(&session_id, "error", error.message(), None));
                 self.shared.receive(RunEvent::state(&session_id, "error", None));
+                self.shared.continuation_failed(&request, error.message());
                 Err(error)
             }
         }
@@ -525,6 +570,7 @@ impl RunService {
     pub async fn dispose(&self) {
         lock(&self.shared.state).closing = true;
         self.manager.dispose().await;
+        self.release_antigravity_rules().await;
         self.shared.send(ServiceEvent::SaveNow);
     }
 }

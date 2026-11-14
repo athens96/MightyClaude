@@ -4,7 +4,9 @@
 //! - `--fake-cli <provider> <record> [args…]`: records its arguments in `<record>.args` (a JSON array) and plays C#'s fake: with
 //!   `--permission-prompt-tool` Claude's stdio control protocol (the handshake, one tool request, the plan, resumed-agent and
 //!   background fixtures); with `app-server` or `--safe-mode` the model-list sessions; otherwise reads stdin to its end into
-//!   `<record>.prompt` and answers as Codex's exec (or agy) would.
+//!   `<record>.prompt` and answers as Codex's exec (or agy) would; with `--agy-denied <settings>` as C#'s `FakeAgy` (refused `echo hi`
+//!   on a new conversation, continued it says whether the settings allow it), with `--agy-signin-lost` or `--agy-quoted` agy's lost
+//!   sign-in on stderr or as its answer.
 //! - `--model-list-cli <provider> <state> [args…]`: each CLI's model-list read, answered with the real CLI's recorded output
 //!   (native/contracts/fixtures/model-list-*) for its verified arguments, refused otherwise.
 //! - `--replay-cli <recording> <record> [args…]`: Claude with host prompts that asks one tool permission and one plan, records the
@@ -129,6 +131,24 @@ fn fake_cli(provider: &str, record: &str, args: &[String]) {
         }
         let _ = std::fs::write(format!("{record}.attachments"), Value::Object(captured).to_string());
     }
+    // An agy that is refused a command on its first turn and, continued (--conversation), says whether its settings allow it.
+    if let Some(at) = args.iter().position(|a| a == "--agy-denied")
+        && let Some(settings) = args.get(at + 1)
+    {
+        fake_agy(settings, has("--conversation"), &input);
+        return;
+    }
+    // What Antigravity CLI 1.3.5 prints on stderr when its sign-in is gone, and the same words as a model answer.
+    const SIGN_IN_LOST: &str = "Error: authentication required. Run 'agy' to log in, then retry.";
+    if has("--agy-signin-lost") {
+        eprintln!("{SIGN_IN_LOST}");
+        std::process::exit(1);
+    }
+    if has("--agy-quoted") {
+        say(&json!({"event": "step_update", "step_update": {"step_index": 1, "state": "DONE", "step_type": "agent_response", "text_delta": SIGN_IN_LOST}}).to_string());
+        say("{\"event\":\"result\",\"result\":{\"status\":\"ERROR\",\"error\":{\"message\":\"Internal error encountered.\"}}}");
+        std::process::exit(1);
+    }
     if provider == "gemini" {
         say(
             "{\"event\":\"init\",\"conversation_id\":\"11111111-2222-4333-8444-555555555555\",\"init\":{\"model\":\"gemini-3.8-flash-low\"}}",
@@ -147,6 +167,29 @@ fn fake_cli(provider: &str, record: &str, args: &[String]) {
     if has("--fail-run") {
         std::process::exit(2);
     }
+}
+
+/// C# `AntigravityPermissionVerification.FakeAgy` (`--agy-denied <settings>`): refused a command on its first turn and, continued, says
+/// whether its settings allow it.
+fn fake_agy(settings: &str, continued: bool, input: &str) {
+    const CONVERSATION: &str = "11111111-2222-4333-8444-555555555555";
+    say(&format!("{{\"event\":\"init\",\"conversation_id\":\"{CONVERSATION}\"}}"));
+    if continued {
+        let allowed = std::fs::read_to_string(settings).is_ok_and(|text| text.contains("command(echo hi)"));
+        let answer = if allowed { "allowed" } else { "missing" };
+        say(&format!(
+            "{{\"event\":\"result\",\"result\":{{\"conversation_id\":\"{CONVERSATION}\",\"status\":\"SUCCESS\",\"response\":\"{answer}\"}}}}"
+        ));
+        return;
+    }
+    // Asked for something "risky", it is refused a chained command instead.
+    let command = if input.contains("risky") { "echo hi && date" } else { "echo hi" };
+    say(&format!(
+        "{{\"event\":\"step_update\",\"step_update\":{{\"step_index\":2,\"state\":\"ERROR\",\"step_type\":\"tool\",\"tool_name\":\"run_command\",\"tool_info\":{{\"name\":\"run_command\",\"parameters\":{{\"CommandLine\":\"{command}\"}},\"error\":{{\"type\":\"TOOL_ERROR\",\"message\":\"permission check failed for unsandboxed \\\"{command}\\\": user denied permission to run command:\\n{command}\\nDo not attempt to circumvent this denial.\"}}}}}}}}"
+    ));
+    say(&format!(
+        "{{\"event\":\"result\",\"result\":{{\"conversation_id\":\"{CONVERSATION}\",\"status\":\"SUCCESS\",\"response\":\"\",\"denied_actions\":[{{\"action\":\"command\",\"display_name\":\"RunCommand\"}}]}}}}"
+    ));
 }
 
 fn base64(bytes: &[u8]) -> String {

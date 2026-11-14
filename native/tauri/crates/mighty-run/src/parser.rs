@@ -1,8 +1,8 @@
 //! C# `OutputParser` (OutputParser.cs:10-615): an agent's stream as the pane's transcript — its answers, its tool rows with their
 //! durations, its resume id, its usage, the pictures it showed.
 //!
-//! Claude's stream-json and Codex's `exec --json` are read here. pi's RPC, the ACP agents' frames and Antigravity's stream are W5's:
-//! a [`ProviderStream`] plugs each in, and without one their frames are left unread. Codex's `collab_tool_call` rows need the graph
+//! Claude's stream-json, Codex's `exec --json` and Antigravity's stream-json ([`antigravity`]) are read here. pi's RPC and the ACP
+//! agents' frames are W5's: a [`ProviderStream`] plugs each in, and without one their frames are left unread. Codex's `collab_tool_call` rows need the graph
 //! tracker's `CodexCollaborationItem` (mighty-graph) and its `image_view` pictures the image paths (W4): both go to the hooks.
 //!
 //! Every callback runs under the parser's lock, as C#'s do; none may call back into the parser.
@@ -18,6 +18,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::activity::{self, MAXIMUM_MESSAGE_BYTES, terminal, valid_duration};
+use crate::antigravity::permissions::{DenialCollector, PermissionRequest};
 use crate::compaction;
 use crate::lock;
 use crate::meta;
@@ -25,6 +26,8 @@ use crate::permissions::ToolPermissionRequest;
 use crate::stream;
 use crate::strings;
 use crate::usage::SessionUsageTracker;
+
+pub mod antigravity;
 
 /// Why a picture was refused (C# `AgentImageError`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,7 +103,7 @@ pub fn image_entry_text(count: usize, source: &str) -> String {
     }
 }
 
-/// The frames of an agent this parser does not read itself (pi, the ACP agents, Antigravity: W5), handed the parser's sinks.
+/// The frames of an agent this parser does not read itself (pi, the ACP agents: W5), handed the parser's sinks.
 pub trait ProviderStream: Send {
     fn frame(&mut self, root: &Value, sinks: &mut StreamSinks<'_>);
     /// pi: the turn is still going (stdin stays open).
@@ -130,6 +133,10 @@ pub type GraphImagesHook = Arc<dyn Fn(&LogEntry, Option<&str>, Option<&str>) -> 
 /// An Edit, Write or MultiEdit result the run read (`FileOriginal`): the path as the tool named it, the tool, and the line's
 /// `tool_use_result`, for the file originals (FileChanges, W4) to make their `FileEdit` of.
 pub type FileOriginalHook = Arc<dyn Fn(&str, &str, &Value) + Send + Sync>;
+/// Hears each Antigravity reply as the transcript shows it (C#'s `answer`: the latest one is the request's answer in the graph).
+pub type AnswerHook = Arc<dyn Fn(&str) + Send + Sync>;
+/// Hears the card an Antigravity turn leaves when it was refused anything (C#'s `antigravityPermission`).
+pub type AntigravityCardHook = Arc<dyn Fn(PermissionRequest) + Send + Sync>;
 
 /// The parser's callbacks (C#'s constructor arguments).
 #[derive(Clone, Default)]
@@ -143,6 +150,14 @@ pub struct ParserHooks {
     pub graph_images: Option<GraphImagesHook>,
     pub images: Option<Arc<dyn ImageStore>>,
     pub file_original: Option<FileOriginalHook>,
+    /// `answer`: each Antigravity reply the transcript shows (M/MightyCore/CLIStreamParser.swift flushText → antigravityAnswer).
+    pub answer: Option<AnswerHook>,
+    /// `antigravityPermission`: the card an Antigravity turn leaves; None keeps the older notice that tells how to add an allow rule by
+    /// hand. Only an Antigravity parser hears it.
+    pub antigravity_permission: Option<AntigravityCardHook>,
+    /// `requestedResume`: the Antigravity conversation the run was asked to continue; agy starts a new one when it cannot find it, and
+    /// the transcript says so once.
+    pub requested_resume: Option<String>,
 }
 
 struct Inner {
@@ -164,6 +179,11 @@ struct Inner {
     stored_images: usize,
     image_limit_noted: bool,
     other: Option<Box<dyn ProviderStream>>,
+    /// Antigravity streamed this turn's text as deltas, so its result's full `response` repeats it.
+    antigravity_streamed: bool,
+    new_conversation_noted: bool,
+    /// The turn's refused actions, for the pane's card.
+    denials: DenialCollector,
 }
 
 /// C# `OutputParser`.
@@ -216,6 +236,9 @@ impl OutputParser {
                 stored_images: 0,
                 image_limit_noted: false,
                 other: None,
+                antigravity_streamed: false,
+                new_conversation_noted: false,
+                denials: DenialCollector::new(),
             }),
             suppress_interrupted_result: AtomicBool::new(false),
             image_root: Mutex::new(None),
@@ -485,6 +508,11 @@ impl OutputParser {
         match self.provider.as_str() {
             "claude" => self.claude(&mut inner, &root, kind),
             "codex" => self.codex(&mut inner, &root, kind),
+            "gemini" => {
+                if let Some(event) = meta::text(&root, "event") {
+                    self.antigravity(&mut inner, &root, event, line);
+                }
+            }
             _ => {
                 if let Some(mut other) = inner.other.take() {
                     let mut resumed: Vec<String> = Vec::new();
@@ -772,12 +800,19 @@ impl OutputParser {
         }
     }
 
-    /// `Flush`: a streamed reply still held (Antigravity's deltas) goes out.
+    /// `Flush`: Antigravity's streamed reply, without the newline agy ends it with; the latest one is also the graph's answer.
     pub fn flush(&self) {
         let mut inner = lock(&self.inner);
-        let text = inner.pending.trim_end().to_string();
+        self.flush_locked(&mut inner);
+    }
+
+    fn flush_locked(&self, inner: &mut Inner) {
+        let text = antigravity::trailing_trimmed(&inner.pending).to_string();
         if !text.is_empty() {
             self.log("assistant", &text);
+            if let Some(answer) = &self.hooks.answer {
+                answer(&text);
+            }
         }
         if inner.pending_truncated {
             self.log("system", &strings::get("run.notice.messageTruncated"));

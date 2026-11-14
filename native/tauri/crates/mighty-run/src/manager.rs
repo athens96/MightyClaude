@@ -4,10 +4,13 @@
 //! (`Stop`, 10 s). Its timers are C#'s: the graph published every second, a Claude run's input closed after 120 s of silence once
 //! the request answered and no background task runs (`BackgroundIdleClose`), the permission handshake given 15 s.
 //!
-//! Until their stages: Codex's approval channel (`onRequest`), the ACP agents (opencode, Hermes), pi's RPC and dialogs and
-//! Antigravity's stream are W5 — a run of opencode, Hermes, pi or Antigravity, or a Codex run in `onRequest`, is refused with the
-//! reason (pi and Antigravity are read through the parser's `ProviderStream` once W5 plugs it in). A sharing host's PowerShell
-//! commands are W8. The Agent IO / delegation binding (W7) plugs in through [`RunBinding`]; the file originals (W4) through
+//! An Antigravity run (W5-C) reads agy's stream through the parser, sends its card before the run's last status
+//! (`antigravityPermission`), says a missing conversation once (`AntigravityStderr`) and follows the sub-agents' own transcripts about
+//! once a second through the graph's [`GraphSink::antigravity_children`] (C# `ReadChildren`).
+//!
+//! Until their stages: Codex's approval channel (`onRequest`), the ACP agents (opencode, Hermes), pi's RPC and dialogs are W5 — a run
+//! of opencode, Hermes or pi, or a Codex run in `onRequest`, is refused with the reason (pi is read through the parser's
+//! `ProviderStream` once W5 plugs it in). A sharing host's PowerShell commands are W8. The Agent IO / delegation binding (W7) plugs in through [`RunBinding`]; the file originals (W4) through
 //! [`FileOriginals`].
 
 use std::collections::{BTreeMap, HashMap};
@@ -26,6 +29,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::activity;
+use crate::antigravity::records as antigravity_records;
 use crate::attachments::StagedAttachments;
 use crate::failure;
 use crate::graph::{GraphFactory, GraphSink, GraphStart};
@@ -79,6 +83,12 @@ pub struct RunManagerOptions {
     pub background_idle_close: Duration,
     pub binding: Option<BindingFactory>,
     pub file_originals: Option<FileOriginals>,
+    /// agy's settings and the app's ledger the desktop service's Antigravity continuations hold rules in (C# `DesktopService.AntigravityRules`);
+    /// the service takes them from here (the runner never reads them). None is the user's own settings without a ledger.
+    pub antigravity_rules: Option<crate::antigravity::AntigravityRuleLeases>,
+    /// The home an Antigravity run's sub-agents keep their transcripts under (`AntigravityRecords.Brain(home)`); None is the user's
+    /// profile (C#'s `Environment.SpecialFolder.UserProfile`). Checks pass a fake one.
+    pub antigravity_home: Option<PathBuf>,
 }
 
 impl RunManagerOptions {
@@ -94,6 +104,8 @@ impl RunManagerOptions {
             background_idle_close: Duration::from_secs(120),
             binding: None,
             file_originals: None,
+            antigravity_rules: None,
+            antigravity_home: None,
         }
     }
 }
@@ -537,6 +549,15 @@ struct Exec {
     plan_gate: Mutex<()>,
     todo_run_id: Option<String>,
     emit: Emit,
+    /// Where this Antigravity run's sub-agents keep their transcripts (set once the run is under way), and whether reading them failed.
+    antigravity: Mutex<AntigravityChildren>,
+}
+
+/// C#'s `antigravityBrain` and `watcherDisabled` of an Antigravity run.
+#[derive(Default)]
+struct AntigravityChildren {
+    brain: Option<PathBuf>,
+    disabled: bool,
 }
 
 enum Failure {
@@ -723,6 +744,7 @@ impl Exec {
             plan_gate: Mutex::new(()),
             todo_run_id,
             emit: emit.clone(),
+            antigravity: Mutex::new(AntigravityChildren::default()),
         });
         let reopened = exec.clone();
         *lock(&run.turn_reopened) = Some(Arc::new(move || {
@@ -802,6 +824,19 @@ impl Exec {
             }
             _ => None,
         };
+        let answer =
+            tracker.clone().map(|tracker| Arc::new(move |text: &str| lock(&tracker).antigravity_answer(text)) as crate::parser::AnswerHook);
+        // The card goes out before the run's last status (M/ProcessRunner.swift antigravityPermission).
+        let (card_run, card_emit) = (run.clone(), emit.clone());
+        let antigravity_permission: crate::parser::AntigravityCardHook = Arc::new(move |card| {
+            if !card_run.finished.load(Ordering::SeqCst) && card_run.request.kind == "claude" {
+                card_emit(RunEvent {
+                    antigravity_permission: Some(card),
+                    ..RunEvent::new(&card_run.request.session_id, "antigravityPermission")
+                });
+            }
+        });
+        let requested_resume = if run.request.provider == "gemini" { run.request.resume_id.clone() } else { None };
         let (graph_activity, graph_images) = (tracker.clone(), tracker);
         ParserHooks {
             log: Some(Arc::new(move |kind, text| Exec::log(&log_run, &log_emit, kind, text))),
@@ -829,6 +864,9 @@ impl Exec {
             }),
             images: if run.request.kind == "shell" { None } else { inner.options.images.clone() },
             file_original,
+            answer,
+            antigravity_permission: Some(antigravity_permission),
+            requested_resume,
         }
     }
 
@@ -868,11 +906,20 @@ impl Exec {
         !work::running(&lock(&self.background).work()).is_empty()
     }
 
-    /// `PublishGraph`: the live graph when it changed since the last one sent; false once the run is ending.
+    /// `PublishGraph(false)`.
     fn publish_graph(&self) -> bool {
+        self.publish_graph_with(false)
+    }
+
+    /// `PublishGraph(readChildren)`: the live graph when it changed since the last one sent (the sub-agents' transcripts read first
+    /// when asked); false once the run is ending.
+    fn publish_graph_with(&self, read_children: bool) -> bool {
         let _gate = lock(&self.graph_gate);
         if self.run.finalizing.load(Ordering::SeqCst) || self.run.finished.load(Ordering::SeqCst) {
             return false;
+        }
+        if read_children {
+            self.read_antigravity_children(false);
         }
         if self.graph_dirty.swap(false, Ordering::SeqCst)
             && let Some(tracker) = &self.tracker
@@ -886,6 +933,29 @@ impl Exec {
             }
         }
         true
+    }
+
+    /// `ReadChildren`'s Antigravity half: agy's stream names each sub-agent's conversation but not its work, so once the run starts one
+    /// the sub-agents' own transcripts are read about once a second until the run ends (M/ProcessRunner.swift watchAntigravitySubagents).
+    /// Transcript observation is optional: a file changing under it must never fail the actual CLI turn, so a failed read stops the
+    /// reading for the rest of the run.
+    fn read_antigravity_children(&self, closing: bool) {
+        let Some(tracker) = &self.tracker else { return };
+        if self.run.request.provider != "gemini" {
+            return;
+        }
+        let mut children = lock(&self.antigravity);
+        if children.disabled {
+            return;
+        }
+        let Some(brain) = children.brain.clone() else { return };
+        let namespace = self.run.activity_id.clone();
+        let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            lock(tracker).antigravity_children(&brain, &namespace, closing);
+        }));
+        if read.is_err() {
+            children.disabled = true;
+        }
     }
 
     /// `Finish`: the run's last events — background work that never reported an end, the rows still open, the turn, the graph,
@@ -914,6 +984,7 @@ impl Exec {
             };
             Self::activity(run, &self.emit, &activity::make(&run.activity_id, &request.provider, "turn", state, &summary));
         }
+        self.read_antigravity_children(true);
         if let Some(tracker) = &self.tracker {
             let mut sink = lock(tracker);
             sink.finish(state);
@@ -1071,6 +1142,10 @@ impl Exec {
             _ = run.cancel.cancelled() => return Err(Failure::Cancelled),
         }
         let mut environment = providers.quiet_environment();
+        if provider == "gemini" {
+            let home = inner.options.antigravity_home.clone().or_else(crate::antigravity::permissions::user_profile).unwrap_or_default();
+            lock(&self.antigravity).brain = Some(antigravity_records::brain(&home));
+        }
         if self.tracker.is_some() {
             let exec = self.clone();
             *graph_task = Some(tokio::spawn(async move {
@@ -1079,7 +1154,7 @@ impl Exec {
                         _ = tokio::time::sleep(Duration::from_secs(1)) => {}
                         _ = exec.graph_stop.cancelled() => return,
                     }
-                    if !exec.publish_graph() {
+                    if !exec.publish_graph_with(true) {
                         return;
                     }
                 }
@@ -1097,9 +1172,9 @@ impl Exec {
                     providers::name(&provider)
                 )));
             }
-            if matches!(provider.as_str(), "pi" | "gemini") {
-                // pi's RPC and Antigravity's stream are read by the parser's ProviderStream (W5): without it the run's answer would
-                // never reach the pane, so it is refused as the ACP agents are.
+            if provider == "pi" {
+                // pi's RPC is read by the parser's ProviderStream (W5): without it the run's answer would never reach the pane, so it is
+                // refused as the ACP agents are.
                 return Err(Failure::Error(format!(
                     "{} runs through its own stream, which this build does not read yet.",
                     providers::name(&provider)
@@ -1417,9 +1492,13 @@ impl Exec {
                 Next::End => break,
                 Next::TooLong => {}
                 Next::Line(line) => {
-                    // Only Antigravity reports a lost sign-in on stderr.
-                    if exec.run.request.kind != "shell" && exec.run.request.provider == "gemini" && failure::antigravity(&line) {
-                        exec.run.authentication_failure.store(true, Ordering::SeqCst);
+                    // Only Antigravity reports a lost sign-in on stderr ("Error: authentication required. Run 'agy' to log in, then
+                    // retry."), and that the conversation it was asked to continue is gone.
+                    if exec.run.request.kind != "shell" && exec.run.request.provider == "gemini" {
+                        if failure::antigravity(&line) {
+                            exec.run.authentication_failure.store(true, Ordering::SeqCst);
+                        }
+                        exec.parser.antigravity_stderr(&line);
                     }
                     Self::log(&exec.run, &exec.emit, "output", &line);
                 }

@@ -404,6 +404,12 @@ impl Host {
             ServiceEvent::RequestStarting(_) => {}
             // The resume list never hides a session the app's own pane started or resumed (history.rs).
             ServiceEvent::RememberSession(id) => crate::history::remember_session(self, &id),
+            // A pane's Antigravity card came, went, or its answer moved: the card over its composer follows (MainWindow.cs:93).
+            ServiceEvent::AntigravityCard(id) => {
+                if let Some(pane) = self.view().panes.get_mut(&id) {
+                    pane.dirty = true;
+                }
+            }
         }
     }
 
