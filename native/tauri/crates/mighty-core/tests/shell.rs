@@ -45,6 +45,7 @@ impl Window {
             setup_badge: false,
             setup_needed: false,
             remote: &self.remote,
+            usage: None,
         }
     }
 }

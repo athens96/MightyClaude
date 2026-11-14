@@ -5,12 +5,13 @@
 //! caller's timeout for each phase, and a body read only for a 2xx, refused past the cap. There is no retry. Which hosts and paths may
 //! be asked is the caller's guard (`mighty_accounts::usage::guard`); no message here carries a header value.
 //!
-//! Until W6-A's `mighty_platform::http` port lands this is a plain function; the host adapts it to the port the account usage takes.
+//! [`WinHttpGet`] is mighty-platform's `HttpsGet` port over it (lib.rs `https_get`): an `https://host/path` URL on HTTPS's own port
+//! only, anything else refused before WinHTTP is opened.
 
 use std::ffi::c_void;
 use std::time::Duration;
 
-use mighty_platform::{PlatformError, Result};
+use mighty_platform::{BoxFuture, PlatformError, Result};
 use windows_sys::Win32::Networking::WinHttp::{
     ERROR_WINHTTP_HEADER_NOT_FOUND, INTERNET_DEFAULT_HTTPS_PORT, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_ADDREQ_FLAG_ADD,
     WINHTTP_ADDREQ_FLAG_REPLACE, WINHTTP_AUTOLOGON_SECURITY_LEVEL_HIGH, WINHTTP_DISABLE_COOKIES, WINHTTP_DISABLE_REDIRECTS,
@@ -45,14 +46,9 @@ impl std::fmt::Debug for HttpsRequest {
     }
 }
 
-/// The answer: its status, the body of a 2xx (else empty), `Retry-After`, and a 3xx's `Location` (`"refused"` when it named none).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HttpsResponse {
-    pub status: u16,
-    pub body: String,
-    pub retry_after: Option<String>,
-    pub redirect_location: Option<String>,
-}
+/// The answer (the port's): its status, the body of a 2xx (else empty), `Retry-After`, and a 3xx's `Location` (`"refused"` when it named
+/// none).
+pub use mighty_platform::http::HttpsResponse;
 
 /// The WinHTTP handles of one request, closed in reverse order.
 struct Handles(Vec<*mut c_void>);
@@ -204,6 +200,35 @@ pub async fn get(request: HttpsRequest, max_body: usize) -> Result<HttpsResponse
     }
 }
 
+/// An `https://host[/path?query]` URL as its host and its path and query; anything else (another scheme or port, user info, a
+/// fragment, no host) refused.
+fn split(url: &str) -> Result<(String, String)> {
+    let refused = || PlatformError::Invalid("only an https://host/path address is asked".into());
+    let rest = url.strip_prefix("https://").ok_or_else(refused)?;
+    let (host, path) = match rest.find(['/', '?']) {
+        Some(at) if rest[at..].starts_with('/') => (&rest[..at], rest[at..].to_string()),
+        Some(at) => (&rest[..at], format!("/{}", &rest[at..])),
+        None => (rest, "/".to_string()),
+    };
+    if host.is_empty() || host.contains([':', '@']) || path.contains('#') {
+        return Err(refused());
+    }
+    Ok((host.to_ascii_lowercase(), path))
+}
+
+/// mighty-platform's `HttpsGet` on Windows: [`get`] for an `https://` URL on port 443.
+#[derive(Debug, Default)]
+pub struct WinHttpGet;
+
+impl mighty_platform::HttpsGet for WinHttpGet {
+    fn get(&self, request: mighty_platform::http::HttpsRequest, max_body: usize) -> BoxFuture<'_, Result<HttpsResponse>> {
+        Box::pin(async move {
+            let (host, path_and_query) = split(&request.url)?;
+            get(HttpsRequest { host, path_and_query, headers: request.headers, timeout: request.timeout }, max_body).await
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,5 +260,25 @@ mod tests {
         }
         let shown = format!("{:?}", request("api.anthropic.com", "/x", &[("Authorization", "Bearer sk-FIXTURE")]));
         assert!(shown.contains("Authorization") && !shown.contains("sk-FIXTURE"), "Debug names the headers only: {shown}");
+    }
+
+    /// The port's URL: `https://host/path?query` only, on HTTPS's own port.
+    #[test]
+    fn only_an_https_address_on_its_own_port_is_asked() {
+        assert_eq!(
+            split("https://API.anthropic.com/api/oauth/usage?at_wall=1&skip_spend=1").unwrap(),
+            ("api.anthropic.com".to_string(), "/api/oauth/usage?at_wall=1&skip_spend=1".to_string())
+        );
+        assert_eq!(split("https://api.anthropic.com").unwrap().1, "/");
+        for bad in [
+            "http://api.anthropic.com/x",
+            "https://api.anthropic.com:8443/x",
+            "https://user@api.anthropic.com/x",
+            "https://api.anthropic.com/x#frag",
+            "https:///x",
+            "ftp://x/y",
+        ] {
+            assert!(split(bad).is_err(), "{bad}");
+        }
     }
 }

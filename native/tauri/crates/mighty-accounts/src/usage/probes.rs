@@ -16,9 +16,9 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, Lines};
 
 use super::reset::SHARED_DEADLINE;
 use super::{
-    AccountUsageFailure, AccountUsageFailureKind, AccountUsageHttpRequest, AccountUsageHttpResponse, AccountUsageShapeLog,
-    AccountUsageSnapshot, AccountUsageWindow, ClaudeQuotaCredential, ClaudeResetEntitlements, Guarded, HttpFailure, HttpsGet,
-    MAXIMUM_BODY_BYTES, ResetReadDeadlineBox, UsageError, UsageProbe, copy, credential_file, endpoint, number, reset, retry_interval, text,
+    AccountUsageFailure, AccountUsageFailureKind, AccountUsageHttpResponse, AccountUsageShapeLog, AccountUsageSnapshot, AccountUsageWindow,
+    ClaudeQuotaCredential, ClaudeResetEntitlements, Guarded, HttpFailure, HttpsGet, HttpsRequest, MAXIMUM_BODY_BYTES, ResetReadDeadlineBox,
+    UsageError, UsageProbe, copy, credential_file, endpoint, number, reset, retry_interval, send, text,
 };
 
 fn failure(kind: AccountUsageFailureKind, detail: String) -> UsageError {
@@ -31,12 +31,6 @@ fn network() -> UsageError {
 
 fn invalid() -> UsageError {
     UsageError::Failure(AccountUsageFailure::refresh_failed(AccountUsageFailureKind::InvalidResponse))
-}
-
-impl<T: HttpsGet + ?Sized> HttpsGet for Arc<T> {
-    fn get(&self, request: AccountUsageHttpRequest) -> BoxFuture<'_, Result<AccountUsageHttpResponse, HttpFailure>> {
-        (**self).get(request)
-    }
 }
 
 // ── Claude ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -146,24 +140,21 @@ impl ClaudeAccountProbe {
             return Err(failure(AccountUsageFailureKind::Unavailable, copy::detail_custom_authentication()));
         }
         let credential = load().ok_or_else(|| failure(AccountUsageFailureKind::Authentication, copy::detail_authentication()))?;
-        let request = |path: &str, query: Option<&str>, timeout: Duration| -> Result<AccountUsageHttpRequest, AccountUsageFailure> {
-            Ok(AccountUsageHttpRequest::new(
-                endpoint(path, query)?,
-                vec![
+        let request = |path: &str, query: Option<&str>, timeout: Duration| -> Result<HttpsRequest, AccountUsageFailure> {
+            Ok(HttpsRequest {
+                url: endpoint(path, query)?.to_string(),
+                headers: vec![
                     ("Authorization".into(), format!("Bearer {}", credential.token)),
                     ("Accept".into(), "application/json".into()),
                     ("anthropic-beta".into(), "oauth-2025-04-20".into()),
                 ],
                 timeout,
-            ))
-        };
-        let send = |request: AccountUsageHttpRequest| async move {
-            http.get(request).await.map_err(|error| match error {
-                HttpFailure::Refused(refused) => UsageError::Failure(refused),
-                HttpFailure::Transport(why) => UsageError::Other(why),
             })
         };
-        let usage = send(request("usage", None, Self::TIMEOUT)?).await?;
+        let usage = send(http, request("usage", None, Self::TIMEOUT)?).await.map_err(|error| match error {
+            HttpFailure::Refused(refused) => UsageError::Failure(refused),
+            HttpFailure::Transport(why) => UsageError::Other(why),
+        })?;
         Self::check_response(&usage, clock())?;
         let body = match serde_json::from_str::<Value>(&usage.body) {
             Ok(body @ Value::Object(_)) => body,
@@ -171,7 +162,7 @@ impl ClaudeAccountProbe {
         };
         let mut profile = Value::Null;
         let mut retry_after = None;
-        match http.get(request("profile", None, Self::TIMEOUT)?).await {
+        match send(http, request("profile", None, Self::TIMEOUT)?).await {
             Ok(reply) if reply.status == 429 => retry_after = Some(retry_interval(reply.retry_after.as_deref(), clock())),
             Ok(reply) if (200..300).contains(&reply.status) && reply.redirect_location.is_none() => {
                 profile = serde_json::from_str(&reply.body).unwrap_or(Value::Null);
