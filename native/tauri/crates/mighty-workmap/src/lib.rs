@@ -431,6 +431,10 @@ pub fn read_start(root: &Path, relative: &str, limit: usize) -> Option<String> {
     mighty_composer::files::read_under(relative, root, limit).ok().map(|(_, bytes)| text_of(&bytes))
 }
 
+/// `ReadCommitsAsync`: a version's commits (at most [`MAXIMUM_COMMITS_PER_VERSION`]) and how many it has. None when git failed —
+/// including a log past git's 1 MiB of output (one commit that names a great many files can do it): the whole map then reads
+/// `gitFailed`, as C#'s does (`DelegationGit.Run` gives null past `MaximumBytes`, WorkMap.cs `ReadCommitsAsync`): kept for parity, no
+/// version is shown in part.
 async fn read_commits(git: &Git, root: &Path, range: &str) -> Option<(Vec<WorkMapCommit>, i32)> {
     let limit = MAXIMUM_COMMITS_PER_VERSION.to_string();
     let log = git
