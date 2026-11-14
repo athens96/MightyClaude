@@ -17,6 +17,10 @@
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
     <PublishTrimmed>false</PublishTrimmed>
+    <!-- CsWinRT1032 (a collection expression typed as a read-only interface has no WinRT AOT support) only matters for an AOT or
+         trimmed publish, which this app is not. Newer runner images (win11-vs2026-arm64 20261112) raise it, and
+         TreatWarningsAsErrors turned it into a build failure. -->
+    <NoWarn>$(NoWarn);CsWinRT1032</NoWarn>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>../../../assets/icons/MightyCode.ico</ApplicationIcon>
