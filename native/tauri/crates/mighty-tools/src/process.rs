@@ -56,14 +56,19 @@ pub async fn run(processes: &dyn ProcessHost, request: SpawnRequest, input: Opti
     let control = child.control();
     let (out, mut out_done) = reader(child.stdout.take(), cap);
     let (err, mut err_done) = reader(child.stderr.take(), cap);
-    if let Some(mut stdin) = child.stdin.take() {
-        // A child that closed its stdin before reading all of it is no failure of the run.
-        if let Some(input) = input {
-            let _ = stdin.write_all(input).await;
+    let stdin = child.stdin.take();
+    // The input is written within the time too: a child that never reads a large input (its pipe full) is killed at the time, not
+    // waited on for ever. A child that closed its stdin before reading all of it is no failure of the run.
+    let fed_and_ended = async {
+        if let Some(mut stdin) = stdin {
+            if let Some(input) = input {
+                let _ = stdin.write_all(input).await;
+            }
+            let _ = stdin.shutdown().await;
         }
-        let _ = stdin.shutdown().await;
-    }
-    let (exit_code, timed_out) = match tokio::time::timeout(timeout, control.wait()).await {
+        control.wait().await
+    };
+    let (exit_code, timed_out) = match tokio::time::timeout(timeout, fed_and_ended).await {
         Ok(Ok(code)) => (code, false),
         Ok(Err(error)) => {
             let _ = control.close().await;

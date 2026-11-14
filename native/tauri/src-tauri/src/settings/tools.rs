@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use mighty_native::surface::DialogResult;
 use mighty_native::ui::{El, Ui};
-use mighty_platform::AppPaths;
+use mighty_platform::Paths;
 use mighty_run::strings;
 use mighty_tools::toolkit::{
     self, ProbeResult, ProcessToolkitExecutor, ToolkitEntrySource, ToolkitProbeContext, ToolkitRunner, ToolkitStore,
@@ -52,18 +52,11 @@ pub fn toolkit_of(host: &Host) -> Arc<Toolkit> {
     host.app.state::<Arc<Toolkit>>().inner().clone()
 }
 
-/// The app's folders as main.rs resolved them: the data folder is the host's, the local folder Tauri's for the app's identifier, the
-/// profile key `--profile`'s folder name (else `default`).
-fn paths(host: &Host) -> Option<AppPaths> {
-    let profile = crate::args::parse(std::env::args().skip(1)).ok().and_then(|options| options.profile);
-    let roaming = host.data_dir.parent().map(Path::to_path_buf);
-    AppPaths::resolve(profile, roaming, &[], host.app.path().local_data_dir().ok(), &host.app.config().identifier).ok()
-}
-
-/// `toolkit.json`'s folder: the profile's with `--allow-state-write`, else this machine's local folder for the profile.
+/// `toolkit.json`'s folder: the profile's with `--allow-state-write`, else this machine's local folder for the profile (the app's
+/// folders as main.rs resolved and manages them).
 fn store_folder(host: &Host) -> PathBuf {
-    match paths(host) {
-        Some(paths) => toolkit::store_folder(&paths, host.writes()),
+    match host.app.try_state::<Arc<dyn Paths>>() {
+        Some(paths) => toolkit::store_folder(paths.inner().as_ref(), host.writes()),
         None if host.writes() => host.data_dir.clone(),
         // No local folder known: never the profile's without the flag.
         None => std::env::temp_dir().join("dev.mightycode.tauri").join("toolkit"),
@@ -129,7 +122,7 @@ pub fn toolkit(host: &Arc<Host>, ui: &mut Ui) -> El {
     let toolkit = toolkit_of(host);
     if !toolkit.read.swap(true, Ordering::SeqCst) {
         let reader = host.clone();
-        tauri::async_runtime::spawn(async move { read(&reader) });
+        tauri::async_runtime::spawn_blocking(move || read(&reader));
     }
     let model = lock(&toolkit.model).clone();
     view::toolkit_box(ui, &model, Arc::new(Actions(host.clone())))
@@ -147,7 +140,8 @@ async fn file_action(host: &Arc<Host>, reload: bool, action: impl std::future::F
         return;
     }
     if reload && !host.closing() {
-        read(host);
+        let reader = host.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || read(&reader)).await;
     }
 }
 
@@ -179,8 +173,9 @@ async fn pick_export(host: &Host) -> Option<PathBuf> {
     receiver.await.ok().flatten().and_then(|path| path.into_path().ok())
 }
 
+/// A picked file's text as C#'s `FileIO.ReadTextAsync` reads it: its byte-order mark left out, UTF-16 by its mark.
 fn read_text(path: &Path) -> Result<String, String> {
-    std::fs::read_to_string(path).map_err(|error| error.to_string())
+    std::fs::read(path).map(|bytes| toolkit::file::decode_text(&bytes)).map_err(|error| error.to_string())
 }
 
 /// C# `AddToolkitEntry`: the one entry a JSON file holds (a file that is no entry is said over the tools).
@@ -213,15 +208,20 @@ async fn install(host: Arc<Host>) -> Result<(), String> {
         return Ok(());
     }
     if !host.may_change_machine() {
+        // Said on a line of its own, before any confirmation (the verification mode's words, as the accounts and updates say them).
         host.log.line("toolkit: the install was refused (no --allow-state-write)");
-        lock(&toolkit.model).error = Some("This build installs nothing unless it was started with --allow-state-write.".into());
+        lock(&toolkit.model).notice = Some(crate::setup::verification_mode());
         crate::native::touch(&host, crate::settings::SURFACE);
         return Ok(());
     }
     let Some(runs) = host.runs().cloned() else { return Ok(()) };
     let store = toolkit.store(&host);
-    let runner = ToolkitRunner::new(&store, probe_context(&host, &store));
-    let plan = runner.plan();
+    let context = probe_context(&host, &store);
+    // The plan probes the disk: off the async workers. A skill that names no folder fails it, said in the banner (C#'s `Act`).
+    let (planned, planner_context) = (store.clone(), context.clone());
+    let plan = tauri::async_runtime::spawn_blocking(move || ToolkitRunner::new(&planned, planner_context).plan())
+        .await
+        .map_err(|error| error.to_string())??;
     if plan.is_empty() {
         return Ok(());
     }
@@ -229,22 +229,43 @@ async fn install(host: Arc<Host>) -> Result<(), String> {
     if crate::native::show_dialog(&host, confirm).await != DialogResult::Primary {
         return Ok(());
     }
-    lock(&toolkit.model).running = true;
-    crate::native::touch(&host, crate::settings::SURFACE);
+    let running = Running::start(&host, &toolkit);
     let executor = ProcessToolkitExecutor {
         processes: host.processes.clone(),
         environment: runs.catalog.environment(),
-        resolve: Arc::new(|name, environment| crate::platform::cli_copies(name, environment).into_iter().next()),
+        // C# `CliRunner`: the program along the PATH (× PATHEXT) only.
+        resolve: Arc::new(|name, environment| toolkit::runner::find_on_path(name, environment, &|path| Path::new(path).is_file())),
         working_directory: std::env::current_dir().unwrap_or_default(),
     };
-    let results = runner.run(&plan, &executor).await;
-    {
-        let mut model = lock(&toolkit.model);
-        model.results = Some(results);
-        model.running = false;
-    }
-    read(&host);
+    let results = tauri::async_runtime::spawn_blocking(move || {
+        tauri::async_runtime::block_on(ToolkitRunner::new(&store, context).run(&plan, &executor))
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    lock(&toolkit.model).results = Some(results);
+    drop(running);
+    let reader = host.clone();
+    let _ = tauri::async_runtime::spawn_blocking(move || read(&reader)).await;
     Ok(())
+}
+
+/// The box's buttons waiting while an install runs (C# `HoldToolkit`): released when the install ends however it ends (its task
+/// failing or dropped included), never left waiting.
+struct Running(Arc<Toolkit>, Arc<Host>);
+
+impl Running {
+    fn start(host: &Arc<Host>, toolkit: &Arc<Toolkit>) -> Running {
+        lock(&toolkit.model).running = true;
+        crate::native::touch(host, crate::settings::SURFACE);
+        Running(toolkit.clone(), host.clone())
+    }
+}
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        lock(&self.0.model).running = false;
+        crate::native::touch(&self.1, crate::settings::SURFACE);
+    }
 }
 
 /// What the box's buttons do.

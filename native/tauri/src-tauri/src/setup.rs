@@ -20,7 +20,7 @@
 //! nothing here calls `host.view()` or a builder while it holds the screen.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -29,7 +29,7 @@ use mighty_core::model::{AppSnapshot, RunSession};
 use mighty_native::surface::{DialogResult, Next, SurfaceModel};
 use mighty_native::ui::{El, Local, Ui};
 use mighty_native::view::{Place, View};
-use mighty_platform::{PrefsStore, SetupFiles};
+use mighty_platform::{Paths, PrefsStore, SetupFiles};
 use mighty_run::model::ProviderRuntime;
 use mighty_tools::setup::probe::SetupFirstRun;
 use mighty_tools::setup::screen::{Gate, InstallStart, ProbeContext, RUN_PROBE_INTERVAL, SetupScreen, WATCH_INTERVAL, WatchTick};
@@ -48,8 +48,11 @@ pub struct ShellFlags {
 /// How long the components box counts as shown after it was last drawn (Settings draws its boxes on every 250 ms read).
 const COMPONENTS_SHOWN_FOR: Duration = Duration::from_secs(2);
 
-/// The words a refused install says until W9 lets this build change the machine (W6 defaults: installs only with the flag).
-const INSTALL_NEEDS_WRITES: &str = "This build installs nothing unless it was started with --allow-state-write.";
+/// What a refused install says until W9 lets this build change the machine (W6 defaults: installs only with the flag), the words the
+/// accounts and the updates say too.
+pub fn verification_mode() -> String {
+    mighty_run::strings::get("windows.notifications.statusVerificationMode")
+}
 
 /// The setup's state (C# MainWindow.Setup.cs's fields), managed by the app.
 pub struct SetupState {
@@ -83,15 +86,10 @@ pub fn of(host: &Host) -> Arc<SetupState> {
     host.app.state::<Arc<SetupState>>().inner().clone()
 }
 
-/// The setup files port: a smoke's fake (nothing of this PC is asked or written), else the platform's. platform.rs chooses the OS's
-/// ports and has no `setup_files()` yet (README: W6-B's integration notes); until it has, the host's is `Unsupported`, which refuses
-/// to prepare the script folder (an install says why) and says the app is not elevated.
+/// The setup files port: a smoke's fake (nothing of this PC is asked or written), else the platform's (platform.rs: Windows'
+/// `WindowsSetupFiles`, whose system folder is the probes' working folder, as C# `SetupProber` runs them in `SystemDirectory`).
 fn files_port(host: &Host) -> Arc<dyn SetupFiles> {
-    if host.smoke.is_some() {
-        Arc::new(mighty_platform::setup::FakeSetupFiles::default())
-    } else {
-        Arc::new(mighty_platform::unsupported::Unsupported)
-    }
+    if host.smoke.is_some() { Arc::new(mighty_platform::setup::FakeSetupFiles::default()) } else { crate::platform::setup_files() }
 }
 
 /// Whether this run may change the machine: C#'s `options.SmokeTest` branches, and W6's `--allow-state-write` default.
@@ -149,16 +147,21 @@ pub async fn refresh(host: &Arc<Host>, force: bool, only: Option<HashSet<String>
         let runtime = runtimes(host);
         let workspaces_open = !host.view().snapshot.workspaces().is_empty();
         redraw(host);
-        let done = SetupScreen::refresh(
-            &state.screen,
-            &context,
-            force,
-            only.take(),
-            gate(host),
-            (!runtime.is_empty()).then_some(runtime.as_slice()),
-            workspaces_open,
-        )
-        .await;
+        // The probes look at the disk (PATH folders, the installers' folders) between their `--version` reads: off the async workers.
+        let (task, only, gate) = (state.clone(), only.take(), gate(host));
+        let done = tauri::async_runtime::spawn_blocking(move || {
+            tauri::async_runtime::block_on(SetupScreen::refresh(
+                &task.screen,
+                &context,
+                force,
+                only,
+                gate,
+                (!runtime.is_empty()).then_some(runtime.as_slice()),
+                workspaces_open,
+            ))
+        })
+        .await
+        .unwrap_or_default();
         if done.runtime_stale {
             refresh_runtime(host).await;
             crate::accounts::refresh(host);
@@ -320,15 +323,22 @@ impl SetupActions for Actions {
     fn abandon(&self) {
         let host = self.0.clone();
         crate::native::act(&self.0, async move {
-            finish_run(&host).await;
+            finish_run(&host, None).await;
             Ok(())
         });
     }
 }
 
-/// C# `RequestSetupInstall`: the screen's refusals, then the confirmation (D10), then the install when it is answered Run.
+/// C# `RequestSetupInstall`: the screen's refusals, then the confirmation (D10), then the install when it is answered Run. A run of
+/// the app that may not change the machine says so first (the verification mode's words) and shows no confirmation it would refuse.
 async fn request_install(host: &Arc<Host>) -> Result<(), String> {
     let state = of(host);
+    if gate(host) == Gate::ReadOnly {
+        host.log.line("setup: the install was refused (no --allow-state-write)");
+        lock(&state.screen).message = Some(verification_mode());
+        redraw(host);
+        return Ok(());
+    }
     let environment = environment(host);
     let confirmation = lock(&state.screen).may_confirm(state.files.as_ref(), &environment);
     redraw(host);
@@ -336,53 +346,65 @@ async fn request_install(host: &Arc<Host>) -> Result<(), String> {
     if crate::native::show_dialog(host, view::setup_confirmation(&confirmation)).await != DialogResult::Primary {
         return Ok(());
     }
-    start_install(host, &confirmation.steps);
+    start_install(host, confirmation.steps).await;
     Ok(())
 }
 
-/// The profile folder `--profile` named, as C#'s `options.ProfileDirectory` (the script folder follows it).
-fn profile_directory() -> Option<PathBuf> {
-    crate::args::parse(std::env::args().skip(1)).ok().and_then(|options| options.profile)
+/// The script's folder: `--profile`'s `setup` folder (as C#), else, until W9, this machine's local folder of the Tauri build for the
+/// profile — never the installed C# app's `%LOCALAPPDATA%\MightyCode\setup`, whose leftovers (a running install's script among them)
+/// a start would remove.
+fn script_folder(host: &Host) -> Option<PathBuf> {
+    let profile = crate::args::parse(std::env::args().skip(1)).ok().and_then(|options| options.profile);
+    if let Some(profile) = profile {
+        return Some(mighty_tools::setup::files::folder(Some(&profile), Path::new("")));
+    }
+    let paths = host.app.try_state::<Arc<dyn Paths>>()?;
+    Some(paths.local_dir().join("setup").join(paths.profile_key()))
 }
 
-/// C# `StartSetupInstall`: the script written and opened in a terminal window of its own, then watched.
-fn start_install(host: &Arc<Host>, steps: &[mighty_tools::setup::script::SetupScriptStep]) {
+/// C# `StartSetupInstall`: the script written and opened in a terminal window of its own (the folder made and checked, the script
+/// written, off the async workers), then watched.
+async fn start_install(host: &Arc<Host>, steps: Vec<mighty_tools::setup::script::SetupScriptStep>) {
     let state = of(host);
     let environment = environment(host);
-    let Some(local) = host.app.path().local_data_dir().ok() else { return };
+    let Some(folder) = script_folder(host) else { return };
     let terminals = host.app.state::<crate::platform::Ports>().terminals.clone();
-    let started = lock(&state.screen).start_install(
-        steps,
-        gate(host),
-        &environment,
-        state.files.as_ref(),
-        terminals.as_ref(),
-        profile_directory().as_deref(),
-        &local,
-        Instant::now(),
-    );
+    let (task, gate) = (state.clone(), gate(host));
+    let started = tauri::async_runtime::spawn_blocking(move || {
+        let mut screen = lock(&task.screen);
+        let started = screen.start_install(&steps, gate, &environment, task.files.as_ref(), terminals.as_ref(), &folder, Instant::now());
+        (started, screen.run.as_ref().map(|run| run.opened))
+    })
+    .await;
     match started {
-        InstallStart::Started => watch(host.clone()),
-        InstallStart::NotAllowed => {
+        Ok((InstallStart::Started, Some(opened))) => watch(host.clone(), opened),
+        Ok((InstallStart::NotAllowed, _)) => {
             host.log.line("setup: the install was refused (no --allow-state-write)");
-            lock(&state.screen).message = Some(INSTALL_NEEDS_WRITES.to_string());
+            lock(&state.screen).message = Some(verification_mode());
         }
-        InstallStart::Ignored | InstallStart::Refused => {}
+        _ => {}
     }
     redraw(host);
 }
 
-/// C# `WatchSetupRun`: every 2 s the markers looked at; the not-started hint; the run's items probed every 5 s; the run finished when
-/// its script ended (or its window closed).
-fn watch(host: Arc<Host>) {
+/// C# `WatchSetupRun`: every 2 s the markers looked at (off the async workers); the not-started hint; the run's items probed every
+/// 5 s; the run finished when its script ended (or its window closed). The watcher follows the run that opened at `opened` only: it
+/// stops when the run is abandoned or another one starts (C# cancels `setupWatch`, `ReferenceEquals(setupRun, run)`).
+fn watch(host: Arc<Host>, opened: Instant) {
     tauri::async_runtime::spawn(async move {
         let state = of(&host);
         loop {
             tokio::time::sleep(WATCH_INTERVAL).await;
-            if host.closing() {
+            if host.closing() || !lock(&state.screen).runs(opened) {
                 return;
             }
-            let tick = lock(&state.screen).watch_tick(Instant::now(), state.files.as_ref());
+            let task = state.clone();
+            let tick = tauri::async_runtime::spawn_blocking(move || {
+                let mut screen = lock(&task.screen);
+                if screen.runs(opened) { screen.watch_tick(Instant::now(), task.files.as_ref()) } else { WatchTick::Idle }
+            })
+            .await
+            .unwrap_or(WatchTick::Idle);
             match tick {
                 WatchTick::Idle => return,
                 WatchTick::Ended => break,
@@ -396,14 +418,22 @@ fn watch(host: Arc<Host>) {
                 }
             }
         }
-        finish_run(&host).await;
+        finish_run(&host, Some(opened)).await;
     });
 }
 
-/// C# `FinishSetupRun`: the run over, everything probed again (PATH read anew), then the screen brought back while the app is in
-/// front, else the status bar's badge.
-async fn finish_run(host: &Arc<Host>) {
-    if !lock(&of(host).screen).finish_run() {
+/// C# `FinishSetupRun(run)`: the run over (`run`: only the run that opened then; None: the one there is, the hint's button), everything
+/// probed again (PATH read anew), then the screen brought back while the app is in front, else the status bar's badge.
+async fn finish_run(host: &Arc<Host>, run: Option<Instant>) {
+    let finished = {
+        let state = of(host);
+        let mut screen = lock(&state.screen);
+        match run {
+            Some(opened) => screen.finish_run_of(opened),
+            None => screen.finish_run(),
+        }
+    };
+    if !finished {
         return;
     }
     refresh(host, true, None).await;
@@ -501,8 +531,13 @@ pub fn shell_flags(host: &Host, _snapshot: &AppSnapshot) -> ShellFlags {
 /// `setup::item_for_missing_cli`: C# `SetupItemForMissingCli` — the setup item that installs an agent pane's missing CLI, for the
 /// blocked line's install button (`WindowRules.setup_item_for_missing_cli`). Called with the state locked, as [`shell_flags`].
 pub fn item_for_missing_cli(host: &Host, snapshot: &AppSnapshot, pane: &RunSession) -> Option<String> {
+    if pane.kind() != "claude" {
+        return None;
+    }
     let remote = snapshot.workspace(pane.workspace_id()).is_some_and(|workspace| workspace.remote.is_some());
-    item_for(host, pane.kind(), pane.provider(), remote, &runtimes(host))
+    // Only the pane's own provider's runtime (none before the first read), not every provider's cloned with the state locked.
+    let runtime: Vec<ProviderRuntime> = host.runs().and_then(|runs| runs.runtime(pane.provider())).into_iter().collect();
+    item_for(host, pane.kind(), pane.provider(), remote, &runtime)
 }
 
 /// [`item_for_missing_cli`] over the given runtime (the smoke's step reads it over a runtime of its own, as C#'s does).
@@ -536,6 +571,7 @@ mod tests {
             "setupToolsCancelledWithoutTerminal",
             "setupToolsBlockedPaneInstall",
             "setupTools",
+            "setupInstallCli",
         ] {
             assert!(checks.contains(&name), "the smoke reads {name}");
         }

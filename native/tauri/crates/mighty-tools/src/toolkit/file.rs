@@ -98,9 +98,42 @@ impl std::fmt::Display for FileError {
     }
 }
 
+/// A text file's bytes as .NET reads them (`File.ReadAllText`, `FileIO.ReadTextAsync`): the encoding its byte-order mark names
+/// (UTF-8, UTF-16 little or big endian, UTF-32 little endian), the mark itself left out; UTF-8 without one. What does not decode is
+/// replaced, as .NET's decoders replace it.
+pub fn decode_text(bytes: &[u8]) -> String {
+    let units = |rest: &[u8], big: bool| -> Vec<u16> {
+        rest.chunks(2)
+            .map(|pair| match (pair, big) {
+                ([a, b], false) => u16::from_le_bytes([*a, *b]),
+                ([a, b], true) => u16::from_be_bytes([*a, *b]),
+                _ => 0xFFFD,
+            })
+            .collect()
+    };
+    match bytes {
+        [0xEF, 0xBB, 0xBF, rest @ ..] => String::from_utf8_lossy(rest).into_owned(),
+        [0xFF, 0xFE, 0x00, 0x00, rest @ ..] => rest
+            .chunks(4)
+            .map(|four| {
+                let value = <[u8; 4]>::try_from(four).map(u32::from_le_bytes).unwrap_or(0xFFFD);
+                char::from_u32(value).unwrap_or('\u{FFFD}')
+            })
+            .collect(),
+        [0xFF, 0xFE, rest @ ..] => String::from_utf16_lossy(&units(rest, false)),
+        [0xFE, 0xFF, rest @ ..] => String::from_utf16_lossy(&units(rest, true)),
+        _ => String::from_utf8_lossy(bytes).into_owned(),
+    }
+}
+
+/// The text without a leading byte-order mark (a string read some other way may still carry one).
+pub(crate) fn unmarked(json: &str) -> &str {
+    json.strip_prefix('\u{feff}').unwrap_or(json)
+}
+
 /// C# `ToolkitFileReader.Parse`.
 pub fn parse(json: &str) -> Result<ToolkitFile, FileError> {
-    let root: Value = serde_json::from_str(json).map_err(|error| FileError(error.to_string()))?;
+    let root: Value = serde_json::from_str(unmarked(json)).map_err(|error| FileError(error.to_string()))?;
     let Some(root) = root.as_object() else { return Err(FileError("toolkit.json root must be an object".into())) };
     if root.get("version").and_then(Value::as_i64) != Some(1) {
         return Err(FileError("toolkit.json must have version:1".into()));
@@ -115,7 +148,7 @@ pub fn parse(json: &str) -> Result<ToolkitFile, FileError> {
 /// entry's own fields (a stale `platforms` is let through). None for anything else, a whole toolkit.json or an exported list among
 /// them: Import reads those.
 pub fn parse_added_entry(json: &str) -> Option<ToolkitFileEntry> {
-    let root: Value = serde_json::from_str(json).ok()?;
+    let root: Value = serde_json::from_str(unmarked(json)).ok()?;
     let object = root.as_object()?;
     if object.keys().any(|name| !matches!(name.as_str(), "id" | "displayName" | "install" | "platforms" | "approval")) {
         return None;

@@ -24,6 +24,7 @@ mighty-run.workspace = true
 mighty-composer.workspace = true
 # The forms (`view`): the virtual WinUI, its reader and the settings kit.
 mighty-native.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 indexmap.workspace = true
 chrono.workspace = true

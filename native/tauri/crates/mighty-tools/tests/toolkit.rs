@@ -318,7 +318,13 @@ async fn toolkit_store_keeps_other_os_entries() {
     ToolkitStore::new(&dir).remove("typescript").unwrap();
     let listed = ids(&ToolkitStore::new(&dir).list().0);
     assert!(!listed.contains(&"typescript".to_string()) && !listed.contains(&"ripgrep".to_string()));
-    assert!(read(&dir.join("toolkit.json")).contains("ripgrep"), "brew entry byte-identical after remove");
+    let ripgrep =
+        r#"{ "displayName": "ripgrep", "id": "ripgrep", "install": { "kind": "package", "manager": "brew", "name": "ripgrep" } }"#;
+    let after_remove = read(&dir.join("toolkit.json"));
+    assert!(
+        after_remove.lines().any(|line| line.trim_end_matches(',').trim() == ripgrep),
+        "brew entry byte-identical after remove: {after_remove}"
+    );
     ToolkitStore::new(&dir)
         .import(
             r#"[
@@ -336,7 +342,8 @@ async fn toolkit_store_keeps_other_os_entries() {
         text.contains("\"fd\"") && text.contains("\"setup\"") && text.contains("ripgrep"),
         "imported other-OS entries written to the file"
     );
-    let planned: Vec<String> = ToolkitRunner::new(&store5, fake_context(&home)).plan().into_iter().map(|i| i.entry.id).collect();
+    let planned: Vec<String> =
+        ToolkitRunner::new(&store5, fake_context(&home)).plan().expect("a plan").into_iter().map(|i| i.entry.id).collect();
     assert!(!planned.iter().any(|id| ["fd", "setup", "ripgrep"].contains(&id.as_str())), "other-OS entries never planned");
     store5.approve("prettier", None).unwrap();
     let exported: Value = serde_json::from_str(&store5.export()).unwrap();
@@ -385,7 +392,7 @@ async fn toolkit_plan_runs_only_missing_approved_entries() {
     store.add(&make_entry("unapproved-npm", package("npm", "eslint", None))).unwrap();
     store.approve("approved-npm", None).unwrap();
     let runner = ToolkitRunner::new(&store, fake_context(&home));
-    let plan = runner.plan();
+    let plan = runner.plan().expect("a plan");
     let action = |id: &str| plan.iter().find(|i| i.entry.id == id).map(|i| i.action);
     assert_eq!(action("approved-npm"), Some(PlanAction::Run), "approved gets Run action");
     assert_eq!(action("unapproved-npm"), Some(PlanAction::Skip), "unapproved gets Skip action");
@@ -435,7 +442,7 @@ async fn toolkit_probes_are_file_only_and_run_twice_and_decide_the_result_table(
     store2.add(&make_entry("probe-skill", skill("https://github.com/example/probe-skill.git"))).unwrap();
     store2.approve("probe-skill", None).unwrap();
     let runner2 = ToolkitRunner::new(&store2, fake_context(&home2));
-    let plan2 = runner2.plan();
+    let plan2 = runner2.plan().expect("a plan");
     assert!(plan2.iter().any(|i| i.entry.id == "probe-skill" && i.action == PlanAction::Run), "the plan's probe says missing");
     common::write(&home2.join(".claude").join("skills").join("probe-skill").join("SKILL.md"), "# Probe Skill");
     let results2 = runner2.run(&plan2, &FakeExecutor::default()).await;
@@ -462,7 +469,7 @@ async fn toolkit_plan_is_a_step_list() {
     let store = ToolkitStore::new(&dir);
     store.add(&plugin_entry).unwrap();
     store.approve("my-plugin", None).unwrap();
-    let plan = ToolkitRunner::new(&store, ctx.clone()).plan();
+    let plan = ToolkitRunner::new(&store, ctx.clone()).plan().expect("a plan");
     let item = plan.iter().find(|i| i.entry.id == "my-plugin").expect("plugin entry is in the plan");
     assert!(item.commands.len() == 2 && item.commands.iter().all(|cmd| cmd.len() > 1), "each step is a full argv, not a single string");
     common::remove(&dir);
@@ -475,8 +482,9 @@ async fn toolkit_plan_is_a_step_list() {
     step_store.approve("second-npm", None).unwrap();
     let step_runner = ToolkitRunner::new(&step_store, ctx);
     let log = Arc::new(Mutex::new(Vec::new()));
-    let results =
-        step_runner.run(&step_runner.plan(), &SpecificFailExecutor { log: log.clone(), token: "org/step-plugin-test".into() }).await;
+    let results = step_runner
+        .run(&step_runner.plan().expect("a plan"), &SpecificFailExecutor { log: log.clone(), token: "org/step-plugin-test".into() })
+        .await;
     let plugin_result = results.iter().find(|r| r.entry_id == "step-plugin").expect("step-plugin entry has a result");
     assert_eq!(plugin_result.steps.iter().map(|s| s.outcome).collect::<Vec<_>>(), [StepOutcome::Failed, StepOutcome::Skipped]);
     assert!(log.lock().unwrap().iter().any(|cmd| cmd.iter().any(|a| a.contains("eslint") || a == "npm")), "second entry ran");
@@ -511,7 +519,7 @@ async fn result_table_separates_not_attempted_failed_and_succeeded() {
     store.add(&make_entry("succeeding", skill("https://github.com/x/succeeding.git"))).unwrap();
     store.approve("succeeding", None).unwrap();
     let runner = ToolkitRunner::new(&store, fake_context(&home));
-    let results = runner.run(&runner.plan(), &SkillCreatingExecutor::default()).await;
+    let results = runner.run(&runner.plan().expect("a plan"), &SkillCreatingExecutor::default()).await;
     let verdict = |id: &str| results.iter().find(|r| r.entry_id == id).map(|r| r.verdict);
     assert_eq!(verdict("unapproved-skill"), Some(Verdict::Skipped), "not attempted");
     assert_eq!(verdict("failing-mcp"), Some(Verdict::Failed), "failed");
@@ -741,6 +749,23 @@ async fn the_toolkit_executor_fails_a_step_that_cannot_start() {
     common::remove(&cwd);
 }
 
+/// A child that never reads its input is killed at the time even when the input fills its pipe: the input is written within the
+/// time (C# `CliRunner` writes it on the timed task), never waited on before it.
+#[cfg(windows)]
+#[tokio::test]
+async fn a_child_that_never_reads_its_input_ends_at_the_time() {
+    use mighty_platform::ProcessHost;
+    let host = mighty_platform_windows::WindowsProcessHost::new();
+    let cwd = common::temp("stdin-timeout");
+    let request = host.cli_request(&common::fake_cli(), &["--sleep".into(), "60".into()], &cwd, &Default::default()).unwrap();
+    let input = vec![b'x'; 8 * 1024 * 1024];
+    let started = std::time::Instant::now();
+    let ran = mighty_tools::process::run(&host, request, Some(&input), std::time::Duration::from_secs(1), 1024).await.unwrap();
+    assert!(ran.timed_out && ran.exit_code == -1, "{ran:?}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(15), "killed at its time, not after its sleep: {:?}", started.elapsed());
+    common::remove(&cwd);
+}
+
 /// "toolkit file round-trip is a fixed point" (ToolkitVerification.cs:874).
 #[test]
 fn toolkit_file_round_trip_is_a_fixed_point() {
@@ -783,7 +808,7 @@ async fn step_fetch_eligibility_is_derived() {
         store.add(&make_entry(id, install)).unwrap();
         store.approve(id, None).unwrap();
         let runner = ToolkitRunner::new(&store, fake_context(&home));
-        let plan: Vec<ToolkitPlanItem> = runner.plan().into_iter().filter(|i| i.entry.id == id).collect();
+        let plan: Vec<ToolkitPlanItem> = runner.plan().expect("a plan").into_iter().filter(|i| i.entry.id == id).collect();
         let executor = NetworkFailExecutor::default();
         runner.run(&plan, &executor).await;
         assert_eq!(executor.counts.lock().unwrap().get(key).copied().unwrap_or(0), calls, "{key} called {calls} times");
@@ -992,7 +1017,7 @@ async fn result_truth_is_authoritative_probe_decides_verdict_steps_are_explanati
         store.approve("truth-npm", None).unwrap();
         let runner = ToolkitRunner::new(&store, fake_context(&home));
         let plan: Vec<ToolkitPlanItem> =
-            runner.plan().into_iter().filter(|i| i.entry.id == "truth-plugin" || i.entry.id == "truth-npm").collect();
+            runner.plan().expect("a plan").into_iter().filter(|i| i.entry.id == "truth-plugin" || i.entry.id == "truth-npm").collect();
         let log = Arc::new(Mutex::new(Vec::new()));
         let results = runner.run(&plan, &SpecificFailExecutor { log: log.clone(), token: token.into() }).await;
         let plugin_result: &ToolkitRunItem = results.iter().find(|r| r.entry_id == "truth-plugin").unwrap();
@@ -1022,7 +1047,7 @@ async fn result_truth_is_authoritative_probe_decides_verdict_steps_are_explanati
     let store_e = ToolkitStore::new(&dir_e);
     assert!(!store_e.list().0.iter().any(|e| e.id == "macos-only-brew"), "(e) brew hidden from the list on Windows");
     let runner_e = ToolkitRunner::new(&store_e, fake_context(&home_e));
-    let plan_e = runner_e.plan();
+    let plan_e = runner_e.plan().expect("a plan");
     assert!(!plan_e.iter().any(|i| i.entry.id == "macos-only-brew"), "(e) brew absent from plan");
     let executor = FakeExecutor::default();
     let results_e = runner_e.run(&plan_e, &executor).await;
@@ -1086,4 +1111,133 @@ fn the_toolkit_is_kept_in_the_profile_only_with_writes() {
     assert_eq!(mighty_tools::toolkit::store_folder(&paths, true), root.join("data"));
     assert_eq!(mighty_tools::toolkit::store_folder(&paths, false), root.join("local").join("toolkit").join("default"));
     common::remove(&root);
+}
+
+/// Hash vectors C# computed (MightyCode.Core `ToolkitStore.BuildCanonicalJson` and `CanonicalHash` on .NET 10, saved in
+/// tests/fixtures/toolkit-hash-cs-vectors.json): escapes (quote, backslash, tab, non-ASCII, U+2028, HTML characters, a control
+/// character), mcp with and without arguments, a skill and a repoScript.
+#[test]
+fn hash_parity_matches_csharps_vectors_for_escapes_mcp_skill_and_repo_script() {
+    let text = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/toolkit-hash-cs-vectors.json")).unwrap();
+    let vectors: Vec<Value> = serde_json::from_str(&text).unwrap();
+    assert_eq!(vectors.len(), 6);
+    for vector in vectors {
+        let input: Value = serde_json::from_str(vector["input"].as_str().unwrap()).unwrap();
+        let entry = file::parse_entry(&input).unwrap_or_else(|| panic!("the vector decodes: {input}"));
+        assert_eq!(store::build_canonical_json(&entry), vector["canonicalBytes"].as_str().unwrap(), "{} canonical bytes", entry.id);
+        assert_eq!(store::canonical_hash(&entry), vector["sha256"].as_str().unwrap(), "{} sha256", entry.id);
+    }
+}
+
+/// Import and Add read a file as .NET does (`FileIO.ReadTextAsync`): its mark left out, UTF-16 by its mark; a toolkit.json this
+/// store wrote (UTF-8 with its mark) imports, and a UTF-16 toolkit.json reads.
+#[test]
+fn toolkit_files_with_a_byte_order_mark_or_in_utf16_read() {
+    let (from, into) = (common::temp("bom-from"), common::temp("bom-into"));
+    ToolkitStore::new(&from).add(&make_entry("bom-npm", package("npm", "typescript", None))).unwrap();
+    let bytes = std::fs::read(from.join("toolkit.json")).unwrap();
+    assert!(bytes.starts_with(&[0xEF, 0xBB, 0xBF]), "the store writes UTF-8 with its mark");
+    ToolkitStore::new(&into).import(&file::decode_text(&bytes)).expect("a toolkit.json the store wrote imports");
+    assert!(ids(&ToolkitStore::new(&into).list().0).contains(&"bom-npm".to_string()));
+    let marked = "\u{feff}{\"id\":\"one\",\"displayName\":\"One\",\"install\":{\"kind\":\"package\",\"manager\":\"npm\",\"name\":\"one\"}}";
+    assert!(file::parse_added_entry(marked).is_some(), "Add takes a marked entry");
+    assert!(ToolkitStore::new(&into).import("\u{feff}[]").is_ok(), "Import takes a marked list");
+    let text = read(&from.join("toolkit.json"));
+    let utf16: Vec<u8> = [0xFF, 0xFE].into_iter().chain(text.encode_utf16().flat_map(u16::to_le_bytes)).collect();
+    assert_eq!(file::decode_text(&utf16), text);
+    let big: Vec<u8> = [0xFE, 0xFF].into_iter().chain("[]".encode_utf16().flat_map(u16::to_be_bytes)).collect();
+    assert_eq!(file::decode_text(&big), "[]");
+    std::fs::write(into.join("toolkit.json"), &utf16).unwrap();
+    let (entries, error) = ToolkitStore::new(&into).list();
+    assert!(error.is_none() && ids(&entries).contains(&"bom-npm".to_string()), "a UTF-16 toolkit.json reads");
+    common::remove(&from);
+    common::remove(&into);
+}
+
+/// An entry the reader cannot take makes the file unreadable rather than being dropped by the next save (C#'s `JsonDocument` refuses
+/// the whole file); the export of a Mac entry with an approval drops the approval and keeps every number as its text.
+#[test]
+fn unreadable_entries_are_kept_and_exports_keep_numbers_as_written() {
+    common::korean();
+    let dir = common::temp("lone-surrogate");
+    let original =
+        r#"{"version":1,"entries":[{"id":"bad","displayName":"\ud800","install":{"kind":"package","manager":"npm","name":"x"}}]}"#;
+    std::fs::write(dir.join("toolkit.json"), original).unwrap();
+    let store = ToolkitStore::new(&dir);
+    assert_eq!(store.list().1, Some(strings::get("toolkit.error.unreadable")));
+    assert!(store.add(&make_entry("other", package("npm", "y", None))).is_err());
+    assert_eq!(read(&dir.join("toolkit.json")), original, "the file is never rewritten");
+    common::remove(&dir);
+    let dir = common::temp("export-numbers");
+    let entry = r#"{"id":"mac-brew","displayName":"rg","install":{"kind":"package","manager":"brew","name":"ripgrep"},"approval":{"contentHash":"abc"},"weight":1.0,"big":18446744073709551616,"list":[1.50,{"approval":2e3}]}"#;
+    std::fs::write(dir.join("toolkit.json"), format!(r#"{{"version":1,"entries":[{entry}]}}"#)).unwrap();
+    assert_eq!(
+        ToolkitStore::new(&dir).export(),
+        r#"[{"id":"mac-brew","displayName":"rg","install":{"kind":"package","manager":"brew","name":"ripgrep"},"weight":1.0,"big":18446744073709551616,"list":[1.50,{"approval":2e3}]}]"#,
+        "the approval goes, every number stays as written"
+    );
+    common::remove(&dir);
+}
+
+/// npm's probe: npm in a PATH folder with the package in that folder's `node_modules` or beside it (its parent's); a folder written
+/// with a trailing separator is its own directory name (.NET `Path.GetDirectoryName`), never one level higher.
+#[test]
+fn the_npm_probe_finds_the_package_beside_npm() {
+    let root = common::temp("npm-probe");
+    let (prefix, bin) = (root.join("prefix"), root.join("prefix").join("npm"));
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(bin.join("npm.cmd"), "").unwrap();
+    let entry = make_entry("probe-npm", package("npm", "left-pad", None));
+    let probe_with = |dir: &str| {
+        let context =
+            ToolkitProbeContext { home_directory: root.clone(), path_directories: vec![dir.to_string()], local_app_data: root.clone() };
+        probe::probe(&entry, None, &context)
+    };
+    let plain = bin.to_string_lossy().into_owned();
+    let trailing = format!("{plain}{}", std::path::MAIN_SEPARATOR);
+    assert_eq!(probe_with(&plain), ProbeResult::Missing);
+    std::fs::create_dir_all(prefix.join("node_modules").join("left-pad")).unwrap();
+    assert_eq!(probe_with(&plain), ProbeResult::Installed, "beside npm's folder (the global prefix)");
+    assert_eq!(probe_with(&trailing), ProbeResult::Missing, "a trailing separator looks in npm's own folder, not its parent");
+    std::fs::create_dir_all(bin.join("node_modules").join("left-pad")).unwrap();
+    assert_eq!(probe_with(&trailing), ProbeResult::Installed, "in npm's folder");
+    common::remove(&root);
+}
+
+/// A toolkit step's program is found as C#'s `CliRunner` finds it (`WindowsCommand.Find`): along the PATH with PATHEXT only, never in
+/// the installers' folders the setup probe also looks in; a full path as it is; a name with a separator or drive never.
+#[test]
+fn a_toolkit_steps_program_is_found_along_the_path_only() {
+    let files = ["C:\\tools\\npm.cmd", "C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd", "C:\\git\\git.exe"];
+    let exists = |path: &str| files.iter().any(|f| f.eq_ignore_ascii_case(path));
+    let environment: std::collections::BTreeMap<String, String> =
+        [("Path".to_string(), "relative;\"C:\\tools\";C:\\git\\".to_string()), ("PATHEXT".to_string(), ".EXE;.CMD".to_string())].into();
+    // The candidate as found (PATHEXT's spelling of the extension), as C# answers it.
+    assert_eq!(runner::find_on_path("npm", &environment, &exists).as_deref(), Some("C:\\tools\\npm.CMD"));
+    assert_eq!(runner::find_on_path("git", &environment, &exists).as_deref(), Some("C:\\git\\git.EXE"));
+    assert_eq!(runner::find_on_path("git.exe", &environment, &exists).as_deref(), Some("C:\\git\\git.exe"));
+    assert_eq!(runner::find_on_path("claude", &environment, &exists), None, "the npm folder is not on this PATH");
+    assert_eq!(runner::find_on_path("C:\\tools\\npm", &environment, &exists).as_deref(), Some("C:\\tools\\npm.CMD"));
+    assert_eq!(runner::find_on_path("tools\\npm", &environment, &exists), None);
+    assert_eq!(runner::find_on_path("", &environment, &exists), None);
+}
+
+/// A skill's folder is a plain name inside .claude\skills: a drive (`D:evil`), `..` or a separator never names a folder outside it
+/// (the probe says missing, the plan says why instead of cloning there); an address that is no URL fails the plan with why.
+#[test]
+fn a_skill_folder_never_escapes_the_skills_folder() {
+    assert_eq!(probe::skill_folder_name("https://github.com/x/some-skill.git").as_deref(), Some("some-skill"));
+    for url in ["https://github.com/x/D:evil", "https://github.com/x/C:", "https://github.com/x/..git"] {
+        assert_eq!(probe::skill_folder_name(url), None, "{url}");
+    }
+    assert!(probe::skill_folder("https://github.com/x/D:evil").is_err() && probe::skill_folder("not a url").is_err());
+    let (dir, home) = (common::temp("skill-escape"), common::temp("skill-escape-home"));
+    let store = ToolkitStore::new(&dir);
+    store.add(&make_entry("evil-skill", skill("https://github.com/x/D:evil"))).unwrap();
+    store.approve("evil-skill", None).unwrap();
+    let error = ToolkitRunner::new(&store, fake_context(&home)).plan().expect_err("the plan says why");
+    assert!(error.contains("D:evil"), "{error}");
+    assert!(runner::install_commands(&make_entry("e", skill("https://github.com/x/D:evil")), None, &fake_context(&home)).is_empty());
+    common::remove(&dir);
+    common::remove(&home);
 }

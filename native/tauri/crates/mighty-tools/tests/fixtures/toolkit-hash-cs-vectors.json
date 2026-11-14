@@ -1,0 +1,32 @@
+[
+  {
+    "input": "{\"id\":\"esc-npm\",\"displayName\":\"Quote \\\" back\\\\slash\\ttab é 한 \\u2028 <b>&amp;'\",\"install\":{\"kind\":\"package\",\"manager\":\"npm\",\"name\":\"@scope/pkg\"}}",
+    "canonicalBytes": "{\"displayName\":\"Quote \\u0022 back\\\\slash\\ttab \\u00E9 \\uD55C \\u2028 \\u003Cb\\u003E\\u0026amp;\\u0027\",\"id\":\"esc-npm\",\"install\":{\"kind\":\"package\",\"manager\":\"npm\",\"name\":\"@scope/pkg\"}}",
+    "sha256": "06436d79e6d08cd00b5feeff77020b8955407d06d5d8cd72813ac338a69790d1"
+  },
+  {
+    "input": "{\"id\":\"mcp-server\",\"displayName\":\"MCP server\",\"install\":{\"kind\":\"mcp\",\"name\":\"files\",\"executable\":\"npx\",\"args\":[\"-y\",\"@modelcontextprotocol/server-filesystem\",\"C:\\\\Users\\\\me\",\"\\\"quoted\\\"\"]}}",
+    "canonicalBytes": "{\"displayName\":\"MCP server\",\"id\":\"mcp-server\",\"install\":{\"args\":[\"-y\",\"@modelcontextprotocol/server-filesystem\",\"C:\\\\Users\\\\me\",\"\\u0022quoted\\u0022\"],\"executable\":\"npx\",\"kind\":\"mcp\",\"name\":\"files\"}}",
+    "sha256": "c18f9fc350ffb28706dc3c679c069cdcf681c9d2a645b47a9099b72047c4ae78"
+  },
+  {
+    "input": "{\"id\":\"mcp-noargs\",\"displayName\":\"MCP no args\",\"install\":{\"kind\":\"mcp\",\"name\":\"plain\",\"executable\":\"plain-mcp\",\"args\":[]}}",
+    "canonicalBytes": "{\"displayName\":\"MCP no args\",\"id\":\"mcp-noargs\",\"install\":{\"args\":[],\"executable\":\"plain-mcp\",\"kind\":\"mcp\",\"name\":\"plain\"}}",
+    "sha256": "8f33031930f7dd3782c0d3e9d8838664ec5582bc08f05680e6001a78a71732d4"
+  },
+  {
+    "input": "{\"id\":\"skill-one\",\"displayName\":\"A skill\",\"install\":{\"kind\":\"skill\",\"url\":\"https://github.com/athens96/some-skill.git\"}}",
+    "canonicalBytes": "{\"displayName\":\"A skill\",\"id\":\"skill-one\",\"install\":{\"kind\":\"skill\",\"url\":\"https://github.com/athens96/some-skill.git\"}}",
+    "sha256": "582d7123b75cf3ffb1fd929375f6361ef7e6d6a995ddfcf584aaf03f25ee43a2"
+  },
+  {
+    "input": "{\"id\":\"repo-script\",\"displayName\":\"Repo script\",\"install\":{\"kind\":\"repoScript\",\"url\":\"https://github.com/athens96/script.git\",\"ref\":\"v1.2\",\"scriptPath\":\"tools/install.sh\"}}",
+    "canonicalBytes": "{\"displayName\":\"Repo script\",\"id\":\"repo-script\",\"install\":{\"kind\":\"repoScript\",\"ref\":\"v1.2\",\"scriptPath\":\"tools/install.sh\",\"url\":\"https://github.com/athens96/script.git\"}}",
+    "sha256": "a01d7c236663a682d2bf0e23d2904655cb20918d1831693941ce621192fe1c51"
+  },
+  {
+    "input": "{\"id\":\"plugin-esc\",\"displayName\":\"Plugin \\u0001 ctl\",\"install\":{\"kind\":\"plugin\",\"source\":\"athens96/market\",\"pluginID\":\"tool@market\"}}",
+    "canonicalBytes": "{\"displayName\":\"Plugin \\u0001 ctl\",\"id\":\"plugin-esc\",\"install\":{\"kind\":\"plugin\",\"pluginID\":\"tool@market\",\"source\":\"athens96/market\"}}",
+    "sha256": "85e6ddec5eeda93bd38c93e1968349e96e3bf568026113cc7a0e2a0ef6c5ff8c"
+  }
+]

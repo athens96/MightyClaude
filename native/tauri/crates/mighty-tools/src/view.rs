@@ -360,6 +360,9 @@ pub struct ToolkitRow {
 pub struct ToolkitModel {
     pub rows: Vec<ToolkitRow>,
     pub error: Option<String>,
+    /// Why the install did nothing in this run of the app (the verification mode, no `--allow-state-write`): a line of its own, not
+    /// the file's error.
+    pub notice: Option<String>,
     pub running: bool,
     pub results: Option<Vec<ToolkitRunItem>>,
 }
@@ -479,6 +482,8 @@ pub fn toolkit_box(ui: &Ui, model: &ToolkitModel, actions: Arc<dyn ToolkitAction
         ..Grid::default()
     });
     rows.add(banner).visible = model.error.is_some();
+    let notice = text(ui, model.notice.clone().unwrap_or_default(), TextStyle::size(11.0).ink(Token::Ink2)).aid("settings-toolkit-notice");
+    rows.add(notice).visible = model.notice.is_some();
     for row in &model.rows {
         rows.add(toolkit_row(ui, row, model.running, &actions));
     }

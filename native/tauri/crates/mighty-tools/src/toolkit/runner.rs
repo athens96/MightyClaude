@@ -154,8 +154,10 @@ impl<'a> ToolkitRunner<'a> {
         ToolkitRunner { store, probe_context }
     }
 
-    /// The entries that are missing now: the bundled entry and approved user entries run, unapproved user entries are skipped.
-    pub fn plan(&self) -> Vec<ToolkitPlanItem> {
+    /// The entries that are missing now: the bundled entry and approved user entries run, unapproved user entries are skipped. A
+    /// skill to run whose address is no URL, or names no plain folder, fails the plan with why (C#'s `new Uri` throws out of `Plan`
+    /// and the box says it), rather than leaving the tool out unsaid.
+    pub fn plan(&self) -> Result<Vec<ToolkitPlanItem>, String> {
         let (entries, _) = self.store.list();
         let mut items = Vec::new();
         for entry in entries {
@@ -166,6 +168,9 @@ impl<'a> ToolkitRunner<'a> {
             if entry.source == ToolkitEntrySource::User && approval.is_none() {
                 items.push(ToolkitPlanItem { entry, action: PlanAction::Skip, commands: vec![] });
             } else {
+                if let ToolkitInstallSpec::Skill { url } = &entry.install {
+                    probe::skill_folder(url)?;
+                }
                 let commands = install_commands(&entry, approval.as_ref(), &self.probe_context);
                 if commands.is_empty() {
                     continue;
@@ -173,7 +178,7 @@ impl<'a> ToolkitRunner<'a> {
                 items.push(ToolkitPlanItem { entry, action: PlanAction::Run, commands });
             }
         }
-        items
+        Ok(items)
     }
 
     /// Executes a plan: items in order, one failure does not stop the rest; a fetch step is tried once more when its output reads as
@@ -296,6 +301,47 @@ pub fn is_network_error(output: &str) -> bool {
 /// Finds a step's program along the PATH the CLI environment keeps now (C# `WindowsCommand.Find`: PATH × PATHEXT); None leaves the
 /// bare name, which cannot start.
 pub type Resolver = Arc<dyn Fn(&str, &BTreeMap<String, String>) -> Option<String> + Send + Sync>;
+
+/// C# `WindowsCommand.Find(name, PATH, PATHEXT)`, what `CliRunner` runs a step's program by: a full path as it is (or with a PATHEXT
+/// extension), a bare name in each fully qualified PATH folder (the first 64) with each PATHEXT extension (the name itself too when
+/// it already ends in one) — only the PATH, never the installers' own folders the setup probe also looks in. A name with a separator
+/// or a drive is never looked for.
+pub fn find_on_path(name: &str, environment: &BTreeMap<String, String>, exists: &dyn Fn(&str) -> bool) -> Option<String> {
+    if name.is_empty() || name.contains('\0') {
+        return None;
+    }
+    let path_ext = crate::setup::windows::variable(environment, "PATHEXT").filter(|ext| !ext.trim().is_empty());
+    let extensions: Vec<&str> = path_ext
+        .unwrap_or(".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC")
+        .split(';')
+        .map(str::trim)
+        .filter(|ext| ext.starts_with('.') && ext.len() > 1)
+        .collect();
+    let lower = name.to_lowercase();
+    let named = extensions.iter().any(|ext| lower.ends_with(&ext.to_lowercase()));
+    let candidates = |stem: &str| -> Vec<String> {
+        let mut all = if named { vec![stem.to_string()] } else { vec![] };
+        all.extend(extensions.iter().map(|ext| format!("{stem}{ext}")));
+        all
+    };
+    if crate::setup::windows::fully_qualified(name) {
+        return if exists(name) { Some(name.to_string()) } else { candidates(name).into_iter().find(|c| exists(c)) };
+    }
+    if name.contains(['/', '\\', ':']) {
+        return None;
+    }
+    let path = crate::setup::windows::variable(environment, "PATH").unwrap_or("");
+    for folder in path.split(';').take(64) {
+        let directory = folder.trim().trim_matches('"');
+        if directory.is_empty() || directory.contains('\0') || !crate::setup::windows::fully_qualified(directory) {
+            continue;
+        }
+        if let Some(found) = candidates(&crate::setup::windows::combine(directory, name)).into_iter().find(|c| exists(c)) {
+            return Some(found);
+        }
+    }
+    None
+}
 
 /// One toolkit step at most this long (C#: `TimeSpan.FromMinutes(5)`).
 pub const STEP_TIMEOUT: Duration = Duration::from_secs(5 * 60);

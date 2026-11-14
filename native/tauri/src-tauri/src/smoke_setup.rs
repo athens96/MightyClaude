@@ -90,11 +90,26 @@ const PROBE: &str = r#"(async () => {
     const card = () => [...document.querySelectorAll('[data-card=statusLine]')].find((c) => (c.textContent ?? '').includes('mighty-smoke-'));
     report.trustAsked = !!(await until(() => (card()?.querySelector('.status-trust-command')?.textContent ?? '').includes(line.workspace), 20000));
     report.userRows = !!(await until(() => [...(card()?.querySelectorAll('.status-row') ?? [])].some((r) => r.textContent.includes(line.user)), 15000));
-    card()?.querySelector('.status-trust-answers button')?.click();
-    report.pageTrust = !!(await until(async () => (await host('statusLineState')).untrusted === null, 3000));
-    if (!report.pageTrust) await host('statusLineTrust');
+    // Allow, in the page: the card's own button reaches the host (statusLineTrust), the question goes and the workspace's rows show.
+    card()?.querySelectorAll('.status-trust-answers button')[0]?.click();
+    report.pageTrust = !!(await until(async () => (await host('statusLineState')).untrusted === null, 10000));
     report.workspaceRows = !!(await until(() => { const c = card(); return c && !c.querySelector('.status-trust') && [...c.querySelectorAll('.status-row')].some((r) => r.textContent.includes(line.workspace)); }, 15000));
     report.lineState = await host('statusLineState');
+    // Not now: the edited command asks again; the card's second button clears the question and the edited command never runs.
+    const edited = await host('statusLineEdit');
+    report.editAsked = !!(await until(() => (card()?.querySelector('.status-trust-command')?.textContent ?? '').includes(edited.workspace), 20000));
+    card()?.querySelectorAll('.status-trust-answers button')[1]?.click();
+    report.denyCleared = !!(await until(async () => (await host('statusLineState')).untrusted === null && !card()?.querySelector('.status-trust'), 10000));
+    await new Promise((r) => setTimeout(r, 2500));
+    const denied = await host('statusLineState');
+    report.deniedNotRun = report.denyCleared && !denied.rows.some((r) => r.includes(edited.workspace)) && ![...(card()?.querySelectorAll('.status-row') ?? [])].some((r) => r.textContent.includes(edited.workspace));
+    // installCli: the Antigravity pane read as missing offers its install; the composer's button opens the screen on Antigravity.
+    const blocked = await host('installCliPane');
+    const offer = await until(() => [...document.querySelectorAll('.composer-text-button')].find((b) => b.textContent.trim() === blocked.label), 15000);
+    report.installOffered = !!offer;
+    offer?.click();
+    report.installOpened = !!(await until(async () => { const s = await host('state'); return s.setupOpen && s.focus === 'agy' && setup(); }, 10000));
+    await host('installCliEnd');
   } catch (error) {
     report.error = String(error);
   }
@@ -105,9 +120,12 @@ const PROBE: &str = r#"(async () => {
 /// The status line step's workspace and pane.
 const WORKSPACE: &str = "smoke-status-line-workspace";
 const PANE: &str = "smoke-status-line-pane";
-/// What the two commands print.
+/// The Antigravity pane whose missing CLI the blocked line offers to install.
+const AGY_PANE: &str = "smoke-install-cli-pane";
+/// What the commands print: the home's, the workspace's, the workspace's once edited.
 const USER_LINE: &str = "mighty-smoke-user-line";
 const WORKSPACE_LINE: &str = "mighty-smoke-workspace-line";
+const EDITED_LINE: &str = "mighty-smoke-edited-line";
 
 /// The components fixture (C# `ComponentsSmokeFixture`): one plugin, npm and winget entry each (this PC's) and a brew and a
 /// repoScript entry (the Mac's).
@@ -130,9 +148,11 @@ struct Fixtures {
     components: Option<PathBuf>,
     /// The status line's folder, and what the state had before: the active workspace and pane, whether the status line was on.
     status_line: Option<(PathBuf, Option<String>, Option<String>, bool)>,
+    /// Antigravity's runtime as read before the install step read it as missing.
+    agy_runtime: Option<ProviderRuntime>,
 }
 
-static FIXTURES: Mutex<Fixtures> = Mutex::new(Fixtures { components: None, status_line: None });
+static FIXTURES: Mutex<Fixtures> = Mutex::new(Fixtures { components: None, status_line: None, agy_runtime: None });
 
 fn fixtures() -> MutexGuard<'static, Fixtures> {
     FIXTURES.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -204,7 +224,14 @@ pub fn checks(report: &Value) -> Vec<(&'static str, bool)> {
         && yes(at("resultsShown"))
         && yes(at("installReturned"))
         && yes(at("componentsClosed"));
-    let status_line = yes(at("trustAsked")) && yes(at("userRows")) && yes(at("workspaceRows"));
+    let status_line = yes(at("trustAsked"))
+        && yes(at("userRows"))
+        && yes(at("pageTrust"))
+        && yes(at("workspaceRows"))
+        && yes(at("editAsked"))
+        && yes(at("denyCleared"))
+        && yes(at("deniedNotRun"));
+    let install_cli = yes(at("installOffered")) && yes(at("installOpened"));
     vec![
         ("setupView", report.get("error").is_none() && panel),
         ("setup", panel && yes(at("panelClosed"))),
@@ -219,6 +246,7 @@ pub fn checks(report: &Value) -> Vec<(&'static str, bool)> {
         ("setupTools", tools),
         ("componentsSection", components_ok),
         ("statusLine", status_line),
+        ("setupInstallCli", install_cli),
     ]
 }
 
@@ -273,6 +301,7 @@ fn state(host: &Host) -> Value {
         "run": screen.run.is_some(),
         "probing": screen.probing,
         "message": screen.message,
+        "focus": screen.focus,
     })
 }
 
@@ -412,7 +441,7 @@ async fn components_fixture(folder: &Path) -> Result<(Arc<ToolkitStore>, Vec<Too
     let probe = ToolkitProbeContext { home_directory: folder.join("home"), path_directories: vec![], local_app_data: folder.join("local") };
     let executor = SmokeExecutor { local_app_data: probe.local_app_data.clone(), commands: Mutex::new(vec![]) };
     let runner = ToolkitRunner::new(&store, probe);
-    let plan = runner.plan();
+    let plan = runner.plan()?;
     let runs = runner.run(&plan, &executor).await;
     let commands = lock(&executor.commands).clone();
     let run_ids: Vec<String> = runs.iter().map(|r| r.entry_id.clone()).collect();
@@ -472,12 +501,20 @@ fn status_line(host: &Arc<Host>) -> Result<Value, String> {
         let mut state: Value = serde_json::from_str(&view.snapshot.to_json()).map_err(|e| e.to_string())?;
         let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
         let entry = json!({"id": WORKSPACE, "name": "Smoke status line", "path": workspace, "createdAt": now});
-        let pane = json!({
-            "id": PANE, "workspaceId": WORKSPACE, "title": "Smoke status line", "kind": "claude", "status": "idle", "model": "default",
-            "provider": "claude", "settings": {"effort": "default", "permissionMode": "manual", "maxTurns": null, "maxBudgetUsd": null},
-            "logs": [], "draft": "", "createdAt": now, "agentViewMode": "mighty", "graphViewMode": "diagram",
-        });
-        for (name, item) in [("workspaces", entry), ("sessions", pane)] {
+        let pane = |id: &str, provider: &str, title: &str| {
+            json!({
+                "id": id, "workspaceId": WORKSPACE, "title": title, "kind": "claude", "status": "idle", "model": "default",
+                "provider": provider, "settings": {"effort": "default", "permissionMode": "manual", "maxTurns": null, "maxBudgetUsd": null},
+                "logs": [], "draft": "", "createdAt": now, "agentViewMode": "mighty", "graphViewMode": "diagram",
+            })
+        };
+        // The status line's Claude pane, and an Antigravity pane for the blocked line's install (`installCli`).
+        let items = [
+            ("workspaces", entry),
+            ("sessions", pane(PANE, "claude", "Smoke status line")),
+            ("sessions", pane(AGY_PANE, "gemini", "Smoke Antigravity")),
+        ];
+        for (name, item) in items {
             state.get_mut(name).and_then(Value::as_array_mut).ok_or_else(|| format!("the state has no {name}"))?.push(item);
         }
         let mut expanded: Vec<Value> = state.get("expandedWorkspaceIds").and_then(Value::as_array).cloned().unwrap_or_default();
@@ -500,7 +537,7 @@ fn status_line_end(host: &Arc<Host>) -> Result<(), String> {
     {
         let mut view = host.view();
         let mut state: Value = serde_json::from_str(&view.snapshot.to_json()).map_err(|e| e.to_string())?;
-        for (name, id) in [("workspaces", WORKSPACE), ("sessions", PANE)] {
+        for (name, id) in [("workspaces", WORKSPACE), ("sessions", PANE), ("sessions", AGY_PANE)] {
             if let Some(list) = state.get_mut(name).and_then(Value::as_array_mut) {
                 list.retain(|item| item.get("id").and_then(Value::as_str) != Some(id));
             }
@@ -521,8 +558,44 @@ fn status_line_end(host: &Arc<Host>) -> Result<(), String> {
     Ok(())
 }
 
+/// The status line step edits the workspace's command: the edited one asks for trust again (its fingerprint changed).
+fn status_line_edit(host: &Arc<Host>) -> Result<Value, String> {
+    let folder = fixtures().status_line.as_ref().map(|fixture| fixture.0.clone()).ok_or("no status line fixture")?;
+    let text = json!({"statusLine": {"type": "command", "command": format!("echo {EDITED_LINE}")}}).to_string();
+    std::fs::write(folder.join("workspace").join(".claude").join("settings.json"), text).map_err(|e| e.to_string())?;
+    crate::status_line::smoke_refresh(host, PANE);
+    Ok(json!({"workspace": EDITED_LINE}))
+}
+
+/// The blocked line's install: Antigravity read as missing (the runtime as the run engine holds it, the earlier reading kept to put
+/// back), its pane made active, its composer offering the install; the label the page shows for it.
+async fn install_cli_pane(host: &Arc<Host>) -> Result<Value, String> {
+    let runs = host.runs().cloned().ok_or("no run engine")?;
+    until(Duration::from_secs(15), || runs.runtime("gemini").is_some()).await;
+    let held = runs.runtime("gemini").ok_or("Antigravity's runtime was never read")?;
+    fixtures().agy_runtime = Some(held.clone());
+    runs.keep(ProviderRuntime { available: false, version: None, ..held });
+    {
+        let mut view = host.view();
+        view.update(|state| state.active_session_id = Some(AGY_PANE.into()))?;
+        crate::panes::ensure(&mut view, Some(AGY_PANE))?;
+    }
+    host.panes_changed();
+    host.flush();
+    Ok(json!({"pane": AGY_PANE, "label": host.locale.get("setup.blocked.install")}))
+}
+
+/// Antigravity's runtime as it was read.
+fn install_cli_end(host: &Arc<Host>) {
+    if let (Some(held), Some(runs)) = (fixtures().agy_runtime.take(), host.runs()) {
+        runs.keep(held);
+        host.panes_changed();
+    }
+}
+
 /// Everything the step put in place taken away (C#'s `finally`s).
 fn reset(host: &Arc<Host>) -> Result<(), String> {
+    install_cli_end(host);
     fix(host, None);
     crate::native::close(host, mighty_tools::view::SETUP_SURFACE);
     if let Some(folder) = fixtures().components.take() {
@@ -561,7 +634,13 @@ pub async fn smoke_setup(action: String, args: Value, host: tauri::State<'_, Arc
         }
         "statusLine" => status_line(&host),
         "statusLineState" => Ok(crate::status_line::smoke_state(&host, PANE)),
-        "statusLineTrust" => crate::status_line::trust_answer(&host, PANE, true).map(|_| Value::Null),
+        "statusLineEdit" => status_line_edit(&host),
+        "installCliPane" => install_cli_pane(&host).await,
+        "installCliEnd" => {
+            install_cli_end(&host);
+            crate::native::close(&host, mighty_tools::view::SETUP_SURFACE);
+            Ok(Value::Null)
+        }
         "reset" => reset(&host).map(|_| Value::Null),
         other => Err(format!("unknown smoke action {other}")),
     }
@@ -599,11 +678,17 @@ mod tests {
             "afterCancel": {"run": false, "terminalsOpened": 0}, "blocked": {"agy": "agy", "shell": null, "claude": null}, "toolsClosed": true,
             "components": {"passed": true}, "visibleIds": ["mighty-toolkit", "smoke-plugin", "smoke-npm", "smoke-winget"],
             "setupList": true, "resultsShown": true, "installReturned": true, "componentsClosed": true,
-            "trustAsked": true, "userRows": true, "workspaceRows": true,
+            "trustAsked": true, "userRows": true, "pageTrust": true, "workspaceRows": true, "editAsked": true, "denyCleared": true,
+            "deniedNotRun": true, "installOffered": true, "installOpened": true,
         });
         let all = checks(&report);
         assert!(all.iter().all(|(_, passed)| *passed), "{all:?}");
-        assert_eq!(all.len(), 13);
+        assert_eq!(all.len(), 14);
+        // The card's own Allow must have worked: a host-side trust no longer passes the status line.
+        let mut host_side = report.clone();
+        host_side["pageTrust"] = json!(false);
+        let failed: Vec<&str> = checks(&host_side).into_iter().filter(|(_, passed)| !passed).map(|(name, _)| name).collect();
+        assert_eq!(failed, ["statusLine"]);
         let opened = json!({"afterCancel": {"run": true, "terminalsOpened": 1}});
         let mut broken = report.clone();
         broken["afterCancel"] = opened["afterCancel"].clone();
