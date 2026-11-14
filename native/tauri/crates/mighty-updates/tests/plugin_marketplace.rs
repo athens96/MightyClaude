@@ -808,3 +808,32 @@ async fn the_running_app_owns_the_operations_object() {
         "the macOS argument list"
     );
 }
+
+/// C#'s `OperateAsync` sets `running` before any await: the window reserves the app-wide gate synchronously (under the state's lock)
+/// and hands the operation to a task, so nothing — another window's change, an automatic update, a composer's start reading the
+/// holds — slips in between. The reservation refuses every other operation until it ends or is dropped.
+#[tokio::test]
+async fn a_reserved_gate_refuses_every_other_operation_until_it_is_released() {
+    korean();
+    let runner = claude_ok(|_| ok(INSTALL_OK));
+    let reader = dyn_reader(&claude_reader(&runner));
+    let folder = text(&temp("market-reserve"));
+    let operations = PluginOperations::new(runner.clone());
+    let browser = ClaudePluginBrowser::new("claude", workspace(&folder));
+    browser.apply(reader.snapshot(&workspace(&folder), none()).await);
+
+    let reservation = operations.reserve().expect("the gate is free");
+    assert!(operations.is_running(), "reserved, the gate reads running at once (the holds read it)");
+    assert!(operations.reserve().is_none(), "a second reservation is refused");
+    let refused = operations.install(&browser, &reader, "fmt@sample", &none()).await;
+    assert!(refused.status == status::BUSY && refused.detail == strings::operation_busy(), "an operation is refused while it is held");
+    let automatic = operations.update_installed("claude", &workspace(&folder), std::time::Duration::from_secs(1), &none(), None).await;
+    assert_eq!(automatic.status, "busy", "an automatic update too");
+    assert_eq!(mutations(&runner), 0, "nothing reached the CLI");
+
+    let result = PluginOperations::install_reserved(reservation, &browser, &reader, "fmt@sample", &none()).await;
+    assert_eq!(result.status, status::SUCCEEDED, "the reserved operation runs under its own reservation");
+    assert!(!operations.is_running(), "and releases the gate when it ends");
+    drop(operations.reserve().expect("free again"));
+    assert!(!operations.is_running(), "a dropped reservation releases it too");
+}

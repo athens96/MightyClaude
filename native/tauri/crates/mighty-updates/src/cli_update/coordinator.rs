@@ -139,6 +139,8 @@ impl CliUpdateCoordinator {
     }
 
     async fn run(&self, token: CancellationToken) {
+        // C#'s `finally`: the run ends however it ends — done, cancelled, its updater panicking or its task dropped.
+        let _ended = RunEnded(self);
         let mut all = Vec::new();
         for provider in wire::PROVIDERS {
             if token.is_cancelled() {
@@ -149,12 +151,20 @@ impl CliUpdateCoordinator {
             self.lock().results = all.clone();
             self.changed();
         }
+    }
+}
+
+/// Ends a run when it is dropped: not updating any more, its finish time, no token, the listeners told.
+struct RunEnded<'a>(&'a CliUpdateCoordinator);
+
+impl Drop for RunEnded<'_> {
+    fn drop(&mut self) {
         {
-            let mut state = self.lock();
+            let mut state = self.0.lock();
             state.is_updating = false;
             state.finished_at = Some(Utc::now());
             state.cancel = None;
         }
-        self.changed();
+        self.0.changed();
     }
 }

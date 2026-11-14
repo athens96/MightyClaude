@@ -872,3 +872,55 @@ async fn opencode_upgrades_itself_open_code1_is_left_to_the_setup_screen_and_her
     );
     let _ = std::fs::remove_dir_all(home);
 }
+
+/// Rust only: making the service reads nothing (the app makes it as its run engine attaches, possibly with the state locked); the
+/// CLI environment is read each time an update is planned, on a blocking thread, so a PATH refreshed meanwhile counts.
+#[tokio::test]
+async fn the_environment_is_read_when_an_update_is_planned_not_when_the_service_is_made() {
+    korean();
+    let home = temp("source");
+    let reads = Arc::new(AtomicUsize::new(0));
+    let (counted, empty) = (reads.clone(), text(&dir(&home, &["empty"])));
+    let runner = FakeRunner::new(|_, _| version_answer("2.1.271"));
+    let service = CliUpdateService::with_environment_source(
+        runner.clone(),
+        Arc::new(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+            BTreeMap::from([("PATH".to_string(), empty.clone())])
+        }),
+        text(&home),
+    );
+    assert_eq!(reads.load(Ordering::SeqCst), 0, "made, it read nothing");
+    assert_eq!(service.inspect("claude", &none()).await.method, "missing");
+    assert_eq!(reads.load(Ordering::SeqCst), 1, "a plan reads the environment once");
+    assert_eq!(service.update("codex", &none()).await.method, "missing");
+    assert_eq!(reads.load(Ordering::SeqCst), 2, "each plan reads it again");
+    let _ = std::fs::remove_dir_all(home);
+}
+
+/// C#'s `finally`: a run whose updater panics still ends — not updating any more, its finish time set, the listeners told — so the
+/// box and the holds never stay on.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_coordinator_whose_updater_panics_still_ends_its_run() {
+    korean();
+    let coordinator = CliUpdateCoordinator::new(updater(|provider, _| {
+        Box::pin(async move {
+            if provider == PROVIDERS[1] {
+                panic!("the stand-in updater fails");
+            }
+            Some(CliUpdateResult::new(&provider, "updated"))
+        })
+    }));
+    let told = Arc::new(AtomicUsize::new(0));
+    let count = told.clone();
+    coordinator.on_state_changed(move || {
+        count.fetch_add(1, Ordering::SeqCst);
+    });
+    assert!(coordinator.start());
+    until(|| !coordinator.is_updating(), 5000, "the run ends").await;
+    assert!(coordinator.finished_at().is_some(), "it has a finish time");
+    assert_eq!(coordinator.results().len(), 1, "the first provider's result is kept");
+    coordinator.cancel().await;
+    assert!(told.load(Ordering::SeqCst) >= 3, "started, the first result, the end");
+    assert!(coordinator.can_start(), "and a new run may start");
+}

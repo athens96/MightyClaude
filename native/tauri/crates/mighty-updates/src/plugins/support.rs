@@ -197,9 +197,130 @@ fn array<'a>(object: &'a Map<String, Value>, name: &str) -> Option<&'a Vec<Value
     object.get(name)?.as_array()
 }
 
+/// Whether an answer's row arrays stay within the caps — a top-level array (Claude's marketplaces), or the `installed`,
+/// `available` and `marketplaces` arrays of a top-level object — read without keeping a value and stopped at the first array past
+/// its cap, so an answer of too many rows is refused before it is parsed into values. Text that is no JSON answers false too (the
+/// parse would refuse it).
+pub fn within_row_caps(text: &str) -> bool {
+    use serde::Deserialize;
+    let mut reader = serde_json::Deserializer::from_str(text);
+    Rows::deserialize(&mut reader).is_ok() && reader.end().is_ok()
+}
+
+/// What [`within_row_caps`] reads: nothing kept, an error once an array runs past its cap.
+struct Rows;
+
+/// One array's elements counted (ignored) up to `cap`; anything that is not an array passes.
+struct Capped(usize);
+
+impl<'de> serde::de::DeserializeSeed<'de> for Capped {
+    type Value = ();
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_any(self)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for Capped {
+    type Value = ();
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "at most {} rows", self.0)
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+        let mut count = 0;
+        while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
+            count += 1;
+            if count > self.0 {
+                return Err(serde::de::Error::custom("too many rows"));
+            }
+        }
+        Ok(())
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        while map.next_entry::<serde::de::IgnoredAny, serde::de::IgnoredAny>()?.is_some() {}
+        Ok(())
+    }
+
+    fn visit_bool<E>(self, _: bool) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_i64<E>(self, _: i64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_u64<E>(self, _: u64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_f64<E>(self, _: f64) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_str<E>(self, _: &str) -> Result<(), E> {
+        Ok(())
+    }
+    fn visit_unit<E>(self) -> Result<(), E> {
+        Ok(())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Rows {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Rows, D::Error> {
+        struct Top;
+        impl<'de> serde::de::Visitor<'de> for Top {
+            type Value = Rows;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a plugin answer")
+            }
+
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(self, seq: A) -> Result<Rows, A::Error> {
+                serde::de::Visitor::visit_seq(Capped(MAXIMUM_MARKETPLACE_ROWS), seq).map(|()| Rows)
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Rows, A::Error> {
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "installed" | "available" => map.next_value_seed(Capped(MAXIMUM_ROWS))?,
+                        "marketplaces" => map.next_value_seed(Capped(MAXIMUM_MARKETPLACE_ROWS))?,
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                Ok(Rows)
+            }
+
+            fn visit_bool<E>(self, _: bool) -> Result<Rows, E> {
+                Ok(Rows)
+            }
+            fn visit_i64<E>(self, _: i64) -> Result<Rows, E> {
+                Ok(Rows)
+            }
+            fn visit_u64<E>(self, _: u64) -> Result<Rows, E> {
+                Ok(Rows)
+            }
+            fn visit_f64<E>(self, _: f64) -> Result<Rows, E> {
+                Ok(Rows)
+            }
+            fn visit_str<E>(self, _: &str) -> Result<Rows, E> {
+                Ok(Rows)
+            }
+            fn visit_unit<E>(self) -> Result<Rows, E> {
+                Ok(Rows)
+            }
+        }
+        deserializer.deserialize_any(Top)
+    }
+}
+
 /// Claude's two answers (`plugin list --json --available`, `plugin marketplace list --json`) as one snapshot.
 pub fn parse_snapshot(listing: &str, marketplaces: &str, working_directory: &str, cli_version: Option<&str>) -> ClaudePluginSnapshot {
-    if listing.len() > MAXIMUM_LISTING_BYTES || marketplaces.len() > MAXIMUM_MARKETPLACE_BYTES {
+    if listing.len() > MAXIMUM_LISTING_BYTES
+        || marketplaces.len() > MAXIMUM_MARKETPLACE_BYTES
+        || !within_row_caps(listing)
+        || !within_row_caps(marketplaces)
+    {
         return malformed(cli_version);
     }
     let (Ok(root), Ok(markets)) = (serde_json::from_str::<Value>(listing), serde_json::from_str::<Value>(marketplaces)) else {
@@ -305,7 +426,11 @@ pub fn parse_codex_snapshot(
     _working_directory: &str,
     cli_version: Option<&str>,
 ) -> ClaudePluginSnapshot {
-    if listing.len() > MAXIMUM_LISTING_BYTES || marketplaces.len() > MAXIMUM_MARKETPLACE_BYTES {
+    if listing.len() > MAXIMUM_LISTING_BYTES
+        || marketplaces.len() > MAXIMUM_MARKETPLACE_BYTES
+        || !within_row_caps(listing)
+        || !within_row_caps(marketplaces)
+    {
         return malformed(cli_version);
     }
     let (Ok(root), Ok(markets)) = (serde_json::from_str::<Value>(listing), serde_json::from_str::<Value>(marketplaces)) else {

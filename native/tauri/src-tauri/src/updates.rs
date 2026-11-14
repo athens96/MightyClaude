@@ -10,9 +10,9 @@
 //! ([`AutomaticUpdatePolicy`]); a manual CLI update outside a smoke also needs the flag (`Host::may_change_machine`), else each CLI
 //! reads skipped with the verification-mode word. A C# app on the same PC may run the same updates.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Local, Utc};
 use mighty_core::model::{AppSnapshot, RunSession, Workspace};
@@ -22,7 +22,7 @@ use mighty_platform::BoxFuture;
 use mighty_run::RunEvent;
 use mighty_updates::cli_update::coordinator::Updater;
 use mighty_updates::cli_update::holds::{
-    AutomaticUpdateHost, AutomaticUpdatePolicy, AutomaticUpdates, CheckGate, HoldPane, ProviderUse, UpdateActivity,
+    AutomaticUpdateHost, AutomaticUpdatePolicy, AutomaticUpdates, CheckGate, HoldPane, ProviderUse, QueuedPane, UpdateActivity,
     ready_for_automatic_update,
 };
 use mighty_updates::cli_update::schedule::CliAutoUpdateSchedule;
@@ -32,7 +32,7 @@ use mighty_updates::runner::{CancellationToken, HostCliRunner};
 use mighty_updates::view::{self, CliUpdateActions, CliUpdateBox};
 use tauri::{AppHandle, Manager};
 
-use crate::host::Host;
+use crate::host::{Host, View};
 
 /// The manual updater's stand-in in a smoke (C# `smokeCliUpdater`).
 pub type SmokeUpdater = Arc<dyn Fn(String, CancellationToken) -> BoxFuture<'static, CliUpdateResult> + Send + Sync>;
@@ -46,9 +46,14 @@ struct State {
     smoke_updater: Option<SmokeUpdater>,
     /// C# `lastManualUpdateRefresh`.
     last_manual_refresh: Option<DateTime<Utc>>,
-    /// The providers the last notice held, so a released one's queued requests start (C# `BackgroundUpdateChanged`).
-    held: BTreeSet<String>,
+    /// When each pane's queue was last asked to drain (a notice comes many times a pass: one drain at a time per pane).
+    draining: HashMap<String, Instant>,
+    /// The smoke's stand-in for the drain: told the pane instead of starting its queued request.
+    drain_hook: Option<DrainHook>,
 }
+
+/// The smoke's stand-in for a queue's drain.
+pub type DrainHook = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// The host's updates.
 pub struct Updates {
@@ -77,7 +82,9 @@ fn home() -> String {
     std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).unwrap_or_default()
 }
 
-/// The host's [`Updates`], made (and its tick started) the first time once the run engine is attached; none before.
+/// The host's [`Updates`], made (and its tick started) the first time once the run engine is attached; none before. Cheap and safe
+/// anywhere, the state locked or in a builder: making it reads nothing (the CLI environment is read when an update is planned, on a
+/// blocking thread) and starts no process. main.rs makes it as the run engine attaches.
 pub fn of(host: &Host) -> Option<Arc<Updates>> {
     if let Some(updates) = host.app.try_state::<Arc<Updates>>() {
         return Some(updates.inner().clone());
@@ -85,7 +92,8 @@ pub fn of(host: &Host) -> Option<Arc<Updates>> {
     let runs = host.runs()?;
     let environment = runs.catalog.environment();
     let runner = Arc::new(HostCliRunner::new(host.processes.clone()));
-    let service = Arc::new(CliUpdateService::new(runner, environment.current().values, home()));
+    let read = environment.clone();
+    let service = Arc::new(CliUpdateService::with_environment_source(runner, Arc::new(move || read.current().values), home()));
     let app = host.app.clone();
     let updates = Arc::new(Updates {
         service,
@@ -103,6 +111,26 @@ pub fn of(host: &Host) -> Option<Arc<Updates>> {
     host.app.try_state::<Arc<Updates>>().map(|updates| updates.inner().clone())
 }
 
+/// How long quitting waits for a running update to stop.
+const SHUTDOWN_WAIT: Duration = Duration::from_secs(3);
+
+/// `updates::shutdown`: quitting (C# `ShutdownAutomaticUpdates`, the coordinator's and the service's `ShutdownAsync`): the automatic
+/// pass cancelled, the manual run and the service refusing new work and cancelled, the running installer stopped with everything it
+/// started — waited for at most [`SHUTDOWN_WAIT`]. Called from main.rs's `RunEvent::Exit`, outside the async runtime; nothing when
+/// the updates were never made.
+#[allow(dead_code, reason = "a seam W6-A (main.rs's Exit handler) calls")]
+pub fn shutdown(host: &Host) {
+    let Some(updates) = host.app.try_state::<Arc<Updates>>().map(|updates| updates.inner().clone()) else { return };
+    updates.closing.cancel();
+    tauri::async_runtime::block_on(async move {
+        let stop = async {
+            updates.coordinator.shutdown().await;
+            updates.service.shutdown().await;
+        };
+        let _ = tokio::time::timeout(SHUTDOWN_WAIT, stop).await;
+    });
+}
+
 impl Updates {
     fn state(&self) -> MutexGuard<'_, State> {
         lock(&self.state)
@@ -112,6 +140,13 @@ impl Updates {
     pub fn activity(&self) -> UpdateActivity {
         let manual = self.state().manual_provider.clone();
         self.automatic.activity(self.coordinator.is_updating(), manual.as_deref(), self.operations.is_running())
+    }
+
+    /// The smoke's stand-in for a queue's drain (None: the composer's drain).
+    pub fn set_drain_hook(&self, hook: Option<DrainHook>) {
+        let mut state = self.state();
+        state.drain_hook = hook;
+        state.draining.clear();
     }
 
     /// The smoke's stand-in for the manual updater (None: the real service).
@@ -211,12 +246,18 @@ pub fn on_run_event(host: &Arc<Host>, event: &RunEvent) {
     }
 }
 
-/// C# `ReadyForAutomaticUpdate`'s inputs for `provider`: its runs here (and another computer's on this PC, W8: none yet), its
-/// panes starting or holding queued input, its last activity. A sign-in in progress is W6-C's (`loginBusy`, `accountChanges`,
-/// `accountLoginWaits`); accounts.rs has no seam for it yet, so it reads none. Locks the state: never call it with the state locked.
+/// C# `ReadyForAutomaticUpdate`'s inputs for `provider`: its runs here (and another computer's on this PC, W8: none yet), a sign-in,
+/// sign-out or terminal wait of it (W6-C's `accounts::busy`: C# `loginBusy`, `accountChanges`, `accountLoginWaits`), its panes
+/// starting or holding queued input, its last activity. Locks the state: never call it with the state locked ([`provider_use_in`]).
 pub fn provider_use(host: &Host, provider: &str) -> ProviderUse {
-    let active = host.runs().is_some_and(|runs| runs.service.has_active_provider(provider));
     let view = host.view();
+    provider_use_in(host, &view, provider)
+}
+
+/// [`provider_use`] read under a state guard the caller holds, so an admission decided from it holds until the guard drops (C#
+/// decides on the window's one dispatcher). Order: the state, then the accounts' and the updates' own locks, as [`holds`].
+pub fn provider_use_in(host: &Host, view: &View, provider: &str) -> ProviderUse {
+    let active = host.runs().is_some_and(|runs| runs.service.has_active_provider(provider));
     let panes: Vec<_> = view
         .panes
         .iter()
@@ -224,58 +265,61 @@ pub fn provider_use(host: &Host, provider: &str) -> ProviderUse {
         .collect();
     let starting = panes.iter().any(|(_, ui)| ui.view.starting || ui.view.queue_starting);
     let queued = panes.iter().any(|(pane, ui)| pane.status() != "error" && !ui.queue.items().is_empty());
-    drop(view);
     let last_active = of(host).and_then(|updates| updates.state().last_active.get(provider).copied());
-    ProviderUse { running: active || starting, account_change: false, queued, last_active }
+    ProviderUse { running: active || starting, account_change: crate::accounts::busy(host, provider), queued, last_active }
 }
 
-/// The providers whose local panes an update holds now.
-fn held(activity: &UpdateActivity) -> BTreeSet<String> {
-    let mut held = BTreeSet::new();
-    if activity.automatic_running
-        && let Some(provider) = &activity.automatic_provider
-    {
-        held.insert(provider.clone());
-    }
-    if let Some(provider) = &activity.manual_provider {
-        held.insert(provider.clone());
-    }
-    if activity.plugin_operation_running && !(activity.automatic_running && activity.automatic_plugins) {
-        held.extend(["claude".to_string(), "codex".to_string()]);
-    }
-    held
+/// How soon a pane's queue is asked to drain again (the drain itself waits for the pane to be free).
+const DRAIN_AGAIN: Duration = Duration::from_secs(2);
+
+/// The panes whose queued requests drain now ([`UpdateActivity::drains`]), read under the state guard.
+fn draining(view: &View, activity: &UpdateActivity) -> Vec<String> {
+    let rows: Vec<(String, RunSession, bool, usize)> = view
+        .panes
+        .iter()
+        .filter_map(|(id, ui)| {
+            let pane = view.snapshot.session(id)?;
+            Some((id.clone(), (**pane).clone(), ui.view.starting || ui.view.queue_starting, ui.queue.items().len()))
+        })
+        .collect();
+    let panes: Vec<QueuedPane> = rows
+        .iter()
+        .map(|(id, pane, starting, queued)| QueuedPane {
+            id,
+            pane: HoldPane::of(pane, remote(&view.snapshot, pane)),
+            status: pane.status(),
+            starting: *starting,
+            queued: *queued,
+        })
+        .collect();
+    activity.drains(&panes).into_iter().map(str::to_string).collect()
 }
 
-/// C# `NotifyAutomaticUpdates`: every pane's composer looked at again (each `BackgroundUpdateChanged`: a released pane with queued
-/// requests drains them), the CLI 업데이트 box drawn again (the phone's notice is W8).
+/// C# `NotifyAutomaticUpdates`: every pane's composer looked at again — each `BackgroundUpdateChanged`: a pane with queued requests
+/// that nothing holds any more drains them —, the CLI 업데이트 box drawn again (the phone's notice is W8).
 pub fn notify(host: &Arc<Host>) {
     crate::panes::mark_all(host);
-    if let Some(updates) = of(host) {
-        let now = held(&updates.activity());
-        let released: Vec<String> = {
-            let mut state = updates.state();
-            let released = state.held.difference(&now).cloned().collect();
-            state.held = now;
-            released
+    if let Some(updates) = of(host)
+        && !host.closing()
+    {
+        let ready = {
+            let view = host.view();
+            draining(&view, &updates.activity())
         };
-        if !released.is_empty() && !host.closing() {
-            let draining: Vec<String> = {
-                let view = host.view();
-                view.panes
-                    .iter()
-                    .filter(|(id, ui)| {
-                        !ui.queue.items().is_empty()
-                            && view.snapshot.session(id).is_some_and(|p| {
-                                p.kind() == "claude"
-                                    && released.iter().any(|r| r == p.provider())
-                                    && !matches!(p.status(), "running" | "error")
-                            })
-                    })
-                    .map(|(id, _)| id.clone())
-                    .collect()
-            };
-            for id in draining {
-                crate::composer::drain_queue(host.clone(), id);
+        let (hook, due) = {
+            let mut state = updates.state();
+            let now = Instant::now();
+            let due: Vec<String> =
+                ready.into_iter().filter(|id| state.draining.get(id).is_none_or(|at| now.duration_since(*at) >= DRAIN_AGAIN)).collect();
+            for id in &due {
+                state.draining.insert(id.clone(), now);
+            }
+            (state.drain_hook.clone(), due)
+        };
+        for id in due {
+            match &hook {
+                Some(hook) => hook(&id),
+                None => crate::composer::drain_queue(host.clone(), id),
             }
         }
     }
@@ -325,22 +369,37 @@ fn manual_updater(app: AppHandle) -> Updater {
                 let word = mighty_run::strings::get("windows.notifications.statusVerificationMode");
                 return Some(CliUpdateResult::new(&provider, "skipped").with_detail(word));
             }
-            if let Some(refused) = updates.activity().manual_update_refusal(&provider, &provider_use(&host, &provider)) {
-                return Some(refused);
-            }
-            updates.state().manual_provider = Some(provider.clone());
+            // Admitted and held in one decision under the state's lock, so no composer start slips in between (C#: one dispatcher).
+            let held = {
+                let view = host.view();
+                let usage = provider_use_in(&host, &view, &provider);
+                if let Some(refused) = updates.activity().manual_update_refusal(&provider, &usage) {
+                    return Some(refused);
+                }
+                updates.state().manual_provider = Some(provider.clone());
+                ManualHold(updates.clone())
+            };
             notify(&host);
             let result = match stand_in {
                 Some(stand_in) => stand_in(provider.clone(), token.clone()).await,
                 None => updates.service.update(&provider, &token).await,
             };
-            updates.state().manual_provider = None;
+            drop(held);
             if !host.closing() {
                 notify(&host);
             }
             Some(result)
         })
     })
+}
+
+/// The manual update's hold of its provider, released however the update ends (C#'s `finally`).
+struct ManualHold(Arc<Updates>);
+
+impl Drop for ManualHold {
+    fn drop(&mut self) {
+        self.0.state().manual_provider = None;
+    }
 }
 
 /// The coordinator's `StateChanged` (MainWindow.cs:78-85): the box drawn again; once the run ended its results are the last ones

@@ -100,13 +100,14 @@ pub struct PluginOperations {
     runner: Arc<dyn CliRunner>,
     /// The CLI environment the app's readers are built with (C# `CliEnvironment`); None for a check's instance.
     environment: Option<Arc<dyn ShellEnvironment>>,
-    running: AtomicBool,
+    running: Arc<AtomicBool>,
 }
 
-/// Clears the gate when the operation ends or is dropped.
-struct Running<'a>(&'a AtomicBool);
+/// The app-wide gate held for one operation ([`PluginOperations::reserve`]): released when the operation ends or the reservation is
+/// dropped.
+pub struct Reservation(Arc<AtomicBool>);
 
-impl Drop for Running<'_> {
+impl Drop for Reservation {
     fn drop(&mut self) {
         self.0.store(false, Ordering::SeqCst);
     }
@@ -117,12 +118,12 @@ impl PluginOperations {
     /// CLI environment the readers are given. Making it starts no process.
     pub fn installed(host: Arc<dyn ProcessHost>, environment: Arc<dyn ShellEnvironment>) -> PluginOperations {
         let runner = HostCliRunner::new(host).with_output_cap(support::MAXIMUM_LISTING_BYTES);
-        PluginOperations { runner: Arc::new(runner), environment: Some(environment), running: AtomicBool::new(false) }
+        PluginOperations { runner: Arc::new(runner), environment: Some(environment), running: Arc::new(AtomicBool::new(false)) }
     }
 
     /// A check's instance: any runner, nothing installed is ever started.
     pub fn new(runner: Arc<dyn CliRunner>) -> PluginOperations {
-        PluginOperations { runner, environment: None, running: AtomicBool::new(false) }
+        PluginOperations { runner, environment: None, running: Arc::new(AtomicBool::new(false)) }
     }
 
     /// The one shared runner.
@@ -140,8 +141,10 @@ impl PluginOperations {
         self.running.load(Ordering::SeqCst)
     }
 
-    fn admit(&self) -> Option<Running<'_>> {
-        self.running.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).ok().map(|_| Running(&self.running))
+    /// The gate taken now, or None while another operation holds it: what a caller reserves synchronously (C#'s `OperateAsync` sets
+    /// `running` before any await) before it hands the operation to a task, so nothing starts in between.
+    pub fn reserve(&self) -> Option<Reservation> {
+        self.running.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).ok().map(|_| Reservation(self.running.clone()))
     }
 
     fn reader_with(&self, provider: &str, environment: BTreeMap<String, String>) -> ProviderReader {
@@ -168,7 +171,7 @@ impl PluginOperations {
         cancel: &CancellationToken,
         reader_factory: Option<ReaderFactory>,
     ) -> PluginAutoUpdateResult {
-        let Some(_running) = self.admit() else { return PluginAutoUpdateResult::busy() };
+        let Some(_running) = self.reserve() else { return PluginAutoUpdateResult::busy() };
         if !matches!(provider, "claude" | "codex") {
             return PluginAutoUpdateResult::failure();
         }
@@ -206,8 +209,21 @@ impl PluginOperations {
         plugin_id: &str,
         cancel: &CancellationToken,
     ) -> ClaudePluginOperationResult {
-        let Some(_running) = self.admit() else { return busy() };
-        browser.install(reader, plugin_id, cancel).await
+        let Some(reservation) = self.reserve() else { return busy() };
+        Self::install_reserved(reservation, browser, reader, plugin_id, cancel).await
+    }
+
+    /// [`PluginOperations::install`] under a gate the caller reserved; the gate is released when it ends.
+    pub async fn install_reserved(
+        reservation: Reservation,
+        browser: &ClaudePluginBrowser,
+        reader: &Arc<dyn PluginReader>,
+        plugin_id: &str,
+        cancel: &CancellationToken,
+    ) -> ClaudePluginOperationResult {
+        let result = browser.install(reader, plugin_id, cancel).await;
+        drop(reservation);
+        result
     }
 
     /// 마켓플레이스 새로고침's call, by the same rule.
@@ -217,8 +233,20 @@ impl PluginOperations {
         reader: &Arc<dyn PluginReader>,
         cancel: &CancellationToken,
     ) -> ClaudePluginOperationResult {
-        let Some(_running) = self.admit() else { return busy() };
-        browser.refresh_marketplaces(reader, cancel).await
+        let Some(reservation) = self.reserve() else { return busy() };
+        Self::refresh_reserved(reservation, browser, reader, cancel).await
+    }
+
+    /// [`PluginOperations::refresh_marketplaces`] under a gate the caller reserved.
+    pub async fn refresh_reserved(
+        reservation: Reservation,
+        browser: &ClaudePluginBrowser,
+        reader: &Arc<dyn PluginReader>,
+        cancel: &CancellationToken,
+    ) -> ClaudePluginOperationResult {
+        let result = browser.refresh_marketplaces(reader, cancel).await;
+        drop(reservation);
+        result
     }
 }
 

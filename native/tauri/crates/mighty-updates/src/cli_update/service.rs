@@ -143,7 +143,7 @@ struct Gate {
 /// C# `CliUpdateService`: one update at a time; a second request while one runs reports busy.
 pub struct CliUpdateService {
     runner: Arc<dyn CliRunner>,
-    environment: BTreeMap<String, String>,
+    environment: EnvironmentSource,
     home: String,
     metadata_timeout: Duration,
     update_timeout: Duration,
@@ -156,10 +156,23 @@ const VERSION_TEXT_CAP: usize = 160;
 /// `ComponentSection.InstallCommand("gemini")`: Antigravity's own installer, named when an agy elsewhere is left alone.
 const ANTIGRAVITY_INSTALL_COMMAND: &str = "irm https://antigravity.google/cli/install.ps1 | iex";
 
+/// Where the service reads the CLI environment from, each time it plans an update (the app's may change: a refreshed PATH).
+pub type EnvironmentSource = Arc<dyn Fn() -> BTreeMap<String, String> + Send + Sync>;
+
 impl CliUpdateService {
     /// `environment` is the CLI environment the PATH and the installers' folders are read from (C#: the process's variables), `home`
     /// the user's profile folder. Nothing falls back to the real profile: a folder the environment does not name is not looked in.
     pub fn new(runner: Arc<dyn CliRunner>, environment: BTreeMap<String, String>, home: impl Into<String>) -> CliUpdateService {
+        Self::with_environment_source(runner, Arc::new(move || environment.clone()), home)
+    }
+
+    /// [`CliUpdateService::new`] with the environment read each time an update is planned, on a blocking thread (the app's comes from
+    /// its shell environment, which may read the registry): making the service reads nothing.
+    pub fn with_environment_source(
+        runner: Arc<dyn CliRunner>,
+        environment: EnvironmentSource,
+        home: impl Into<String>,
+    ) -> CliUpdateService {
         CliUpdateService {
             runner,
             environment,
@@ -219,7 +232,8 @@ impl CliUpdateService {
         if self.lock().closing {
             return CliUpdateInstallation::new(provider).detail(strings::detail_closing());
         }
-        match self.plan(provider, cancel).await {
+        let machine = self.machine().await;
+        match self.plan(&machine, provider, cancel).await {
             Ok((installation, _)) => installation,
             Err(RunError::Cancelled) => CliUpdateInstallation::new(provider).detail(strings::detail_inspect_cancelled()),
             Err(RunError::Failed(_)) => CliUpdateInstallation::new(provider).detail(strings::detail_inspect_failed()),
@@ -283,7 +297,8 @@ impl CliUpdateService {
         let mut installation = CliUpdateInstallation::new(provider);
         let outcome: Step<CliUpdateResult> = async {
             cancelled(token)?;
-            let (planned, invocation) = self.plan(provider, token).await?;
+            let machine = self.machine().await;
+            let (planned, invocation) = self.plan(&machine, provider, token).await?;
             installation = planned;
             cancelled(token)?;
             let Some(invocation) = invocation else {
@@ -299,7 +314,7 @@ impl CliUpdateService {
                     ..CliUpdateResult::of(&installation, "failed", strings::detail_failed_exit(run.exit_code))
                 });
             }
-            let after = self.installed_command(provider, token).await?;
+            let after = self.installed_command(&machine, provider, token).await?;
             cancelled(token)?;
             let Some((_, version)) = after.filter(|(_, version)| !version.is_empty()) else {
                 return Ok(CliUpdateResult {
@@ -323,12 +338,24 @@ impl CliUpdateService {
         }
     }
 
-    async fn plan(&self, provider: &str, token: &CancellationToken) -> Step<(CliUpdateInstallation, Option<Invocation>)> {
+    /// What is on this computer for a plan to look at: the environment as read now, on a blocking thread, and the home folder.
+    async fn machine(&self) -> Arc<Machine> {
+        let (environment, home) = (self.environment.clone(), self.home.clone());
+        Arc::new(blocking(move || Machine { environment: environment(), home }).await)
+    }
+
+    async fn plan(
+        &self,
+        machine: &Arc<Machine>,
+        provider: &str,
+        token: &CancellationToken,
+    ) -> Step<(CliUpdateInstallation, Option<Invocation>)> {
         if !wire::PROVIDERS.contains(&provider) {
             return Ok((CliUpdateInstallation::new(provider).detail(strings::detail_unsupported_provider()), None));
         }
-        let Some((path, version)) = self.installed_command(provider, token).await? else {
-            let present = self.candidates(mighty_run::providers::executable(provider)).iter().any(|c| is_file(c));
+        let Some((path, version)) = self.installed_command(machine, provider, token).await? else {
+            let (on, name) = (machine.clone(), mighty_run::providers::executable(provider).to_string());
+            let present = blocking(move || on.candidates(&name).iter().any(|c| is_file(c))).await;
             let installation = CliUpdateInstallation::new(provider);
             return Ok((
                 if present {
@@ -339,116 +366,22 @@ impl CliUpdateService {
                 None,
             ));
         };
-        let resolved = paths::resolve(&path);
-        let installation = CliUpdateInstallation {
-            version: Some(version.clone()),
-            executable_path: Some(path.clone()),
-            detail: strings::detail_unknown_method(),
-            ..CliUpdateInstallation::new(provider)
-        };
-        let get = mighty_run::strings::get;
-        match provider {
-            // pi updates itself, whichever way it was installed (`pi update self`; M/CLIUpdateService.swift).
-            "pi" => {
-                return Ok((
-                    installation.method("pi").updatable().detail(get("settings.cliUpdate.detailPi")),
-                    Invocation::new(&path, &["update", "self"]),
-                ));
-            }
-            "opencode" => {
-                // OpenCode 1 (npm opencode-ai) is replaced from the setup screen: its own upgrade stays on 1.
-                if !mighty_run::acp::accounts::opencode_supported(&version) {
-                    return Ok((installation.method("opencode").detail(get("settings.cliUpdate.detailOpencodeV1")), None));
-                }
-                // OpenCode 2 upgrades itself, finds out how it was installed (npm, its script) and asks nothing.
-                return Ok((
-                    installation.method("opencode").updatable().detail(get("settings.cliUpdate.detailOpencode")),
-                    Invocation::new(&path, &["upgrade"]),
-                ));
-            }
-            // Hermes updates its own checkout and environment; --yes keeps it from waiting on a prompt.
-            "hermes" => {
-                return Ok((
-                    installation.method("hermes").updatable().detail(get("settings.cliUpdate.detailHermes")),
-                    Invocation::new(&path, &["update", "--yes"]),
-                ));
-            }
-            _ => {}
-        }
-        if let Some(package) = winget_package(&resolved) {
-            let installation = installation.method("winget");
-            let Some(winget) = self.candidates("winget").into_iter().find(|c| is_file(c)) else {
-                return Ok((installation.detail(strings::detail_winget_runtime_missing()), None));
-            };
-            // Exactly the one package this installation belongs to: --id with --exact, never --all, no interactive or elevation prompt.
-            return Ok((
-                installation.updatable().detail(strings::detail_winget_plan()),
-                Invocation::new(
-                    &winget,
-                    &[
-                        "upgrade",
-                        "--id",
-                        &package,
-                        "--exact",
-                        "--silent",
-                        "--accept-source-agreements",
-                        "--accept-package-agreements",
-                        "--disable-interactivity",
-                    ],
-                ),
-            ));
-        }
-        if provider == "gemini" {
-            // Antigravity's installer puts one agy.exe in %LOCALAPPDATA%\agy\bin, which `agy update` replaces; a copy anywhere else is
-            // left alone (M/CLIUpdateService.swift:146-157).
-            let installed = paths::join(&self.antigravity_install_folder(), &["agy.exe"]);
-            if !paths::same(Some(&resolved), Some(&installed)) {
-                let detail = mighty_run::strings::get_with(
-                    "settings.cliUpdate.detailAntigravityElsewhereWindows",
-                    &[("command", ANTIGRAVITY_INSTALL_COMMAND)],
-                );
-                return Ok((installation.detail(detail), None));
-            }
-            return Ok((
-                installation.method("native").updatable().detail(get("settings.cliUpdate.detailNativeAntigravity")),
-                Invocation::new(&path, &["update"]),
-            ));
-        }
-        if provider == "claude" && self.native_claude(&resolved) {
-            return Ok((
-                installation.method("native").updatable().detail(strings::detail_native_claude()),
-                Invocation::new(&path, &["update"]),
-            ));
-        }
-        if let Some(npm) = npm_package(&resolved, provider) {
-            let installation = installation.method("npm");
-            if !release(&npm.version) {
-                return Ok((installation.detail(strings::detail_npm_prerelease()), None));
-            }
-            let Some((node, script)) = self.find_npm_runtime(&npm.prefix) else {
-                return Ok((installation.detail(strings::detail_npm_runtime_missing()), None));
-            };
-            // The official package only, in the prefix it is already installed in.
-            let latest = format!("{}@latest", npm.name);
-            return Ok((
-                installation.updatable().detail(strings::detail_npm_plan()),
-                Invocation::new(&node, &[&script, "install", "--global", "--prefix", &npm.prefix, &latest, "--no-audit", "--no-fund"]),
-            ));
-        }
-        Ok((installation, None))
+        // Links resolved, package.json read, folders looked at: on a blocking thread.
+        let (on, provider) = (machine.clone(), provider.to_string());
+        Ok(blocking(move || on.analyze(&provider, path, version)).await)
     }
 
-    /// The first candidate that answers `--version` (exit 0, in time, a version), as `(path, version)`.
-    async fn installed_command(&self, provider: &str, token: &CancellationToken) -> Step<Option<(String, String)>> {
+    /// The first candidate that answers `--version` (exit 0, in time, a version), as `(path, version)`; the candidates that exist
+    /// found on a blocking thread.
+    async fn installed_command(&self, machine: &Arc<Machine>, provider: &str, token: &CancellationToken) -> Step<Option<(String, String)>> {
         if !wire::PROVIDERS.contains(&provider) {
             return Ok(None);
         }
         let executable = mighty_run::providers::executable(provider);
-        for path in self.candidates(executable) {
+        let (on, name) = (machine.clone(), executable.to_string());
+        let existing: Vec<String> = blocking(move || on.candidates(&name).into_iter().filter(|c| is_file(c)).collect()).await;
+        for path in existing {
             cancelled(token)?;
-            if !is_file(&path) {
-                continue;
-            }
             let run = match self.runner.run(CliCall::new(&path, ["--version"], self.metadata_timeout), token.clone()).await {
                 Ok(run) => run,
                 Err(RunError::Cancelled) => return Err(RunError::Cancelled),
@@ -465,6 +398,115 @@ impl CliUpdateService {
             return Ok(Some((path, paths::utf16_prefix(&text, VERSION_TEXT_CAP))));
         }
         Ok(None)
+    }
+}
+
+/// The environment and the home folder one plan reads, and the file questions it asks (on a blocking thread).
+struct Machine {
+    environment: BTreeMap<String, String>,
+    home: String,
+}
+
+impl Machine {
+    /// How the installation at `path` (answering `version`) is updated, if it is: the sync half of C#'s `PlanAsync`.
+    fn analyze(&self, provider: &str, path: String, version: String) -> (CliUpdateInstallation, Option<Invocation>) {
+        let resolved = paths::resolve(&path);
+        let installation = CliUpdateInstallation {
+            version: Some(version.clone()),
+            executable_path: Some(path.clone()),
+            detail: strings::detail_unknown_method(),
+            ..CliUpdateInstallation::new(provider)
+        };
+        let get = mighty_run::strings::get;
+        match provider {
+            // pi updates itself, whichever way it was installed (`pi update self`; M/CLIUpdateService.swift).
+            "pi" => {
+                return (
+                    installation.method("pi").updatable().detail(get("settings.cliUpdate.detailPi")),
+                    Invocation::new(&path, &["update", "self"]),
+                );
+            }
+            "opencode" => {
+                // OpenCode 1 (npm opencode-ai) is replaced from the setup screen: its own upgrade stays on 1.
+                if !mighty_run::acp::accounts::opencode_supported(&version) {
+                    return (installation.method("opencode").detail(get("settings.cliUpdate.detailOpencodeV1")), None);
+                }
+                // OpenCode 2 upgrades itself, finds out how it was installed (npm, its script) and asks nothing.
+                return (
+                    installation.method("opencode").updatable().detail(get("settings.cliUpdate.detailOpencode")),
+                    Invocation::new(&path, &["upgrade"]),
+                );
+            }
+            // Hermes updates its own checkout and environment; --yes keeps it from waiting on a prompt.
+            "hermes" => {
+                return (
+                    installation.method("hermes").updatable().detail(get("settings.cliUpdate.detailHermes")),
+                    Invocation::new(&path, &["update", "--yes"]),
+                );
+            }
+            _ => {}
+        }
+        if let Some(package) = winget_package(&resolved) {
+            let installation = installation.method("winget");
+            let Some(winget) = self.candidates("winget").into_iter().find(|c| is_file(c)) else {
+                return (installation.detail(strings::detail_winget_runtime_missing()), None);
+            };
+            // Exactly the one package this installation belongs to: --id with --exact, never --all, no interactive or elevation prompt.
+            return (
+                installation.updatable().detail(strings::detail_winget_plan()),
+                Invocation::new(
+                    &winget,
+                    &[
+                        "upgrade",
+                        "--id",
+                        &package,
+                        "--exact",
+                        "--silent",
+                        "--accept-source-agreements",
+                        "--accept-package-agreements",
+                        "--disable-interactivity",
+                    ],
+                ),
+            );
+        }
+        if provider == "gemini" {
+            // Antigravity's installer puts one agy.exe in %LOCALAPPDATA%\agy\bin, which `agy update` replaces; a copy anywhere else is
+            // left alone (M/CLIUpdateService.swift:146-157).
+            let installed = paths::join(&self.antigravity_install_folder(), &["agy.exe"]);
+            if !paths::same(Some(&resolved), Some(&installed)) {
+                let detail = mighty_run::strings::get_with(
+                    "settings.cliUpdate.detailAntigravityElsewhereWindows",
+                    &[("command", ANTIGRAVITY_INSTALL_COMMAND)],
+                );
+                return (installation.detail(detail), None);
+            }
+            return (
+                installation.method("native").updatable().detail(get("settings.cliUpdate.detailNativeAntigravity")),
+                Invocation::new(&path, &["update"]),
+            );
+        }
+        if provider == "claude" && self.native_claude(&resolved) {
+            return (
+                installation.method("native").updatable().detail(strings::detail_native_claude()),
+                Invocation::new(&path, &["update"]),
+            );
+        }
+        if let Some(npm) = npm_package(&resolved, provider) {
+            let installation = installation.method("npm");
+            if !release(&npm.version) {
+                return (installation.detail(strings::detail_npm_prerelease()), None);
+            }
+            let Some((node, script)) = self.find_npm_runtime(&npm.prefix) else {
+                return (installation.detail(strings::detail_npm_runtime_missing()), None);
+            };
+            // The official package only, in the prefix it is already installed in.
+            let latest = format!("{}@latest", npm.name);
+            return (
+                installation.updatable().detail(strings::detail_npm_plan()),
+                Invocation::new(&node, &[&script, "install", "--global", "--prefix", &npm.prefix, &latest, "--no-audit", "--no-fund"]),
+            );
+        }
+        (installation, None)
     }
 
     /// The PATH candidates, then Antigravity's installer folder (it reaches PATH for new sessions only), then npm's global folder
@@ -531,6 +573,14 @@ impl Drop for Finished<'_> {
         }
         drop(gate);
         self.done.send_replace(true);
+    }
+}
+
+/// `work` on a blocking thread (file system questions, the environment's read), a panic in it carried over.
+async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    match tokio::task::spawn_blocking(work).await {
+        Ok(value) => value,
+        Err(error) => std::panic::resume_unwind(error.into_panic()),
     }
 }
 

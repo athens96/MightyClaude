@@ -17,7 +17,7 @@ use mighty_core::model::Workspace;
 use mighty_core::wire::PROVIDERS;
 use mighty_platform::BoxFuture;
 use mighty_updates::cli_update::holds::{
-    AutomaticUpdateHost, AutomaticUpdatePolicy, AutomaticUpdates, CheckGate, HoldPane, ProviderUse, UpdateActivity,
+    AutomaticUpdateHost, AutomaticUpdatePolicy, AutomaticUpdates, CheckGate, HoldPane, ProviderUse, QueuedPane, UpdateActivity,
     ready_for_automatic_update,
 };
 use mighty_updates::cli_update::{CliUpdateResult, strings};
@@ -98,10 +98,36 @@ fn an_update_holds_only_its_own_provider() {
     assert!(!released.background_update_holds(&pane("claude")), "a finished update holds nothing");
 }
 
-/// `releasedQueuePreservesOrder`'s Core: queued input neither starts under a hold nor admits another idle update; an idle provider
-/// is ready after three quiet minutes.
+fn queued_pane<'a>(id: &'a str, provider: &'a str, status: &'a str, starting: bool, queued: usize) -> QueuedPane<'a> {
+    QueuedPane { id, pane: pane(provider), status, starting, queued }
+}
+
+/// `releasedQueuePreservesOrder`'s Core (C# `BackgroundUpdateChanged`, `StartNextQueuedInput`): queued requests do not drain while an
+/// update holds their pane, a manual update or a plugin change blocks it; released, every free pane with a queue drains, whatever
+/// started the hold; and queued input admits no automatic update of its provider (an idle provider is ready after three quiet
+/// minutes).
 #[test]
 fn queued_requests_neither_start_under_a_hold_nor_admit_another_idle_update() {
+    korean();
+    let panes = [
+        queued_pane("claude-1", "claude", "completed", false, 2),
+        queued_pane("codex-1", "codex", "idle", false, 1),
+        queued_pane("claude-empty", "claude", "idle", false, 0),
+        queued_pane("claude-running", "claude", "running", false, 1),
+        queued_pane("claude-error", "claude", "error", false, 1),
+        queued_pane("claude-starting", "claude", "idle", true, 1),
+    ];
+    let automatic = UpdateActivity { automatic_running: true, automatic_provider: Some("claude".into()), ..UpdateActivity::default() };
+    assert_eq!(automatic.drains(&panes), ["codex-1"], "Claude's queue waits for Claude's update; Codex's does not");
+    let manual = UpdateActivity { manual_running: true, manual_provider: Some("claude".into()), ..UpdateActivity::default() };
+    assert_eq!(manual.drains(&panes), ["codex-1"], "a manual update holds the queue too");
+    let plugins = UpdateActivity { plugin_operation_running: true, ..UpdateActivity::default() };
+    assert!(plugins.drains(&panes).is_empty(), "a plugin change holds Claude's and Codex's queues");
+    let released = UpdateActivity::default();
+    assert_eq!(released.drains(&panes), ["claude-1", "codex-1"], "released: every free pane with a queue drains, nothing else");
+    let remote = [QueuedPane { pane: HoldPane { remote: true, ..pane("claude") }, ..panes[0] }];
+    assert_eq!(automatic.drains(&remote), ["claude-1"], "a remote pane's CLI is its host's: this PC's update holds nothing there");
+
     let now = Utc::now();
     let idle = ProviderUse { last_active: Some(now - TimeDelta::minutes(3)), ..ProviderUse::default() };
     assert!(ready_for_automatic_update(&idle, now), "three idle minutes admit an update");
@@ -358,4 +384,26 @@ async fn a_cancelled_pass_ends_at_once_and_holds_nothing() {
     assert!(!state.running && state.provider.is_none(), "a cancelled pass holds nothing");
     assert!(!updates.activity(false, None, false).background_update_holds(&pane("claude")), "the hold is released");
     assert_eq!(*host.finished.lock().unwrap(), Some(false), "the host knows it did not complete");
+}
+
+/// C#'s `finally`: a pass whose task is dropped half-way (the app quitting, a panic) holds nothing afterwards and tells the host.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dropped_pass_holds_nothing() {
+    korean();
+    let updates = Arc::new(AutomaticUpdates::new());
+    let host = Arc::new(FakeHost::with((Some(true), None), updates.clone()));
+    *host.hang.lock().unwrap() = true;
+    let running = {
+        let (updates, host) = (updates.clone(), host.clone());
+        tokio::spawn(async move { updates.run(host.as_ref(), &all(), &workspace("/home/someone"), &CancellationToken::new()).await })
+    };
+    until(|| updates.snapshot().provider.as_deref() == Some("claude"), 5000, "Claude's update runs").await;
+    let changes = *host.changes.lock().unwrap();
+    running.abort();
+    let _ = running.await;
+    let state = updates.snapshot();
+    assert!(!state.running && state.provider.is_none() && state.finished_at.is_some(), "the dropped pass is at rest: {state:?}");
+    assert!(!updates.activity(false, None, false).background_update_holds(&pane("claude")), "and holds no pane");
+    assert!(*host.changes.lock().unwrap() > changes, "the host was told the holds changed");
+    assert_eq!(*host.finished.lock().unwrap(), None, "a dropped pass did not finish");
 }

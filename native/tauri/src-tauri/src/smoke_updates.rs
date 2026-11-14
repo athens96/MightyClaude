@@ -14,9 +14,10 @@
 //!   (`WindowIsARealWinUISurfaceWiredIntoTheApp`), `pluginMarketplaceWired` (`WindowIsWiredIntoTheRunningAppAndTheSmokeRun`),
 //!   `pluginOperationsOwned` (the WinUI half of `TheRunningAppOwnsTheOperationsObject`).
 //! - `automaticUpdates` (`RunAutomaticUpdatesSmoke`), host-side over the live seams and the composer's model: the plugin switch's
-//!   default and its write, an automatic update holding only its provider's local pane (the phone's half is W8), a manual update and
-//!   a manual plugin change blocking the panes they should. The composer's queue (a held send kept, released in order, a stop
-//!   dropping it) is checked by the composer's own steps; starting a queued request here could start a CLI.
+//!   default and its write, an automatic update holding only its provider's local pane (the phone's half is W8), requests queued
+//!   under the hold kept and drained in order once it is released, the page's `stop` dropping a held request, a manual update
+//!   blocking only its provider without consuming the draft or the queue, a manual plugin change blocking Claude and Codex. A queue's
+//!   drain is a stand-in that records the pane (C#'s `smokeStart`), so nothing queued here ever starts a CLI.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -261,7 +262,9 @@ pub fn checks(report: &Value) -> Vec<(&'static str, bool)> {
         && text(c, "reloadedStatus") == plugin_strings::detail_missing_cli()
         && number(c, "reads") == 2
         && yes(c, "closed");
-    let claude_wired = yes(c, "loaded")
+    // Opened by the pane's own plugin button (`openPlugins`), as the user opens it.
+    let claude_wired = yes(c, "fromPane")
+        && yes(c, "loaded")
         && number(c, "controls") >= 2
         && yes(c, "closeButton")
         && number(c, "dialogButtons") == 0
@@ -342,7 +345,9 @@ pub fn checks(report: &Value) -> Vec<(&'static str, bool)> {
                 && [
                     "defaultAndPersistedPreference",
                     "sameProviderLocalHeld",
-                    "manualUpdateRefuses",
+                    "manualUpdateRefusesWithoutConsumingDrafts",
+                    "releasedQueuePreservesOrder",
+                    "stopCancelsHeldRequests",
                     "manualPluginMutationBlocksBothProviders",
                 ]
                 .iter()
@@ -435,6 +440,42 @@ fn composer_of(host: &Host, id: &str) -> (bool, bool, Option<String>) {
     (busy, can_send, hold)
 }
 
+/// The pane's queued requests' words, in order.
+fn queued(host: &Host, id: &str) -> Vec<String> {
+    let view = host.view();
+    view.panes.get(id).map(|ui| ui.queue.items().iter().map(|item| item.text.clone()).collect()).unwrap_or_default()
+}
+
+/// A request queued on the pane as the composer queues one (C# `queuedInputs.Add`).
+fn enqueue(host: &Host, id: &str, text: &str) -> bool {
+    let mut view = host.view();
+    let _ = crate::panes::ensure(&mut view, Some(id));
+    let Some(ui) = view.panes.get_mut(id) else { return false };
+    let added = ui.queue.add(text, vec![], None, false, false, &host.locale).is_ok();
+    ui.dirty = true;
+    added
+}
+
+/// The pane's queue emptied (the fixture put back).
+fn clear_queue(host: &Host, id: &str) {
+    if let Some(ui) = host.view().panes.get_mut(id) {
+        ui.queue.clear();
+        ui.forget_unqueued();
+        ui.dirty = true;
+    }
+}
+
+fn composer_draft(host: &Host, id: &str) -> String {
+    host.view().panes.get(id).map(|ui| ui.view.draft.clone()).unwrap_or_default()
+}
+
+fn set_draft(host: &Host, id: &str, draft: &str) {
+    if let Some(ui) = host.view().panes.get_mut(id) {
+        ui.view.draft = draft.to_string();
+        ui.dirty = true;
+    }
+}
+
 async fn wait(mut test: impl FnMut() -> bool, milliseconds: u64) -> bool {
     for _ in 0..milliseconds / 20 {
         if test() {
@@ -483,7 +524,55 @@ async fn automatic(host: &Arc<Host>) -> Result<Value, String> {
     report["sameProviderLocalHeld"] =
         json!(held && !codex_held && busy && hold.as_deref() == Some(mighty_run::strings::provider_label("claude")) && released);
 
-    // manualUpdateRefuses: a manual update of Claude (a stand-in that waits) blocks Claude's pane only; the composer refuses a send.
+    // From here a queue's drain is a stand-in that records the pane (C#'s `smokeStart`): nothing queued ever starts a CLI.
+    if !queued(host, &id).is_empty() || matches!(pane.status(), "running" | "error") {
+        return Err("the automatic-update fixture needs an idle Claude pane with an empty queue".into());
+    }
+    let drained = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let into = drained.clone();
+    updates.set_drain_hook(Some(Arc::new(move |pane: &str| into.lock().unwrap_or_else(|p| p.into_inner()).push(pane.to_string()))));
+    let drains =
+        |drained: &std::sync::Mutex<Vec<String>>| drained.lock().unwrap_or_else(|p| p.into_inner()).iter().filter(|p| **p == id).count();
+
+    // releasedQueuePreservesOrder: two requests queued while Claude's update holds the pane neither start nor admit another
+    // idle update; releasing the update drains them, in the order they came (C#: "Releasing an update must schedule queued input
+    // draining", "Released local and mobile inputs must retain FIFO order").
+    updates.automatic.set_holding(Some("claude"), false);
+    let enqueued = enqueue(host, &id, "local held instruction") && enqueue(host, &id, "mobile held instruction");
+    crate::updates::notify(host);
+    let held_drains = drains(&drained);
+    let admits =
+        mighty_updates::cli_update::holds::ready_for_automatic_update(&crate::updates::provider_use(host, "claude"), chrono::Utc::now());
+    updates.automatic.set_holding(None, false);
+    crate::updates::notify(host);
+    let released_drains = drains(&drained);
+    let order = queued(host, &id);
+    report["releasedQueuePreservesOrder"] = json!(
+        enqueued && held_drains == 0 && !admits && released_drains == 1 && order == ["local held instruction", "mobile held instruction"]
+    );
+    clear_queue(host, &id);
+
+    // stopCancelsHeldRequests: a request held by the update, then the page's stop: the queue is dropped and the release starts nothing.
+    updates.set_drain_hook(Some({
+        let into = drained.clone();
+        Arc::new(move |pane: &str| into.lock().unwrap_or_else(|p| p.into_inner()).push(pane.to_string()))
+    }));
+    updates.automatic.set_holding(Some("claude"), false);
+    let queued_again = enqueue(host, &id, "cancel held instruction");
+    crate::updates::notify(host);
+    let before_stop = drains(&drained);
+    let (first, _) = tokio::sync::oneshot::channel();
+    host.clone().dispatch(json!({"kind": "call", "id": 9_000_001, "method": "stop", "args": {"paneId": id}}), first).await;
+    let dropped = wait(|| queued(host, &id).is_empty(), 5000).await;
+    updates.automatic.set_holding(None, false);
+    crate::updates::notify(host);
+    report["stopCancelsHeldRequests"] =
+        json!(queued_again && before_stop == released_drains && dropped && drains(&drained) == released_drains);
+
+    // manualUpdateRefusesWithoutConsumingDrafts: a manual update of Claude (a stand-in that waits) blocks Claude's pane only, the
+    // composer refuses a send, the draft is left as it was, and a queued request is held, not started, until the update ends.
+    let draft = composer_draft(host, &id);
+    set_draft(host, &id, "keep blocked draft");
     let last = updates.shown_results();
     let gate = CancellationToken::new();
     let held_gate = gate.clone();
@@ -509,11 +598,29 @@ async fn automatic(host: &Arc<Host>) -> Result<Value, String> {
         )
     };
     let (_, can_send, _) = composer_of(host, &id);
+    let held_queue = enqueue(host, &id, "keep blocked queued request");
+    crate::updates::notify(host);
+    let blocked_drains = drains(&drained);
+    let kept = composer_draft(host, &id) == "keep blocked draft" && queued(host, &id) == ["keep blocked queued request"];
+    clear_queue(host, &id);
     gate.cancel();
     let finished = wait(|| !updates.coordinator.is_updating(), 10_000).await;
+    // The run's end (its results the last ones) is told before its task ends: once that is waited for, the restore is final.
+    updates.coordinator.cancel().await;
     updates.set_smoke_updater(None);
     updates.automatic.set_cli_results(last);
-    report["manualUpdateRefuses"] = json!(started && updating && claude_block.is_some() && codex_block.is_none() && !can_send && finished);
+    set_draft(host, &id, &draft);
+    report["manualUpdateRefusesWithoutConsumingDrafts"] = json!(
+        started
+            && updating
+            && claude_block.is_some()
+            && codex_block.is_none()
+            && !can_send
+            && held_queue
+            && blocked_drains == released_drains
+            && kept
+            && finished
+    );
 
     // manualPluginMutationBlocksBothProviders: a plugin install held by a fake reader blocks Claude and Codex, not Antigravity.
     let workspace = active_workspace(host).ok_or("no active workspace")?;
@@ -539,6 +646,8 @@ async fn automatic(host: &Arc<Host>) -> Result<Value, String> {
     report["manualPluginMutationBlocksBothProviders"] =
         json!(running && blocks == [true, true, false] && !plugin_can_send && !updates.operations.is_running());
 
+    clear_queue(host, &id);
+    updates.set_drain_hook(None);
     host.view().update(|state| state.auto_update_plugins = saved)?;
     Ok(report)
 }
