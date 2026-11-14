@@ -121,14 +121,32 @@ fn the_kept_lists_file_is_bounded_and_read_tolerantly() {
         "only the entry that checks out: {}",
         loaded.entries().len()
     );
-    // A name written twice in an entry refuses it, as the Mac's decoder does; once in the file's root the last one counts.
-    let repeated = format!(
-        r#"{{"version":1,"lists":[{{"provider":"pi","provider":"gemini","listedAt":"{stamp}","detail":"d","models":[{{"value":"m","displayName":"M","description":""}}]}}],"lists":[]}}"#
+    // A name written twice in an entry refuses it, as the Mac's decoder does, and that entry alone.
+    let entry = |provider: &str| {
+        format!(
+            r#"{{"provider":"{provider}","listedAt":"{stamp}","detail":"d","models":[{{"value":"m","displayName":"M","description":""}}]}}"#
+        )
+    };
+    let twice = format!(
+        r#"{{"provider":"pi","provider":"gemini","listedAt":"{stamp}","detail":"d","models":[{{"value":"m","displayName":"M","description":""}}]}}"#
     );
-    std::fs::write(&file, repeated).unwrap();
-    assert!(KeptModelLists::load(Some(&file)).entries().is_empty(), "a repeated name refuses the entry, and the last root lists count");
-    // Over the size bound the file is not read at all.
-    std::fs::write(&file, vec![0u8; kept_lists::MAXIMUM_BYTES + 1]).unwrap();
+    std::fs::write(&file, format!(r#"{{"version":1,"lists":[{twice},{}]}}"#, entry("codex"))).unwrap();
+    let providers_of = |lists: KeptModelLists| lists.entries().iter().map(|e| e.provider.clone()).collect::<Vec<_>>();
+    assert_eq!(providers_of(KeptModelLists::load(Some(&file))), ["codex"], "a repeated name refuses its entry, and only it");
+    // Written twice in the file's root, the last one counts.
+    std::fs::write(&file, format!(r#"{{"version":1,"lists":[{}],"lists":[{}]}}"#, entry("pi"), entry("gemini"))).unwrap();
+    assert_eq!(providers_of(KeptModelLists::load(Some(&file))), ["gemini"], "the root's last lists count");
+    // Over the size bound a file that would read is not read at all: the same lists padded to the bound read, one byte more do not.
+    let padded = |size: usize| {
+        let mut data = format!(r#"{{"version":1,"lists":[{}]}}"#, entry("codex")).into_bytes();
+        let end = data.pop().unwrap();
+        data.resize(size - 1, b' ');
+        data.push(end);
+        data
+    };
+    std::fs::write(&file, padded(kept_lists::MAXIMUM_BYTES)).unwrap();
+    assert_eq!(providers_of(KeptModelLists::load(Some(&file))), ["codex"], "a file at the bound is read");
+    std::fs::write(&file, padded(kept_lists::MAXIMUM_BYTES + 1)).unwrap();
     assert!(KeptModelLists::load(Some(&file)).entries().is_empty(), "an oversized file is not read");
 
     let mut lists = KeptModelLists::default();
