@@ -2084,6 +2084,7 @@ dependencies = [
  "mighty-platform",
  "mighty-platform-windows",
  "regex",
+ "serde",
  "serde_json",
  "sha2",
  "sys-locale",

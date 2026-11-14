@@ -30,6 +30,8 @@ mod process;
 #[cfg(windows)]
 pub mod pty;
 #[cfg(windows)]
+pub mod setup_probe;
+#[cfg(windows)]
 pub mod shell_activity;
 #[cfg(windows)]
 mod text;
@@ -159,6 +161,12 @@ mod imp {
     /// The user's clipboard (a terminal's copy and paste).
     pub fn clipboard() -> Arc<dyn mighty_platform::Clipboard> {
         Arc::new(WindowsClipboard)
+    }
+
+    /// Each copy of the command `name` this PC has (C# `SetupProber.Executables`): along the environment's PATH with PATHEXT, then
+    /// in the installers' folders.
+    pub fn cli_copies(name: &str, environment: &std::collections::BTreeMap<String, String>) -> Vec<String> {
+        crate::setup_probe::executables(name, &Variables::from(environment))
     }
 
     #[cfg(test)]

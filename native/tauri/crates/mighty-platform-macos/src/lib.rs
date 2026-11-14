@@ -119,6 +119,25 @@ mod imp {
         Arc::new(Unsupported)
     }
 
+    /// Each copy of the command `name` along the environment's PATH (M/AppStore+AskTargets.swift reads the login shell's PATH): an
+    /// executable file of that name in each folder, once.
+    pub fn cli_copies(name: &str, environment: &std::collections::BTreeMap<String, String>) -> Vec<String> {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mut copies: Vec<String> = Vec::new();
+        for folder in environment.get("PATH").map(String::as_str).unwrap_or("").split(':').take(64) {
+            if folder.is_empty() || !folder.starts_with('/') {
+                continue;
+            }
+            let path = std::path::Path::new(folder).join(name);
+            let runnable = std::fs::metadata(&path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0);
+            let text = path.to_string_lossy().into_owned();
+            if runnable && !copies.contains(&text) {
+                copies.push(text);
+            }
+        }
+        copies
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;

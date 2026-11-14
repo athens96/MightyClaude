@@ -6,6 +6,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod args;
+mod ask;
 mod cards;
 mod composer;
 mod delta;
@@ -17,6 +18,7 @@ mod host;
 mod logfile;
 mod methods;
 mod mighty;
+mod models;
 mod panes;
 mod platform;
 mod runs;
@@ -200,6 +202,13 @@ fn main() {
     } else {
         platform.paths.local_dir().join("image-cache").join(platform.paths.profile_key())
     };
+    // The CLIs' catalogue's storage (C# ProviderCatalog's storageDirectory: the last list each CLI gave, `model-lists.json`) likewise:
+    // the profile folder, else this machine's local folder for the profile.
+    let catalog_dir = if options.allow_state_write {
+        data_dir.clone()
+    } else {
+        platform.paths.local_dir().join("provider-catalog").join(platform.paths.profile_key())
+    };
     // The work map's summaries likewise, and its git's empty hooks folder this machine's own (workmap.rs).
     let workmap_folders = workmap::Folders::new(platform.paths.as_ref(), options.allow_state_write);
     // The file originals (files.rs, C# `FileOriginalStore`) likewise: the profile's `file-originals`, else this machine's own.
@@ -249,7 +258,14 @@ fn main() {
             {
                 let _ = std::fs::create_dir_all(folder);
             }
-            runs::Runs::start(&host, platform.processes.clone(), platform.environment.clone(), fake_claude.clone(), image_dir.clone());
+            runs::Runs::start(
+                &host,
+                platform.processes.clone(),
+                platform.environment.clone(),
+                fake_claude.clone(),
+                image_dir.clone(),
+                catalog_dir.clone(),
+            );
             // Terminal panes, the agents' terminals, terminal prompts and shell block runs (terminal.rs).
             terminal::Terminals::start(&host, &platform);
             host.start_clocks();

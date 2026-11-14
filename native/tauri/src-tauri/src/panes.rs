@@ -93,12 +93,16 @@ pub fn requests(host: &Host, id: &str) -> Vec<ToolPermissionRequest> {
     host.runs().map(|r| r.service.pending_permissions(id)).unwrap_or_default()
 }
 
-/// What the window knows of the pane that the composer reads (C# `owner.*` members); the later stages' stay at rest.
-fn window_rules(snapshot: &AppSnapshot, pane: &RunSession, pending: usize) -> WindowRules {
+/// What the window knows of the pane that the composer reads (C# `owner.*` members); the later stages' stay at rest. A Claude pane
+/// whose catalogue was never scanned is scanned for its "send to" switch (ask.rs, C# `RefreshAskCatalog(pane, whenStale: false)`).
+fn window_rules(host: &Host, snapshot: &AppSnapshot, pane: &RunSession, pending: usize) -> WindowRules {
+    crate::ask::refresh_catalog(host, snapshot, pane, false);
     WindowRules {
         pending_requests: pending,
         awaits_notice: mighty_graph::notice::awaits_notice(pane),
         status_line_enabled: snapshot.status_line_enabled,
+        ask_targets: crate::ask::targets_for(host, snapshot, pane),
+        ask_notice: crate::ask::notice(host, pane.id()),
         ..WindowRules::default()
     }
 }
@@ -110,7 +114,7 @@ pub fn composer_state(host: &Host, view: &mut View, id: &str) -> Option<Composer
     let runs = host.runs();
     let runtime = runs.and_then(|r| r.composer_runtime(pane.provider()));
     let efforts = runs.map(|r| r.efforts(&pane, workspace.as_ref(), &view.snapshot)).unwrap_or_default();
-    let window = window_rules(&view.snapshot, &pane, requests(host, id).iter().filter(|r| r.state == "pending").count());
+    let window = window_rules(host, &view.snapshot, &pane, requests(host, id).iter().filter(|r| r.state == "pending").count());
     let ui = view.panes.get_mut(id)?;
     ui.view.queue = ui.queue.items().to_vec();
     let inputs = ComposerInputs {
@@ -133,7 +137,7 @@ pub fn refreshed(host: &Host, view: &mut View, id: &str) -> Option<(bool, compos
     let runs = host.runs();
     let runtime = runs.and_then(|r| r.composer_runtime(pane.provider()));
     let efforts = runs.map(|r| r.efforts(&pane, workspace.as_ref(), &view.snapshot)).unwrap_or_default();
-    let window = window_rules(&view.snapshot, &pane, 0);
+    let window = window_rules(host, &view.snapshot, &pane, 0);
     let ui = view.panes.get_mut(id)?;
     ui.view.queue = ui.queue.items().to_vec();
     let inputs = ComposerInputs {
@@ -200,6 +204,8 @@ pub fn cards_of(host: &Host, view: &mut View, id: &str) -> Option<(Vec<Card>, bo
 /// One pass of the composer and cards pushes over the pane views (C# `FlushWebComposers`, `FlushWebCards`): a pane whose record
 /// changed, or that something else marked, is read again; each model goes out when its JSON is not the one last sent.
 pub fn flush(host: &Host) {
+    // A pane selected reads its model list again (models.rs, C# RefreshSelectedPaneModels).
+    crate::models::follow_selection(host);
     let mut view = host.view();
     if !view.ready {
         return;

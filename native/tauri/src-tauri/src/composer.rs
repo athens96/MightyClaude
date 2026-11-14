@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use base64::Engine as _;
+use mighty_composer::ask_targets;
 use mighty_composer::attachments;
 use mighty_composer::menus::{self, MenuAction, MenuInputs, RunSettingsForm};
 use mighty_composer::pending::SubmitReceipt;
@@ -138,18 +139,32 @@ async fn start_run(
 /// then a start. What happened: started, notStarted, queued, blocked or none, with the request's user entry and graph run when it
 /// started at once.
 async fn submit(host: &Arc<Host>, id: &str) -> Result<SubmitReceipt, String> {
+    // A saved "send to" choice not yet known to stand waits briefly for the pane's catalogue and the PATH read (ask.rs).
+    crate::ask::await_targets(host, id).await;
+    // Asking another CLI carries the words alone, wrapped once here: staged files stay in the composer.
+    let asked = {
+        let view = host.view();
+        if !panes::alive(&view, id) {
+            return Ok(SubmitReceipt::new("none"));
+        }
+        let pane = session(&view, id)?;
+        crate::ask::send_target(host, &view.snapshot, &pane)
+    };
     // DeferBusyComposer: a busy pane (running, starting) always queues the draft as its next request.
     let taken = {
         let mut view = host.view();
         let pane = session(&view, id)?;
         let busy_run = pane.status() == "running" || running(host, id);
         let ui = panes::ui(&mut view, id)?;
+        if asked.is_some() && ask_targets::wrap(&ui.view.draft, asked).is_none() {
+            return Ok(SubmitReceipt::new("none"));
+        }
         if busy_run || ui.view.starting {
             if pane.kind() != "claude" || !ui.has_content() || ui.view.starting || ui.view.attachments_loading {
                 return Ok(SubmitReceipt::new("none"));
             }
-            let text = ui.view.draft.clone();
-            let files = ui.view.attachments.clone();
+            let Some(text) = ask_targets::wrap(&ui.view.draft, asked) else { return Ok(SubmitReceipt::new("none")) };
+            let files = if asked.is_none() { ui.view.attachments.clone() } else { vec![] };
             // The same request validation applies before consuming a draft even though it runs later.
             let mut probe = StartRunRequest::new(pane.id(), pane.workspace_id(), pane.kind(), &text);
             probe.provider = pane.provider().to_string();
@@ -158,8 +173,9 @@ async fn submit(host: &Arc<Host>, id: &str) -> Result<SubmitReceipt, String> {
             probe.attachments = (!files.is_empty()).then(|| files.clone());
             probe.validate().map_err(|e| e.message().to_string())?;
             let override_mode = queue::background::queued_override(ui.view.launches_in_plan_mode);
+            let consumed: HashSet<String> = files.iter().map(|f| f.id.clone()).collect();
             ui.queue.add(&text, files, override_mode, false, false, &host.locale).map_err(|e| e.to_string())?;
-            ui.view.attachments.clear();
+            ui.view.attachments.retain(|a| !consumed.contains(&a.id));
             ui.view.draft.clear();
             ui.dirty = true;
             let drained = matches!(pane.status(), "completed" | "idle");
@@ -184,15 +200,22 @@ async fn submit(host: &Arc<Host>, id: &str) -> Result<SubmitReceipt, String> {
         ui.view.starting = true;
         ui.submission += 1;
         let typed = std::mem::take(&mut ui.view.draft);
-        let files = std::mem::take(&mut ui.view.attachments);
+        let files = if asked.is_none() { std::mem::take(&mut ui.view.attachments) } else { vec![] };
         ui.dirty = true;
         (typed, files, ui.submission)
     };
     let (typed, files, submission) = taken;
-    let outcome = start_run(host, id, &typed, files.clone(), None).await;
+    let submitted = ask_targets::wrap(&typed, asked).unwrap_or_else(|| typed.clone());
+    // The model list as the CLI has it now comes first: the request takes the pane's model and effort after it (models.rs).
+    crate::models::prepare(host, id).await;
+    let moot = {
+        let view = host.view();
+        !panes::alive(&view, id) || view.panes.get(id).is_none_or(|u| u.submission != submission)
+    };
+    let outcome = if moot { None } else { Some(start_run(host, id, &submitted, files.clone(), None).await) };
     let mut view = host.view();
     let alive = panes::alive(&view, id);
-    let started = matches!(outcome, Ok(Some(_)));
+    let started = matches!(outcome, Some(Ok(Some(_))));
     if let Some(ui) = view.panes.get_mut(id) {
         ui.view.starting = false;
         ui.dirty = true;
@@ -206,6 +229,8 @@ async fn submit(host: &Arc<Host>, id: &str) -> Result<SubmitReceipt, String> {
             ui.view.attachments.splice(0..0, back);
         }
     }
+    // A send made moot while the models were checked (a stop, another send, the pane gone) starts nothing.
+    let Some(outcome) = outcome else { return Ok(SubmitReceipt::new("none")) };
     match outcome {
         Err(error) => Err(error),
         Ok(None) => {
@@ -271,6 +296,7 @@ pub fn drain_queue(host: Arc<Host>, id: String) {
                 ui.dirty = true;
                 item
             };
+            crate::models::prepare(&host, &id).await;
             let outcome = start_run(&host, &id, &next.text, next.attachments.clone(), next.permission_mode_override.clone()).await;
             let mut view = host.view();
             if let Some(ui) = view.panes.get_mut(&id) {
@@ -492,7 +518,8 @@ fn run_menu_action(host: &Arc<Host>, view: &mut View, id: &str, action: MenuActi
             }
             let next = switch_provider(host, &pane, &value);
             change(view, id, |_| next)?;
-            refresh_models(host, view, id);
+            // The switch reads the new agent's models; the list in hand is another agent's (models.rs, C# RefreshModels).
+            crate::models::refresh(host, &view.snapshot, id, true);
         }
         MenuAction::RefreshModels => refresh_models(host, view, id),
         MenuAction::ChangeModel(value) => change_model(host, view, id, &value)?,
@@ -819,12 +846,15 @@ pub fn register(methods: &mut Registry) {
         // The catalogue scanned off the page's thread: the user's and the workspace's commands and skills.
         let locale = host.locale;
         let provider = pane.provider().to_string();
+        let path = root.clone();
         let scanned = tauri::async_runtime::spawn_blocking(move || {
             let home = dirs_home();
             slash::commands(&provider, root.as_deref().map(std::path::Path::new), &home, &slash::DiskFiles, &locale)
         })
         .await
         .unwrap_or_default();
+        // The scan is the catalogue the "send to" switch reads too (ask.rs, C# `SetSlashCatalog`).
+        crate::ask::set_catalog(&host, pane.provider(), path.as_deref(), scanned.clone());
         let view = host.view();
         Ok(with_menu_inputs(&host, &view, &pane, |i| serde_json::to_value(menus::slash_catalog(i, &scanned)).unwrap_or(Value::Null)))
     });
@@ -929,27 +959,20 @@ pub fn register(methods: &mut Registry) {
         }
         Ok(json!(reset))
     });
-    // The 보낼 대상 switch: a target the pane offers (none until the installed CLIs and the ask skill are read), or null for Claude.
+    // The 보낼 대상 switch (ask.rs, C# `SetAskTarget`): a target the pane offers, or null for Claude.
     methods.add("setAskTarget", |host: Arc<Host>, args| async move {
-        let mut view = host.view();
-        let id = ensure(&mut view, pane_id(&args))?;
+        let id = ensure(&mut host.view(), pane_id(&args))?;
         let target = match args.get("target") {
             Some(Value::String(target)) => Some(target.clone()),
             Some(Value::Null) => None,
             _ => return Err(host.locale.get("remote.error.badBody")),
         };
-        if target.is_some() {
-            // AskTargetsFor(pane) offers none yet (README: pending inputs).
-            return Err(host.locale.get("remote.error.badBody"));
-        }
-        if session(&view, &id)?.ask_target.is_some() {
-            change(&mut view, &id, |p| RunSession { ask_target: None, ..p.clone() })?;
-        }
+        crate::ask::set_target(&host, &id, target)?;
         Ok(Value::Null)
     });
-    // No fallback notice is ever raised while no target is offered.
     methods.add("dismissAskNotice", |host: Arc<Host>, args| async move {
-        ensure(&mut host.view(), pane_id(&args))?;
+        let id = ensure(&mut host.view(), pane_id(&args))?;
+        crate::ask::dismiss_notice(&host, &id);
         Ok(Value::Null)
     });
 }
@@ -978,6 +1001,6 @@ fn run_now_rows(host: &Host, view: &mut View, id: &str) -> Vec<(String, QueueRun
 }
 
 /// The user's home folder (the slash catalogue's `~/.claude`).
-fn dirs_home() -> std::path::PathBuf {
+pub(crate) fn dirs_home() -> std::path::PathBuf {
     std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(std::path::PathBuf::from).unwrap_or_default()
 }

@@ -62,6 +62,12 @@ pub fn show_in_explorer(folder: &std::path::Path) -> std::result::Result<(), Str
     os::show_in_explorer(folder)
 }
 
+/// Each copy of the command `name` this computer has along `environment`'s PATH (C# `SetupProber.Executables`: with PATHEXT and the
+/// installers' folders on Windows).
+pub fn cli_copies(name: &str, environment: &std::collections::BTreeMap<String, String>) -> Vec<String> {
+    os::cli_copies(name, environment)
+}
+
 /// The browser engine's installed version (C# `WebView2RuntimeLocator`), or none when the pane must offer its install.
 pub fn browser_runtime() -> Option<String> {
     os::browser_runtime()

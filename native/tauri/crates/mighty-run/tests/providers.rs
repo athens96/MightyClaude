@@ -1,5 +1,6 @@
-//! ProviderCatalog checks: C# ModelListProbeVerification (the reads, their arguments and failures; the kept-lists file, the menu line,
-//! the refresh queue and the remote wire are other stages'), AutoPermissionVerification, and Verification.cs "wire settings include
+//! ProviderCatalog checks: C# ModelListProbeVerification (the reads, their arguments and failures, the list kept across a restart;
+//! the kept-lists file itself, the menu line and the refresh queue are model_lists.rs's, the remote wire W8's),
+//! AutoPermissionVerification, and Verification.cs "wire settings include
 //! explicit nullable limits; provider validation" and "Claude/Codex metadata protocol sends no user prompt or model turn". The reads
 //! over a real child run on Windows (the Mac ProcessHost is W1-D's).
 
@@ -327,6 +328,23 @@ mod reads {
             let state = self.state();
             common::catalog(move |provider| Some(common::fake_command(&["--model-list-cli", provider, &state])))
         }
+        /// `Catalog(storage)`: the lists kept in `storage` too.
+        fn catalog_kept(&self, storage: &std::path::Path) -> providers::ProviderCatalog {
+            let state = self.state();
+            let finder: providers::Finder = std::sync::Arc::new(move |provider: String| {
+                let found = Some(common::fake_command(&["--model-list-cli", &provider, &state]));
+                Box::pin(async move { found })
+            });
+            providers::ProviderCatalog::new(
+                std::sync::Arc::new(mighty_platform_windows::WindowsProcessHost::new()),
+                common::environment(),
+                Some(finder),
+            )
+            .with_storage(Some(storage.to_path_buf()))
+        }
+        fn recover(&self, provider: &str) {
+            let _ = std::fs::remove_file(self.file(provider, "-fail"));
+        }
         fn file(&self, provider: &str, suffix: &str) -> std::path::PathBuf {
             self.state.join(format!("{}{suffix}", providers::executable(provider)))
         }
@@ -402,42 +420,78 @@ mod reads {
         );
     }
 
-    /// AFailedReadKeepsTheLastListMarkedAndARestartStillHasIt, in memory (the KeptModelLists file is not ported: the lists are kept
-    /// for the catalog's life).
     #[tokio::test(flavor = "multi_thread")]
-    async fn a_failed_read_keeps_the_last_list_marked() {
+    async fn a_failed_read_keeps_the_last_list_marked_and_a_restart_still_has_it() {
+        use mighty_run::kept_lists::{self, KeptModelLists, ModelListNotice};
         common::korean();
         let fake = FakeListClis::new();
+        let storage = fake.state.join("storage");
         let workspace = fake.state.join("site");
         std::fs::create_dir_all(&workspace).unwrap();
         let workspace = workspace.to_string_lossy().into_owned();
+        let file = storage.join(kept_lists::FILE_NAME);
         const SIGNED_OUT: &str = "Error: authentication required. Run 'agy' to log in, then retry.\n";
-        let catalog = fake.catalog();
-        let fresh = catalog.refresh_provider("gemini", Some(&workspace), false).await.model_catalog;
-        assert!(fresh.is_fresh(), "a list the CLI just gave");
-        fake.fail("gemini", SIGNED_OUT);
-        let kept = catalog.refresh_provider("gemini", Some(&workspace), false).await.model_catalog;
-        assert!(
-            kept.source == "cli"
-                && !kept.is_fresh()
-                && models_json(&kept.models) == models_json(&fresh.models)
-                && kept.detail == fresh.detail,
-            "the last list stays, marked"
-        );
-        assert_eq!(
-            kept.read_failure.as_deref(),
-            Some("agy models: 종료 코드 1 · Error: authentication required. Run 'agy' to log in, then retry."),
-            "why"
-        );
-        assert!(kept.listed_at.is_some(), "when it was read");
-        // Another workspace that never read a list gets this provider's newest, marked the same way.
-        let other = catalog.refresh_provider("gemini", Some(&fake.state()), false).await.model_catalog;
-        assert!(
-            models_json(&other.models) == models_json(&fresh.models) && other.read_failure.is_some(),
-            "another workspace gets the newest list"
-        );
+        let (fresh, kept) = {
+            let catalog = fake.catalog_kept(&storage);
+            let fresh = catalog.refresh_provider("gemini", Some(&workspace), false).await.model_catalog;
+            assert!(fresh.is_fresh() && kept_lists::notice(&fresh, None).is_none(), "a list the CLI just gave needs no line");
+            let saved = KeptModelLists::load(Some(&file));
+            assert!(
+                saved.list("gemini", Some(&workspace)).is_some_and(|e| models_json(&e.models) == models_json(&fresh.models)),
+                "the list is in the file"
+            );
+
+            fake.fail("gemini", SIGNED_OUT);
+            let kept = catalog.refresh_provider("gemini", Some(&workspace), false).await.model_catalog;
+            assert!(
+                kept.source == "cli"
+                    && !kept.is_fresh()
+                    && models_json(&kept.models) == models_json(&fresh.models)
+                    && kept.detail == fresh.detail,
+                "the last list stays, marked"
+            );
+            assert_eq!(
+                kept.read_failure.as_deref(),
+                Some("agy models: 종료 코드 1 · Error: authentication required. Run 'agy' to log in, then retry."),
+                "why"
+            );
+            assert!(kept_lists::date(kept.listed_at.as_deref()).is_some(), "when it was read");
+            assert_eq!(
+                kept_lists::notice(&kept, None),
+                Some(ModelListNotice {
+                    line: strings::get_with("composer.model.listKept", &[("age", &strings::get("resume.time.now"))]),
+                    help: kept.read_failure.clone().unwrap(),
+                }),
+                "the menu line"
+            );
+            // Another workspace that never read a list gets this provider's newest, marked the same way.
+            let other = catalog.refresh_provider("gemini", Some(&fake.state()), false).await.model_catalog;
+            assert!(
+                models_json(&other.models) == models_json(&fresh.models) && other.read_failure.is_some(),
+                "another workspace gets the newest list"
+            );
+            (fresh, kept)
+        };
+        // After a restart the read still fails: the list comes back from the file, not the built-in one.
+        {
+            let restarted = fake.catalog_kept(&storage);
+            let restored = restarted.refresh_provider("gemini", Some(&workspace), false).await.model_catalog;
+            assert!(
+                restored.source == "cli"
+                    && models_json(&restored.models) == models_json(&fresh.models)
+                    && restored.read_failure == kept.read_failure,
+                "a restart keeps the list"
+            );
+            // A list the CLI gives again is fresh again, and only that one.
+            fake.recover("gemini");
+            assert!(
+                restarted.refresh_provider("gemini", Some(&workspace), false).await.model_catalog.is_fresh(),
+                "the next good read is fresh"
+            );
+        }
         // With nothing kept, the built-in list, and why.
-        let empty = fake.catalog();
+        fake.fail("gemini", SIGNED_OUT);
+        let empty = fake.catalog_kept(&fake.state.join("empty"));
         let built_in = empty.refresh_provider("gemini", Some(&workspace), false).await.model_catalog;
         assert!(
             built_in.source == "fallback"
@@ -445,6 +499,15 @@ mod reads {
                 && built_in.read_failure == kept.read_failure,
             "the built-in list with the reason"
         );
+        assert_eq!(
+            kept_lists::notice(&built_in, None),
+            Some(ModelListNotice { line: strings::get("composer.model.listFallback"), help: kept.read_failure.clone().unwrap() }),
+            "the built-in list's line"
+        );
+        // A catalog without a storage folder (the checks) keeps the lists in memory only.
+        let memory = fake.catalog();
+        memory.refresh_provider("gemini", Some(&workspace), false).await;
+        assert!(!fake.state.join(kept_lists::FILE_NAME).exists(), "nothing is written without a storage folder");
     }
 
     #[tokio::test(flavor = "multi_thread")]
