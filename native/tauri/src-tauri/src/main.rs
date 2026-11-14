@@ -318,6 +318,8 @@ fn main() {
             let (inbound, mut calls) = tokio::sync::mpsc::unbounded_channel::<Value>();
             app.manage(Inbound(inbound));
             app.manage(host.clone());
+            // C# `BeginAutomaticUpdates`: the automatic updates' 60 s tick from the start (updates.rs, W6-D).
+            let _ = updates::of(&host);
             // The user's settings outside the state (the text setting: frame.rs).
             app.manage(platform.prefs.clone());
             // W6's ports: the terminal window, the font families, the HTTPS GET (platform.rs; a smoke's fakes).

@@ -383,11 +383,16 @@ pub fn drain_queue(host: Arc<Host>, id: String) {
                     return;
                 }
                 let status = view.snapshot.session(&id).map(|s| s.status().to_string()).unwrap_or_default();
+                // C# `StartNextQueuedInput`: an update of the pane's CLI holds a queue already draining (updates.rs, W6-D).
+                let held = view.snapshot.session(&id).is_some_and(|pane| {
+                    crate::updates::holds(&host, &view.snapshot, pane)
+                        || crate::updates::manual_block(&host, &view.snapshot, pane).is_some()
+                });
                 let Ok(ui) = panes::ui(&mut view, &id) else { return };
                 if ui.queue.items().is_empty() {
                     return;
                 }
-                if status == "running" || status == "error" || ui.view.starting || ui.view.queue_starting || running(&host, &id) {
+                if status == "running" || status == "error" || ui.view.starting || ui.view.queue_starting || running(&host, &id) || held {
                     continue;
                 }
                 ui.view.queue_starting = true;
