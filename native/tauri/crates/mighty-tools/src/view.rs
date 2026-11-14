@@ -243,8 +243,10 @@ fn footer(ui: &Ui, screen: &SetupScreen, plan: &[String], actions: &Arc<dyn Setu
     buttons.push(ui.settings_push(check.enabled(!screen.probing), ControlSize::Regular, false, false).aid("setup-recheck").cell(0, 1));
     let install = actions.clone();
     let label = strings::get("setup.button.install");
-    let button = El::button(label.clone()).named(label).enabled(!plan.is_empty() && !running).on_click(move || install.install());
-    buttons.push(ui.settings_push(button, ControlSize::Regular, true, false).aid("setup-install").cell(0, 2));
+    let button = El::button(label.clone()).named(label).on_click(move || install.install());
+    // Enabled after `SettingsPush` painted it, as C# sets `IsEnabled` (so a refused install keeps its full strength).
+    let button = ui.settings_push(button, ControlSize::Regular, true, false).enabled(!plan.is_empty() && !running);
+    buttons.push(button.aid("setup-install").cell(0, 2));
     rows.push(El::grid(Grid {
         children: buttons,
         cols: vec![Track::Star(1.0), Track::Auto, Track::Auto],

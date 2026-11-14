@@ -234,8 +234,10 @@ pub fn account_row(ui: &mut Ui, row: &AccountRow, reading: bool, actions: &Arc<d
     }
     let (act, p) = (actions.clone(), provider.clone());
     let refresh = ui
-        .settings_icon_button(REFRESH_GLYPH, copy::refresh_tooltip(), move || act.refresh(&p), 12.0)
+        .settings_icon_button(REFRESH_GLYPH, copy::refresh_tooltip(), move || act.refresh(&p), 13.0)
         .aid(format!("cli-account-refresh-{provider}"))
+        // C#'s `Held` sets every row button at the line's top.
+        .va(VAlign::Top)
         .enabled(held);
     let at = place(&mut parts, &mut cols, refresh, Track::Auto);
     parts[at].margin = Thickness::new(parts[at].margin.left, -1.0, 0.0, 0.0);

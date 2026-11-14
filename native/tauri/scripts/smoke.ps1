@@ -9,6 +9,8 @@
 #                                                            stand-in Claude, mighty-run's mighty-fake-cli, unless this is given)
 #   .\native\tauri\scripts\smoke.ps1 -RealClaude              one real request to the installed claude CLI instead of the run steps
 #                                                            (a new demo profile, writes off, a temporary workspace folder)
+#   .\native\tauri\scripts\smoke.ps1 -NativeDump <file>       every native and text push also written to <file> (--native-dump; the
+#                                                            parity capture, tools\parity\native.ps1)
 #
 # Exits with the app's code: 0 when the smoke passed.
 param(
@@ -17,6 +19,7 @@ param(
     [string]$Profile,
     [string]$Out,
     [int]$RemoteDebuggingPort = 0,
+    [string]$NativeDump,
     [switch]$NoRuns,
     [switch]$RealClaude
 )
@@ -98,6 +101,7 @@ if ($RealClaude) {
 }
 if ($readOnly) { $arguments += @('--log-dir', (Join-Path $Out 'tauri-logs')) }
 if ($RemoteDebuggingPort -gt 0) { $arguments += @('--remote-debugging-port', "$RemoteDebuggingPort") }
+if ($NativeDump) { $arguments += @('--native-dump', [IO.Path]::GetFullPath($NativeDump)) }
 $watch = [Diagnostics.Stopwatch]::StartNew()
 $process = Start-Process -FilePath $Exe -ArgumentList $arguments -PassThru -Wait -WindowStyle Normal
 $watch.Stop()

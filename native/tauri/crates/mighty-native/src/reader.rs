@@ -11,9 +11,10 @@
 //! - a dictionary's null is written as `null` (a glyph's `ink`, a closed expander's `c`, a grid without definitions' `cols`), ids,
 //!   indexes and cells are integers, every other number a double in .NET's shortest form.
 //!
-//! What a TextBlock inherits is followed down the tree as WinUI does: its ink (a control's `Foreground`; at the root the theme's `ink`,
-//! which `TextFillColorPrimaryBrush` is set to), its size (a control's `TextSize`, else the stock 14 at the text setting's scale; at
-//! the root a plain 14) and its family (a control's, else the interface font).
+//! What a TextBlock inherits is followed down the tree as C# reads it: its ink (WinUI's stock text colour, at the root and inside a
+//! control alike: C# reads each form as it builds it, before the window's `DesignBrushes` or a template's `Foreground` reach it, so
+//! its capture reads `on-status` by night), its size (a control's `TextSize`, else the stock 14 at the text setting's scale; at the
+//! root a plain 14) and its family (a control's, else the interface font).
 
 use indexmap::IndexMap;
 use mighty_core::design_tokens::{Token, metrics};
@@ -203,8 +204,10 @@ impl<'a> Reader<'a> {
         Reader { env, surface, ids, acts }
     }
 
+    /// What the form's root hands down: WinUI's stock text colour, not the theme's `ink` (C#'s forms sit in a hidden host where the
+    /// window's `DesignBrushes` do not reach the stock TextBlock style; C#'s capture reads `on-status` by night).
     fn root(&self) -> Inherit {
-        Inherit { ink: Some(self.env.theme.brush(Token::Ink)), size: STOCK_SIZE, family: None }
+        Inherit { ink: Some(self.env.theme.stock_text()), size: STOCK_SIZE, family: None }
     }
 
     /// The interface font a control draws in by default (`ContentControlThemeFontFamily`).
@@ -212,10 +215,12 @@ impl<'a> Reader<'a> {
         self.env.text.family.clone().unwrap_or_else(|| metrics::FONT_BODY.to_string())
     }
 
-    /// What a control's content inherits when the control's style sets its own words' look (the stock 14, the theme's ink).
+    /// What a control's content inherits when the control's style sets its own words' look (the stock 14; WinUI's stock text colour:
+    /// C# reads every form as it builds it, before a template hands the control's `Foreground` down, so its capture reads a button's
+    /// glyph and words in `on-status` by night whatever the button was painted with).
     fn control_inherit(&self, size: Option<f64>) -> Inherit {
         Inherit {
-            ink: Some(self.env.theme.brush(Token::Ink)),
+            ink: Some(self.env.theme.stock_text()),
             size: self.env.text.size(size.unwrap_or(STOCK_SIZE)),
             family: Some(self.control_family()),
         }
@@ -509,11 +514,7 @@ impl<'a> Reader<'a> {
                 if label {
                     node.insert("label", words(&button.content).into());
                 } else {
-                    let theme_ink = Some(self.env.theme.brush(Token::Ink));
-                    let inside = Inherit {
-                        ink: if enabled { button.foreground.or(theme_ink) } else { button.disabled_ink },
-                        ..self.control_inherit(button.size)
-                    };
+                    let inside = self.control_inherit(button.size);
                     if let Some(inner) = self.content_at(&button.content, enabled, &format!("{path}/c"), &inside) {
                         node.insert("c", J::Arr(vec![J::Obj(inner)]));
                     }

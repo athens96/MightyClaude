@@ -565,7 +565,7 @@ mod tests {
         let first = rendered(&surfaces, "companion").unwrap();
         assert_eq!(
             first,
-            r#"{"kind":"native","id":"companion","place":"popover","view":{"kind":"companion","title":"Status","sections":[{"beta":false,"node":{"t":"button","id":1,"name":"Go","label":"Go"}}]}}"#
+            r#"{"kind":"native","id":"companion","place":"popover","view":{"kind":"companion","title":"Status","sections":[{"beta":false,"node":{"t":"button","id":1,"name":"Go","label":"Go","ha":"start","va":"center"}}]}}"#
         );
         assert_eq!(rendered(&surfaces, "companion"), None, "unchanged: nothing pushed");
         surfaces.forget_sent();
@@ -610,7 +610,8 @@ mod tests {
             view["view"]["buttons"],
             json!([{"id": "close", "label": "Cancel", "disabled": false, "accent": false}, {"id": "primary", "label": "Select", "disabled": false, "accent": true}])
         );
-        assert!(view["view"].get("width").is_none(), "an unstyled dialog has no size");
+        // C# reads WinUI's own ContentDialogMaxWidth/MaxHeight off a dialog that set none (its capture: 548 and 756).
+        assert_eq!((view["view"]["width"].clone(), view["view"]["height"].clone()), (json!(548), json!(756)), "an unstyled dialog's size");
         assert_eq!(surfaces.button("dialog-1", Some("primary")), Some(Next::Push), "accept refused");
         assert_eq!(*answered.lock().unwrap(), None);
         valid.store(true, Ordering::SeqCst);

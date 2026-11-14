@@ -779,6 +779,11 @@ impl Smoke {
                 checks["realUsage"] = json!(tokens);
             }
         }
+        // localeKeyLeakScan, last (C# `RunWebLiveSmoke`'s last step): every W6 box's words, none a raw locale key.
+        let leak_scan = (self.mode != Mode::RealClaude).then(|| shared(host).map(|host| crate::smoke_settings::leak_scan(&host)));
+        if let Some(scan) = &leak_scan {
+            checks["localeKeyLeakScan"] = json!(scan.as_ref().is_some_and(crate::smoke_settings::leak_scan_passed));
+        }
         let passed = checks.as_object().is_some_and(|c| c.values().all(|v| v == &Value::Bool(true)));
         let result = json!({
             "passed": passed,
@@ -797,6 +802,7 @@ impl Smoke {
             "setup": w6.1,
             "accounts": w6.2,
             "updates": w6.3,
+            "localeKeyLeakScan": leak_scan.flatten(),
             "acp": self.progress().acp.clone(),
             "runs": runs,
             "mode": format!("{:?}", self.mode),

@@ -59,10 +59,15 @@ pub const PENDING: [Pending; 3] = [Pending::AgentIoTools, Pending::RunTerminalCo
 /// (its help dimmed over the entries, 11pt code, selectable, at most 360 high), closed with its ✕; the window holds its dialog
 /// meanwhile, and nothing opens while another sheet is up.
 pub async fn show_history(host: &Arc<Host>, pane: &RunSession) {
+    let Some(_sheet) = crate::frame::Sheet::begin(host) else { return };
+    crate::native::show_dialog(host, history_dialog(pane, &host.locale)).await;
+}
+
+/// D14's dialog for `pane` (no I/O): what [`show_history`] shows.
+pub fn history_dialog(pane: &RunSession, locale: &mighty_core::locale::Locale) -> mighty_native::surface::DialogSpec {
     use mighty_native::surface::{DialogChrome, DialogSpec};
     use mighty_native::ui::{Content, El, Kind, TextBlock, Wrapping};
-    let Some(_sheet) = crate::frame::Sheet::begin(host) else { return };
-    let history = terminal_history(pane, &host.locale);
+    let history = terminal_history(pane, locale);
     let (help, words) = (history.help.clone(), history.text.clone());
     let mut spec = DialogSpec::new(history.title.clone(), move |ui| {
         let mut help = ui.text_block(help.clone(), 12.0).opacity(0.7);
@@ -84,7 +89,7 @@ pub async fn show_history(host: &Arc<Host>, pane: &RunSession) {
     .styled(None, None);
     spec.close = Some(history.close.clone());
     spec.chrome = Some(DialogChrome { panel: Some(history.panel.into()), icon: Some(history.icon.into()), ..DialogChrome::default() });
-    crate::native::show_dialog(host, spec).await;
+    spec
 }
 
 /// How often an agent terminal is looked at for a prompt, and how many looks with no command running end the watch.
@@ -950,5 +955,22 @@ mod tests {
         assert!(is_working_folder(if cfg!(windows) { "C:\\work\\child" } else { "/work/child" }));
         assert!(!is_working_folder("relative\\child") && !is_working_folder("a\0b") && !is_working_folder(&"x".repeat(4097)));
         assert_eq!(PENDING.len(), 3, "the history dialog is drawn now (show_history)");
+    }
+
+    /// D14 against C#'s capture (`mighty-native/tests/golden/terminal-history.json`, plan W6 §1.8): C#'s web smoke's shell pane
+    /// with its last request and answer, the panel as the page first got it.
+    #[test]
+    fn the_history_dialog_matches_cs() {
+        let pane = RunSession {
+            id: Some("smoke-history-pane".into()),
+            kind: Some("shell".into()),
+            logs: Some(vec![
+                mighty_core::model::LogEntry::new("l1".into(), "user", "fixture request 2".into(), "2026-11-14T00:00:00Z".into(), None),
+                mighty_core::model::LogEntry::new("l2".into(), "assistant", "fixture answer 2".into(), "2026-11-14T00:00:01Z".into(), None),
+            ]),
+            ..RunSession::default()
+        };
+        let golden = include_str!("../../crates/mighty-native/tests/golden/terminal-history.json");
+        assert_eq!(crate::native::golden_dialog(history_dialog(&pane, &Locale::new("ko"))), golden.trim_end());
     }
 }

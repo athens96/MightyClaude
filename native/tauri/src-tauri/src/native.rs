@@ -301,6 +301,17 @@ pub fn register(methods: &mut Registry) {
     });
 }
 
+/// A dialog as C#'s capture holds it (plan W6 §1.8): opened as `dialog-1`, drawn in the capture's context (dark, the standard text,
+/// Korean), its id `dialog`, normalized by `parity`; what a golden in `mighty-native/tests/golden` is compared with.
+#[cfg(test)]
+pub(crate) fn golden_dialog(spec: DialogSpec) -> String {
+    let surfaces = Surfaces::new();
+    surfaces.open("dialog-1", Place::Dialog, Box::new(DialogSurface::new(spec, |_| {})));
+    let mut push: Value = serde_json::from_str(&surfaces.render("dialog-1", &Env::default()).expect("a push")).unwrap_or(Value::Null);
+    push["id"] = json!("dialog");
+    mighty_native::parity::text(&mighty_native::parity::normalize(&push, &[]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

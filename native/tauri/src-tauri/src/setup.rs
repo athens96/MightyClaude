@@ -25,6 +25,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use mighty_accounts::accounts::CliLoginOption;
 use mighty_core::model::{AppSnapshot, RunSession};
 use mighty_native::surface::{DialogResult, Next, SurfaceModel};
 use mighty_native::ui::{El, Local, Ui};
@@ -261,12 +262,12 @@ fn extras(host: &Host) -> SetupExtras {
     }
 }
 
-/// The list (C# `BuildSetupContent` with `FillSetupContent`) as the screen's state has it now; no I/O.
+/// The list (C# `BuildSetupContent` with `FillSetupContent`) as the screen's state has it now; no I/O. The catalog is not read here:
+/// as in C#, the refresh the list's showing starts reads it (`begin_refresh`), so the first drawing of the components box has no rows.
 pub fn list(host: &Arc<Host>, ui: &Ui) -> El {
     let extras = extras(host);
     let state = of(host);
-    let mut screen = lock(&state.screen);
-    screen.load_catalog();
+    let screen = lock(&state.screen);
     view::setup_content(ui, &screen, &extras, Arc::new(Actions(host.clone())))
 }
 
@@ -279,11 +280,19 @@ impl SetupActions for Actions {
         lock(&of(&self.0).screen).toggle(id);
     }
 
-    /// The CLI accounts' own sign-in (a terminal window on the CLI's login command, W6-C's).
+    /// The CLI accounts' own sign-in (a terminal window on the CLI's login command, W6-C's); why it cannot start now is the screen's
+    /// message (C# `setupMessage = ex.Message`). No screen lock is held while it runs (it redraws).
     fn sign_in(&self, provider: &str) {
         lock(&of(&self.0).screen).message = None;
-        crate::accounts::start_sign_in(&self.0, provider, None);
-        redraw(&self.0);
+        let (host, provider) = (self.0.clone(), provider.to_string());
+        crate::native::act(&self.0, async move {
+            let refused = crate::accounts::start_cli_sign_in(&host, &provider, CliLoginOption::Account).await.err();
+            if let Some(refused) = refused {
+                lock(&of(&host).screen).message = Some(refused);
+            }
+            redraw(&host);
+            Ok(())
+        });
     }
 
     /// The CLI update for an old agent CLI (W6-D's), unless one or a plugin operation runs.

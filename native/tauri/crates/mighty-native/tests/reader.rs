@@ -30,13 +30,15 @@ fn with_ui<T>(env: &Env, build: impl FnOnce(&mut Ui) -> T) -> T {
     build(&mut ui)
 }
 
+/// A TextBlock with no ink of its own reads WinUI's stock text colour (white by night: `on-status`), not the theme's `ink`: C# reads
+/// its forms before the window's brushes reach them (its capture, plan W6 §1.8).
 #[test]
-fn a_text_block_at_the_root_is_14_in_the_themes_ink_and_does_not_wrap() {
-    assert_eq!(render(&El::text_block("Hi"), &dark()), r#"{"t":"text","text":"Hi","size":14,"ink":"ink","nowrap":true}"#);
+fn a_text_block_at_the_root_is_14_in_the_stock_ink_and_does_not_wrap() {
+    assert_eq!(render(&El::text_block("Hi"), &dark()), r#"{"t":"text","text":"Hi","size":14,"ink":"on-status","nowrap":true}"#);
     assert_eq!(render(&El::text_block(""), &dark()), "null", "no words: dropped");
     let mut inlines = El::text_block("");
     inlines.text_mut().unwrap().inlines = vec![Inline::Run("a".into()), Inline::LineBreak, Inline::Span(vec![Inline::Run("b".into())])];
-    assert_eq!(render(&inlines, &dark()), r#"{"t":"text","text":"a\nb","size":14,"ink":"ink","nowrap":true}"#);
+    assert_eq!(render(&inlines, &dark()), r#"{"t":"text","text":"a\nb","size":14,"ink":"on-status","nowrap":true}"#);
 }
 
 #[test]
@@ -79,7 +81,7 @@ fn sizes_are_unscaled_at_every_text_scale() {
     assert_eq!(read(0.9, 12.5), 13.0, "Size(12.5) = 11.5 at 90%, Unscaled(11.5) = 13");
     assert_eq!(read(1.1, 12.5), 12.5);
     let e = Env { text: TextAppearance::new(1.2, None, None, None), ..dark() };
-    assert_eq!(render(&El::text_block("x"), &e), r#"{"t":"text","text":"x","size":11.5,"ink":"ink","nowrap":true}"#);
+    assert_eq!(render(&El::text_block("x"), &e), r#"{"t":"text","text":"x","size":11.5,"ink":"on-status","nowrap":true}"#);
 }
 
 /// A code font without "Mono", "Consol" or "Code" in its name gives no `mono` (AppText.cs:49).
@@ -125,12 +127,12 @@ fn a_wrapper_writes_its_tail_into_its_childs_dictionary() {
     let scroll = El::new(Kind::ScrollViewer { content: inner.into() }).margin(Thickness::all(5.0)).max_height(300.0);
     assert_eq!(
         render(&scroll, &dark()),
-        r#"{"t":"stack","dir":"v","gap":0,"c":[{"t":"text","text":"a","size":14,"ink":"ink","nowrap":true}],"role":"row","margin":[5,5,5,5],"maxH":300}"#
+        r#"{"t":"stack","dir":"v","gap":0,"c":[{"t":"text","text":"a","size":14,"ink":"on-status","nowrap":true}],"role":"row","margin":[5,5,5,5],"maxH":300}"#
     );
     let bare = El::border(Border { child: Some(Box::new(El::text_block("b").aid("inner"))), ..Border::default() }).aid("outer");
-    assert_eq!(render(&bare, &dark()), r#"{"t":"text","text":"b","size":14,"ink":"ink","nowrap":true,"aid":"outer"}"#);
+    assert_eq!(render(&bare, &dark()), r#"{"t":"text","text":"b","size":14,"ink":"on-status","nowrap":true,"aid":"outer"}"#);
     let disabled = El::new(Kind::ContentControl { content: El::button("Go").named("Go").into() }).enabled(false);
-    assert_eq!(render(&disabled, &dark()), r#"{"t":"button","id":1,"name":"Go","label":"Go","disabled":true}"#);
+    assert_eq!(render(&disabled, &dark()), r#"{"t":"button","id":1,"name":"Go","label":"Go","ha":"start","va":"center","disabled":true}"#);
 }
 
 #[test]
@@ -150,7 +152,7 @@ fn hidden_parts_are_dropped() {
     ]);
     assert_eq!(
         render(&stack, &dark()),
-        r#"{"t":"stack","dir":"v","gap":0,"c":[{"t":"text","text":"shown","size":14,"ink":"ink","nowrap":true}]}"#
+        r#"{"t":"stack","dir":"v","gap":0,"c":[{"t":"text","text":"shown","size":14,"ink":"on-status","nowrap":true}]}"#
     );
     assert_eq!(render(&El::vstack(vec![El::shape()]), &dark()), "null", "an empty stack is null");
     assert_eq!(render(&El::text_block("x").mark("loading").margin(Thickness::all(3.0)), &dark()), r#"{"t":"loading"}"#);
@@ -164,10 +166,11 @@ fn shapes_glyphs_and_pictures() {
     assert_eq!(render(&El::new(Kind::Ellipse { fill: Some(accent) }).width(6.0), &e), r#"{"t":"dot","fill":"accent","size":6,"w":6}"#);
     let glyph = El::new(Kind::FontIcon { glyph: "\u{E713}".into(), size: Some(14.0), foreground: Some(Brush::TRANSPARENT) });
     assert_eq!(render(&glyph, &e), "{\"t\":\"glyph\",\"glyph\":\"\\uE713\",\"size\":14,\"ink\":null}", "a glyph's ink is always written");
-    assert_eq!(render(&El::font_icon("x", None), &e), r#"{"t":"glyph","glyph":"x","size":20,"ink":"ink"}"#);
+    assert_eq!(render(&El::font_icon("x", None), &e), r#"{"t":"glyph","glyph":"x","size":20,"ink":"on-status"}"#);
     let picture = El::new(Kind::Image { src: Some("data:image/png;base64,AA==".into()) }).height(40.0);
     assert_eq!(render(&picture, &e), r#"{"t":"image","src":"data:image/png;base64,AA==","h":40}"#);
-    assert_eq!(render(&El::new(Kind::ProgressRing { active: true }), &e), r#"{"t":"spinner"}"#);
+    // A ProgressRing's style centres it (C#'s capture: `ha:"center"` on a ring aligned only vertically).
+    assert_eq!(render(&El::new(Kind::ProgressRing { active: true }), &e), r#"{"t":"spinner","ha":"center","va":"center"}"#);
     let bar = El::new(Kind::ProgressBar { value: 0.45, max: 1.0, indeterminate: false });
     assert_eq!(render(&bar, &e), r#"{"t":"progress","value":0.45,"max":1,"indeterminate":false}"#);
     let info = El::new(Kind::InfoBar { open: true, title: Some("T".into()), message: None, severity: "warning" });
@@ -193,7 +196,7 @@ fn borders_rules_and_boxes() {
     });
     assert_eq!(
         render(&boxed, &e),
-        r#"{"t":"box","c":[{"t":"text","text":"in","size":14,"ink":"ink","nowrap":true}],"fill":"card-raised","line":[1,1,1,1],"lineInk":"line","pad":[4,1,4,1],"radius":6}"#
+        r#"{"t":"box","c":[{"t":"text","text":"in","size":14,"ink":"on-status","nowrap":true}],"fill":"card-raised","line":[1,1,1,1],"lineInk":"line","pad":[4,1,4,1],"radius":6}"#
     );
 }
 
@@ -210,8 +213,8 @@ fn a_grid_writes_its_cells_tracks_and_gaps() {
     assert_eq!(
         render(&grid, &dark()),
         concat!(
-            r#"{"t":"grid","c":[{"t":"text","text":"a","size":14,"ink":"ink","nowrap":true,"row":0,"col":0},"#,
-            r#"{"t":"text","text":"b","size":14,"ink":"ink","nowrap":true,"row":1,"col":2,"rowSpan":2,"colSpan":3}],"#,
+            r#"{"t":"grid","c":[{"t":"text","text":"a","size":14,"ink":"on-status","nowrap":true,"row":0,"col":0},"#,
+            r#"{"t":"text","text":"b","size":14,"ink":"on-status","nowrap":true,"row":1,"col":2,"rowSpan":2,"colSpan":3}],"#,
             r#""cols":["minmax(0,1fr)","minmax(0,0.45fr)","1000px","auto"],"rows":["auto","30px"],"gap":[2,8]}"#
         )
     );
@@ -238,7 +241,8 @@ fn controls_carry_their_ids_and_state() {
     let node: serde_json::Value = serde_json::from_str(&text).unwrap();
     let c = &node["c"];
     assert_eq!(c[0], json!({"t":"link","id":1,"label":"Guide"}));
-    assert_eq!(c[1], json!({"t":"check","id":2,"on":true,"label":"Never"}));
+    // A CheckBox's style aligns it left and centred (C#'s capture reads it so off every one not aligned otherwise).
+    assert_eq!(c[1], json!({"t":"check","id":2,"on":true,"label":"Never","ha":"start","va":"center"}));
     assert_eq!(c[2], json!({"t":"radio","id":3,"on":false,"label":"One"}));
     assert_eq!(c[3], json!({"t":"switch","id":4,"on":true,"name":"Sw"}));
     assert_eq!(c[4], json!({"t":"select","id":5,"index":1,"name":"Pick","items":["a","b"]}));
@@ -274,7 +278,7 @@ fn an_expander_writes_null_children_when_closed_and_its_header() {
     };
     assert_eq!(
         render(&open, &e),
-        r#"{"t":"expander","id":1,"open":true,"header":null,"c":[{"t":"text","text":"inside","size":14,"ink":"ink","nowrap":true}]}"#
+        r#"{"t":"expander","id":1,"open":true,"header":null,"c":[{"t":"text","text":"inside","size":14,"ink":"on-status","nowrap":true}]}"#
     );
 }
 
@@ -282,15 +286,24 @@ fn an_expander_writes_null_children_when_closed_and_its_header() {
 fn buttons_labels_inner_content_accent_destructive_and_menus() {
     let e = dark();
     with_ui(&e, |ui| {
-        assert_eq!(render(&ui.button("Save", || {}), &e), r#"{"t":"button","id":1,"name":"Save","label":"Save"}"#);
+        assert_eq!(
+            render(&ui.button("Save", || {}), &e),
+            r#"{"t":"button","id":1,"name":"Save","label":"Save","ha":"start","va":"center"}"#
+        );
         let plain = ui.settings_push(ui.button("Remove", || {}), ControlSize::Regular, false, true);
-        assert_eq!(render(&plain, &e), r#"{"t":"button","id":1,"name":"Remove","label":"Remove","destructive":true,"va":"center"}"#);
+        assert_eq!(
+            render(&plain, &e),
+            r#"{"t":"button","id":1,"name":"Remove","label":"Remove","destructive":true,"ha":"start","va":"center"}"#
+        );
         let prominent = ui.settings_push(ui.button("Install", || {}), ControlSize::Small, true, false);
-        assert_eq!(render(&prominent, &e), r#"{"t":"button","id":1,"name":"Install","label":"Install","accent":true,"va":"center"}"#);
+        assert_eq!(
+            render(&prominent, &e),
+            r#"{"t":"button","id":1,"name":"Install","label":"Install","accent":true,"ha":"start","va":"center"}"#
+        );
         let off = ui.settings_push(ui.button("Install", || {}).enabled(false), ControlSize::Regular, true, false);
         assert_eq!(
             render(&off, &e),
-            r#"{"t":"button","id":1,"name":"Install","label":"Install","accent":true,"va":"center","dim":true,"disabled":true}"#
+            r#"{"t":"button","id":1,"name":"Install","label":"Install","accent":true,"ha":"start","va":"center","dim":true,"disabled":true}"#
         );
         let mut glyph = ui.button("Reload", || {});
         glyph.button_mut().unwrap().content = ui.settings_glyph_label("\u{E72C}", "Reload", 11.0).into();
@@ -299,11 +312,11 @@ fn buttons_labels_inner_content_accent_destructive_and_menus() {
             render(&glyph, &e),
             concat!(
                 "{\"t\":\"button\",\"id\":1,\"name\":\"Reload\",\"c\":[{\"t\":\"stack\",\"dir\":\"h\",\"gap\":4,\"c\":[",
-                "{\"t\":\"glyph\",\"glyph\":\"\\uE72C\",\"size\":11,\"ink\":\"page\",\"va\":\"center\"},",
-                "{\"t\":\"text\",\"text\":\"Reload\",\"size\":11,\"ink\":\"page\",\"nowrap\":true,\"va\":\"center\"}],\"va\":\"center\"}],",
-                "\"accent\":true,\"va\":\"center\"}"
+                "{\"t\":\"glyph\",\"glyph\":\"\\uE72C\",\"size\":11,\"ink\":\"on-status\",\"va\":\"center\"},",
+                "{\"t\":\"text\",\"text\":\"Reload\",\"size\":11,\"ink\":\"on-status\",\"nowrap\":true,\"va\":\"center\"}],\"va\":\"center\"}],",
+                "\"accent\":true,\"ha\":\"start\",\"va\":\"center\"}"
             ),
-            "the content takes the prominent button's on-accent (by night the page's colour)"
+            "the content reads WinUI's stock ink, not the button's (C# reads a form before a template hands its Foreground down)"
         );
         let menu = ui.settings_menu_button(
             "Account",
@@ -329,7 +342,7 @@ fn buttons_labels_inner_content_accent_destructive_and_menus() {
         );
         assert_eq!(
             node["c"][0]["c"][1],
-            json!({"t":"box","c":[{"t":"glyph","glyph":"\u{E70D}","size":8,"ink":"ink","ha":"center","va":"center"}],"radius":4,"w":16,"h":16,"va":"center"})
+            json!({"t":"box","c":[{"t":"glyph","glyph":"\u{E70D}","size":8,"ink":"on-status","ha":"center","va":"center"}],"radius":4,"w":16,"h":16,"va":"center"})
         );
     });
 }

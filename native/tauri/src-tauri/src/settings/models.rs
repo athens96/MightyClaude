@@ -96,6 +96,10 @@ fn catalog(host: &Host, provider: &str) -> ModelCatalog {
     if let Some(catalog) = with(|m| m.catalogs.as_ref().and_then(|c| c.get(provider).cloned())) {
         return catalog;
     }
+    // A smoke shows the fallback catalogs, as C#'s does (its runtime is never read in a smoke): never this PC's CLIs' lists.
+    if host.smoke.is_some() {
+        return providers::fallback(provider);
+    }
     host.runs().map(|r| r.catalog_of(provider)).unwrap_or_else(|| providers::fallback(provider))
 }
 
@@ -347,10 +351,13 @@ fn registered(host: &Arc<Host>, ui: &mut Ui, provider: &phase_section::ProviderF
             false,
             false,
         )
+        // C#'s add button is a plain `Button { Content }`: no automation name of its own.
+        .named(String::new())
         .aid(format!("phaseModels-addButton-{p}"))
         .cell(0, 2);
     let add_row = El::grid(Grid {
-        children: vec![ui.settings_text(provider.add_label.clone(), TextStyle::default()), field.width(NAME_FIELD), add],
+        // The field takes its column's width (C# sets no width on it).
+        children: vec![ui.settings_text(provider.add_label.clone(), TextStyle::default()), field, add],
         cols: vec![Track::Star(1.0), Track::Pixel(NAME_FIELD), Track::Auto],
         col_spacing: metrics::SPACING_SM,
         ..Grid::default()

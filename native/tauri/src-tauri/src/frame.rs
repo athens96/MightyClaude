@@ -605,8 +605,12 @@ async fn add_pane_entry(host: &Arc<Host>, entry: &str, group: Option<String>, wo
 
 // ── the text size ──
 
-/// The saved text setting (C# `TextAppearanceStore.Load`) from the settings store the host was given, else the standard one.
+/// The saved text setting (C# `TextAppearanceStore.Load`) from the settings store the host was given, else the standard one; a
+/// smoke takes the standard one, as C#'s `AppText.Load(smokeTest)` does (never the user's own).
 fn saved_text(host: &Host) -> TextAppearance {
+    if host.smoke.is_some() {
+        return TextAppearance::default();
+    }
     let Some(prefs) = host.app.try_state::<Arc<dyn PrefsStore>>() else { return TextAppearance::default() };
     let read = |key: &str| prefs.get(key).ok().flatten();
     let text = |key: &str| match read(key) {

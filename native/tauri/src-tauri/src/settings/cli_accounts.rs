@@ -35,6 +35,7 @@ pub fn accounts(host: &Arc<Host>, ui: &mut Ui) -> El {
 
 /// Claude Mods (C# `BuildClaudeModsSection`, MainWindow.Settings.cs:145-153): Claude's runtime as the run engine read it.
 pub fn claude_mods(host: &Arc<Host>, ui: &mut Ui) -> El {
-    let claude = host.runs().and_then(|runs| runs.runtime("claude"));
+    // Not read yet in a smoke, as C#'s (see `accounts::providers_model`).
+    let claude = if host.smoke.is_some() { None } else { host.runs().and_then(|runs| runs.runtime("claude")) };
     mighty_accounts::view::claude_mods(ui, claude.as_ref())
 }

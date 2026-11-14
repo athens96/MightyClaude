@@ -11,6 +11,8 @@
 //! - The live keys (C# `RunWebLiveSmoke`): `settingsSections` (the headings the page showed, in its order, and D's CLI update rows, the
 //!   auto-update switch flipped and restored, in memory), `phaseModelsSection`, `phaseModelsActions` (the rendered controls clicked),
 //!   `completionNotification` (skipped as unsupported while the app may not change the machine, else sent).
+//! - `localeKeyLeakScan` (C# `RunSettingsLeakScan`), run by smoke.rs as the smoke finishes, after every other step: every W6 box's
+//!   words as the page would get them (each category's boxes and the setup list), at least 50, none a raw locale key.
 
 use std::sync::{Arc, Mutex};
 
@@ -158,8 +160,24 @@ fn model() -> std::sync::MutexGuard<'static, Option<ModelDialog>> {
 /// The smoke's model-id-style dialog (C#'s, built in `RunWebSettingsSmoke`): a field headed `composer.model.idHeader` and a note under
 /// it; its primary refused, the note set, while the words are no model id (`wire::model`, the composer's rule).
 fn open_model_dialog(host: &Arc<Host>) {
-    let locale = host.locale;
     let (text, note) = (Local::new(String::new()), Local::new(String::new()));
+    let spec = model_dialog(host.locale, text.clone(), note.clone());
+    *model() = Some(ModelDialog { text: Some(text), note: Some(note), answer: None });
+    let handle = crate::native::start_dialog(host, spec);
+    tauri::async_runtime::spawn(async move {
+        let answer = match handle.wait().await {
+            DialogResult::Primary => "primary",
+            DialogResult::Secondary => "secondary",
+            DialogResult::None => "none",
+        };
+        if let Some(dialog) = model().as_mut() {
+            dialog.answer = Some(answer);
+        }
+    });
+}
+
+/// The model-id-style dialog over its words `text` and its note `note` (no I/O).
+fn model_dialog(locale: mighty_core::locale::Locale, text: Local<String>, note: Local<String>) -> DialogSpec {
     let header = locale.get("composer.model.idHeader");
     let (typed, noted) = (text.clone(), note.clone());
     let mut spec = DialogSpec::new(locale.get("composer.model.enterIdTitle"), move |_| {
@@ -177,29 +195,19 @@ fn open_model_dialog(host: &Arc<Host>) {
         refused.set(locale.get("composer.model.invalidName"));
         false
     }));
-    *model() = Some(ModelDialog { text: Some(text), note: Some(note), answer: None });
-    let handle = crate::native::start_dialog(host, spec);
-    tauri::async_runtime::spawn(async move {
-        let answer = match handle.wait().await {
-            DialogResult::Primary => "primary",
-            DialogResult::Secondary => "secondary",
-            DialogResult::None => "none",
-        };
-        if let Some(dialog) = model().as_mut() {
-            dialog.answer = Some(answer);
-        }
-    });
+    spec
 }
 
-/// The terminal history over a shell pane holding "fixture answer 2" (C#'s smoke pane's record): the panel opens on its own task.
+/// The terminal history over a shell pane holding "fixture request 2" and "fixture answer 2" (C#'s smoke pane's last record, as its
+/// panel shows it): the panel opens on its own task.
 fn open_terminal_history(host: &Arc<Host>) -> Value {
     let pane = mighty_core::model::RunSession {
         id: Some("smoke-history-pane".into()),
         kind: Some("shell".into()),
         title: Some("Smoke shell".into()),
         logs: Some(vec![
-            mighty_core::model::LogEntry::new("l1".into(), "output", "fixture answer 1".into(), "2026-11-14T00:00:00Z".into(), None),
-            mighty_core::model::LogEntry::new("l2".into(), "output", "fixture answer 2".into(), "2026-11-14T00:00:01Z".into(), None),
+            mighty_core::model::LogEntry::new("l1".into(), "user", "fixture request 2".into(), "2026-11-14T00:00:00Z".into(), None),
+            mighty_core::model::LogEntry::new("l2".into(), "assistant", "fixture answer 2".into(), "2026-11-14T00:00:01Z".into(), None),
         ]),
         ..mighty_core::model::RunSession::default()
     };
@@ -497,6 +505,83 @@ async fn drive_phase_models(host: &Arc<Host>, catalogs: &std::collections::HashM
     Ok(())
 }
 
+/// Every W6 box at once, for the leak scan: each available category's boxes (`SettingsGroups`) and the setup screen's list, as
+/// Settings would show them now.
+struct EveryBox(Arc<Host>);
+
+impl SurfaceModel for EveryBox {
+    fn view(&mut self, ui: &mut Ui) -> View {
+        let locale = ui.locale();
+        let mut sections: Vec<Section> = available(&locale)
+            .into_iter()
+            .flat_map(|c| crate::settings::groups(&locale, c.id))
+            .map(|group| {
+                let body = (group.build)(&self.0, ui);
+                Section { title: Some(group.title), beta: group.beta, node: Some(ui.section_body(body)) }
+            })
+            .collect();
+        let setup = crate::setup::list(&self.0, ui);
+        sections.push(Section { title: Some(locale.get("setup.title")), beta: false, node: Some(ui.section_body(setup)) });
+        View::Settings {
+            title: locale.get("settings.title"),
+            close: locale.get("settings.closeButton"),
+            nav: vec![],
+            selected: String::new(),
+            sections,
+            width: 1.0,
+            height: 1.0,
+        }
+    }
+}
+
+/// The words a push shows (C# `CollectVisibleStrings`: a TextBlock's text and runs, a TextBox's text, a control's words, a tooltip;
+/// here also a header, a placeholder and a pop-up's items), depth first.
+fn visible_strings(value: &Value, out: &mut Vec<String>) {
+    const WORDS: [&str; 11] =
+        ["text", "label", "help", "header", "placeholder", "title", "subtitle", "close", "message", "tooltip", "value"];
+    match value {
+        Value::Object(map) => {
+            for (key, value) in map {
+                match value {
+                    Value::String(words) if WORDS.contains(&key.as_str()) && !words.is_empty() => out.push(words.clone()),
+                    Value::Array(items) if key == "items" || key == "options" => {
+                        for item in items {
+                            match item {
+                                Value::String(words) if !words.is_empty() => out.push(words.clone()),
+                                other => visible_strings(other, out),
+                            }
+                        }
+                    }
+                    other => visible_strings(other, out),
+                }
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|v| visible_strings(v, out)),
+        _ => {}
+    }
+}
+
+/// C# `RunSettingsLeakScan`, the smoke's last step: every W6 box's words as the page would get them, none of them a raw locale key
+/// (`LocaleKeyLeak.Detect`). `{scanned, leaks}`, as C# reports it.
+pub fn leak_scan(host: &Arc<Host>) -> Value {
+    const VIEW: &str = "smoke-leak-scan";
+    let surfaces = Surfaces::new();
+    surfaces.open(VIEW, Place::Surface, Box::new(EveryBox(host.clone())));
+    let push = surfaces.render(VIEW, &crate::native::env(host)).and_then(|push| serde_json::from_str::<Value>(&push).ok());
+    let mut strings = vec![];
+    if let Some(push) = &push {
+        visible_strings(push, &mut strings);
+    }
+    let keys = mighty_core::locale::keys();
+    let leaks = mighty_core::locale::key_leaks(strings.iter().map(String::as_str), &keys);
+    json!({"scanned": strings.len(), "leaks": leaks})
+}
+
+/// The leak scan's check: at least 50 strings read, none a key.
+pub fn leak_scan_passed(scan: &Value) -> bool {
+    scan.get("scanned").and_then(Value::as_u64).unwrap_or(0) >= 50 && scan.get("leaks").and_then(Value::as_array).is_some_and(Vec::is_empty)
+}
+
 /// The step's host side, for its probe: `state` (the theme, the saved category, whether Settings and a dialog are open),
 /// `terminalHistory`, `modelDialog` and `modelDialogState`, `live` (the live keys, over `args.headings`). Smoke only.
 #[tauri::command]
@@ -544,6 +629,35 @@ mod tests {
     /// Review L7: the settingsSections order is read off the page's headings: categories showing their boxes in `SettingsGroups`'
     /// order pass (Windows' CLI tab puts CLI Update last, as C# does); a heading dropped, shown twice or out of its category's order
     /// fails `smoke_run`.
+    /// The leak scan reads the words a push shows (texts, labels, headers, placeholders, a pop-up's items) and not its ids, inks or
+    /// automation ids; a key among them fails it, as do fewer than 50 strings.
+    #[test]
+    fn the_leak_scan_reads_the_shown_words() {
+        let push = json!({"kind": "settings", "title": "설정", "sections": [{"title": "화면", "node": {"t": "stack", "c": [
+            {"t": "text", "text": "settings.text.sectionTitle", "ink": "#FFFFFF"},
+            {"t": "combo", "id": 3, "aid": "settings-theme", "items": ["다크", "라이트"], "header": "테마"},
+            {"t": "field", "placeholder": "모델 ID", "text": ""}
+        ]}}]});
+        let mut strings = vec![];
+        visible_strings(&push, &mut strings);
+        assert_eq!(strings, ["설정", "화면", "settings.text.sectionTitle", "다크", "라이트", "테마", "모델 ID"]);
+        let keys = mighty_core::locale::keys();
+        let leaks = mighty_core::locale::key_leaks(strings.iter().map(String::as_str), &keys);
+        assert_eq!(leaks, ["settings.text.sectionTitle"]);
+        assert!(!leak_scan_passed(&json!({"scanned": 60, "leaks": leaks})));
+        assert!(!leak_scan_passed(&json!({"scanned": 49, "leaks": []})));
+        assert!(leak_scan_passed(&json!({"scanned": 50, "leaks": []})));
+    }
+
+    /// The model-id-style dialog against C#'s capture (`mighty-native/tests/golden/model-dialog.json`, plan W6 §1.8): as the page
+    /// first got it, the field empty.
+    #[test]
+    fn the_model_dialog_matches_cs() {
+        let spec = model_dialog(mighty_core::locale::Locale::new("ko"), Local::new(String::new()), Local::new(String::new()));
+        let golden = include_str!("../../crates/mighty-native/tests/golden/model-dialog.json");
+        assert_eq!(crate::native::golden_dialog(spec), golden.trim_end());
+    }
+
     #[test]
     fn the_section_headings_come_from_the_page() {
         let locale = mighty_core::locale::Locale::new("en");

@@ -397,14 +397,21 @@ pub struct El {
 }
 
 impl El {
+    /// An element with WinUI's defaults: a Button's and a CheckBox's style aligns it left and centred, a ProgressRing's centres it
+    /// (C#'s capture reads `ha:"start"`/`"center"`, `va:"center"` off every one not aligned otherwise), every other element stretches.
     pub fn new(kind: Kind) -> El {
+        let (ha, va) = match kind {
+            Kind::Button(_) | Kind::CheckBox { .. } => (HAlign::Left, VAlign::Center),
+            Kind::ProgressRing { .. } => (HAlign::Center, VAlign::Center),
+            _ => (HAlign::Stretch, VAlign::Stretch),
+        };
         El {
             kind,
             visible: true,
             opacity: 1.0,
             margin: Thickness::ZERO,
-            ha: HAlign::Stretch,
-            va: VAlign::Stretch,
+            ha,
+            va,
             width: None,
             height: None,
             max_width: None,

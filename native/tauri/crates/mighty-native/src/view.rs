@@ -67,6 +67,11 @@ pub struct ChromeView {
     pub actions: Option<El>,
 }
 
+/// WinUI's `ContentDialogMaxWidth`: a dialog's width when it set none.
+pub const CONTENT_DIALOG_MAX_WIDTH: f64 = 548.0;
+/// WinUI's `ContentDialogMaxHeight`: a dialog's height when it set none.
+pub const CONTENT_DIALOG_MAX_HEIGHT: f64 = 756.0;
+
 /// A view (`NativeView`).
 #[allow(clippy::large_enum_variant, reason = "built once per read and written at once; never kept or moved around")]
 pub enum View {
@@ -212,8 +217,10 @@ impl View {
                     out.end_object();
                 }
                 out.end_array();
-                out.prop_opt_float("width", *width);
-                out.prop_opt_float("height", *height);
+                // C# reads `ContentDialogMaxWidth`/`MaxHeight` off the dialog's resources, which answer WinUI's own when the dialog
+                // set none (C#'s capture: 548 and 756 for a plain ContentDialog).
+                out.prop_float("width", width.unwrap_or(CONTENT_DIALOG_MAX_WIDTH));
+                out.prop_float("height", height.unwrap_or(CONTENT_DIALOG_MAX_HEIGHT));
             }
             View::Companion { title, body } => {
                 out.prop_str("kind", Some("companion"));

@@ -64,6 +64,16 @@ impl Theme {
         Brush::of(self.palette()[token], opacity)
     }
 
+    /// WinUI's own `TextFillColorPrimaryBrush` for the theme (white by night, black at 0xE4 by day): what a TextBlock with no ink of
+    /// its own inherits in C#'s hidden form host, outside the window's `DesignBrushes` (the capture reads it as `on-status` by night
+    /// and as no name by day).
+    pub fn stock_text(self) -> Brush {
+        match self {
+            Theme::Dark => Brush(0xFFFF_FFFF),
+            Theme::Light => Brush(0xE400_0000),
+        }
+    }
+
     /// C# `brushes.Tertiary`: `ink` at [`TERTIARY_OPACITY`].
     pub fn tertiary(self) -> Brush {
         self.brush_at(Token::Ink, TERTIARY_OPACITY)

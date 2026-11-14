@@ -208,7 +208,7 @@ pub fn busy(host: &Host, provider: &str) -> bool {
 
 /// `accounts::start_sign_in`: C# `StartCliSignIn(provider, option)` — the CLI's own sign-in in a terminal window, then its status
 /// polled until it reads signed in. `option`: `console`, `bedrock`, else the account.
-#[allow(dead_code, reason = "a seam W6-B (the setup screen's sign-in row) calls")]
+#[allow(dead_code, reason = "a seam for the panes; the setup screen awaits start_cli_sign_in to say its refusal")]
 pub fn start_sign_in(host: &Arc<Host>, provider: &str, option: Option<&str>) {
     let option = match option {
         Some("console") => CliLoginOption::Console,
@@ -858,8 +858,9 @@ fn say(host: &Host, provider: &str, message: Option<String>) {
 }
 
 /// `StartCliSignIn`: the CLI's own sign-in in a terminal window, then the wait (`AwaitTerminalSignIn`); the account is held only
-/// while the terminal opens. Bedrock's setup holds it until its window closes, then the status is read once.
-async fn start_cli_sign_in(host: &Arc<Host>, provider: &str, option: CliLoginOption) -> Result<(), String> {
+/// while the terminal opens. Bedrock's setup holds it until its window closes, then the status is read once. Its refusal is the
+/// caller's to say (the setup screen's message, the row's failure).
+pub(crate) async fn start_cli_sign_in(host: &Arc<Host>, provider: &str, option: CliLoginOption) -> Result<(), String> {
     if of(host).closed.load(Ordering::SeqCst) {
         return Ok(());
     }
@@ -1181,6 +1182,10 @@ fn model_of(
 
 /// The providers box's model: the run engine's runtime per provider, and the recheck under way.
 pub fn providers_model(host: &Host) -> mighty_accounts::view::ProvidersModel {
+    // A smoke shows the runtime as not read yet, as C#'s does (it never reads it in a smoke): never this PC's CLIs.
+    if host.smoke.is_some() {
+        return mighty_accounts::view::ProvidersModel { runtime: vec![], checking: of(host).checking_runtime.load(Ordering::SeqCst) };
+    }
     let runtime = host.runs().map(|runs| mighty_core::wire::PROVIDERS.iter().filter_map(|p| runs.runtime(p)).collect()).unwrap_or_default();
     mighty_accounts::view::ProvidersModel { runtime, checking: of(host).checking_runtime.load(Ordering::SeqCst) }
 }
