@@ -23,7 +23,7 @@
   "antigravity.permission.kind.other": "操作",
   "antigravity.permission.kind.url": "地址",
   "antigravity.permission.noRule": "此操作无法通过规则允许。请更改权限模式后重新请求。",
-  "antigravity.permission.onceOnly": "此命令会串联、使用管道、重定向或可能删除数据，因此只能允许一次。",
+  "antigravity.permission.onceOnly": "此命令会串联、使用管道、重定向、可能删除数据，或含有字母、数字和 ._/:=@+,- 以外的字符（引号、$、~、% 等），因此只能允许一次。",
   "antigravity.permission.onceOnlyAgyFolder": "此命令涉及 Antigravity 自己的设置文件夹（.gemini），因此只能允许一次。",
   "antigravity.permission.onceOnlyInterpreter": "此命令会启动 shell、解释器或运行其他代码的包装程序（如 bash、python -c、npx），因此只能允许一次。",
   "antigravity.permission.rule": "规则：{rule}（文件夹规则涵盖其中的所有内容）",

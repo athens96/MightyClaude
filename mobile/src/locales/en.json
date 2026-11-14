@@ -23,7 +23,7 @@
   "antigravity.permission.kind.other": "Action",
   "antigravity.permission.kind.url": "Address",
   "antigravity.permission.noRule": "No rule can allow this. Change the permission mode and ask again.",
-  "antigravity.permission.onceOnly": "This command chains, pipes, redirects or may destroy data, so it can only be allowed once.",
+  "antigravity.permission.onceOnly": "This command chains, pipes, redirects, may destroy data or holds more than plain letters, digits and ._/:=@+,- (quotes, $, ~, % and the like), so it can only be allowed once.",
   "antigravity.permission.onceOnlyAgyFolder": "This command touches Antigravity's own settings folder (.gemini), so it can only be allowed once.",
   "antigravity.permission.onceOnlyInterpreter": "This command starts a shell, an interpreter or a wrapper that runs other code (bash, python -c, npx and the like), so it can only be allowed once.",
   "antigravity.permission.rule": "Rule: {rule} (a folder rule covers everything in it)",

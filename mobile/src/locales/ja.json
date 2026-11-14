@@ -23,7 +23,7 @@
   "antigravity.permission.kind.other": "操作",
   "antigravity.permission.kind.url": "アドレス",
   "antigravity.permission.noRule": "この操作はルールで許可できません。権限モードを変更してからもう一度依頼してください。",
-  "antigravity.permission.onceOnly": "このコマンドはコマンドをつなぐ、パイプやリダイレクトを使う、またはデータを消す可能性があるため、今回のみ許可できます。",
+  "antigravity.permission.onceOnly": "このコマンドはコマンドをつなぐ、パイプやリダイレクトを使う、データを消す可能性がある、または英数字と ._/:=@+,- 以外の文字(引用符、$、~、% など)を含むため、今回のみ許可できます。",
   "antigravity.permission.onceOnlyAgyFolder": "Antigravity自身の設定フォルダー(.gemini)に触れるコマンドのため、今回のみ許可できます。",
   "antigravity.permission.onceOnlyInterpreter": "シェルやインタープリター、ほかのコードを実行するラッパー(bash、python -c、npxなど)を起動するコマンドのため、今回のみ許可できます。",
   "antigravity.permission.rule": "ルール: {rule}（フォルダーのルールはその中のすべてを許可）",
