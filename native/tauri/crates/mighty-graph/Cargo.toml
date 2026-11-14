@@ -7,6 +7,14 @@ license.workspace = true
 publish.workspace = true
 rust-version.workspace = true
 
+# mighty-run's stand-in agent CLI (its tests/fake/cli.rs, std and serde_json only), built here too so this crate's tests can run real
+# ACP runs through the run engine with the real tracker (tests/acp_graphs.rs): a `[[bin]]` is only named by its own package's tests.
+[[bin]]
+name = "mighty-graph-fake-cli"
+path = "../mighty-run/tests/fake/cli.rs"
+test = false
+doc = false
+
 [dependencies]
 mighty-core.workspace = true
 # The run engine's graph seam (`run.rs`): mighty-run never reads this crate, so the two have no cycle.
@@ -19,3 +27,10 @@ sha2.workspace = true
 regex.workspace = true
 percent-encoding.workspace = true
 chrono.workspace = true
+
+[dev-dependencies]
+mighty-platform.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt", "rt-multi-thread", "macros"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+mighty-platform-windows.workspace = true
