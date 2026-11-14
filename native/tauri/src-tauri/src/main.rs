@@ -324,6 +324,8 @@ fn main() {
             app.manage(platform.prefs.clone());
             // W6's ports: the terminal window, the font families, the HTTPS GET (platform.rs; a smoke's fakes).
             app.manage(platform::ports(host.smoke.is_some()));
+            // The pseudo consoles, for a CLI's hidden background sign-in (accounts.rs, W6-C).
+            app.manage(platform.ptys.clone());
             // Completion notifications: registered with the OS only with --allow-state-write, never in a smoke (notifications.rs).
             if host.smoke.is_none() {
                 notifications::start(&host);
@@ -418,6 +420,8 @@ fn main() {
             if let Some(host) = app.try_state::<Arc<Host>>() {
                 // The model lists read and reconcile nothing more (C# `modelRefreshes?.Shutdown()`, before the last save).
                 models::shutdown(&host);
+                // The account usage's pending reads cancelled (usage.rs, W6-C).
+                tauri::async_runtime::block_on(usage::shutdown(&host));
                 // Every terminal closed first (C# CloseTerminalsAsync), the wait bounded.
                 terminal::close_all(app);
                 // The last save (C# DesktopService.DisposeAsync), written only with --allow-state-write.

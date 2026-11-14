@@ -9,8 +9,9 @@ use std::path::PathBuf;
 
 use crate::{BoxFuture, Result};
 
-/// A command to open in a terminal window.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// A command to open in a terminal window. Its `Debug` names the environment's variables, never their values (a CLI environment can
+/// hold credentials).
+#[derive(Clone, PartialEq, Eq, Default)]
 pub struct TerminalLaunch {
     /// The command and its arguments, handed on as a list: no command line is ever made from text.
     pub argv: Vec<String>,
@@ -24,6 +25,19 @@ pub struct TerminalLaunch {
     pub environment: BTreeMap<String, String>,
     /// False: the system's own console window even where a terminal app is installed (C#: Bedrock's setup).
     pub prefer_terminal_app: bool,
+}
+
+impl std::fmt::Debug for TerminalLaunch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TerminalLaunch")
+            .field("argv", &self.argv)
+            .field("resolved", &self.resolved)
+            .field("directory", &self.directory)
+            .field("title", &self.title)
+            .field("environment", &self.environment.keys().collect::<Vec<_>>())
+            .field("prefer_terminal_app", &self.prefer_terminal_app)
+            .finish()
+    }
 }
 
 /// A window opened.
@@ -40,4 +54,25 @@ pub trait TerminalWindow: Send + Sync {
 /// when the command is empty or cannot start.
 pub trait TerminalLauncher: Send + Sync {
     fn open(&self, launch: TerminalLaunch) -> Result<Box<dyn TerminalWindow>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A launch's `Debug` names the variables and never prints their values.
+    #[test]
+    fn debug_names_the_environment_without_its_values() {
+        let launch = TerminalLaunch {
+            argv: vec!["claude".into(), "/login".into()],
+            environment: BTreeMap::from([
+                ("ANTHROPIC_API_KEY".to_string(), "sk-secret-value".to_string()),
+                ("PATH".to_string(), "C:\\bin".to_string()),
+            ]),
+            ..TerminalLaunch::default()
+        };
+        let text = format!("{launch:?}");
+        assert!(text.contains("ANTHROPIC_API_KEY") && text.contains("PATH") && text.contains("/login"));
+        assert!(!text.contains("sk-secret-value") && !text.contains("C:\\\\bin"), "{text}");
+    }
 }
