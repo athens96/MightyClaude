@@ -88,7 +88,7 @@ const PROBE: &str = r#"(async () => {
     await settled(async (s) => s.search === '' && s.filter === '');
     c.aids = aids();
     c.dialogButtons = view()?.querySelectorAll('[data-testid^=native-button-]').length ?? -1;
-    c.reloadText = words('claude', 'reload');
+    c.reloadText = (q('claude', 'reload')?.querySelector('.native-text')?.textContent ?? '').trim();
     press('claude', 'reload');
     await until(async () => (await panel()).reads >= 2 && words('claude', 'load-status').length > 0, 10000);
     c.reloadedStatus = words('claude', 'load-status');
@@ -148,6 +148,7 @@ const PROBE: &str = r#"(async () => {
     press('claude', 'install-docs@sample');
     await until(async () => { const s = await panel(); return !s.mutating && s.result.length > 0 && words('claude', 'operation-result') === s.result; }, 10000);
     m.installResult = words('claude', 'operation-result');
+    m.resultAids = aids();
     press('claude', 'refresh-marketplaces');
     await until(async () => { const s = await panel(); return !s.mutating && s.result !== m.installResult && words('claude', 'operation-result') === s.result; }, 10000);
     m.refreshResult = words('claude', 'operation-result');
@@ -314,7 +315,9 @@ pub fn checks(report: &Value) -> Vec<(&'static str, bool)> {
     let market_aids = strings_of(m, "aids");
     let held_aids = strings_of(m, "heldAids");
     let id = |part: &str| support::automation_id("claude", part);
-    let marketplace_wired = ["scope-picker", "refresh-marketplaces", "operation-result"].iter().all(|part| market_aids.contains(&id(part)))
+    let result_aids = strings_of(m, "resultAids");
+    let marketplace_wired = ["scope-picker", "refresh-marketplaces"].iter().all(|part| market_aids.contains(&id(part)))
+        && result_aids.contains(&id("operation-result"))
         && ["cancel-operation", "operation-progress"].iter().all(|part| held_aids.contains(&id(part)))
         && ["fmt@sample", "docs@sample", "ship@other"].iter().all(|plugin| market_aids.contains(&id(&format!("install-{plugin}"))));
     let (before, after) = (m.get("before").unwrap_or(&empty), m.get("after").unwrap_or(&empty));
@@ -475,7 +478,8 @@ async fn automatic(host: &Arc<Host>) -> Result<Value, String> {
     let (busy, _, hold) = composer_of(host, &id);
     updates.automatic.set_holding(None, false);
     crate::updates::notify(host);
-    let released = !crate::updates::holds(host, &host.view().snapshot.clone(), &pane) && !composer_of(host, &id).0;
+    let snapshot = host.view().snapshot.clone();
+    let released = !crate::updates::holds(host, &snapshot, &pane) && !composer_of(host, &id).0;
     report["sameProviderLocalHeld"] =
         json!(held && !codex_held && busy && hold.as_deref() == Some(mighty_run::strings::provider_label("claude")) && released);
 
