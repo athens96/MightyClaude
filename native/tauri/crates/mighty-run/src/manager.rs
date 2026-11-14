@@ -2149,6 +2149,13 @@ impl Exec {
                             exec.run.authentication_failure.store(false, Ordering::SeqCst);
                         }
                     }
+                    // The CLI's own turn result is marked seen before anything of it reaches the pane (consume shows the turn's end and
+                    // the background agents it leaves waiting): a steer sent on what the pane shows comes after the mark, so its reset
+                    // holds. Touched first, so the idle close never acts on the mark before the line is read.
+                    if exec.run.channel().is_some() && stream::is_turn_result(&line) {
+                        exec.run.touch();
+                        exec.run.turn_result_seen.store(true, Ordering::SeqCst);
+                    }
                     exec.consume(&line);
                     if request.provider == "gemini" {
                         Self::publish_antigravity_cards(&exec).await;
@@ -2156,9 +2163,6 @@ impl Exec {
                     // EOF only after the CLI's own turn result; background tasks still running keep it open longer.
                     exec.run.touch();
                     if exec.run.channel().is_some() && stream::is_settle_point(&line) {
-                        if stream::is_turn_result(&line) {
-                            exec.run.turn_result_seen.store(true, Ordering::SeqCst);
-                        }
                         exec.settle_input();
                     }
                 }

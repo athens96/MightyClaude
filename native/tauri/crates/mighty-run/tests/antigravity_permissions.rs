@@ -654,8 +654,12 @@ impl Folder {
             probe,
         )
     }
+    /// A refused removal is tried again after pauses of seconds (1 s, then 2 s), as the app's own are (250 ms, 1 s, 3 s): right after
+    /// the settings are written another process (most likely Windows Defender's scan) can hold them for a second or so, and the swap
+    /// is refused meanwhile (`ERROR_ACCESS_DENIED`). With pauses of milliseconds every try met it, the removal waited for the next
+    /// release, and a check that the rule is gone once settled failed.
     fn leases(&self) -> AntigravityRuleLeases {
-        self.leases_with(10, 0)
+        self.leases_with(1000, 0)
     }
 }
 
@@ -957,7 +961,7 @@ fn a_rule_agy_writes_back_is_taken_out_again() {
     english();
     let folder = Folder::new("written-back");
     folder.make(Some(&real()));
-    let leases = folder.leases_with(10, 300);
+    let leases = folder.leases_with(1000, 300);
     let lease = leases.apply(&grant("agy-1", true, &["command(echo hi)"])).unwrap().unwrap();
     let with_rule = folder.text().unwrap();
     leases.release(&lease);
@@ -1010,7 +1014,8 @@ fn what_a_crash_left_is_removed_at_the_next_launch() {
     folder.leases().apply(&grant("agy-2", true, &["command(echo hi)"])).unwrap();
     let saved = folder.text().unwrap();
     std::fs::write(folder.settings_path(), "{ broken").unwrap();
-    folder.leases().remove_leftovers();
+    // Every try fails here, so the pauses between them are short.
+    folder.leases_with(10, 0).remove_leftovers();
     assert!(folder.ledger().exists(), "kept while the settings cannot be read");
     std::fs::write(folder.settings_path(), saved).unwrap();
     let last = folder.leases();
@@ -1027,12 +1032,16 @@ fn what_a_crash_left_in_the_other_ledger_goes_too() {
     let folder = Folder::new("other-ledger");
     folder.make(Some(&real()));
     let other = folder.root.join("local").join("antigravity-temporary-rules.json");
+    // The launches that crash never look again: their pause before it outlasts the check. (The second one's apply finds the first
+    // rule pending in that ledger; a look left to run, which nothing waits for, lets go of it at the moment the next launch's look
+    // does, and of two deletes of one ledger at once one fails with ERROR_ACCESS_DENIED: the check could find the ledger still
+    // there, pending deletion and unreadable.)
     let elsewhere = |path: &Path| {
         AntigravityRuleLeases::with_ports(
             &folder.settings_path(),
             Some(path),
             Some(vec![Duration::from_millis(10)]),
-            Some(Duration::from_millis(0)),
+            Some(Duration::from_secs(3600)),
             leases::portable_replace,
             common::path_probe(),
         )
