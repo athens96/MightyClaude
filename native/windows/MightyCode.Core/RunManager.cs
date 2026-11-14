@@ -653,10 +653,14 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         }
         _ = Task.Delay(TimeSpan.FromSeconds(2)).ContinueWith(_ => { if (run.Finished || child.Completion.IsCompleted) return; run.AcpEnding = true; child.Kill(); }, TaskScheduler.Default);
     }
-    /// <summary>Hermes's turn runs in its gateway: <c>session/cancel</c> goes first, and the process ends a second later (M/ProcessRunner.swift cancelGrace).</summary>
+    /// <summary>
+    /// Hermes's turn runs in its gateway: <c>session/cancel</c> goes first, and the process ends a second later (M/ProcessRunner.swift cancelGrace).
+    /// Before it, the permission requests waiting on the user are answered <c>cancelled</c> (<see cref="AcpChannel.CancelTurn"/>).
+    /// </summary>
     private static void StopHermes(Run run, ChildProcess child)
     {
-        if (run.Acp?.Cancellation.Take() is not { } frame) { child.Kill(); return; }
+        if (run.Acp is not { } acp || acp.Cancellation.Take() is not { } frame) { child.Kill(); return; }
+        acp.CancelTurn();
         lock (run.InputGate)
         {
             try { if (Volatile.Read(ref run.AcpInputClosed) == 0) { child.Input.Write(frame); child.Input.Flush(); } } catch (IOException) { } catch (ObjectDisposedException) { }
@@ -673,10 +677,13 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             try { child.Input.Close(); } catch (IOException) { } catch (ObjectDisposedException) { }
         }
     }
-    /// <summary>이번만 허용 / 거부 for one waiting request of one run. Nothing else is ever returned.</summary>
+    /// <summary>
+    /// 이번만 허용 / 거부 for one waiting request of one run. Nothing else is ever returned. Once a stop has begun (Hermes's second of grace
+    /// after its <c>session/cancel</c>, say) the request is settled, as the questionnaire's answer is.
+    /// </summary>
     public void RespondToToolPermission(string sessionId, string requestId, bool allow)
     {
-        if (!runs.TryGetValue(sessionId, out var run)) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
+        if (!runs.TryGetValue(sessionId, out var run) || run.Finalizing || run.Finished || run.Cancel.IsCancellationRequested) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
         if (run.CodexPermissions is { } codex) codex.Respond(requestId, allow);
         else if (run.Acp is { } acp) acp.Respond(requestId, allow);
         else if (run.PiDialogs is { } dialogs) dialogs.Respond(requestId, allow);

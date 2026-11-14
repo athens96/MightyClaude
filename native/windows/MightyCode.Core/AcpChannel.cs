@@ -54,6 +54,8 @@ public sealed class AcpChannel
     private JsonArray configOptions = [];
     private int sequence;
     private bool canResume, canLoad, replaying, closed, started;
+    /// <summary>The turn is being cancelled (<see cref="CancelTurn"/>): no answer of the user's leaves the channel any more.</summary>
+    private bool turnCancelled;
     /// <summary>The tool call the agent opened last and has not settled: a form that names no call of its own (Hermes's clarify) is that call's question.</summary>
     private string? openCall;
 
@@ -301,7 +303,8 @@ public sealed class AcpChannel
         if (method == "elicitation/create") { Elicitation(rawId, key, parameters); return; }
         // No file system or terminal was offered: anything else is not this client's.
         if (method != "session/request_permission") { Send(new JsonObject { ["jsonrpc"] = "2.0", ["id"] = rawId.DeepClone(), ["error"] = new JsonObject { ["code"] = -32601, ["message"] = "Method not supported by this client." } }); return; }
-        if (SessionId is not { } session || Text(parameters["sessionId"]) != session || parameters["toolCall"] is not JsonObject call)
+        // A request that comes once the turn is being cancelled is answered so at once, as the protocol asks of the client.
+        if (turnCancelled || SessionId is not { } session || Text(parameters["sessionId"]) != session || parameters["toolCall"] is not JsonObject call)
         {
             Reply(rawId, new JsonObject { ["outcome"] = new JsonObject { ["outcome"] = "cancelled" } }); return;
         }
@@ -377,7 +380,7 @@ public sealed class AcpChannel
     {
         lock (sync)
         {
-            if (closed || !pending.TryGetValue(requestId, out var ask) || ask.Asked is not { } asked) throw new InvalidOperationException(Locale.Get("permission.error.questionGone"));
+            if (closed || turnCancelled || !pending.TryGetValue(requestId, out var ask) || ask.Asked is not { } asked) throw new InvalidOperationException(Locale.Get("permission.error.questionGone"));
             var checkedAnswers = AgentQuestions.Answers(ask.Display, answers);
             if (asked.Form is { } form)
             {
@@ -405,7 +408,7 @@ public sealed class AcpChannel
     {
         lock (sync)
         {
-            if (closed || !pending.TryGetValue(requestId, out var ask)) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
+            if (closed || turnCancelled || !pending.TryGetValue(requestId, out var ask)) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
             if (allow && ask.AllowOption is null) throw new InvalidOperationException(Locale.Get("acp.channel.denyOnly"));
             pending.Remove(requestId);
             if (ask.Asked?.Form is not null) Reply(ask.RpcId, new JsonObject { ["action"] = "decline" });
@@ -427,6 +430,30 @@ public sealed class AcpChannel
         var value = ask.Display with { State = "cancelled" };
         if (ask.Asked is null) activity(value, "stopped");
         emit(value);
+    }
+
+    /// <summary>
+    /// The turn is being cancelled (RunManager.StopHermes writes <c>session/cancel</c> right after): every <c>session/request_permission</c>
+    /// still waiting on the user is answered <c>cancelled</c>, as the protocol asks of a client that cancels a turn ("The Client MUST respond to
+    /// all pending session/request_permission requests with the cancelled outcome", agentclientprotocol.com, prompt turn: cancellation), one
+    /// that comes later is answered so at once, and no answer of the user's leaves the channel after this. A form (elicitation/create) is no
+    /// permission request: it stays until the run ends. What the agent still streams is read as before.
+    /// </summary>
+    public void CancelTurn()
+    {
+        lock (sync)
+        {
+            if (closed || turnCancelled) return;
+            turnCancelled = true;
+            foreach (var (id, ask) in pending.Where(p => p.Value.Asked?.Form is null).ToList())
+            {
+                pending.Remove(id);
+                Answer(ask.RpcId, null);
+                var value = ask.Display with { State = "cancelled" };
+                if (ask.Row) activity(value, "stopped");
+                emit(value);
+            }
+        }
     }
 
     public void CancelAll() { lock (sync) CancelAllLocked(); }

@@ -630,12 +630,14 @@ internal static class Verification
         await Test("acp hermes: the clarify config value is the Mac's", AcpVerification.TheClarifyConfigValueIsTheMacs);
         await Test("acp: attached copies are named in the prompt and pictures are image blocks", AcpVerification.AttachedCopiesAreNamedInThePromptAndPicturesAreImageBlocks);
         await Test("acp hermes: a session is continued only where its yolo and its answers allow", AcpVerification.AHermesSessionIsContinuedOnlyWhereItsYoloAndAnswerAllow);
+        await Test("acp hermes: a cancelled turn answers its waiting permissions cancelled", AcpVerification.ACancelledTurnAnswersItsWaitingPermissionsCancelled);
         await Test("acp run: an opencode run speaks ACP, completes whether its server exits or is ended, and its graph is the answer with its tokens", AcpRunVerification.AnOpencodeRunSpeaksAcpAndCompletesWhetherTheServerExitsOrIsEnded);
         await Test("acp run: an opencode request's block keeps its replies and tool rows, a sub-agent's text kept out", AcpRunVerification.AnOpencodeRunsBlockKeepsItsRepliesAndToolRows);
         await Test("acp run: a signed-out opencode run ends in error with the sign-in reason", AcpRunVerification.ASignedOutOpencodeRunEndsInErrorWithTheSignInReason);
         await Test("acp run: an OpenCode 1 is not run and asks for OpenCode 2", AcpRunVerification.AnOpenCode1IsNotRunAndAsksForOpenCode2);
         await Test("acp run: Hermes gets full access as yolo, its edit policy, clarify turned on once, and a graph of its answer without tokens", AcpRunVerification.AHermesRunGivesFullAccessAsYoloAndTurnsClarifyOnOnce);
         await Test("acp run: a stop tells Hermes to cancel the turn before the process ends", AcpRunVerification.AStopTellsHermesToCancelTheTurnBeforeTheProcessEnds);
+        await Test("acp run: a stop answers a waiting permission cancelled and refuses a later allow", AcpRunVerification.AStopAnswersAWaitingPermissionCancelledAndRefusesALaterAllow);
         // Antigravity permission cards, ported from the Mac's AntigravityPermissionTests over the shared fixture.
         await Test("antigravity cards: every fixture turn gives its actions", AntigravityPermissionVerification.EveryFixtureTurnGivesItsActions);
         await Test("antigravity cards: without a card the older notice stays", AntigravityPermissionVerification.WithoutACardTheOlderNoticeStays);

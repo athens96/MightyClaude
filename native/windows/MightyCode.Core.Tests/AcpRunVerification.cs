@@ -17,7 +17,7 @@ internal static class AcpRunVerification
     /// <summary>The stand-in agent (Program.cs <c>--fake-acp state fixture [--fake-…] args</c>).</summary>
     internal static async Task FakeAcpAsync(string state, string fixture, string[] rest)
     {
-        var linger = rest.Contains("--fake-linger"); var stall = rest.Contains("--fake-stall");
+        var linger = rest.Contains("--fake-linger"); var stall = rest.Contains("--fake-stall"); var holdPermission = rest.Contains("--fake-hold-permission");
         var args = rest.Where(a => !a.StartsWith("--fake-", StringComparison.Ordinal)).ToArray();
         await using var stdout = Console.OpenStandardOutput();
         async Task Say(string text) { await stdout.WriteAsync(Encoding.UTF8.GetBytes(text)); await stdout.FlushAsync(); }
@@ -54,9 +54,11 @@ internal static class AcpRunVerification
                 File.AppendAllText(stdin, request + "\n");
             }
             await Say(line + "\n");
+            // The turn waits on its first permission request, as Hermes does until it is answered.
+            if (holdPermission && line.Contains("\"session/request_permission\"", StringComparison.Ordinal)) break;
         }
         while (await input.ReadLineAsync() is { } extra) File.AppendAllText(stdin, extra + "\n");
-        if (linger || stall) await Task.Delay(60_000);
+        if (linger || stall || holdPermission) await Task.Delay(60_000);
     }
 
     private static ProviderCatalog Fake(string provider, string state, string fixture, string version, params string[] options) =>
@@ -228,6 +230,42 @@ internal static class AcpRunVerification
             Check(events.Last(e => e.Type == "status").Status == "stopped", "stopped");
             var stdin = Lines(Path.Combine(directory, "stdin.txt"));
             Check(stdin.Any(l => l.Contains("\"session/cancel\"") && l.Contains(AcpVerification.HermesSession)), "session/cancel went before the end: " + string.Join(" | ", stdin));
+        }
+        finally { try { Directory.Delete(directory, true); } catch (IOException) { } HermesQuestionTool.Reset(); }
+    }
+
+    /// <summary>
+    /// S-B4 and B11 (M/Tests/MightyCoreTests/HermesTests.swift aStopAnswersAWaitingPermissionCancelledAndRefusesALaterAllow): a stop answers
+    /// the permission request Hermes waits on <c>cancelled</c> before its <c>session/cancel</c>, as the protocol asks of a client that cancels a
+    /// turn, and an Allow pressed once the stop began is refused as already settled and never reaches Hermes in its second of grace.
+    /// </summary>
+    internal static async Task AStopAnswersAWaitingPermissionCancelledAndRefusesALaterAllow()
+    {
+        HermesQuestionTool.Reset();
+        var directory = Verification.Temp();
+        try
+        {
+            var events = new ConcurrentQueue<RunEvent>(); var asks = new ConcurrentQueue<ToolPermissionRequest>(); var workspace = new Workspace { Path = directory };
+            File.WriteAllText(Path.Combine(directory, "hermes-config.json"), "{\"platform_toolsets.acp\":[\"hermes-acp\",\"clarify\"]}");
+            await using var catalog = Fake("hermes", directory, "tools", "Hermes Agent v0.23.1", "--fake-hold-permission");
+            string askId;
+            await using (var manager = new RunManager(_ => Task.FromResult(workspace), catalog, "", events.Enqueue, asks.Enqueue))
+            {
+                await manager.StartAsync(new("pane", workspace.Id, "claude", "edit the note", [], Provider: "hermes"));
+                await Verification.Until(() => asks.Any(a => a.State == "pending") && Lines(Path.Combine(directory, "stdin.txt")).Any(l => l.Contains("\"session/prompt\"")), 30_000);
+                askId = asks.First(a => a.State == "pending").Id;
+                var stopping = manager.StopAsync("pane");
+                try { manager.RespondToToolPermission("pane", askId, true); throw new InvalidOperationException("an Allow after the stop began went through"); }
+                catch (InvalidOperationException ex) when (ex.Message == ToolPermissionStrings.AlreadySettled) { }
+                await stopping;
+                await Verification.Until(() => events.Any(Ended), 30_000);
+            }
+            Check(events.Last(e => e.Type == "status").Status == "stopped", "stopped");
+            var stdin = Lines(Path.Combine(directory, "stdin.txt"));
+            var answered = Array.FindIndex(stdin, l => l.Contains("\"result\"") && l.Contains("\"cancelled\"") && l.Contains("\"id\":0"));
+            var cancel = Array.FindIndex(stdin, l => l.Contains("\"session/cancel\""));
+            Check(answered >= 0 && cancel > answered && !stdin.Any(l => l.Contains("allow_once")), "the waiting request answered cancelled before session/cancel, no allow: " + string.Join(" | ", stdin));
+            Check(asks.Any(a => a.Id == askId && a.State == "cancelled"), "its card is cancelled");
         }
         finally { try { Directory.Delete(directory, true); } catch (IOException) { } HermesQuestionTool.Reset(); }
     }

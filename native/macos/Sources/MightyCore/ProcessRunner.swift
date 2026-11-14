@@ -901,9 +901,11 @@ public actor ProcessRunner {
 
     /// Answers exactly one pending request in exactly one local run. A stale
     /// card from a previous execution of the same pane can never grant access.
+    /// Once a stop has begun (signalled off this actor before `stop` reached it, Hermes's second
+    /// of grace after its `session/cancel` among it) the request is settled.
     public func respondToPermission(sessionId: String, runId: String, requestId: String, allow: Bool) async throws {
         guard !shuttingDown, let run = runs[sessionId], run.activityId == runId,
-              !run.stopping, !run.finished else {
+              !run.stopping, !run.finished, !stopSignalled(run) else {
             throw MightyError(L("run.error.permissionRunGone"))
         }
         if let permissions = run.permissions { try permissions.respond(requestId: requestId, allow: allow) }
@@ -911,6 +913,11 @@ public actor ProcessRunner {
         else if let channel = run.acp { try channel.respond(requestId: requestId, allow: allow) }
         else if let dialogs = run.piDialogs { try dialogs.respond(requestId: requestId, allow: allow) }
         else { throw MightyError(L("run.error.noInteractivePermission")) }
+    }
+    /// A stop of `run` was signalled (`LiveRunRegistry.signalStop`), which may come before `stop` reaches this actor.
+    private func stopSignalled(_ run: ManagedProcess) -> Bool {
+        guard let child = run.child else { return false }
+        return liveRuns.wasSignalled(run.request.sessionId, child: child)
     }
     /// Answers one pending ExitPlanMode request in exactly one local run.
     public func answerPlan(sessionId: String, runId: String, requestId: String, decision: PlanDecision) async throws {
@@ -964,7 +971,7 @@ public actor ProcessRunner {
         return true
     }
     public func answerUserQuestions(sessionId: String, runId: String, requestId: String, answers: [String: UserQuestionAnswer]) async throws {
-        guard !shuttingDown, let run = runs[sessionId], run.activityId == runId, !run.stopping, !run.finished else {
+        guard !shuttingDown, let run = runs[sessionId], run.activityId == runId, !run.stopping, !run.finished, !stopSignalled(run) else {
             throw MightyError(L("run.error.questionRunGone"))
         }
         // Claude's AskUserQuestion, an ACP agent's form or clarify (opencode, Hermes), or a pi extension's dialog.

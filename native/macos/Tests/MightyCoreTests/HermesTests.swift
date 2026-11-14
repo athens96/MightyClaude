@@ -655,11 +655,14 @@ struct HermesTests {
     /// response. With `hold` it answers up to the prompt and then only records what it is sent,
     /// as a turn in flight does.
     /// `acp`: what `hermes config get --json platform_toolsets.acp` answers (nil: not set); `config set` rewrites it.
-    private func fakeHermes(_ directory: URL, fixture: String, hold: Bool = false, acp: String? = #"["hermes-acp", "clarify"]"#, toolsets: String = #"["hermes-cli"]"#) throws -> URL {
+    /// `fixtureURL`: frames of its own instead of the named recording's; `recordAfter`: what it is
+    /// sent once its frames run out is recorded too.
+    private func fakeHermes(_ directory: URL, fixture: String, hold: Bool = false, acp: String? = #"["hermes-acp", "clarify"]"#, toolsets: String = #"["hermes-cli"]"#,
+                            fixtureURL: URL? = nil, recordAfter: Bool = false) throws -> URL {
         if let acp { try Data(acp.utf8).write(to: directory.appendingPathComponent("acp.json")) }
         try Data(toolsets.utf8).write(to: directory.appendingPathComponent("toolsets.json"))
         let binary = directory.appendingPathComponent("hermes")
-        let fixtureFile = Self.root.appendingPathComponent("native/contracts/fixtures/hermes-acp-\(fixture).jsonl").path
+        let fixtureFile = (fixtureURL ?? Self.root.appendingPathComponent("native/contracts/fixtures/hermes-acp-\(fixture).jsonl")).path
         let source = """
         #!/bin/sh
         if [ "$1" = "--version" ]; then printf 'Hermes Agent v0.23.1 (2026.9.24) · stable · local 3b4215785882\\nInstall directory: /tmp/hermes\\nInstall method: git\\n'; exit 0; fi
@@ -684,7 +687,7 @@ struct HermesTests {
           esac
           printf '%s\\n' "$frame"
         done < '\(fixtureFile)'
-        cat <&3 > /dev/null
+        \(recordAfter ? "cat <&3 >> stdin.txt" : "cat <&3 > /dev/null")
         """
         try Data(source.utf8).write(to: binary)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
@@ -804,6 +807,67 @@ struct HermesTests {
             let stdin = try String(contentsOf: directory.appendingPathComponent("stdin.txt"), encoding: .utf8).split(separator: "\n").map(String.init)
             #expect(stdin.count == 3 && stdin[1].contains("\"session/new\"") && !stdin.contains { $0.contains("session/resume") })
             #expect(events.values().contains { $0.type == "resume" && $0.resumeId == Self.answerSession })
+        } catch { await runner.shutdown(); await service.shutdown(); throw error }
+        await runner.shutdown(); await service.shutdown()
+    }
+
+    /// S-B11 (Windows AcpVerification.ACancelledTurnAnswersItsWaitingPermissionsCancelled): a turn
+    /// being cancelled answers the permission requests waiting on the user `cancelled`, before its
+    /// `session/cancel` ("The Client MUST respond to all pending session/request_permission requests
+    /// with the cancelled outcome"), answers one that comes later so at once, and lets no answer of
+    /// the user's out after that.
+    @Test func aCancelledTurnAnswersItsWaitingPermissionsCancelled() throws {
+        let run = try Self.channel(StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "edit the note", provider: "hermes"))
+        run.channel.start()
+        let lines = try Self.fixture("tools")
+        func text(_ line: Data) -> String { String(decoding: line, as: UTF8.self) }
+        let first = try #require(lines.firstIndex { text($0).contains("\"session/request_permission\"") })
+        let second = try #require(lines[(first + 1)...].firstIndex { text($0).contains("\"session/request_permission\"") })
+        for line in lines[...first] { var data = line; data.append(10); run.channel.receive(data) }
+        let card = try #require(run.permissions.last { $0.state == "pending" })
+        func cancelled(_ frame: [String: Any], _ id: Int) -> Bool {
+            (frame["id"] as? Int) == id && ((frame["result"] as? [String: Any])?["outcome"] as? [String: Any])?["outcome"] as? String == "cancelled"
+        }
+        let taken = try #require(run.channel.cancellation.take())
+        let frames = taken.split(separator: 10).compactMap { (try? JSONSerialization.jsonObject(with: Data($0))) as? [String: Any] }
+        #expect(frames.count == 2 && cancelled(frames[0], 0) && frames[1]["method"] as? String == "session/cancel")
+        let written = run.writes.count
+        #expect(throws: (any Error).self) { try run.channel.respond(requestId: card.id, allow: true) }
+        #expect(run.writes.count == written && run.channel.cancellation.take() == nil)
+        var data = lines[second]; data.append(10); run.channel.receive(data)
+        #expect(run.writes.count == written + 1 && run.writes.last.map { cancelled($0, 1) } == true)
+        #expect(run.permissions.filter { $0.state == "pending" }.count == 1)
+    }
+
+    /// S-B4 and B11 (Windows AcpRunVerification.AStopAnswersAWaitingPermissionCancelledAndRefusesALaterAllow):
+    /// a stop answers the permission request Hermes waits on `cancelled` before its `session/cancel`,
+    /// and an Allow pressed once the stop was signalled is refused and never reaches Hermes.
+    @Test func aStopAnswersAWaitingPermissionCancelledAndRefusesALaterAllow() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        // The recorded turn up to its first approval, which waits on the user when the stop comes.
+        let lines = try Self.fixture("tools")
+        let first = try #require(lines.firstIndex { String(decoding: $0, as: UTF8.self).contains("\"session/request_permission\"") })
+        let held = directory.appendingPathComponent("held.jsonl")
+        try lines[...first].reduce(Data()) { $0 + $1 + Data([10]) }.write(to: held)
+        let binary = try fakeHermes(directory, fixture: "tools", fixtureURL: held, recordAfter: true)
+        let service = ProviderService(binaryOverrides: ["hermes": binary], environment: ["PATH": "/usr/bin:/bin", "HOME": directory.path])
+        let events = HermesRecorder<RunEvent>()
+        let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { events.append($0) })
+        let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
+        let sent = directory.appendingPathComponent("stdin.txt")
+        do {
+            try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "edit the note", provider: "hermes"), workspace: workspace, allowPermissionPrompts: true)
+            try await wait { events.values().contains { $0.permission?.state == "pending" } && (try? String(contentsOf: sent, encoding: .utf8))?.contains("\"session/prompt\"") == true }
+            let ask = try #require(events.values().compactMap(\.permission).first { $0.state == "pending" })
+            runner.signalStop(id: "pane")
+            await #expect(throws: MightyError.self) { try await runner.respondToPermission(sessionId: "pane", runId: ask.runId, requestId: ask.id, allow: true) }
+            await runner.stop(id: "pane")
+            let frames = try String(contentsOf: sent, encoding: .utf8).split(separator: "\n").map(String.init)
+            let answered = frames.firstIndex { $0.contains("\"result\"") && $0.contains("\"cancelled\"") }
+            let cancel = frames.firstIndex { $0.contains("\"method\":\"session/cancel\"") }
+            #expect(answered != nil && cancel != nil && answered! < cancel!, "\(frames)")
+            #expect(!frames.contains { $0.contains("allow_once") })
+            #expect(events.values().last { $0.type == "status" }?.status == "stopped")
         } catch { await runner.shutdown(); await service.shutdown(); throw error }
         await runner.shutdown(); await service.shutdown()
     }

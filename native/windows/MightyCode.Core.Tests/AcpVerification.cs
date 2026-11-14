@@ -494,6 +494,34 @@ internal static class AcpVerification
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// S-B11 (M/Tests/MightyCoreTests/HermesTests.swift aCancelledTurnAnswersItsWaitingPermissionsCancelled): a turn being cancelled answers
+    /// the permission requests waiting on the user <c>cancelled</c> ("The Client MUST respond to all pending session/request_permission requests
+    /// with the cancelled outcome"), answers one that comes later so at once, and lets no answer of the user's out after that.
+    /// </summary>
+    internal static Task ACancelledTurnAnswersItsWaitingPermissionsCancelled()
+    {
+        var run = Channel(Request("hermes", "edit the note"));
+        run.Channel.Start();
+        var lines = Fixture("hermes", "tools");
+        var first = Array.FindIndex(lines, l => l.Contains("\"session/request_permission\""));
+        var second = Array.FindIndex(lines, first + 1, l => l.Contains("\"session/request_permission\""));
+        foreach (var line in lines.Take(first + 1)) run.Receive(line);
+        var card = run.Permissions.Single(p => p.State == "pending");
+        var written = run.Writes.Count;
+        run.Channel.CancelTurn();
+        static bool Cancelled(JsonObject frame, int id) => frame["id"] is JsonValue value && value.GetValueKind() == JsonValueKind.Number && value.GetValue<int>() == id
+            && frame["result"]?["outcome"]?["outcome"]?.GetValue<string>() == "cancelled";
+        Check(run.Writes.Count == written + 1 && Cancelled(run.Writes[^1], 0), "the waiting request is answered cancelled: " + run.Writes[^1].ToJsonString());
+        Check(run.Permissions[^1].Id == card.Id && run.Permissions[^1].State == "cancelled", "its card is cancelled");
+        Check(Throws(() => run.Channel.Respond(card.Id, true)) && run.Writes.Count == written + 1, "the user's answer no longer leaves");
+        run.Receive(lines[second]);
+        Check(run.Writes.Count == written + 2 && Cancelled(run.Writes[^1], 1) && run.Permissions.Count(p => p.State == "pending") == 1, "a later request is answered cancelled at once, with no card");
+        run.Channel.CancelTurn();
+        Check(run.Writes.Count == written + 2 && !run.Channel.TurnCompleted, "cancelling again sends nothing");
+        return Task.CompletedTask;
+    }
+
     internal static Task AHermesSessionIsContinuedOnlyWhereItsYoloAndAnswerAllow()
     {
         const string id = HermesResumed;

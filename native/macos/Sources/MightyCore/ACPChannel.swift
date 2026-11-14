@@ -282,6 +282,7 @@ final class ACPChannel {
         // instead of answered by guess.
         if options.filter({ $0["kind"] as? String == "allow_once" }).count > 1 {
             if pending.count < Self.maximumPending, let ask = choiceQuestion(rawID, key, call, Array(options), reject: reject) {
+                guard waitOnUser(rawID, key) else { return }
                 pending[ask.display.id] = ask
                 activity(ask.display, "waiting"); emit(ask.display); return
             }
@@ -300,8 +301,24 @@ final class ACPChannel {
         let value = ToolPermissionRequest(id: UUID().uuidString, runId: runId, toolUseId: callID, toolName: Self.toolName(kind: call["kind"] as? String, title: (call["name"] ?? call["title"]) as? String),
                                           inputJSON: display, summary: title.isEmpty ? L("acp.channel.permissionSummary") : title,
                                           reason: allow == nil ? L("acp.channel.denyOnly") : nil, canAllow: allow != nil)
+        guard waitOnUser(rawID, key) else { return }
         pending[value.id] = Pending(rpcID: rawID, allowOption: allow, rejectOption: reject, display: value)
         activity(value, "waiting"); emit(value)
+    }
+    /// A permission request now waits on the user: its `cancelled` answer is kept for a stop
+    /// (`ACPCancellation`). False when the turn is being cancelled already: the request is
+    /// answered so at once, as the protocol asks of the client, and shows no card.
+    private func waitOnUser(_ rawID: Any, _ key: String) -> Bool {
+        guard let answer = Self.encoded(["jsonrpc": "2.0", "id": rawID, "result": ["outcome": ["outcome": "cancelled"]]]) else { return true }
+        if cancellation.asked(key, cancelledAnswer: answer) { return true }
+        write(answer); return false
+    }
+    /// The user's answer to `ask` may leave: never once the turn is being cancelled (a
+    /// permission request's `cancelled` answer went out then, before `session/cancel`).
+    private func userMayAnswer(_ ask: Pending) -> Bool {
+        if case .form = ask.question { return !cancellation.turnCancelled }
+        guard let key = Self.idKey(ask.rpcID) else { return !cancellation.turnCancelled }
+        return cancellation.settled(key)
     }
     /// Hermes's clarify as an approval: the tool call's title is the question and each
     /// `allow_once` option one choice. The answer is the picked option; nothing typed can travel.
@@ -340,10 +357,12 @@ final class ACPChannel {
         case .form(let form):
             // Checked first: an answer the form cannot carry leaves the card answerable.
             let content = try form.content(checked)
+            guard userMayAnswer(ask) else { throw MightyError(L("permission.error.questionGone")) }
             pending.removeValue(forKey: requestId)
             reply(ask.rpcID, ["action": "accept", "content": content])
         case .choices(let options):
             guard let answer = checked.values.first, answer.typed.isEmpty, answer.picked.count == 1, let option = options[answer.picked[0]] else { throw MightyError(L("questionnaire.error.choicesOnly")) }
+            guard userMayAnswer(ask) else { throw MightyError(L("permission.error.questionGone")) }
             pending.removeValue(forKey: requestId)
             self.answer(ask.rpcID, option)
         }
@@ -354,6 +373,7 @@ final class ACPChannel {
     func respond(requestId: String, allow: Bool) throws {
         guard !closed, let ask = pending[requestId] else { throw MightyError(L("permission.error.requestGone")) }
         guard !allow || ask.allowOption != nil else { throw MightyError(L("acp.channel.denyOnly")) }
+        guard userMayAnswer(ask) else { throw MightyError(L("permission.error.requestGone")) }
         pending.removeValue(forKey: requestId)
         // A question's Cancel: the form is declined, the clarify approval skipped.
         if case .form = ask.question { reply(ask.rpcID, ["action": "decline"]) }
@@ -369,6 +389,8 @@ final class ACPChannel {
     }
     private func cancelPending(_ id: String) {
         guard let ask = pending.removeValue(forKey: id) else { return }
+        // Withdrawn or settled by the agent: nothing is answered for it at a stop.
+        if let key = Self.idKey(ask.rpcID) { cancellation.settled(key) }
         var value = ask.display
         value.state = "cancelled"; if ask.question == nil { activity(value, "stopped") }; emit(value)
     }
@@ -384,7 +406,11 @@ final class ACPChannel {
     }
     private func reply(_ id: Any, _ result: [String: Any]) { send(["jsonrpc": "2.0", "id": id, "result": result]) }
     private func rpcError(_ id: Any, _ code: Int, _ message: String) { send(["jsonrpc": "2.0", "id": id, "error": ["code": code, "message": message]]) }
-    private func send(_ obj: [String: Any]) { if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys, .withoutEscapingSlashes]) { write(data + Data([10])) } }
+    private func send(_ obj: [String: Any]) { if let data = Self.encoded(obj) { write(data) } }
+    /// One frame as it is sent: sorted keys, slashes as they are, a line feed after it.
+    private static func encoded(_ obj: [String: Any]) -> Data? {
+        (try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys, .withoutEscapingSlashes])).map { $0 + Data([10]) }
+    }
 
     static func idKey(_ raw: Any?) -> String? {
         if let text = raw as? String, !text.isEmpty, text.utf8.count <= 256 { return "s:" + text }
@@ -447,11 +473,42 @@ final class ACPChannel {
 }
 
 /// A turn's `session/cancel` frame behind a lock, so the stop signal (sent off the runner's
-/// actor, before the process is ended) can read it.
+/// actor, before the process is ended) can read it, with the `cancelled` answers of the
+/// permission requests waiting on the user: a client that cancels a turn answers each of
+/// them so ("The Client MUST respond to all pending session/request_permission requests with
+/// the cancelled outcome", agentclientprotocol.com, prompt turn: cancellation), and no answer
+/// of the user's leaves after that.
 final class ACPCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var frame: Data?
+    private var asks: [String: Data] = [:]
+    private var cancelled = false
     func set(_ value: Data?) { lock.lock(); frame = value.map { $0 + Data([10]) }; lock.unlock() }
-    /// The frame, once: a second stop does not send it again.
-    func take() -> Data? { lock.lock(); defer { frame = nil; lock.unlock() }; return frame }
+    /// The turn is being cancelled: `take()` gave its frame.
+    var turnCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+    /// A permission request waits on the user (`key`, with its `cancelled` answer). False once
+    /// the turn is being cancelled: the caller answers it so at once.
+    func asked(_ key: String, cancelledAnswer: Data) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !cancelled else { return false }
+        asks[key] = cancelledAnswer
+        return true
+    }
+    /// The request no longer waits (answered, withdrawn or settled). False once the turn is
+    /// being cancelled: its `cancelled` answer went out, and the user's must not.
+    @discardableResult func settled(_ key: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        asks.removeValue(forKey: key)
+        return !cancelled
+    }
+    /// The waiting requests' `cancelled` answers, then the frame, once: a second stop does not
+    /// send them again. nil when no turn is in flight.
+    func take() -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        guard let frame else { return nil }
+        cancelled = true
+        let answers = asks.values.reduce(Data(), +)
+        asks = [:]; self.frame = nil
+        return answers + frame
+    }
 }
