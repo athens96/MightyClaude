@@ -70,24 +70,24 @@ pub fn env(host: &Host) -> Env {
     Env { theme, text: crate::frame::text_setting(host), locale: host.locale }
 }
 
-/// A push to the page (dropped while it is not ready), written to the dump as sent.
-fn post(host: &Host, kind: &str, json: String) {
+/// A push to the page, written to the dump as sent; false (and dropped) while the page is not ready.
+fn post(host: &Host, kind: &str, json: String) -> bool {
     let view = host.view();
     if !view.ready {
-        return;
+        return false;
     }
     if let Some(file) = lock(&of(host).dump).as_mut() {
         let _ = writeln!(file, "{json}");
     }
     host.push(&view, kind, json);
+    true
 }
 
-/// `PushNative`: the surface read again and pushed when its text changed.
+/// `PushNative`: the surface read again and pushed when its text changed, posted under the surface's own lock (review M1: a close
+/// never overtakes it).
 pub fn render(host: &Host, id: &str) {
     let env = env(host);
-    if let Some(push) = of(host).surfaces.render(id, &env) {
-        post(host, "native", push);
-    }
+    of(host).surfaces.render_to(id, &env, |push| post(host, "native", push));
 }
 
 /// `native::touch`: a surface whose model changed outside an input (a read finished, a timer) is read again now instead of on the
@@ -105,9 +105,9 @@ pub fn open(host: &Host, id: &str, place: Place, model: Box<dyn SurfaceModel>) {
 
 /// `CloseNativeSurface`: its `native{id}` push when it was open.
 pub fn close(host: &Host, id: &str) {
-    if let Some(push) = of(host).surfaces.close(id) {
+    of(host).surfaces.close(id, |push| {
         post(host, "native", push);
-    }
+    });
 }
 
 pub fn is_open(host: &Host, id: &str) -> bool {
@@ -156,9 +156,7 @@ pub fn tick(host: &Host) {
         return;
     }
     let env = env(host);
-    for push in natives.surfaces.render_all(&env) {
-        post(host, "native", push);
-    }
+    natives.surfaces.render_all_to(&env, |push| post(host, "native", push));
     push_text(host);
 }
 
@@ -259,7 +257,10 @@ pub fn register(methods: &mut Registry) {
         // `(int)element`: the id as an integer, a fraction cut off.
         let outcome = natives.surfaces.act(view, id as i64, text(&args, "op").unwrap_or(""), &value);
         let done = outcome.run(|url| {
-            if let Some(url) = crate::methods::openable_url(url)
+            // A smoke opens no browser (it would outlive the run): the address is logged, as `open_help` does.
+            if host.smoke.is_some() {
+                host.log.line(&format!("smoke: native link not opened: {url}"));
+            } else if let Some(url) = crate::methods::openable_url(url)
                 && let Err(error) = crate::platform::open_url(&url)
             {
                 host.log.line(&format!("native link: {error}"));

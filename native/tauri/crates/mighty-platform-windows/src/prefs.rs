@@ -140,6 +140,15 @@ mod tests {
     #[test]
     fn values_read_as_the_csharp_app_reads_them() {
         let key = format!(r"Software\MightyCode-test-{}", std::process::id());
+        /// The test's key, taken away however the test ends (a failed assertion included).
+        struct Remove(Vec<u16>);
+        impl Drop for Remove {
+            fn drop(&mut self) {
+                // SAFETY: a NUL-terminated key name under HKCU that only this test made.
+                unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, self.0.as_ptr()) };
+            }
+        }
+        let _remove = Remove(wide(&key));
         let prefs = RegistryPrefs::under(&key);
         assert_eq!(prefs.get("delegation.enabled").unwrap(), None, "a missing key reads as no value");
         put(&key, "delegation.enabled", REG_DWORD, &0u32.to_le_bytes());
@@ -164,9 +173,6 @@ mod tests {
         prefs.remove("textScale").unwrap();
         assert_eq!(prefs.get("textScale").unwrap(), None, "removed, and removing again is no error");
         assert!(prefs.set("x", PrefValue::Other).is_err());
-        let key = wide(&key);
-        // SAFETY: a NUL-terminated key name under HKCU that only this test made.
-        unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, key.as_ptr()) };
         assert_eq!(decode(REG_DWORD, &u32::MAX.to_le_bytes()), PrefValue::Int(-1), "a DWORD is signed, as .NET reads it");
     }
 }

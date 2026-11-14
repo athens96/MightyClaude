@@ -2,6 +2,7 @@
 //! MainWindow.TextAppearance.cs:113-202 `BuildTextSection`; MainWindow.Delegation.cs `DelegationOn`, `SetDelegationOn`). Owner: W6-A.
 
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use mighty_core::design_tokens::{Token, metrics};
 use mighty_core::locale::LANGUAGES;
@@ -25,38 +26,67 @@ pub const LANGUAGE_CHOICES: [(&str, &str); 5] = [
 /// `DelegationSwitch`'s value name under `HKCU\Software\MightyCode`.
 pub const DELEGATION_VALUE: &str = "delegation.enabled";
 
-/// The delegation switch as the app holds it: a smoke's own (off until it is switched, C# `smokeDelegationOn`), else the value
-/// switched in this run (kept in memory without `--allow-state-write`), else the registry's (a missing value is on).
-static DELEGATION: Mutex<Option<bool>> = Mutex::new(None);
+/// How long a reading of the registry value stands (C# `DelegationSwitch.ReadFor`: a builder asks four times a second).
+const DELEGATION_READ_FOR: Duration = Duration::from_secs(2);
+
+/// The delegation switch as the app holds it (C# `DelegationSwitch`'s `last`, plus what a run that may not write holds).
+#[derive(Debug, Default)]
+struct Delegation {
+    /// The value switched in this run when it may not be written (a smoke's own, C# `smokeDelegationOn`; else this run's).
+    held: Option<bool>,
+    /// The registry's value and when it was read (or written).
+    reading: Option<(bool, Instant)>,
+}
+
+impl Delegation {
+    /// The value without reading the registry: this run's, else a reading under 2 s old.
+    fn known(&self, now: Instant) -> Option<bool> {
+        self.held.or(self.reading.filter(|(_, at)| now.saturating_duration_since(*at) < DELEGATION_READ_FOR).map(|(on, _)| on))
+    }
+
+    /// `Set`'s outcome: a written value is the reading; a refused write forgets the reading, so the switch shows the registry's value
+    /// again (C#: `last = null; return false`).
+    fn written(&mut self, on: bool, saved: bool, now: Instant) {
+        self.reading = if saved { Some((on, now)) } else { None };
+    }
+}
+
+static DELEGATION: Mutex<Delegation> = Mutex::new(Delegation { held: None, reading: None });
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// C# `DelegationOn`.
+/// C# `DelegationOn`: a smoke's switch (off until it is switched), else this run's, else the registry's from a reading at most 2 s old
+/// (a missing value is on).
 pub fn delegation_on(host: &Host) -> bool {
-    if let Some(on) = *lock(&DELEGATION) {
+    let now = Instant::now();
+    if let Some(on) = lock(&DELEGATION).known(now) {
         return on;
     }
     if host.smoke.is_some() {
         return false;
     }
-    // Read once and kept (a builder reads it four times a second; C# reads the registry at most every 2 s).
+    // Read off the lock; a registry that cannot be read is on, as C# takes it.
     let saved = host.app.try_state::<Arc<dyn PrefsStore>>().and_then(|prefs| prefs.get(DELEGATION_VALUE).ok().flatten());
     let on = saved.is_none_or(|value| value.is_on());
-    *lock(&DELEGATION) = Some(on);
+    lock(&DELEGATION).reading = Some((on, now));
     on
 }
 
-/// C# `SetDelegationOn`: a smoke's switch, else the registry's DWORD (only with `--allow-state-write`), else this run's.
+/// C# `SetDelegationOn`: the registry's DWORD with `--allow-state-write` (a refused write puts the registry's value back on the
+/// switch), else the value held for this run (a smoke's own).
 pub fn set_delegation_on(host: &Host, on: bool) {
-    if host.may_change_machine()
-        && let Some(prefs) = host.app.try_state::<Arc<dyn PrefsStore>>()
-        && let Err(error) = prefs.set(DELEGATION_VALUE, PrefValue::Int(i64::from(on)))
-    {
-        host.log.line(&format!("delegation switch not saved: {error}"));
+    match host.app.try_state::<Arc<dyn PrefsStore>>().filter(|_| host.may_change_machine()) {
+        Some(prefs) => {
+            let saved = prefs.set(DELEGATION_VALUE, PrefValue::Int(i64::from(on)));
+            if let Err(error) = &saved {
+                host.log.line(&format!("delegation switch not saved: {error}"));
+            }
+            lock(&DELEGATION).written(on, saved.is_ok(), Instant::now());
+        }
+        None => lock(&DELEGATION).held = Some(on),
     }
-    *lock(&DELEGATION) = Some(on);
     host.panes_changed();
 }
 
@@ -303,7 +333,12 @@ fn preview(ui: &Ui, text: &TextAppearance, area: Area, size: f64) -> El {
         foreground: Some(ui.brush(Token::Ink)),
         wrapping: Wrapping::Wrap,
         ..TextBlock::default()
-    }));
+    }))
+    .aid(match area {
+        Area::Interface => "settings-text-preview",
+        Area::Transcript => "settings-text-transcript-preview",
+        Area::Code => "settings-text-code-preview",
+    });
     El::border(Border {
         child: Some(Box::new(words)),
         padding: Thickness::all(metrics::SPACING_SM),
@@ -365,4 +400,25 @@ pub fn agent_links(host: &Arc<Host>, ui: &mut Ui) -> El {
     let mut rows = ui.settings_rows();
     rows.add(ui.settings_labeled(ui.settings_text(&title, TextStyle::default()), picker, false));
     rows.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Review L6: a refused write puts the registry's value back on the switch (the reading is forgotten, so the next ask reads the
+    /// registry), a reading stands 2 s and no longer, and a value held for this run wins over any reading.
+    #[test]
+    fn the_delegation_switch_follows_the_registry() {
+        let start = Instant::now();
+        let mut switch = Delegation { held: None, reading: Some((true, start)) };
+        assert_eq!(switch.known(start + Duration::from_millis(1999)), Some(true));
+        assert_eq!(switch.known(start + DELEGATION_READ_FOR), None, "read again after 2 s");
+        switch.written(false, false, start);
+        assert_eq!(switch.known(start), None, "a refused write is not the value: the registry is read again");
+        switch.written(false, true, start);
+        assert_eq!(switch.known(start), Some(false), "a written value is the reading");
+        switch.held = Some(true);
+        assert_eq!(switch.known(start + Duration::from_secs(60)), Some(true));
+    }
 }

@@ -56,6 +56,8 @@ struct Surface {
     locals: Locals,
     acts: Acts,
     sent: Option<String>,
+    /// Closed (taken out of the list): a read in flight posts nothing more for it.
+    closed: bool,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -83,8 +85,12 @@ impl Surfaces {
     /// `OpenNativeSurface`: a surface of that id already open is closed first (without a push) and the new one takes the end of
     /// the order.
     pub fn open(&self, id: &str, place: Place, model: Box<dyn SurfaceModel>) {
-        let surface = Surface { id: id.to_string(), place, model, locals: Locals::default(), acts: Acts::default(), sent: None };
+        let surface =
+            Surface { id: id.to_string(), place, model, locals: Locals::default(), acts: Acts::default(), sent: None, closed: false };
         let replaced = self.take(id);
+        if let Some(old) = &replaced {
+            lock(old).closed = true;
+        }
         lock(&self.open).push((id.to_string(), Arc::new(Mutex::new(surface))));
         lock(&self.ids).forget(id);
         // A replaced model is let go of outside the list's lock (dropping it may take the host's locks).
@@ -98,12 +104,19 @@ impl Surfaces {
         Some(open.remove(at).1)
     }
 
-    /// `CloseNativeSurface`: the close push when it was open. Its model is let go of here, outside the list's lock.
-    pub fn close(&self, id: &str) -> Option<String> {
-        let removed = self.take(id)?;
+    /// `CloseNativeSurface`: when it was open, it is marked closed and its close push handed to `post` under its own lock, so a read
+    /// of it in flight either posted before this push or posts nothing (a closed dialog never comes back). Its model is let go of here,
+    /// outside every lock. False when it was not open.
+    pub fn close(&self, id: &str, post: impl FnOnce(String)) -> bool {
+        let Some(removed) = self.take(id) else { return false };
+        {
+            let mut surface = lock(&removed);
+            surface.closed = true;
+            post(close_push(id));
+        }
         lock(&self.ids).forget(id);
         drop(removed);
-        Some(close_push(id))
+        true
     }
 
     pub fn contains(&self, id: &str) -> bool {
@@ -120,28 +133,50 @@ impl Surfaces {
         format!("dialog-{}", self.dialogs.fetch_add(1, Ordering::SeqCst) + 1)
     }
 
-    /// `PushNative`: the surface read again (C# `Begin`, then its model); its push when the text differs from the last one sent.
-    pub fn render(&self, id: &str, env: &Env) -> Option<String> {
-        let surface = self.find(id)?;
+    /// `PushNative`: the surface read again (C# `Begin`, then its model) and, when the text differs from the last one sent, its push
+    /// handed to `post` while the surface's lock is still held (surface, then state: the host's lock order), so pushes of one surface
+    /// reach the page in the order they were read. `post` answers whether the push went out; only then is it the text sent (a page that
+    /// is not ready gets it later). True when a push went out.
+    pub fn render_to(&self, id: &str, env: &Env, post: impl FnOnce(String) -> bool) -> bool {
+        let Some(surface) = self.find(id) else { return false };
         let mut surface = lock(&surface);
-        let Surface { id, place, model, locals, acts, sent } = &mut *surface;
+        let Surface { id, place, model, locals, acts, sent, closed } = &mut *surface;
+        if *closed {
+            return false;
+        }
         let view = model.view(&mut Ui::new(env, locals));
         acts.clear();
         let json = {
             let mut ids = lock(&self.ids);
-            view.write(&mut Reader::new(env, id, &mut ids, acts))
+            let json = view.write(&mut Reader::new(env, id, &mut ids, acts));
+            ids.prune(id);
+            json
         };
         if sent.as_deref() == Some(json.as_str()) {
-            return None;
+            return false;
         }
-        let push = open_push(id, *place, &json);
+        if !post(open_push(id, *place, &json)) {
+            return false;
+        }
         *sent = Some(json);
-        Some(push)
+        true
     }
 
-    /// Every open surface read again, oldest first: the pushes of those that changed.
-    pub fn render_all(&self, env: &Env) -> Vec<String> {
-        self.ids().iter().filter_map(|id| self.render(id, env)).collect()
+    /// [`Surfaces::render_to`] for a caller that takes the push itself (a test, the smoke's own surface): the push, taken as sent.
+    pub fn render(&self, id: &str, env: &Env) -> Option<String> {
+        let mut pushed = None;
+        self.render_to(id, env, |push| {
+            pushed = Some(push);
+            true
+        });
+        pushed
+    }
+
+    /// Every open surface read again, oldest first, each push posted right after its read.
+    pub fn render_all_to(&self, env: &Env, mut post: impl FnMut(String) -> bool) {
+        for id in self.ids() {
+            self.render_to(&id, env, &mut post);
+        }
     }
 
     /// Every surface's last text forgotten (the page is not ready, or asked for them again: `nativeState`).
@@ -155,7 +190,10 @@ impl Surfaces {
     /// `nativeAction`: what the input on control `id` of surface `view` does, as its last read left it.
     pub fn act(&self, view: &str, id: i64, op: &str, value: &Value) -> Outcome {
         match self.find(view) {
-            Some(surface) => lock(&surface).acts.resolve(id, op, value),
+            Some(surface) => {
+                let mut surface = lock(&surface);
+                if surface.closed { Outcome::Refused } else { surface.acts.resolve(id, op, value) }
+            }
             None => Outcome::Refused,
         }
     }
@@ -439,22 +477,103 @@ mod tests {
         Env { theme: Theme::Dark, text: Default::default(), locale: Locale::new("en") }
     }
 
+    /// The push a read posts, if any.
+    fn rendered(surfaces: &Surfaces, id: &str) -> Option<String> {
+        surfaces.render(id, &env())
+    }
+
+    /// The close push, if the surface was open.
+    fn closed(surfaces: &Surfaces, id: &str) -> Option<String> {
+        let mut pushed = None;
+        surfaces.close(id, |push| pushed = Some(push));
+        pushed
+    }
+
+    /// Review M1: a close that comes while a read of the surface is posting waits for that post, so the page gets the view and then
+    /// its close, never the close first; a read after the close posts nothing.
+    #[test]
+    fn a_close_never_overtakes_a_read_in_flight() {
+        let surfaces = Arc::new(Surfaces::new());
+        surfaces.open("dialog-1", Place::Dialog, Box::new(Plain("Ask")));
+        let order = Arc::new(Mutex::new(Vec::<String>::new()));
+        let (posting, posted) = std::sync::mpsc::channel::<()>();
+        let (resume, waiting) = std::sync::mpsc::channel::<()>();
+        let reader = {
+            let (surfaces, order) = (surfaces.clone(), order.clone());
+            std::thread::spawn(move || {
+                surfaces.render_to("dialog-1", &env(), |push| {
+                    posting.send(()).unwrap();
+                    waiting.recv().unwrap();
+                    order.lock().unwrap().push(if push.contains("\"view\"") { "view".into() } else { push });
+                    true
+                });
+            })
+        };
+        posted.recv().unwrap();
+        let closer = {
+            let (surfaces, order) = (surfaces.clone(), order.clone());
+            std::thread::spawn(move || {
+                surfaces.close("dialog-1", |_| order.lock().unwrap().push("close".into()));
+            })
+        };
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        resume.send(()).unwrap();
+        reader.join().unwrap();
+        closer.join().unwrap();
+        assert_eq!(*order.lock().unwrap(), vec!["view".to_string(), "close".to_string()]);
+        assert_eq!(rendered(&surfaces, "dialog-1"), None, "a closed surface is read no more");
+    }
+
+    /// Review L3: a push the page did not take (not ready) is not the text sent: the next read posts it again.
+    #[test]
+    fn a_push_not_taken_is_sent_again() {
+        let surfaces = Surfaces::new();
+        surfaces.open("companion", Place::Popover, Box::new(Plain("Status")));
+        assert!(!surfaces.render_to("companion", &env(), |_| false));
+        assert!(rendered(&surfaces, "companion").is_some());
+    }
+
+    /// Review L1: two sections' first buttons are two controls with two ids.
+    #[test]
+    fn sections_do_not_share_ids() {
+        struct Two;
+        impl SurfaceModel for Two {
+            fn view(&mut self, ui: &mut Ui) -> View {
+                let section = |ui: &mut Ui| crate::view::Section { title: None, beta: false, node: Some(ui.button("Go", || {})) };
+                let sections = vec![section(ui), section(ui)];
+                View::Settings {
+                    title: "t".into(),
+                    close: "c".into(),
+                    nav: vec![],
+                    selected: "general".into(),
+                    sections,
+                    width: 1.0,
+                    height: 1.0,
+                }
+            }
+        }
+        let surfaces = Surfaces::new();
+        surfaces.open("settings", Place::Surface, Box::new(Two));
+        let pushed = rendered(&surfaces, "settings").unwrap();
+        assert!(pushed.contains(r#""id":1,"#) && pushed.contains(r#""id":2,"#), "{pushed}");
+    }
+
     #[test]
     fn a_surface_is_pushed_only_when_its_text_changed() {
         let surfaces = Surfaces::new();
         surfaces.open("companion", Place::Popover, Box::new(Plain("Status")));
-        let first = surfaces.render("companion", &env()).unwrap();
+        let first = rendered(&surfaces, "companion").unwrap();
         assert_eq!(
             first,
             r#"{"kind":"native","id":"companion","place":"popover","view":{"kind":"companion","title":"Status","sections":[{"beta":false,"node":{"t":"button","id":1,"name":"Go","label":"Go"}}]}}"#
         );
-        assert_eq!(surfaces.render("companion", &env()), None, "unchanged: nothing pushed");
+        assert_eq!(rendered(&surfaces, "companion"), None, "unchanged: nothing pushed");
         surfaces.forget_sent();
-        assert_eq!(surfaces.render("companion", &env()).as_deref(), Some(first.as_str()), "forgotten: pushed again");
+        assert_eq!(rendered(&surfaces, "companion").as_deref(), Some(first.as_str()), "forgotten: pushed again");
         assert!(surfaces.act("companion", 1, "invoke", &Value::Null).taken());
         assert!(!surfaces.act("companion", 2, "invoke", &Value::Null).taken());
-        assert_eq!(surfaces.close("companion").as_deref(), Some(r#"{"kind":"native","id":"companion"}"#));
-        assert_eq!(surfaces.close("companion"), None);
+        assert_eq!(closed(&surfaces, "companion").as_deref(), Some(r#"{"kind":"native","id":"companion"}"#));
+        assert_eq!(closed(&surfaces, "companion"), None);
         assert!(!surfaces.act("companion", 1, "invoke", &Value::Null).taken(), "a closed surface takes nothing");
     }
 
@@ -484,7 +603,7 @@ mod tests {
         spec.accept = Some(Box::new(move |result| result != DialogResult::Primary || check.load(Ordering::SeqCst)));
         let surfaces = Surfaces::new();
         surfaces.open("dialog-1", Place::Dialog, Box::new(DialogSurface::new(spec, move |r| *into.lock().unwrap() = Some(r))));
-        let pushed = surfaces.render("dialog-1", &env()).unwrap();
+        let pushed = rendered(&surfaces, "dialog-1").unwrap();
         let view: Value = serde_json::from_str(&pushed).unwrap();
         assert_eq!(view["view"]["chrome"], json!({"kind": "sheet", "danger": false, "busy": false}));
         assert_eq!(
@@ -508,7 +627,7 @@ mod tests {
         spec.secondary = Some(DialogButton::new("Later").enabled_when(|| false));
         let surfaces = Surfaces::new();
         surfaces.open("dialog-2", Place::Dialog, Box::new(DialogSurface::new(spec, |_| {})));
-        let view: Value = serde_json::from_str(&surfaces.render("dialog-2", &env()).unwrap()).unwrap();
+        let view: Value = serde_json::from_str(&rendered(&surfaces, "dialog-2").unwrap()).unwrap();
         assert_eq!(view["view"]["chrome"], json!({"kind": "alert", "danger": false, "busy": true}));
         assert_eq!(view["view"]["sections"], json!([{"beta": false, "node": {"t": "text", "text": "Working", "selectable": true}}]));
         assert_eq!(surfaces.button("dialog-2", Some("secondary")), Some(Next::Stay), "a disabled button is ignored");

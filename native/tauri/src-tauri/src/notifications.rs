@@ -11,7 +11,6 @@ use std::sync::{Arc, Mutex};
 use mighty_core::locale::Locale;
 use mighty_core::notifications::{self, Decision, SmokeOutcome};
 use mighty_platform::Notification;
-use mighty_run::RunEvent;
 use tauri::Manager;
 
 use crate::host::Host;
@@ -83,15 +82,15 @@ pub fn permission_text(locale: &Locale, permission: NotificationPermission) -> S
 
 /// C# `HandleRunEventForNotification` (the last thing the window does with a run event): a toast when the decision says so and the app
 /// may notify; its body names the pane's title alone.
-pub fn on_event(host: &Arc<Host>, event: &RunEvent) {
-    if host.closing() || event.kind != "status" {
+pub fn on_status(host: &Arc<Host>, session_id: &str, status: Option<&str>) {
+    if host.closing() {
         return;
     }
     let (title, run_title) = {
         let view = host.view();
         let enabled = view.snapshot.completion_notifications_enabled;
-        let title = with(|state| state.decision.process(&event.kind, event.status.as_deref(), &event.session_id, &view.snapshot, enabled));
-        let run_title = view.snapshot.session(&event.session_id).map_or_else(|| event.session_id.clone(), |s| s.title().to_string());
+        let title = with(|state| state.decision.process("status", status, session_id, &view.snapshot, enabled));
+        let run_title = view.snapshot.session(session_id).map_or_else(|| session_id.to_string(), |s| s.title().to_string());
         (title, run_title)
     };
     if title.is_none() || permission(host) != NotificationPermission::Allowed {
@@ -102,7 +101,7 @@ pub fn on_event(host: &Arc<Host>, event: &RunEvent) {
     let notification = Notification {
         title: notifications::text(&host.locale, "NotificationTitle"),
         body: notifications::body(&host.locale, &run_title),
-        pane_id: Some(event.session_id.clone()),
+        pane_id: Some(session_id.to_string()),
     };
     let log = host.clone();
     tauri::async_runtime::spawn(async move {
@@ -131,21 +130,25 @@ pub fn focus(host: &Arc<Host>, pane: &str) {
 }
 
 /// The live smoke's `completionNotification` (C# `RunCompletionNotificationSmoke`): a smoke never registers with the OS (it would write
-/// the user's registry), so it is unsupported there and skipped, as on CI's runners.
-pub async fn smoke(host: &Arc<Host>) -> SmokeOutcome {
+/// the user's registry), so it is unsupported there and skipped, as on CI's runners. Where it is supported, the fixture's toast is the
+/// one a run's completion shows (the localized `NotificationTitle`, the body over `FixtureTitle`), and a send that fails is the smoke's
+/// failure (the error comes back, C#'s throw), never a skip.
+pub async fn smoke(host: &Arc<Host>) -> Result<SmokeOutcome, String> {
     let supported = host.may_change_machine();
-    let outcome = notifications::smoke_run(
+    notifications::smoke_run(
         supported,
         async || crate::platform::register_notifications().err(),
-        async |title: &str, id: &str| -> Result<(), String> {
-            let Some(ports) = host.app.try_state::<crate::platform::Ports>() else { return Ok(()) };
-            let notification =
-                Notification { title: title.into(), body: notifications::body(&host.locale, title), pane_id: Some(id.into()) };
+        async |run_title: &str, id: &str| -> Result<(), String> {
+            let ports = host.app.try_state::<crate::platform::Ports>().ok_or("no notifier")?;
+            let notification = Notification {
+                title: notifications::text(&host.locale, "NotificationTitle"),
+                body: notifications::body(&host.locale, run_title),
+                pane_id: Some(id.into()),
+            };
             ports.notifier.notify(notification).await.map_err(|e| e.to_string())
         },
     )
-    .await;
-    outcome.unwrap_or_else(|error| SmokeOutcome::skipped(Some(&error)))
+    .await
 }
 
 #[cfg(test)]

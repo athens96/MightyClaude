@@ -178,29 +178,38 @@ impl Acts {
         ids
     }
 
-    /// What `op` with `value` does to control `id` (WebNative.cs `Act`).
-    pub fn resolve(&self, id: i64, op: &str, value: &Value) -> Outcome {
-        let Some(target) = self.targets.get(&id) else { return Outcome::Refused };
+    /// What `op` with `value` does to control `id` (WebNative.cs `Act`). As C#'s live control takes the change, the stored control does
+    /// too: a second click on a switch whose handler has not redrawn it yet toggles it back, and words typed then cleared reach the
+    /// field both times.
+    pub fn resolve(&mut self, id: i64, op: &str, value: &Value) -> Outcome {
+        let Some(target) = self.targets.get_mut(&id) else { return Outcome::Refused };
         match (op, target) {
             ("invoke", Target::Link { uri: Some(uri) }) if web_address(uri) => Outcome::Open(uri.clone()),
             ("invoke", Target::Button { enabled: true, on }) => call(on, Input::Invoke),
-            ("invoke", Target::ToggleMenuItem { enabled: true, checked, on }) => call(on, Input::Toggle(!checked)),
+            ("invoke", Target::ToggleMenuItem { enabled: true, checked, on }) => {
+                *checked = !*checked;
+                call(on, Input::Toggle(*checked))
+            }
             ("invoke", Target::MenuItem { enabled: true, on }) => call(on, Input::Invoke),
             ("toggle", Target::Radio { enabled: true, on, handler }) => {
                 if *on {
                     Outcome::Done
                 } else {
+                    *on = true;
                     call(handler, Input::Toggle(true))
                 }
             }
-            ("toggle", Target::Toggle { enabled: true, on, handler }) => call(handler, Input::Toggle(!on)),
-            ("toggle", Target::Switch { enabled: true, on, handler }) => call(handler, Input::Toggle(!on)),
+            ("toggle", Target::Toggle { enabled: true, on, handler }) | ("toggle", Target::Switch { enabled: true, on, handler }) => {
+                *on = !*on;
+                call(handler, Input::Toggle(*on))
+            }
             ("toggle", Target::Expander { open }) => Outcome::Flip(open.clone()),
             ("select", Target::Combo { enabled: true, index, count, handler }) => match int32(value) {
                 Some(row) if row >= 0 && (row as usize) < *count => {
                     if row == *index {
                         Outcome::Done
                     } else {
+                        *index = row;
                         call(handler, Input::Select(row))
                     }
                 }
@@ -211,25 +220,30 @@ impl Acts {
                     if row == *index {
                         Outcome::Done
                     } else {
+                        *index = row;
                         call(handler, Input::Select(row))
                     }
                 }
                 _ => Outcome::Refused,
             },
-            ("text", Target::Field { enabled: true, readonly: false, text, handler }) => match value.as_str() {
+            ("text", Target::Field { enabled: true, readonly: false, text, handler })
+            | ("text", Target::Password { enabled: true, text, handler }) => match value.as_str() {
                 Some(words) if words == text => Outcome::Done,
-                Some(words) => call(handler, Input::Text(words.to_string())),
-                None => Outcome::Refused,
-            },
-            ("text", Target::Password { enabled: true, text, handler }) => match value.as_str() {
-                Some(words) if words == text => Outcome::Done,
-                Some(words) => call(handler, Input::Text(words.to_string())),
+                Some(words) => {
+                    *text = words.to_string();
+                    call(handler, Input::Text(words.to_string()))
+                }
                 None => Outcome::Refused,
             },
             ("value", Target::Slider { enabled: true, value: current, min, max, handler }) => match value.as_f64() {
                 Some(number) if value.is_number() => {
                     let held = number.clamp(*min, *max);
-                    if held == *current { Outcome::Done } else { call(handler, Input::Value(held)) }
+                    if held == *current {
+                        Outcome::Done
+                    } else {
+                        *current = held;
+                        call(handler, Input::Value(held))
+                    }
                 }
                 _ => Outcome::Refused,
             },
@@ -253,7 +267,7 @@ mod tests {
         (handler(move |input| into.lock().unwrap().push(input)), seen)
     }
 
-    fn run(acts: &Acts, id: i64, op: &str, value: Value) -> bool {
+    fn run(acts: &mut Acts, id: i64, op: &str, value: Value) -> bool {
         acts.resolve(id, op, &value).run(|_| {})
     }
 
@@ -280,33 +294,33 @@ mod tests {
         let open = Local::new(false);
         acts.insert(16, Target::Expander { open: open.clone() });
 
-        assert!(run(&acts, 1, "invoke", Value::Null));
-        assert!(!run(&acts, 2, "invoke", Value::Null), "a disabled button");
-        assert!(!run(&acts, 1, "toggle", Value::Null), "a button does not toggle");
+        assert!(run(&mut acts, 1, "invoke", Value::Null));
+        assert!(!run(&mut acts, 2, "invoke", Value::Null), "a disabled button");
+        assert!(!run(&mut acts, 1, "toggle", Value::Null), "a button does not toggle");
         let mut opened = None;
         assert!(acts.resolve(3, "invoke", &Value::Null).run(|url| opened = Some(url.to_string())));
         assert_eq!(opened.as_deref(), Some("https://example.com/"));
-        assert!(!run(&acts, 4, "invoke", Value::Null), "a link without a web address");
-        assert!(run(&acts, 5, "toggle", Value::Null));
-        assert!(run(&acts, 6, "toggle", Value::Null), "a checked radio button takes it without an event");
-        assert!(run(&acts, 7, "toggle", Value::Null));
-        assert!(run(&acts, 8, "toggle", Value::Null));
-        assert!(run(&acts, 9, "select", json!(2)));
-        assert!(!run(&acts, 9, "select", json!(3)), "past the rows");
-        assert!(!run(&acts, 9, "select", json!(-1)), "a pop-up has no −1");
-        assert!(!run(&acts, 9, "select", json!(1.0)), "TryGetInt32 refuses a fraction's form");
-        assert!(!run(&acts, 9, "select", json!("1")));
-        assert!(run(&acts, 10, "select", json!(-1)), "a list takes −1");
-        assert!(run(&acts, 11, "text", json!("ab")));
-        assert!(!run(&acts, 11, "text", json!(5)));
-        assert!(!run(&acts, 12, "text", json!("ab")), "a read-only field");
-        assert!(run(&acts, 13, "value", json!(99)));
-        assert!(!run(&acts, 13, "value", json!("5")));
-        assert!(run(&acts, 14, "invoke", Value::Null));
-        assert!(!run(&acts, 15, "invoke", Value::Null), "a disabled menu row");
-        assert!(run(&acts, 16, "toggle", Value::Null));
+        assert!(!run(&mut acts, 4, "invoke", Value::Null), "a link without a web address");
+        assert!(run(&mut acts, 5, "toggle", Value::Null));
+        assert!(run(&mut acts, 6, "toggle", Value::Null), "a checked radio button takes it without an event");
+        assert!(run(&mut acts, 7, "toggle", Value::Null));
+        assert!(run(&mut acts, 8, "toggle", Value::Null));
+        assert!(run(&mut acts, 9, "select", json!(2)));
+        assert!(!run(&mut acts, 9, "select", json!(3)), "past the rows");
+        assert!(!run(&mut acts, 9, "select", json!(-1)), "a pop-up has no −1");
+        assert!(!run(&mut acts, 9, "select", json!(1.0)), "TryGetInt32 refuses a fraction's form");
+        assert!(!run(&mut acts, 9, "select", json!("1")));
+        assert!(run(&mut acts, 10, "select", json!(-1)), "a list takes −1");
+        assert!(run(&mut acts, 11, "text", json!("ab")));
+        assert!(!run(&mut acts, 11, "text", json!(5)));
+        assert!(!run(&mut acts, 12, "text", json!("ab")), "a read-only field");
+        assert!(run(&mut acts, 13, "value", json!(99)));
+        assert!(!run(&mut acts, 13, "value", json!("5")));
+        assert!(run(&mut acts, 14, "invoke", Value::Null));
+        assert!(!run(&mut acts, 15, "invoke", Value::Null), "a disabled menu row");
+        assert!(run(&mut acts, 16, "toggle", Value::Null));
         assert!(open.get(), "the expander flipped");
-        assert!(!run(&acts, 99, "invoke", Value::Null), "a stale id");
+        assert!(!run(&mut acts, 99, "invoke", Value::Null), "a stale id");
         assert_eq!(
             *seen.lock().unwrap(),
             vec![
@@ -323,6 +337,59 @@ mod tests {
         );
     }
 
+    /// Review M2: the stored control takes each change as C#'s live one does — two clicks on a switch before its handler redrew it send
+    /// on then off, and words typed then cleared reach the field both times.
+    #[test]
+    fn each_input_changes_the_stored_control() {
+        let (on, seen) = recorder();
+        let mut acts = Acts::default();
+        acts.insert(1, Target::Switch { enabled: true, on: false, handler: Some(on.clone()) });
+        acts.insert(2, Target::Field { enabled: true, readonly: false, text: String::new(), handler: Some(on.clone()) });
+        acts.insert(3, Target::Combo { enabled: true, index: 0, count: 3, handler: Some(on) });
+        assert!(run(&mut acts, 1, "toggle", Value::Null) && run(&mut acts, 1, "toggle", Value::Null));
+        assert!(run(&mut acts, 2, "text", json!("ab")) && run(&mut acts, 2, "text", json!("")));
+        assert!(run(&mut acts, 3, "select", json!(2)) && run(&mut acts, 3, "select", json!(0)));
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![
+                Input::Toggle(true),
+                Input::Toggle(false),
+                Input::Text("ab".into()),
+                Input::Text(String::new()),
+                Input::Select(2),
+                Input::Select(0)
+            ]
+        );
+    }
+
+    /// Every input on a disabled control is refused (C#'s `IsEnabled: true` patterns).
+    #[test]
+    fn disabled_controls_refuse_every_input() {
+        let (on, seen) = recorder();
+        let mut acts = Acts::default();
+        acts.insert(1, Target::Toggle { enabled: false, on: false, handler: Some(on.clone()) });
+        acts.insert(2, Target::Switch { enabled: false, on: false, handler: Some(on.clone()) });
+        acts.insert(3, Target::Radio { enabled: false, on: false, handler: Some(on.clone()) });
+        acts.insert(4, Target::Combo { enabled: false, index: 0, count: 3, handler: Some(on.clone()) });
+        acts.insert(5, Target::Field { enabled: false, readonly: false, text: String::new(), handler: Some(on.clone()) });
+        acts.insert(6, Target::Password { enabled: false, text: String::new(), handler: Some(on.clone()) });
+        acts.insert(7, Target::Slider { enabled: false, value: 0.0, min: 0.0, max: 5.0, handler: Some(on.clone()) });
+        acts.insert(8, Target::ToggleMenuItem { enabled: false, checked: false, on: Some(on) });
+        for (id, op, value) in [
+            (1, "toggle", Value::Null),
+            (2, "toggle", Value::Null),
+            (3, "toggle", Value::Null),
+            (4, "select", json!(1)),
+            (5, "text", json!("a")),
+            (6, "text", json!("a")),
+            (7, "value", json!(2)),
+            (8, "invoke", Value::Null),
+        ] {
+            assert!(!run(&mut acts, id, op, value), "control {id} is disabled");
+        }
+        assert!(seen.lock().unwrap().is_empty());
+    }
+
     /// The control's own event fires only on a change: the same row, the same words or the same value answer true and run nothing.
     #[test]
     fn no_event_without_a_change() {
@@ -331,9 +398,9 @@ mod tests {
         acts.insert(1, Target::Combo { enabled: true, index: 1, count: 3, handler: Some(on.clone()) });
         acts.insert(2, Target::Field { enabled: true, readonly: false, text: "same".into(), handler: Some(on.clone()) });
         acts.insert(3, Target::Slider { enabled: true, value: 10.0, min: 0.0, max: 10.0, handler: Some(on) });
-        assert!(run(&acts, 1, "select", json!(1)));
-        assert!(run(&acts, 2, "text", json!("same")));
-        assert!(run(&acts, 3, "value", json!(50)), "held to 10, the value it has");
+        assert!(run(&mut acts, 1, "select", json!(1)));
+        assert!(run(&mut acts, 2, "text", json!("same")));
+        assert!(run(&mut acts, 3, "value", json!(50)), "held to 10, the value it has");
         assert!(seen.lock().unwrap().is_empty());
     }
 }

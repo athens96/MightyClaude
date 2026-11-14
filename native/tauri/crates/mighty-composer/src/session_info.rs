@@ -21,6 +21,8 @@ pub struct Inputs<'a> {
     pub elapsed: Option<String>,
     /// The user's number grouping (`N0` in `CultureInfo.CurrentCulture`): the separator and the group sizes.
     pub grouping: Option<&'a (String, Vec<usize>)>,
+    /// The user's decimal separator (`NumberDecimalSeparator` in `CultureInfo.CurrentCulture`), when the OS says.
+    pub decimal: Option<&'a str>,
     /// `ToLocalTime().ToString("T", CurrentCulture)` of a reported time, when it reads.
     pub long_time: &'a dyn Fn(&str) -> Option<String>,
 }
@@ -61,11 +63,42 @@ fn usage_scope(scope: Option<&str>, l: &Locale) -> String {
     })
 }
 
-/// `$"${amount:0.####}"`: at most four decimals, trailing zeros dropped.
-fn dollars(amount: f64) -> String {
-    let text = format!("{amount:.4}");
-    let text = text.trim_end_matches('0').trim_end_matches('.');
-    format!("${text}")
+/// `$"${amount:0.####}"` in the user's culture: the amount's shortest digits rounded at the fourth decimal half away from zero, as
+/// .NET rounds a custom format's digits (not the binary value: 0.00005 is "0.0001"), trailing zeros dropped, the user's decimal
+/// separator (a "." when the OS does not say).
+fn dollars(amount: f64, decimal: Option<&str>) -> String {
+    if !amount.is_finite() {
+        return format!("${amount}");
+    }
+    let text = format!("{}", amount.abs());
+    let (whole, fraction) = text.split_once('.').unwrap_or((&text, ""));
+    let mut digits: Vec<u8> = whole.bytes().chain(fraction.bytes().take(4)).map(|b| b - b'0').collect();
+    let mut kept = fraction.len().min(4);
+    if fraction.as_bytes().get(4).is_some_and(|d| *d >= b'5') {
+        let mut at = digits.len();
+        loop {
+            if at == 0 {
+                digits.insert(0, 1);
+                break;
+            }
+            at -= 1;
+            if digits[at] == 9 {
+                digits[at] = 0;
+            } else {
+                digits[at] += 1;
+                break;
+            }
+        }
+    }
+    while kept > 0 && digits.last() == Some(&0) {
+        digits.pop();
+        kept -= 1;
+    }
+    let split = digits.len() - kept;
+    let whole: String = digits[..split].iter().map(|d| char::from(b'0' + d)).collect();
+    let fraction: String = digits[split..].iter().map(|d| char::from(b'0' + d)).collect();
+    let sign = if amount < 0.0 && digits.iter().any(|d| *d != 0) { "-" } else { "" };
+    if fraction.is_empty() { format!("${sign}{whole}") } else { format!("${sign}{whole}{}{fraction}", decimal.unwrap_or(".")) }
 }
 
 /// `WebSessionInfo`: the popover's object as C#'s anonymous object writes it (nulls left out).
@@ -163,7 +196,7 @@ pub fn session_info(inputs: &Inputs) -> Value {
         "cost",
         cost.map(|amount| {
             let scope = usage_scope(usage.and_then(|u| u.cost_scope.as_deref()), l);
-            json!({"label": l.get_with("composer.sessionInfo.costWithScope", &[("scope", &scope)]), "value": dollars(amount)})
+            json!({"label": l.get_with("composer.sessionInfo.costWithScope", &[("scope", &scope)]), "value": dollars(amount, inputs.decimal)})
         }),
     );
     put("noUsage", Some(json!(no_usage)));
@@ -203,8 +236,17 @@ mod tests {
         assert_eq!(n0(12345678, Some(&india)), "1,23,45,678");
         let space = ("\u{a0}".to_string(), vec![3]);
         assert_eq!(n0(1234, Some(&space)), "1\u{a0}234");
-        assert_eq!(dollars(0.12345), "$0.1235");
-        assert_eq!(dollars(2.0), "$2");
+        assert_eq!(dollars(0.12345, None), "$0.1235");
+        assert_eq!(dollars(2.0, None), "$2");
+        // Review L9: .NET's `0.####` rounds the shortest digits half away from zero (Rust's `{:.4}` rounds the binary value, half to
+        // even: 0.00005 → "0.0000", 1.00005 → "1.0000"), and writes the user's decimal separator.
+        assert_eq!(dollars(0.00005, None), "$0.0001");
+        assert_eq!(dollars(1.00005, None), "$1.0001");
+        assert_eq!(dollars(0.99995, None), "$1");
+        assert_eq!(dollars(9.99999, Some(",")), "$10");
+        assert_eq!(dollars(0.1, Some(",")), "$0,1");
+        assert_eq!(dollars(0.00004, None), "$0");
+        assert_eq!(dollars(12.5, Some(",")), "$12,5");
     }
 
     /// A pane with no usage: the context unavailable, the selected model, the workspace and its path, no tokens, the ids.
@@ -220,6 +262,7 @@ mod tests {
             models: &[],
             elapsed: None,
             grouping: None,
+            decimal: None,
             long_time: &|_| None,
         });
         assert_eq!(info["context"], l.get("composer.sessionInfo.contextUnavailable"));
@@ -248,6 +291,7 @@ mod tests {
             models: &[],
             elapsed: Some("01:05".into()),
             grouping: None,
+            decimal: None,
             long_time: &|_| Some("3:04:05 AM".into()),
         });
         assert_eq!(info["context"], l.get_with("composer.sessionInfo.contextTokens", &[("used", "50,000"), ("limit", "200,000")]));

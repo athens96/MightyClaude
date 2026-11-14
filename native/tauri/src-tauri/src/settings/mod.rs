@@ -155,6 +155,10 @@ impl SurfaceModel for SettingsSurface {
         }
         self.category = to.to_string();
         refresh_accounts(&self.host, to);
+        if to == "models" {
+            // omc's and Ouroboros's settings read again off the surface's lock (C# `LoadTools` on every build).
+            models::reload_tools(&self.host);
+        }
         let mut view = self.host.view();
         view.error = None;
         if let Err(error) = view.update(|state| state.settings_pane = Some(to.to_string())) {

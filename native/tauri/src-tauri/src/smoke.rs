@@ -704,19 +704,17 @@ impl Smoke {
             for (name, passed) in crate::smoke_history::checks(history.as_ref().unwrap_or(&missing)) {
                 checks[name] = json!(passed);
             }
-            // The W6 steps: the settings step always runs; the others only once their part has one (a step that did not start
-            // reports nothing and adds no check).
-            let missing = json!({"error": "the settings step did not report"});
-            for (name, passed) in crate::smoke_settings::checks(w6.0.as_ref().unwrap_or(&missing)) {
-                checks[name] = json!(passed);
-            }
-            let parts: [(&Option<Value>, StepChecks); 3] =
-                [(&w6.1, crate::smoke_setup::checks), (&w6.2, crate::smoke_accounts::checks), (&w6.3, crate::smoke_updates::checks)];
-            for (report, part) in parts {
-                if let Some(report) = report {
-                    for (name, passed) in part(report) {
-                        checks[name] = json!(passed);
-                    }
+            // The W6 steps: a step that did not start (or did not report) fails every one of its checks (review L7).
+            let parts: [(&Option<Value>, StepChecks, &str); 4] = [
+                (&w6.0, crate::smoke_settings::checks, "settings"),
+                (&w6.1, crate::smoke_setup::checks, "setup"),
+                (&w6.2, crate::smoke_accounts::checks, "accounts"),
+                (&w6.3, crate::smoke_updates::checks, "updates"),
+            ];
+            for (report, part, step) in parts {
+                let missing = json!({"error": format!("the {step} step did not report")});
+                for (name, passed) in part(report.as_ref().unwrap_or(&missing)) {
+                    checks[name] = json!(passed && report.is_some());
                 }
             }
         }

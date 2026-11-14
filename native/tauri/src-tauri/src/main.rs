@@ -422,10 +422,13 @@ fn main() {
             if let Some(host) = app.try_state::<Arc<Host>>() {
                 // The model lists read and reconcile nothing more (C# `modelRefreshes?.Shutdown()`, before the last save).
                 models::shutdown(&host);
-                // The account usage's pending reads cancelled (usage.rs, W6-C).
+                // The accounts' sign-ins and reads let go, and the account usage's pending reads cancelled (accounts.rs, usage.rs, W6-C).
+                accounts::shutdown(&host);
                 tauri::async_runtime::block_on(usage::shutdown(&host));
                 // Every terminal closed first (C# CloseTerminalsAsync), the wait bounded.
                 terminal::close_all(app);
+                // The CLI updates and plugin operations cancelled, the wait bounded (updates.rs, W6-D).
+                updates::shutdown(&host);
                 // The last save (C# DesktopService.DisposeAsync), written only with --allow-state-write.
                 host.close();
                 host.write_unimplemented();

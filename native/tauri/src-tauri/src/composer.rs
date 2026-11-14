@@ -337,6 +337,7 @@ pub fn session_info(host: &Arc<Host>, pane: Option<&str>) -> crate::host::Reply 
     let models: Vec<_> = catalog.models.iter().map(|m| m.label_option()).collect();
     let elapsed = pane.run_timing.as_ref().filter(|t| t.is_valid()).map(|t| mighty_run::timing::label(t, None));
     let grouping = crate::platform::number_grouping();
+    let decimal = crate::platform::decimal_separator();
     Ok(mighty_composer::session_info::session_info(&mighty_composer::session_info::Inputs {
         locale: host.locale,
         pane: &pane,
@@ -344,6 +345,7 @@ pub fn session_info(host: &Arc<Host>, pane: Option<&str>) -> crate::host::Reply 
         models: &models,
         elapsed,
         grouping: grouping.as_ref(),
+        decimal: decimal.as_deref(),
         long_time: &crate::platform::long_time,
     }))
 }

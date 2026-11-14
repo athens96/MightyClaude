@@ -1,6 +1,6 @@
 //! Later stages' boxes, host-absent as in C# (MainWindow.Styles, MobileRemote, ScreenShare, RemoteWorkspaces, Companion). Owner: W6-A.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use mighty_core::design_tokens::{Token, metrics};
 use mighty_native::kit::{ControlSize, TextStyle};
@@ -10,15 +10,15 @@ use crate::host::Host;
 
 /// 스타일 (C# `BuildStylesSection`, MainWindow.Styles.cs:18-139): the register and rescan buttons, the description, then each registered
 /// style's row. Styles (their registry, trust store and approval sheet) are W9's: until then no style is registered, so the list is
-/// empty, register's file picker and rescan have nothing to read, and nothing is locked.
+/// empty, register's file picker and rescan have nothing to read (both shown disabled), and nothing is locked.
 pub fn styles(_host: &Arc<Host>, ui: &mut Ui) -> El {
     let locale = ui.locale();
     let mut rows = ui.settings_rows();
     let register = ui
-        .settings_push(ui.button(locale.get("settings.styles.registerButton"), || {}), ControlSize::Regular, false, false)
+        .settings_push(ui.button(locale.get("settings.styles.registerButton"), || {}).enabled(false), ControlSize::Regular, false, false)
         .aid("settings-style-register");
     let rescan = ui
-        .settings_push(ui.button(locale.get("settings.styles.rescanButton"), || {}), ControlSize::Regular, false, false)
+        .settings_push(ui.button(locale.get("settings.styles.rescanButton"), || {}).enabled(false), ControlSize::Regular, false, false)
         .aid("settings-style-rescan");
     rows.add(El::stack(true, metrics::SPACING_SM, vec![register, rescan]));
     rows.add(ui.settings_text(locale.get("settings.styles.description"), TextStyle::size(11.0).ink(Token::Ink2)));
@@ -276,12 +276,12 @@ pub fn remote_workspaces(host: &Arc<Host>, ui: &mut Ui) -> El {
             caption(ui, "remote.windows.firewall.removeClosesBoth"),
         ],
     );
-    let smoke = host.smoke.is_some();
+    // The firewall's check is W7's (remote workspaces): until then the button does nothing and is shown disabled.
     let buttons = El::stack(
         true,
         metrics::SPACING_SM,
         vec![
-            ui.settings_push(ui.button(locale.get("setup.button.recheck"), || {}).enabled(!smoke), ControlSize::Small, false, false)
+            ui.settings_push(ui.button(locale.get("setup.button.recheck"), || {}).enabled(false), ControlSize::Small, false, false)
                 .aid("settings-remote-firewall-add"),
             ui.settings_push(ui.button(locale.get("remote.windows.firewall.remove"), || {}), ControlSize::Small, false, true)
                 .aid("settings-remote-firewall-remove")
@@ -336,18 +336,30 @@ pub fn remote_workspaces(host: &Arc<Host>, ui: &mut Ui) -> El {
     rows.finish()
 }
 
+/// The companion's pet switches as switched in this run, by automation id (W8 saves them).
+static PET_SWITCHES: Mutex<Vec<(String, bool)>> = Mutex::new(Vec::new());
+
+fn pet_switches() -> std::sync::MutexGuard<'static, Vec<(String, bool)>> {
+    PET_SWITCHES.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// 컴패니언 (C# `BuildCompanionSection`, MainWindow.Companion.cs:510-578). The pets (their catalog, picker, preview, import, reload and
 /// position) are W8's: until then no pet is installed, so the picker is empty and the box says so (`companion.error.noPet`); the pet
-/// switches keep their defaults for this run. The completion notification switch is the saved setting, and the row under it says
+/// switches keep what was switched for this run (across categories; their defaults at first), and the pet's buttons are shown disabled.
+/// The completion notification switch is the saved setting, and the row under it says
 /// whether Windows lets the app notify (notifications.rs).
 pub fn companion(host: &Arc<Host>, ui: &mut Ui) -> El {
     let locale = ui.locale();
     let mut rows = ui.settings_rows();
     let switch = |ui: &mut Ui, rows: &mut mighty_native::kit::SettingsRows, key: &str, aid: &str, on: bool| {
         let label = locale.get(key);
-        let kept = ui.local(aid, || on);
-        let into = kept.clone();
-        let toggle = ui.settings_switch(&label, kept.get(), Some(aid), move |on| into.set(on));
+        let kept = pet_switches().iter().find(|(id, _)| id == aid).map_or(on, |(_, on)| *on);
+        let id = aid.to_string();
+        let toggle = ui.settings_switch(&label, kept, Some(aid), move |on| {
+            let mut switches = pet_switches();
+            switches.retain(|(kept, _)| *kept != id);
+            switches.push((id.clone(), on));
+        });
         rows.add(ui.settings_labeled(ui.settings_text(&label, TextStyle::default()), toggle, false));
     };
     switch(ui, &mut rows, "companion.settings.enabled", "settings-companion-enabled", true);
@@ -359,7 +371,7 @@ pub fn companion(host: &Arc<Host>, ui: &mut Ui) -> El {
     let framed = ui.settings_popup_frame(picker).margin(Thickness::new(0.0, 0.0, -mighty_native::kit::SETTINGS_POPUP_CHIP_INSET, 0.0));
     let buttons = ["companion.settings.import", "companion.settings.reload", "companion.settings.resetPosition"]
         .iter()
-        .map(|key| ui.settings_push(ui.button(locale.get(key), || {}), ControlSize::Small, false, false))
+        .map(|key| ui.settings_push(ui.button(locale.get(key), || {}).enabled(false), ControlSize::Small, false, false))
         .collect();
     let choice = El::stack(
         false,

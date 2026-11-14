@@ -225,7 +225,6 @@ pub async fn direct(host: &Arc<Host>, on: bool) -> Result<(), String> {
 }
 
 /// `ShutdownAccountUsageAsync`: closing the app cancels the pending reads and drops every value.
-#[allow(dead_code, reason = "the integrator's shutdown hook (main.rs is W6-A's) calls it")]
 pub async fn shutdown(host: &Host) {
     if let Some(usage) = host.app.try_state::<Arc<Usage>>().map(|u| u.inner().clone()) {
         usage.status.close().await;

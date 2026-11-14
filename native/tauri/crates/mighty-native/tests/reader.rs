@@ -401,12 +401,12 @@ fn a_read_fills_the_act_table_and_keeps_ids() {
     let tree = build(seen.clone(), false);
     let first = write(&Reader::new(&e, "settings", &mut ids, &mut acts).node(&tree).unwrap());
     assert_eq!(acts.ids(), vec![1, 2, 3, 4], "the hidden button gets no id");
-    let run = |acts: &Acts, id, op, value| acts.resolve(id, op, &value).run(|_| {});
-    assert!(run(&acts, 1, "invoke", json!(null)));
-    assert!(run(&acts, 2, "text", json!("abc")));
-    assert!(run(&acts, 3, "toggle", json!(null)), "the chosen segment takes the toggle");
-    assert!(run(&acts, 4, "toggle", json!(null)));
-    assert!(!run(&acts, 9, "invoke", json!(null)));
+    let run = |acts: &mut Acts, id, op, value| acts.resolve(id, op, &value).run(|_| {});
+    assert!(run(&mut acts, 1, "invoke", json!(null)));
+    assert!(run(&mut acts, 2, "text", json!("abc")));
+    assert!(run(&mut acts, 3, "toggle", json!(null)), "the chosen segment takes the toggle");
+    assert!(run(&mut acts, 4, "toggle", json!(null)));
+    assert!(!run(&mut acts, 9, "invoke", json!(null)));
     assert_eq!(*seen.lock().unwrap(), vec!["save", "text abc", "pick light"]);
     acts.clear();
     let again = write(&Reader::new(&e, "settings", &mut ids, &mut acts).node(&build(seen.clone(), false)).unwrap());

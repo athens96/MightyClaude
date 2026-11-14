@@ -69,12 +69,14 @@ impl FontCatalog for DirectWriteFonts {
                 if faces == 0 {
                     continue;
                 }
-                match families.iter_mut().find(|f| f.name.eq_ignore_ascii_case(&name)) {
+                let folded = name.to_uppercase();
+                match families.iter_mut().find(|f| f.name.to_uppercase() == folded) {
                     Some(known) => known.monospaced &= fixed,
                     None => families.push(FontFamily { name, monospaced: fixed }),
                 }
             }
-            families.sort_by_key(|f| f.name.to_lowercase());
+            // C#'s `OrdinalIgnoreCase`: compared upper-cased, a stable sort.
+            families.sort_by_key(|f| f.name.to_uppercase());
             Ok(families)
         }
     }
@@ -94,7 +96,7 @@ mod tests {
         assert!(find("Segoe UI").is_some_and(|f| !f.monospaced), "Segoe UI is proportional");
         assert!(find("Wingdings").is_none() && find("Segoe MDL2 Assets").is_none(), "symbol fonts are left out");
         assert!(families.iter().all(|f| !f.name.starts_with(['@', '.'])));
-        let names: Vec<String> = families.iter().map(|f| f.name.to_lowercase()).collect();
+        let names: Vec<String> = families.iter().map(|f| f.name.to_uppercase()).collect();
         let mut sorted = names.clone();
         sorted.sort();
         sorted.dedup();

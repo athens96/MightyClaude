@@ -2,8 +2,8 @@
 //! `PhasePair`, `AddRegisteredModels`, `SavePhaseModelEdit`; MainWindow.PhaseModelsSmoke.cs), drawn from mighty-run's typed
 //! `phase_section::form`. Owner: W6-A.
 //!
-//! omc's and Ouroboros's settings (`PhaseModelTools`) are read once as Settings opens (a smoke uses the fixture tools and reads
-//! nothing); a change to them is written back only when the app may write the user's settings (`--allow-state-write`, never a smoke),
+//! omc's and Ouroboros's settings (`PhaseModelTools`) are read again as Settings opens and as the models category is chosen, outside
+//! any lock (C# `LoadTools` on every build; a smoke uses the fixture tools and reads nothing); a change to them is written back only when the app may write the user's settings (`--allow-state-write`, never a smoke),
 //! else kept for this run, as C#'s smoke keeps them. Every model saved went through `wire::model` (`phase_models::apply_row`).
 
 use std::collections::HashMap;
@@ -35,9 +35,11 @@ struct Draft {
 }
 
 #[derive(Default)]
-struct Models {
+pub struct Models {
     tools: Option<PhaseModelTools>,
     drafts: HashMap<String, Draft>,
+    /// The smoke's catalogs, in place of the providers' (C#'s smoke replaces the runtime's catalogs).
+    catalogs: Option<HashMap<String, ModelCatalog>>,
 }
 
 static MODELS: Mutex<Option<Models>> = Mutex::new(None);
@@ -52,11 +54,8 @@ fn home() -> Option<std::path::PathBuf> {
     std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(std::path::PathBuf::from)
 }
 
-/// `LoadTools`, once as Settings opens: the smoke's fixture tools in a smoke (nothing read).
+/// `LoadTools`: read again each time (the smoke's fixture tools in a smoke, nothing read). Never under a lock: the files are read first.
 pub fn read_tools(host: &Host) {
-    if with(|m| m.tools.is_some()) {
-        return;
-    }
     let tools = if host.smoke.is_some() {
         phase_section::smoke_fixture_tools()
     } else {
@@ -65,24 +64,71 @@ pub fn read_tools(host: &Host) {
     with(|m| m.tools = Some(tools));
 }
 
+/// The tools read again on a task of its own (the models category chosen while the surface's lock is held), then Settings read again.
+pub fn reload_tools(host: &Arc<Host>) {
+    let host = host.clone();
+    tauri::async_runtime::spawn(async move {
+        let reader = host.clone();
+        if tauri::async_runtime::spawn_blocking(move || read_tools(&reader)).await.is_ok() {
+            crate::native::touch(&host, super::SURFACE);
+        }
+    });
+}
+
+/// The smoke's models: its fixture tools, no drafts and `catalogs` in place of the providers'; what was there is given back to
+/// [`restore`] afterwards.
+pub fn swap_for_smoke(catalogs: HashMap<String, ModelCatalog>) -> Models {
+    let smoke = Models { tools: Some(phase_section::smoke_fixture_tools()), drafts: HashMap::new(), catalogs: Some(catalogs) };
+    let mut models = MODELS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    models.replace(smoke).unwrap_or_default()
+}
+
+/// The models as they were before [`swap_for_smoke`].
+pub fn restore(saved: Models) {
+    *MODELS.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(saved);
+}
+
 fn tools() -> PhaseModelTools {
     with(|m| m.tools.clone().unwrap_or_default())
 }
 
 fn catalog(host: &Host, provider: &str) -> ModelCatalog {
+    if let Some(catalog) = with(|m| m.catalogs.as_ref().and_then(|c| c.get(provider).cloned())) {
+        return catalog;
+    }
     host.runs().map(|r| r.catalog_of(provider)).unwrap_or_else(|| providers::fallback(provider))
 }
 
-/// `SavePhaseModelEdit`: omc's and Ouroboros's settings written (only when the app may write the user's settings, else kept for this
-/// run), then the phase models saved.
-fn save_edit(host: &Arc<Host>, edit: PhaseModelEdit) -> Result<(), String> {
+/// `SavePhaseModelEdit` with the edit made from the state as the save finds it (C# `UpdateAsync(s => ...)`: two picks at once never
+/// undo each other): the phase models saved, then omc's and Ouroboros's settings written (only when the app may write the user's
+/// settings, else kept for this run).
+fn save_edit(
+    host: &Arc<Host>,
+    make: impl FnOnce(&PhaseModelsSnapshot, &PhaseModelTools) -> Result<PhaseModelEdit, String>,
+) -> Result<(), String> {
     let before = tools();
+    let mut made = None;
+    let mut refused = None;
+    host.view().update(|state| {
+        let config = state.phase_models.clone().unwrap_or_else(phase_models::new_snapshot);
+        match make(&config, &before) {
+            Ok(edit) => {
+                state.phase_models = Some(edit.config.clone());
+                made = Some(edit);
+            }
+            Err(error) => refused = Some(error),
+        }
+    })?;
+    if let Some(error) = refused {
+        return Err(error);
+    }
+    let Some(edit) = made else { return Ok(()) };
     let after = match home().filter(|_| host.may_change_machine()) {
         Some(home) => phase_section::save_tools(&before, &edit, &home),
         None => PhaseModelTools { omc_agents: edit.omc_agents.clone(), ouroboros_keys: edit.ouroboros_keys.clone(), ..before },
     };
     with(|m| m.tools = Some(after));
-    host.view().update(|state| state.phase_models = Some(edit.config))
+    Ok(())
 }
 
 fn config(host: &Host) -> PhaseModelsSnapshot {
@@ -91,32 +137,37 @@ fn config(host: &Host) -> PhaseModelsSnapshot {
 
 /// `ApplyProviderPhaseRow`.
 pub fn apply_row(host: &Arc<Host>, provider: &str, phase: Phase, value: &str) -> Result<(), String> {
-    let edit = phase_models::apply_row(provider, phase, value, &config(host), &tools()).map_err(|e| e.to_string())?;
-    save_edit(host, edit)
+    save_edit(host, |config, tools| phase_models::apply_row(provider, phase, value, config, tools).map_err(|e| e.to_string()))
 }
 
-/// `ApplyPhaseEffort`.
+/// `ApplyPhaseEffort`, from the state as the save finds it.
 pub fn apply_effort(host: &Arc<Host>, provider: &str, phase: Phase, value: &str) -> Result<(), String> {
-    let next = phase_models::set_effort(&config(host), provider, phase, value).map_err(|e| e.to_string())?;
-    host.view().update(|state| state.phase_models = Some(next))
+    let mut refused = None;
+    host.view().update(|state| {
+        let config = state.phase_models.clone().unwrap_or_else(phase_models::new_snapshot);
+        match phase_models::set_effort(&config, provider, phase, value) {
+            Ok(next) => state.phase_models = Some(next),
+            Err(error) => refused = Some(error.to_string()),
+        }
+    })?;
+    refused.map_or(Ok(()), Err)
 }
 
 /// `ApplyPhaseModelKnob`.
 pub fn apply_knob(host: &Arc<Host>, knob: &str, value: &str) -> Result<(), String> {
-    let edit = phase_section::apply_knob(knob, value, &config(host), &tools());
-    save_edit(host, edit)
+    save_edit(host, |config, tools| Ok(phase_section::apply_knob(knob, value, config, tools)))
 }
 
 /// `Add()` + `UpdatePhaseRegistered`: the draft registered (its words why not shown under it), every pane's composer read again.
 pub fn register(host: &Arc<Host>, provider: &str, name: &str, supports: bool, levels: &[String]) -> Result<(), String> {
     let levels: Vec<&str> = levels.iter().map(String::as_str).collect();
-    let registered = {
-        let view = host.view();
-        phase_section::register(&view.snapshot, provider, name, supports, &levels)
-    };
+    let mut registered = Ok(());
+    host.view().update(|state| match phase_section::register(state, provider, name, supports, &levels) {
+        Ok(next) => state.model_defaults = next.model_defaults,
+        Err(error) => registered = Err(error),
+    })?;
     match registered {
-        Ok(next) => {
-            host.view().update(|state| state.model_defaults = next.model_defaults.clone())?;
+        Ok(()) => {
             with(|m| m.drafts.insert(provider.to_string(), Draft::default()));
             host.panes_changed();
             Ok(())
@@ -134,11 +185,7 @@ pub fn register(host: &Arc<Host>, provider: &str, name: &str, supports: bool, le
 
 /// The delete button.
 pub fn unregister(host: &Arc<Host>, provider: &str, name: &str) -> Result<(), String> {
-    let next = {
-        let view = host.view();
-        phase_section::unregister(&view.snapshot, provider, name)
-    };
-    host.view().update(|state| state.model_defaults = next.model_defaults.clone())?;
+    host.view().update(|state| state.model_defaults = phase_section::unregister(state, provider, name).model_defaults)?;
     host.panes_changed();
     Ok(())
 }
@@ -151,10 +198,14 @@ pub fn phase_models(host: &Arc<Host>, ui: &mut Ui) -> El {
 
 /// `FillPhaseModelsSection` over `config` and `tools` (the smoke builds it over its fixture too).
 pub fn build(host: &Arc<Host>, ui: &mut Ui, config: &PhaseModelsSnapshot, tools: &PhaseModelTools) -> El {
-    let snapshot = host.view().snapshot.clone();
+    // Only the registered models are needed: they alone are cloned (not the whole state, four times a second).
+    let entries: HashMap<&str, Vec<_>> = {
+        let view = host.view();
+        ["claude", "codex"].iter().map(|p| (*p, phase_section::registered_of(&view.snapshot, p))).collect()
+    };
     let catalogs: HashMap<&str, ModelCatalog> = ["claude", "codex"].iter().map(|p| (*p, catalog(host, p))).collect();
     let form = phase_section::form(config, tools, &|p| catalogs.get(p).cloned().unwrap_or_else(|| providers::fallback(p)), &|p| {
-        phase_section::registered_of(&snapshot, p)
+        entries.get(p).cloned().unwrap_or_default()
     });
     let mut rows = ui.settings_rows();
     rows.add(ui.settings_text(form.description.clone(), TextStyle::size(11.0).ink(Token::Ink2)));
@@ -272,25 +323,23 @@ fn registered(host: &Arc<Host>, ui: &mut Ui, provider: &phase_section::ProviderF
             .keyed(entry.name.clone()),
         );
     }
-    let typed = ui.local(&format!("phase-add-{p}"), || draft.name.clone());
-    let into = typed.clone();
+    // The words typed live in the draft (C# `phaseRegistrationDrafts`), so they outlive a category switch; a successful add clears them.
+    let provider_id = p.clone();
     let field = ui
-        .settings_field(El::text_box(typed.get()), 11.0)
+        .settings_field(El::text_box(draft.name.clone()), 11.0)
         .named(provider.add_label.clone())
         .aid(format!("phaseModels-add-{p}"))
-        .on_text(move |words| into.set(words))
+        .on_text(move |words| with(|m| m.drafts.entry(provider_id.clone()).or_default().name = words))
         .cell(0, 1);
-    let (to, provider_id, name) = (host.clone(), p.clone(), typed.clone());
+    let (to, provider_id) = (host.clone(), p.clone());
     let add = ui
         .settings_push(
             ui.button(provider.add_button.clone(), move || {
                 let draft = with(|m| m.drafts.entry(provider_id.clone()).or_default().clone());
-                let (host, provider_id, name) = (to.clone(), provider_id.clone(), name.clone());
+                let (host, provider_id) = (to.clone(), provider_id.clone());
                 crate::native::act(&to, async move {
                     // The words show under the add row (the draft's error); the banner stays clear, as C#'s Add catches them.
-                    if register(&host, &provider_id, &name.get(), draft.supports_effort, &draft.levels).is_ok() {
-                        name.set(String::new());
-                    }
+                    let _ = register(&host, &provider_id, &draft.name, draft.supports_effort, &draft.levels);
                     Ok(())
                 });
             }),
@@ -420,12 +469,29 @@ pub fn smoke_section(host: &Arc<Host>, ui: &mut Ui) -> Vec<&'static str> {
     if by("phaseModels-model-codex-execution").is_some() || by("phaseModels-model-codex-planning").is_some() {
         failed.push("codexPaneModel");
     }
-    // The chips sit in the levels panel, hidden until the effort switch is on (C# counts them in the tree; the page reads them once shown).
-    let form = phase_section::form(&config, &phase_section::smoke_fixture_tools(), &providers::fallback, &|_| vec![]);
-    for (p, provider) in ["claude", "codex"].iter().zip(&form.providers) {
-        if by(&format!("phaseModels-add-{p}")).is_none() || provider.effort_levels.len() != mighty_core::wire::EFFORTS.len() {
+    // The chips sit in the levels panel, hidden until the effort switch is on: they are counted in the tree built, as C# counts them in
+    // its visual tree (the page reads them once shown).
+    let mut aids = vec![];
+    tree_aids(&el, &mut aids);
+    for p in ["claude", "codex"] {
+        let chips = aids.iter().filter(|a| a.starts_with(&format!("phaseModels-addLevel-{p}-"))).count();
+        if by(&format!("phaseModels-add-{p}")).is_none() || chips != mighty_core::wire::EFFORTS.len() {
             failed.push("addRow");
         }
     }
     failed
+}
+
+/// Every automation id in the tree built, shown or not.
+fn tree_aids(el: &El, out: &mut Vec<String>) {
+    if let Some(aid) = &el.aid {
+        out.push(aid.clone());
+    }
+    match &el.kind {
+        Kind::Grid(Grid { children, .. }) | Kind::StackPanel(mighty_native::ui::StackPanel { children, .. }) | Kind::Panel { children } => {
+            children.iter().for_each(|child| tree_aids(child, out))
+        }
+        Kind::Border(Border { child: Some(child), .. }) => tree_aids(child, out),
+        _ => {}
+    }
 }

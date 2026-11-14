@@ -89,9 +89,14 @@ pub fn is_alert(content: &Content) -> bool {
     }
 }
 
-/// `node = surface.Reader.Node(element)`, left out when null.
+/// `node = surface.Reader.Node(element)`, left out when null; its controls' key paths start with the part's own name (`name`, or the
+/// section's `s<index>`), so two parts' controls never share an id.
 fn node(out: &mut JsonOut, reader: &mut Reader, name: &str, el: Option<&El>) {
-    if let Some(node) = el.and_then(|el| reader.node(el)) {
+    node_as(out, reader, name, name, el);
+}
+
+fn node_as(out: &mut JsonOut, reader: &mut Reader, name: &str, part: &str, el: Option<&El>) {
+    if let Some(node) = el.and_then(|el| reader.node_in(el, part)) {
         out.name(name);
         write_into(out, &node);
     }
@@ -101,12 +106,12 @@ fn node(out: &mut JsonOut, reader: &mut Reader, name: &str, el: Option<&El>) {
 fn sections(out: &mut JsonOut, reader: &mut Reader, sections: &[Section]) {
     out.name("sections");
     out.begin_array();
-    for section in sections {
+    for (index, section) in sections.iter().enumerate() {
         out.begin_object();
         out.prop_str("title", section.title.as_deref());
         out.name("beta");
         out.bool(section.beta);
-        node(out, reader, "node", section.node.as_ref());
+        node_as(out, reader, "node", &format!("s{index}"), section.node.as_ref());
         out.end_object();
     }
     out.end_array();

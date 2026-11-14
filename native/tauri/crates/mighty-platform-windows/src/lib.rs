@@ -137,16 +137,21 @@ mod imp {
             (written > 0).then(|| String::from_utf16_lossy(&buffer[..written as usize - 1]))
         };
         let separator = read(LOCALE_STHOUSAND)?;
-        let mut sizes: Vec<usize> = read(LOCALE_SGROUPING)?.split(';').map(|size| size.trim().parse().ok()).collect::<Option<_>>()?;
+        Some((separator, group_sizes(&read(LOCALE_SGROUPING)?)?))
+    }
+
+    /// `LOCALE_SGROUPING` as .NET's `NumberGroupSizes`: a trailing 0 repeats the size before it (dropped), without one the grouping
+    /// stops after the sizes given (a 0 added).
+    fn group_sizes(grouping: &str) -> Option<Vec<usize>> {
+        let mut sizes: Vec<usize> = grouping.split(';').map(|size| size.trim().parse().ok()).collect::<Option<_>>()?;
         match sizes.last() {
-            // A trailing 0 repeats the size before it, as .NET reads it; without one the grouping stops after the sizes given.
             Some(0) if sizes.len() > 1 => {
                 sizes.pop();
             }
             Some(_) => sizes.push(0),
             None => return None,
         }
-        Some((separator, sizes))
+        Some(sizes)
     }
 
     /// Every port for this run.
@@ -239,6 +244,16 @@ mod imp {
             let (separator, sizes) = number_grouping().expect("Windows names the user's number format");
             assert!(separator.encode_utf16().count() <= 4, "a separator, not a sentence: {separator:?}");
             assert!(!sizes.is_empty() && sizes.iter().all(|size| *size <= 9), "group sizes {sizes:?}");
+        }
+
+        /// Review L7: the grouping read as .NET reads it — "3;0" is [3], India's "3;2;0" [3, 2], "3" alone [3, 0], words none.
+        #[test]
+        fn the_grouping_reads_as_dotnet_reads_it() {
+            assert_eq!(group_sizes("3;0"), Some(vec![3]));
+            assert_eq!(group_sizes("3;2;0"), Some(vec![3, 2]));
+            assert_eq!(group_sizes("3"), Some(vec![3, 0]));
+            assert_eq!(group_sizes("0"), Some(vec![0, 0]));
+            assert_eq!(group_sizes("3;x"), None);
         }
 
         /// Only a folder is explored (a file of the same name is never handed to the shell).

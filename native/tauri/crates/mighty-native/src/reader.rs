@@ -236,8 +236,14 @@ impl<'a> Reader<'a> {
 
     /// `Node(element)`: the element's node, or none when nothing of it shows. The root of a section, a footer or a chrome part.
     pub fn node(&mut self, el: &El) -> Option<J> {
+        self.node_in(el, "")
+    }
+
+    /// `Node(element)` for one part of a view (a section, the footer, a chrome part): its controls' key paths start with `part`, so two
+    /// sections' first buttons are different controls.
+    pub fn node_in(&mut self, el: &El, part: &str) -> Option<J> {
         let root = self.root();
-        self.node_at(el, true, "", &root).map(J::Obj)
+        self.node_at(el, true, part, &root).map(J::Obj)
     }
 
     /// `Node(content)` for a content that may be words.

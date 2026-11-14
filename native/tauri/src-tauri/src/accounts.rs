@@ -1256,7 +1256,6 @@ fn prune_of(accounts: &Accounts, snapshot: &AppSnapshot) {
 /// `ShutdownLoginRecovery` (MainWindow.LoginRecovery.cs:313-319): every sign-in ended (its hidden terminal closed by its task), every
 /// terminal wait cancelled, the deferred starts, retries, notes and held resends forgotten; no sign-in starts from here on. Called
 /// once from the app's exit.
-#[allow(dead_code, reason = "W6-A's main.rs calls it from the Exit handler")]
 pub fn shutdown(host: &Host) {
     let accounts = of(host);
     accounts.closed.store(true, Ordering::SeqCst);

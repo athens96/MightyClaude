@@ -28,14 +28,19 @@ fn escape(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&apos;")
 }
 
-/// `Uri.EscapeDataString`'s unreserved set kept, every other byte as `%XX`.
+/// C# `WebUtility.UrlEncode`: letters, digits and `-_.!*()` kept, a space as `+`, every other UTF-8 byte as `%XX` (upper case).
 fn url_encode(text: &str) -> String {
     text.bytes()
-        .map(|b| {
-            if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') { (b as char).to_string() } else { format!("%{b:02X}") }
+        .map(|b| match b {
+            b' ' => "+".to_string(),
+            _ if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'!' | b'*' | b'(' | b')') => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
         })
         .collect()
 }
+
+/// How many shown toasts are kept alive: a toast's `Activated` fires only while its object lives.
+const LIVE_TOASTS: usize = 20;
 
 /// The toast's XML (C# `SendAsync`).
 pub fn toast_xml(notification: &Notification) -> String {
@@ -51,6 +56,8 @@ pub fn toast_xml(notification: &Notification) -> String {
 #[derive(Default)]
 pub struct ToastNotifier {
     handler: Arc<Mutex<Option<ActivationHandler>>>,
+    /// The last [`LIVE_TOASTS`] toasts shown, kept so a click on one still showing reaches its handler (review M3).
+    live: Mutex<std::collections::VecDeque<ToastNotification>>,
 }
 
 fn failed(error: windows::core::Error) -> PlatformError {
@@ -74,7 +81,13 @@ impl ToastNotifier {
                 Ok(())
             }))
             .map_err(failed)?;
-        ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(AUMID)).map_err(failed)?.Show(&toast).map_err(failed)
+        ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(AUMID)).map_err(failed)?.Show(&toast).map_err(failed)?;
+        let mut live = self.live.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        live.push_back(toast);
+        while live.len() > LIVE_TOASTS {
+            live.pop_front();
+        }
+        Ok(())
     }
 }
 
@@ -103,7 +116,7 @@ mod tests {
         };
         assert_eq!(
             toast_xml(&notification),
-            "<toast launch=\"sessionId=a%20b%2Fc\"><visual><binding template=\"ToastGeneric\"><text>Mighty Code · Task complete</text>\
+            "<toast launch=\"sessionId=a+b%2Fc\"><visual><binding template=\"ToastGeneric\"><text>Mighty Code · Task complete</text>\
              <text>A &lt;b&gt; &amp; &quot;c&quot; has finished.</text></binding></visual></toast>"
         );
         assert_eq!(url_encode("5a0e0b0b-0000-4000-8000-00000000b10b"), "5a0e0b0b-0000-4000-8000-00000000b10b", "a GUID stays as it is");

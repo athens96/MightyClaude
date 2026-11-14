@@ -118,7 +118,6 @@ const SHUTDOWN_WAIT: Duration = Duration::from_secs(3);
 /// pass cancelled, the manual run and the service refusing new work and cancelled, the running installer stopped with everything it
 /// started — waited for at most [`SHUTDOWN_WAIT`]. Called from main.rs's `RunEvent::Exit`, outside the async runtime; nothing when
 /// the updates were never made.
-#[allow(dead_code, reason = "a seam W6-A (main.rs's Exit handler) calls")]
 pub fn shutdown(host: &Host) {
     let Some(updates) = host.app.try_state::<Arc<Updates>>().map(|updates| updates.inner().clone()) else { return };
     updates.closing.cancel();
