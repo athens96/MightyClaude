@@ -304,6 +304,39 @@ fn work_map_the_pane_is_never_saved_and_never_counted() {
     remove(&folder);
 }
 
+/// The repository's VERSION, release state and notes are read through the workspace reader (W4 review C4): a regular file under the
+/// folder only — no link, nothing outside it, no folder — and none past its size (the notes are cut instead).
+#[test]
+fn work_map_release_files_are_read_inside_the_folder_and_bounded() {
+    use mighty_workmap::{RELEASE_FILE_BYTES, VERSION_BYTES, read_start, read_text};
+    let root = temp("release-files");
+    let outside = temp("release-outside");
+    std::fs::write(root.join("VERSION"), "\u{feff}0.1.2\n").unwrap();
+    assert_eq!(read_text(&root, "VERSION", VERSION_BYTES).as_deref(), Some("0.1.2\n"), "UTF-8, its byte order mark dropped");
+    std::fs::write(root.join("VERSION"), format!("0.1.2{}", " ".repeat(VERSION_BYTES))).unwrap();
+    assert_eq!(read_text(&root, "VERSION", VERSION_BYTES), None, "a VERSION past 1 KiB is not read");
+    std::fs::create_dir_all(root.join("release").join("0.1.2")).unwrap();
+    std::fs::write(root.join("release").join("0.1.2").join("state.json"), "x".repeat(RELEASE_FILE_BYTES + 1)).unwrap();
+    assert_eq!(read_text(&root, "release/0.1.2/state.json", RELEASE_FILE_BYTES), None, "a state past 64 KiB is not read");
+    std::fs::write(root.join("release").join("0.1.2-notes.md"), "n".repeat(RELEASE_FILE_BYTES * 2)).unwrap();
+    assert_eq!(read_start(&root, "release/0.1.2-notes.md", RELEASE_FILE_BYTES).map(|n| n.len()), Some(RELEASE_FILE_BYTES), "notes cut");
+    assert_eq!(read_text(&root, "release", RELEASE_FILE_BYTES), None, "a folder is no file");
+    std::fs::write(outside.join("VERSION"), "9.9.9").unwrap();
+    let escape = format!("../{}/VERSION", outside.file_name().unwrap().to_string_lossy());
+    assert_eq!(read_text(&root, &escape, VERSION_BYTES), None, "nothing outside the folder");
+    std::fs::remove_file(root.join("VERSION")).unwrap();
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_file(outside.join("VERSION"), root.join("VERSION")).is_ok();
+    #[cfg(unix)]
+    let linked = std::os::unix::fs::symlink(outside.join("VERSION"), root.join("VERSION")).is_ok();
+    // Making a link may need a privilege this account lacks; the reader's link check is mighty-composer's own then.
+    if linked {
+        assert_eq!(read_text(&root, "VERSION", VERSION_BYTES), None, "a VERSION that is a link is not followed");
+    }
+    remove(&root);
+    remove(&outside);
+}
+
 // ── a real repository, the summary run and the service (Windows: git and the scripted Claude start through WindowsProcessHost) ──
 
 #[cfg(windows)]

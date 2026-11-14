@@ -138,9 +138,9 @@ impl WorkMapService {
     async fn summarize(&self, workspace: &Workspace, version: WorkMapVersion) {
         let outcome: Result<(), SummaryError> = async {
             let command = (self.find_claude)().await.ok_or(SummaryError::Cli)?;
+            // Through the workspace reader (no link, nothing outside the folder), its first 64 KiB.
             let notes = version.version.as_deref().and_then(|name| {
-                let path = Path::new(workspace.path()).join("release").join(format!("{name}-notes.md"));
-                path.is_file().then(|| std::fs::read(&path).ok()).flatten().map(|b| String::from_utf8_lossy(&b).into_owned())
+                crate::read_start(Path::new(workspace.path()), &format!("release/{name}-notes.md"), crate::RELEASE_FILE_BYTES)
             });
             let prompt = summary::prompt(
                 summary::language_name(self.locale.language()),
