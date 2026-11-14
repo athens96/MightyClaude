@@ -294,6 +294,7 @@ pub fn run_event(view: &mut View, event: &RunEvent) -> bool {
     let locale = mighty_run::strings::locale();
     let notice = queue::settle_notice(status, ui.queue.items().len(), kept, &locale);
     let drain = ui.queue.settle(status, kept);
+    ui.forget_unqueued();
     if let Some(notice) = notice {
         let _ = slash_note(view, id, &notice);
     }
@@ -330,17 +331,30 @@ pub fn drain_queue(host: Arc<Host>, id: String) {
             crate::models::prepare(&host, &id).await;
             let outcome =
                 start_run(&host, &id, &next.text, next.attachments.clone(), next.permission_mode_override.clone(), continuation).await;
-            let mut view = host.view();
-            if let Some(ui) = view.panes.get_mut(&id) {
-                ui.view.queue_starting = false;
-                ui.dirty = true;
-                if matches!(outcome, Ok(Some(_))) {
-                    ui.queue.remove(&next.id);
-                    ui.continuations.remove(&next.id);
+            let failed_card = {
+                let mut view = host.view();
+                let mut failed_card = None;
+                if let Some(ui) = view.panes.get_mut(&id) {
+                    ui.view.queue_starting = false;
+                    ui.dirty = true;
+                    if matches!(outcome, Ok(Some(_))) {
+                        ui.queue.remove(&next.id);
+                        ui.continuations.remove(&next.id);
+                    } else if outcome.is_err()
+                        && let Some((_, card)) = ui.continuations.remove(&next.id)
+                    {
+                        // S-L3: a continuation that could not start loses its grant with its place in the queue; its card decides again.
+                        ui.queue.remove(&next.id);
+                        failed_card = Some(card);
+                    }
                 }
-            }
-            if let Err(error) = outcome {
-                view.error = Some(error);
+                if let Err(error) = &outcome {
+                    view.error = Some(error.clone());
+                }
+                failed_card
+            };
+            if let (Some(card), Err(error)) = (failed_card, &outcome) {
+                crate::antigravity::continuation_failed(&host, &id, card, error);
             }
             return;
         }
@@ -725,6 +739,7 @@ pub fn register(methods: &mut Registry) {
             let cancelled = (!ui.queue_kept_on_stop).then(|| ui.queue.items().len()).filter(|n| *n > 0);
             if !ui.queue_kept_on_stop {
                 ui.queue.clear();
+                ui.forget_unqueued();
             }
             ui.view.stopping = true;
             ui.dirty = true;
@@ -744,6 +759,7 @@ pub fn register(methods: &mut Registry) {
         let id = ensure(&mut view, pane_id(&args))?;
         let ui = panes::ui(&mut view, &id)?;
         if ui.queue.remove(text(&args, "itemId").unwrap_or("")) {
+            ui.forget_unqueued();
             ui.dirty = true;
         }
         Ok(Value::Null)
