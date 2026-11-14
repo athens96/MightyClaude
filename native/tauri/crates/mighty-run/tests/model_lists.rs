@@ -731,6 +731,79 @@ async fn model_list_is_read_again_when_it_must_be() {
     );
 }
 
+/// A reading that panics (ModelSelection.cs:171-172, the probe's `catch` and `finally`) leaves no probe behind: it answers nothing, a
+/// run about to start does not ask again for 15 s, and a selected pane reads again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reading_that_panics_leaves_no_probe_behind() {
+    let loads = Arc::new(AtomicUsize::new(0));
+    let loader: Loader = {
+        let loads = loads.clone();
+        Arc::new(move |context: ModelContext| {
+            let number = loads.fetch_add(1, Ordering::SeqCst) + 1;
+            Box::pin(async move {
+                if number == 1 {
+                    // A panic without the panic hook's message in the checks' output.
+                    std::panic::resume_unwind(Box::new("the reading panicked"));
+                }
+                Ok(runtime(&context.provider, cli(vec![plain("default"), plain(&format!("m{number}"))])))
+            })
+        })
+    };
+    let refresh = ModelCatalogRefresh::new(tokio::runtime::Handle::current(), loader, changed_nothing(), None);
+    let key = ModelContext::new("w", "/w", "codex");
+    let loads_now = || loads.load(Ordering::SeqCst);
+    assert!(refresh.request(&key, true, false).wait().await.is_none() && loads_now() == 1, "the reading that panicked answers nothing");
+    assert!(
+        refresh.request(&key, false, false).wait().await.is_none() && loads_now() == 1,
+        "it counts as a failed reading: a run does not ask again within 15 s"
+    );
+    let value = refresh.request(&key, true, false).wait().await;
+    assert!(
+        last_value(&value).as_deref() == Some("m2") && loads_now() == 2 && refresh.is_current(&key),
+        "a selected pane reads again: the probe that panicked was not kept"
+    );
+    refresh.shutdown();
+}
+
+/// A reading still under way when the app quits (`Shutdown()`, MainWindow.cs:132) is never reported, so no pane is reconciled and
+/// saved after the last save.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reading_under_way_at_quit_is_never_reported() {
+    let (release, hold) = tokio::sync::oneshot::channel::<()>();
+    let hold = Arc::new(Mutex::new(Some(hold)));
+    let loads = Arc::new(AtomicUsize::new(0));
+    let loader: Loader = {
+        let loads = loads.clone();
+        Arc::new(move |context: ModelContext| {
+            loads.fetch_add(1, Ordering::SeqCst);
+            let hold = hold.lock().unwrap().take();
+            Box::pin(async move {
+                if let Some(hold) = hold {
+                    let _ = hold.await;
+                }
+                Ok(runtime(&context.provider, cli(vec![plain("default"), plain("m1")])))
+            })
+        })
+    };
+    let reported = Arc::new(AtomicUsize::new(0));
+    let changed: Changed = {
+        let reported = reported.clone();
+        Arc::new(move |_: &ModelContext, _: Option<&ProviderRuntime>, _: &ProviderRuntime| {
+            reported.fetch_add(1, Ordering::SeqCst);
+        })
+    };
+    let refresh = ModelCatalogRefresh::new(tokio::runtime::Handle::current(), loader, changed, None);
+    let key = ModelContext::new("w", "/w", "claude");
+    let reading = refresh.request(&key, true, false);
+    common::until(|| loads.load(Ordering::SeqCst) == 1, 10_000, "the reading").await;
+    refresh.shutdown();
+    let _ = release.send(());
+    assert!(reading.wait().await.is_none(), "the reading answers nothing once the app quits");
+    assert_eq!(reported.load(Ordering::SeqCst), 0, "and is never reported");
+    refresh.store(&key, runtime("claude", cli(vec![plain("default"), plain("m2")])));
+    assert_eq!(reported.load(Ordering::SeqCst), 0, "nor is a whole runtime read after it");
+}
+
 // M/AppStore+ClaudeModelReset.swift:16-47.
 #[tokio::test(flavor = "multi_thread")]
 async fn model_reset_reads_every_workspace_and_says_how_it_went() {

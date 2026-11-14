@@ -70,6 +70,14 @@ fn models(host: &Host) -> Option<Arc<Models>> {
     Some(host.app.state::<Arc<Models>>().inner().clone())
 }
 
+/// `modelRefreshes?.Shutdown()` at quit (C# `QuitAsync`, MainWindow.cs:132): no list is read or taken in from here on, so no pane is
+/// reconciled, and saved, after the last save. Makes nothing when no list was ever asked for.
+pub fn shutdown(host: &Host) {
+    if let Some(models) = host.app.try_state::<Arc<Models>>() {
+        models.refresh.shutdown();
+    }
+}
+
 /// `ModelContextOf`: an agent pane's provider in its workspace's folder on this computer; a remote workspace's models are its host's.
 fn context_of(state: &AppSnapshot, id: &str) -> Option<ModelContext> {
     let session = state.session(id).filter(|s| s.kind() == "claude")?;

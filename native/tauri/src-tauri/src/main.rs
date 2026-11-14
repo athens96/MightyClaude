@@ -377,6 +377,8 @@ fn main() {
         RunEvent::ExitRequested { code: Some(code), .. } => exit_code = code,
         RunEvent::Exit => {
             if let Some(host) = app.try_state::<Arc<Host>>() {
+                // The model lists read and reconcile nothing more (C# `modelRefreshes?.Shutdown()`, before the last save).
+                models::shutdown(&host);
                 // Every terminal closed first (C# CloseTerminalsAsync), the wait bounded.
                 terminal::close_all(app);
                 // The last save (C# DesktopService.DisposeAsync), written only with --allow-state-write.
