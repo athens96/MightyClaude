@@ -89,48 +89,21 @@ mod imp {
         if done as isize > 32 { Ok(()) } else { Err(std::io::Error::last_os_error().to_string()) }
     }
 
-    /// .NET's `PasteArguments.AppendArgument` (what `ProcessStartInfo.ArgumentList` writes): an argument as it stands when it has no
-    /// blank or quote, else quoted with the quotes and the backslashes before them escaped.
-    pub fn quoted_argument(argument: &str) -> String {
-        if !argument.is_empty() && !argument.contains([' ', '\t', '"']) {
-            return argument.to_string();
-        }
-        let mut quoted = String::from('"');
-        let mut slashes = 0;
-        for c in argument.chars() {
-            match c {
-                '\\' => slashes += 1,
-                '"' => {
-                    quoted.push_str(&"\\".repeat(slashes * 2 + 1));
-                    quoted.push('"');
-                    slashes = 0;
-                }
-                other => {
-                    quoted.push_str(&"\\".repeat(slashes));
-                    quoted.push(other);
-                    slashes = 0;
-                }
-            }
-        }
-        quoted.push_str(&"\\".repeat(slashes * 2));
-        quoted.push('"');
-        quoted
-    }
-
-    /// C# `ShowWorkspaceInExplorer` (MainWindow.Navigation.cs:330): `%WINDIR%\explorer.exe <folder>`, started by the shell (Explorer
-    /// hands the folder to the running shell and is never the app's child).
+    /// C# `ShowWorkspaceInExplorer` (MainWindow.Navigation.cs:330, `explorer.exe <folder>`): the folder handed to the shell's
+    /// `explore` verb, so its name is never an argument Explorer parses (a folder named `a,b` or `/select,x` is that folder, where
+    /// `explorer.exe a,b` reads switches). The shell starts Explorer, never the app's child. Only a folder is explored.
     pub fn show_in_explorer(folder: &std::path::Path) -> std::result::Result<(), String> {
         use std::os::windows::ffi::OsStrExt;
         use windows_sys::Win32::UI::Shell::ShellExecuteW;
         use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        let windows = std::env::var_os("SystemRoot").or_else(|| std::env::var_os("windir")).ok_or("no Windows folder is known")?;
-        let explorer = std::path::Path::new(&windows).join("explorer.exe");
+        if !folder.is_dir() {
+            return Err(format!("not a folder: {}", folder.display()));
+        }
         let wide = |text: &std::ffi::OsStr| text.encode_wide().chain(std::iter::once(0)).collect::<Vec<u16>>();
-        let (verb, program) = (wide("open".as_ref()), wide(explorer.as_os_str()));
-        let argument = wide(quoted_argument(&folder.to_string_lossy()).as_ref());
+        let (verb, target) = (wide("explore".as_ref()), wide(folder.as_os_str()));
         // SAFETY: NUL-terminated strings that live across the call; the other pointers are null as documented.
         let done = unsafe {
-            ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), program.as_ptr(), argument.as_ptr(), std::ptr::null(), SW_SHOWNORMAL)
+            ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), target.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL)
         };
         if done as isize > 32 { Ok(()) } else { Err(std::io::Error::last_os_error().to_string()) }
     }
@@ -200,14 +173,14 @@ mod imp {
             assert!(!sizes.is_empty() && sizes.iter().all(|size| *size <= 9), "group sizes {sizes:?}");
         }
 
-        /// .NET's `ArgumentList` quoting, which C# hands Explorer the folder with.
+        /// Only a folder is explored (a file of the same name is never handed to the shell).
         #[test]
-        fn arguments_are_quoted_as_dotnet_quotes_them() {
-            assert_eq!(quoted_argument(r"C:\Work\app"), r"C:\Work\app");
-            assert_eq!(quoted_argument(r"C:\My Work\app"), r#""C:\My Work\app""#);
-            assert_eq!(quoted_argument(r"C:\My Work\"), r#""C:\My Work\\""#, "a closing backslash doubled before the quote");
-            assert_eq!(quoted_argument(r#"a"b"#), r#""a\"b""#);
-            assert_eq!(quoted_argument(""), r#""""#);
+        fn only_a_folder_is_shown_in_explorer() {
+            let file = std::env::temp_dir().join(format!("mighty-explore-{},x.txt", std::process::id()));
+            std::fs::write(&file, "x").unwrap();
+            assert!(show_in_explorer(&file).is_err());
+            std::fs::remove_file(&file).unwrap();
+            assert!(show_in_explorer(std::path::Path::new(r"C:\no\such\folder,x")).is_err());
         }
 
         #[test]
