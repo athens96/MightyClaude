@@ -51,7 +51,7 @@ native/tauri/
 | W2 Claude 요청 *(완료 2026-11-14)* | 실행 엔진(Claude), 스트림 파서, 권한·질문·계획 카드, 체크리스트·백그라운드, 첨부, 작성창·대기열·슬래시 명령 | claude-stream-*, claude-plan-mode, pending, queue-run-now 통과; 실제 Claude 요청이 처음부터 끝까지 됨 |
 | W3 마이티 흐름 *(완료 2026-11-14)* | 그래프 추적기, 흐름·타임라인·구조·역할 보기, 진행 패널, 알림 대기 | graph-vectors, flow-vectors, agent-notices 통과 |
 | W4 창 종류 *(완료 2026-11-14)* | 터미널(ConPTY + xterm), 파일 창·미리보기·변경점, 브라우저 창(자식 웹뷰), HTML 프레임, 작업 지도, 세션 기록·이어하기 | file-diff, work-map 통과; 해당 smoke 통과 |
-| W5 다른 에이전트 | Codex(exec + 승인 채널), Antigravity(설정 바이트 단위 편집), pi, opencode, Hermes, 모델 목록·단계별 모델 | 각 fixture와 acp-graphs 통과 |
+| W5 다른 에이전트 *(완료 2026-11-14)* | Codex(exec + 승인 채널), Antigravity(설정 바이트 단위 편집), pi, opencode, Hermes, 모델 목록·단계별 모델 | 각 fixture와 acp-graphs 통과 |
 | W6 설정·관리 | 설정 화면 16개 섹션과 대화 상자 14개(NativeNode), 플러그인, CLI 계정·업데이트, 설정 도구, 사용량, 상태 줄, 알림 | setup-catalog, toolkit-hash 통과; 설정 smoke 통과 |
 | W7 위임 | Agent IO MCP, 위임 MCP 서버, 작업 트리·병합, 자식 창 | delegation-modes와 git 시나리오 통과 |
 | W8 원격 | 휴대폰(릴레이·직접·m1·푸시), 원격 작업 공간 v2, 펫(겹침 창), 화면 공유(지금 꺼져 있음 — 마지막) | relay, push, mobile-*, remote-v2 통과; 실제 휴대폰 연결 |
@@ -76,6 +76,7 @@ native/tauri/
 
 각 단계: 구현 → 테스트(C# 테스트 이전 + 공통 기대값) → 독립 코드 리뷰 → 지적 수정 → 커밋·push → Tauri CI(Windows·Mac) 통과.
 정하지 않은 것의 기본값(2026-11-14): 업데이트 손넘김은 Rust exe에 직접, 화면 공유는 W8 맨 끝, 상태 저장은 개발 중 꺼 두고 W9에서 기본으로 켬.
+W6 기본값(2026-11-14, `.omc/research/tauri/w6-plan.md`): 자동 업데이트·자동 로그인과 PC를 바꾸는 동작(로그아웃, 로그인, CLI 업데이트, 플러그인·도구 설치, HKCU·`~/.claude/settings.json`·omc/Ouroboros 설정 쓰기)은 W9 전까지 `--allow-state-write`가 있을 때만; smoke에서는 언제나 꺼 둠.
 
 | 단계 | 커밋 | 리뷰 | CI |
 |---|---|---|---|
@@ -86,4 +87,4 @@ native/tauri/
 | W2·W3 호스트 연결 (실행 서비스·작성창·카드·마이티 push와 메서드, 미뤄 둔 검사, smoke 실행 단계, 실제 Claude 요청 1회) | 2b99e71a 이후 이 브랜치의 연결 커밋들 | 리뷰 대기 | — |
 | W2 Claude 요청 + W3 마이티 흐름 | 8677d8a9, 1740632b, b6091c22, 44f33041, f2b57b05 | 리뷰 3건(실행 엔진 1 HIGH·4 MEDIUM, 그래프 1 HIGH·1 MEDIUM, 작성창·호스트 1 HIGH·2 MEDIUM-HIGH·3 MEDIUM) 모두 수정 | 43491106177 Windows·Mac 통과 |
 | W4 창 종류 (W4-A 터미널, W4-B 파일 창·참조·HTML 프레임·그림 보기, W4-C 세션 기록·이어하기·작업 지도, W4-D 프레임 메서드·대화 상자·작업 공간 만들기·브라우저 창 전부) | f20a9ffc, 6b066f63, 1e029a10, b0bce5bc(병합), 6ff9e43e(이어하기 처음부터 끝까지), 883d4ca8(파일 창 연결), e7bf10f7(레이아웃 동작 하나로), 6b368436(글자 설정·터미널, /rename), 7395a72a(smoke), 062fc6ef·55edac0c(리뷰 수정 병합), 22144f65(Mac 테스트) | 리뷰 4건(터미널, 파일, 기록·작업 지도, 브라우저·대화 상자; HIGH 2건: git 서명 프로그램 실행, iCCP 압축 폭탄) 지적 50건 모두 수정(C#에도 있던 4건은 C# 브랜치 `fix/csharp-from-tauri-review`) | 43553036970 Windows·Mac 통과 |
-| W5 다른 에이전트 (W5-A Codex 승인·세션 기록·pi, W5-B opencode·Hermes, W5-C Antigravity, W5-D 모델 목록·단계별 모델·보내기 대상) | 진행 중 | — | — |
+| W5 다른 에이전트 (W5-A Codex 승인·세션 기록·pi, W5-B opencode·Hermes, W5-C Antigravity, W5-D 모델 목록·단계별 모델·보내기 대상) | 198c5b36(네 부분 병합 w5-final), 65ea00ec 등(리뷰 수정 병합), 7c36a9d8(feat/tauri 병합), cbe4300d(CI 기계의 8.3 임시 경로·Mac 테스트) | 리뷰 5건(W5-A, W5-B, W5-C 정확성·보안, W5-D; HIGH 3건: 대기열에서 지운 요청 실행, Antigravity 규칙의 UNC 경로 NTLM 유출과 경로 별칭 우회) 지적 모두 수정. 보안 리뷰의 공통 규칙(H1·H2·M1·M2·L3·L4)과 B4·B11·B12는 C#·Swift에도 같게(`fix/csharp-from-tauri-review` 5c328851, C#·Mac CI 통과) | 43570264704 Windows·Mac 통과 |
